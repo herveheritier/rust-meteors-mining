@@ -1,0 +1,18 @@
+# Cible de compilation (artefacts de build Rust : binaires, objets, caches)
+/target
+
+# Journaux et fichiers temporaires
+*.log
+*.tmp
+*.swp
+*~
+*.bak
+
+# Éditeurs / IDE — fichiers propres à l'utilisateur
+.vscode/
+.idea/
+*.code-workspace
+
+# Systèmes d'exploitation
+.DS_Store
+Thumbs.db

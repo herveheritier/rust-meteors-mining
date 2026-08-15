@@ -1,0 +1,352 @@
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+' windowUtils.BM
+'$DYNAMIC
+
+sub windowUtils_trapMouseEvents(windowUtils as windowUtils_type)
+    do while _mouseinput
+        windowUtils.mousex = _mousex
+        windowUtils.mousey = _mousey
+        _mouseshow
+    loop
+end sub
+
+function windowUtils_openWindow%(windowUtils() as windowUtils_type, left%,top%,w%,h%,foregroundColor&,hoverColor&,backgroundColor&,borderColor&)
+    _keyclear
+    redim _preserve windowUtils(1 to ubound(windowUtils)+1) as windowUtils_type
+    i% = ubound(windowUtils)
+    windowUtils(i%).windowIsOpen = -1
+    windowUtils(i%).left = left%
+    windowUtils(i%).top = top%
+    windowUtils(i%).width = w%
+    windowUtils(i%).height = h%
+    windowUtils(i%).foregroundColor = foregroundColor&
+    windowUtils(i%).hoverColor = hoverColor&
+    windowUtils(i%).backgroundColor = backgroundColor&
+    windowUtils(i%).borderColor = borderColor&
+    windowUtils(i%).backgroundImage = _newimage(w%,h%,32)
+    windowUtils(i%).previousImage = _newimage(w%,h%,32)
+    _putimage , _dest, windowUtils(i%).previousImage, (left%,top%)-(left%+w%,top%+h%)
+    line (left%,top%)-(left%+w%,top%+h%), windowUtils(i%).backgroundColor, BF
+    _putimage , _dest, windowUtils(i%).backgroundImage, (left%,top%)-(left%+w%,top%+h%)
+    view screen (left%,top%)-(left% + w%,top% + h%), backgroundColor&
+    color foregroundColor&, &H00000000
+    windowUtils_clear windowUtils(i%)
+    windowUtils_openWindow% = i%
+end sub
+
+function windowUtils_openFullScreenWindow%(windowUtils() as windowUtils_type, foregroundColor&, hoverColor&)
+    windowUtils_openFullScreenWindow% = _
+        windowUtils_openWindow(windowUtils(), 0,0,_width-1, _height-1, foregroundColor&,hoverColor&, &H00000000, &HFF000000)
+end function
+
+sub windowUtils_clear(windowUtils as windowUtils_type)
+    cls
+    _putimage (windowUtils.left,windowUtils.top), windowUtils.previousImage, _dest
+    line (windowUtils.left,windowUtils.top)-(windowUtils.left + windowUtils.width,windowUtils.top + windowUtils.height), windowUtils.backgroundColor, BF
+end sub
+
+sub windowUtils_drawTextLeftTop(windowUtils as windowUtils_type, t$,left%,top%)
+    _printstring (windowUtils.left+left%,windowUtils.top+top%), t$
+end sub
+
+function windowUtils_int2str$(i as _unsigned integer)
+    windowUtils_int2str$ = chr$(i\256) + chr$(i mod 256)
+end function
+
+sub db()
+    $console
+    h& = _dest
+    _dest _console
+end sub
+sub de()
+    _dest h&
+end sub
+
+function windowUtils_str2int~%(i$)
+    windowUtils_str2int~% = asc(i$,1) * 256 + asc(i$,2)
+end function
+
+function windowUtils_createLabel%(windowUtils as windowUtils_type, label$,left%,top%)
+
+    labelBeginAt% = len(windowUtils.labelsString)
+    labelLength% = len(label$)
+
+    windowUtils.labelsString = windowUtils.labelsString + label$
+
+    labelWidth% = labelLength% * _fontwidth
+    labelHeight% = _fontheight
+    labelLeft% = windowUtils.left + left%
+    labelTop% = windowUtils.top + top%
+    labelUpdated% = 0
+
+    res$ = ""
+    res$ = res$ + windowUtils_int2str(labelBeginAt%)
+    res$ = res$ + windowUtils_int2str(labelLength%)
+    res$ = res$ + windowUtils_int2str(labelWidth%)
+    res$ = res$ + windowUtils_int2str(labelHeight%)
+    res$ = res$ + windowUtils_int2str(labelLeft%)
+    res$ = res$ + windowUtils_int2str(labelTop%)
+    res$ = res$ + windowUtils_int2str(labelUpdated%)
+
+    windowUtils.labelsData = windowUtils.labelsData + res$
+    windowUtils_createLabel% = windowUtils.labelsCounter
+    windowUtils.labelsCounter = windowUtils.labelsCounter + 1
+
+    _printstring (labelLeft%,labelTop%), label$
+
+end function
+
+sub windowUtils_updateLabel(windowUtils as windowUtils_type, labelId%, label$)
+    bos% = 14 * labelId% + 1
+    labelBeginAt% = windowUtils_str2int(mid$(windowUtils.labelsData,bos%,2))
+    labelLength% = windowUtils_str2int(mid$(windowUtils.labelsData,bos%+2,2))
+    
+    ' update a label don't change the length of the label
+    ' if the new label is longer than the initial label, then the new label is truncated
+
+    previousLabel$ = mid$(windowUtils.labelsString,labelBeginAt%+1,labelLength%)
+    label$ = left$(label$+space$(labelLength%),labelLength%)
+    mid$(windowUtils.labelsString,labelBeginAt%+1,labelLength%) = label$
+
+    labelWidth% = windowUtils_str2int(mid$(windowUtils.labelsData,bos%+4,2))
+    labelHeight% = windowUtils_str2int(mid$(windowUtils.labelsData,bos%+6,2))
+
+    labelLeft% = windowUtils_str2int(mid$(windowUtils.labelsData,bos%+8,2))
+    labelTop% = windowUtils_str2int(mid$(windowUtils.labelsData,bos%+10,2))
+    labelUpdated% = -1 : mid$(windowUtils.labelsData,bos%+12,2) = windowUtils_int2str(labelUpdated%)
+
+    _putimage (labelLeft%,labelTop%), windowUtils.backgroundImage, _dest, (labelLeft% - windowUtils.left,labelTop% - windowUtils.top) - step(labelWidth%,labelHeight%)
+    _printmode _keepbackground
+    _printstring (labelLeft%,labelTop%), label$
+end sub
+
+
+function windowUtils_createButton%(windowUtils as windowUtils_type, label$,left%,bottom%)
+
+    labelBeginAt% = len(windowUtils.buttonsString)
+    labelLength% = len(label$)
+
+    windowUtils.buttonsString = windowUtils.buttonsString + label$
+
+    buttonWidth% = _max(len(label$) * _fontwidth + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT,60)
+    buttonHeight% = _fontheight + 10
+    buttonLeft% = windowUtils.left + left%
+    buttonTop% = windowUtils.top + windowUtils.height - bottom% - 20
+    buttonHover% = 0
+
+    res$ = ""
+    res$ = res$ + windowUtils_int2str(labelBeginAt%)
+    res$ = res$ + windowUtils_int2str(labelLength%)
+    res$ = res$ + windowUtils_int2str(buttonWidth%)
+    res$ = res$ + windowUtils_int2str(buttonHeight%)
+    res$ = res$ + windowUtils_int2str(buttonLeft%)
+    res$ = res$ + windowUtils_int2str(buttonTop%)
+    res$ = res$ + windowUtils_int2str(buttonHover%)
+
+    windowUtils.buttonsData = windowUtils.buttonsData + res$
+    windowUtils_createButton% = windowUtils.buttonsCounter
+    windowUtils.buttonsCounter = windowUtils.buttonsCounter + 1
+
+    line (buttonLeft%,buttonTop%)-(buttonLeft%+buttonWidth%,buttonTop%+buttonHeight%),windowUtils.foregroundColor,B
+    _printstring (buttonLeft% + (buttonWidth% - _printwidth(label$))\2,buttonTop% + 5), label$
+
+end function
+
+function windowUtils_buttonClicked%(windowUtils as windowUtils_type, buttonId%, redraw%)
+    windowUtils_buttonClicked% = 0
+    bos% = 14 * buttonId% + 1
+    labelBeginAt% = windowUtils_str2int(mid$(windowUtils.buttonsData,bos%,2))
+    labelLength% = windowUtils_str2int(mid$(windowUtils.buttonsData,bos%+2,2))
+    buttonWidth% = windowUtils_str2int(mid$(windowUtils.buttonsData,bos%+4,2))
+    buttonHeight% = windowUtils_str2int(mid$(windowUtils.buttonsData,bos%+6,2))
+    buttonLeft% = windowUtils_str2int(mid$(windowUtils.buttonsData,bos%+8,2))
+    buttonTop% = windowUtils_str2int(mid$(windowUtils.buttonsData,bos%+10,2))
+    buttonHover% = windowUtils_str2int(mid$(windowUtils.buttonsData,bos%+12,2))
+    minx% = buttonLeft%
+    maxx% = buttonLeft% + buttonWidth%
+    miny% = buttonTop%
+    maxy% = buttonTop% + buttonHeight%
+    ' mouse pointer over the button
+    if windowUtils.mousex>minx% _andalso windowUtils.mousex<maxx% _andalso windowUtils.mousey>miny% _andalso windowUtils.mousey<maxy% then
+        ' mouse pointer enters the button
+        if buttonHover% = 0 then
+            buttonHover% = -1
+            mid$(windowUtils.buttonsData,14*buttonId%+1+12,2) = windowUtils_int2str(buttonHover%)
+            redraw% = _TRUE
+        end if
+        ' mouse click
+        buttonDown = _mousebutton(1)
+        ' the click is completed when mouse button is released
+        if buttonDown then
+            do while buttonDown
+                null = _mouseinput
+                buttonDown = _mousebutton(1)
+                windowUtils.mousex = _mousex
+                windowUtils.mousey = _mousey
+            loop
+            ' recapture mouse position (if it's not done, the position is sometimes reset to 0,0 !!! maybe a bug ???)
+            windowUtils.mousex = _mousex
+            windowUtils.mousey = _mousey
+            ' the click should only be registered if the mouse pointer is still over the button
+            if windowUtils.mousex>minx% _andalso windowUtils.mousex<maxx% _andalso windowUtils.mousey>miny% _andalso windowUtils.mousey<maxy% then
+                windowUtils_buttonClicked% = -1
+                windowUtils.mousex = -1
+                windowUtils.mousey = -1
+            end if
+        end if
+    else
+        ' mouse point leaves the button
+        if buttonHover% = -1 then
+            buttonHover% = 0
+            mid$(windowUtils.buttonsData,14*buttonId%+1+12,2) = windowUtils_int2str(buttonHover%)
+            redraw% = _TRUE
+        end if
+    end if
+    if redraw% = _TRUE then
+        label$ = mid$(windowUtils.buttonsString,labelBeginAt%+1,labelLength%)
+        if buttonHover% = _TRUE then
+            line (buttonLeft%,buttonTop%)-(buttonLeft%+buttonWidth%,buttonTop%+buttonHeight%),windowUtils.hoverColor,B
+            color windowUtils.hoverColor
+            _printstring (buttonLeft% + (buttonWidth% - _printwidth(label$))\2,buttonTop% + 5), label$
+            color windowUtils.foregroundColor
+        else
+            line (buttonLeft%,buttonTop%)-(buttonLeft%+buttonWidth%,buttonTop%+buttonHeight%),windowUtils.foregroundColor,B
+            _printstring (buttonLeft% + (buttonWidth% - _printwidth(label$))\2,buttonTop% + 5), label$
+        end if
+    end if
+end function
+
+sub windowUtils_refresh(windowUtils as windowUtils_type)
+
+    _display
+end sub
+
+sub windowUtils_closeWindow(windowUtils as windowUtils_type)
+    cls : view
+    _putimage (windowUtils.left,windowUtils.top)-(windowUtils.left+windowUtils.width,windowUtils.top+windowUtils.height), windowUtils.previousImage, _dest
+    _freeimage windowUtils.previousImage
+    _freeimage windowUtils.backgroundImage
+    windowUtils.windowIsOpen = 0
+end sub
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Sub windowUtils_split (in$, delimiter$, result$())
+    ReDim result$(-1 to-1)
+    dim start, finish
+    start = 1
+    Do
+        While Mid$(in$, start, 1) = delimiter$
+            start = start + 1
+            If start > Len(in$) Then Exit Sub
+        Wend
+        finish = InStr(start, in$, delimiter$)
+        If finish = 0 Then finish = Len(in$) + 1
+        ReDim _Preserve result$(0 To UBound(result$) + 1)
+        result$(UBound(result$)) = Mid$(in$, start, finish - start)
+        start = finish + 1
+    Loop While start <= Len(in$)
+End Sub
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+sub windowUtils_messageBox(windowUtils() as windowUtils_type, msg$)
+    pw% = _printwidth(msg$) + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+    w% = _max(300,pw%)
+    wu% = windowUtils_openWindow(windowUtils(), (_width - w%)\2, (_height - 120)\2, w%, 120, &HFF99dfff, &HFFFFFFFF, &HD01AB2FF, &HFF1AB2FF)
+    windowUtils_drawTextLeftTop windowUtils(wu%), msg$, (w%-pw%)\2 + WINDOWUTILS_PADDING_LEFT, 10
+    pw% = _printwidth("OK") + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+    btn1% = windowUtils_createButton(windowUtils(wu%),"OK",(w%-pw%)\2 - WINDOWUTILS_PADDING_LEFT,20)
+    do
+        _limit 24
+        windowUtils_trapMouseEvents windowUtils(wu%)
+        if windowUtils_buttonClicked(windowUtils(wu%),btn1%,_FALSE) = -1 then exit do
+        windowUtils_refresh windowUtils(wu%)
+    loop
+    windowUtils_closeWindow windowUtils(wu%)
+end sub
+
+function windowUtils_choiceBox%(windowUtils() as windowUtils_type, msg$, choice1$, choice2$)
+    pw% = _printwidth(msg$) + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+    w% = _max(300,pw%)
+    wu% = windowUtils_openWindow(windowUtils(), (_width - w%)\2, (_height - 120)\2, w%, 120, &HFF99dfff, &HFFFFFFFF, &HD01AB2FF, &HFF1AB2FF)
+    windowUtils_drawTextLeftTop windowUtils(wu%), msg$, (w%-pw%)\2 + WINDOWUTILS_PADDING_LEFT, 10
+    pw% = _printwidth(choice1$) + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+    btn1% = windowUtils_createButton(windowUtils(wu%),choice1$,(w%\2-pw%)\2 - WINDOWUTILS_PADDING_LEFT,20)
+    pw% = _printwidth(choice2$) + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+    btn2% = windowUtils_createButton(windowUtils(wu%),choice2$,(3*w%\2-pw%)\2 - WINDOWUTILS_PADDING_LEFT,20)
+    do
+        _limit 24
+        windowUtils_trapMouseEvents windowUtils(wu%)
+        if windowUtils_buttonClicked(windowUtils(wu%),btn1%,_FALSE) = -1 then 
+            windowUtils_choiceBox% = _TRUE
+            exit do
+        end if
+        if windowUtils_buttonClicked(windowUtils(wu%),btn2%,_FALSE) = -1 then 
+            windowUtils_choiceBox% = _FALSE
+            exit do
+        end if
+        windowUtils_refresh windowUtils(wu%)
+    loop
+    windowUtils_closeWindow windowUtils(wu%)
+end function
+
+function windowUtils_complexBox%(windowUtils() as windowUtils_type, ttl$, splitter$, msg$, choices$)
+
+    titleWidth% = _printWidth(ttl$) + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+    windowWidth% = _max(300,titleWidth%)
+
+    dim lines$(0)
+    windowUtils_split msg$, splitter$, lines$()
+    dim lineWidth%(lbound(lines$) to ubound(lines$))
+
+    for i% = lbound(lines$) to ubound(lines$)
+        lineWidth%(i%) = _printwidth(lines$(i%)) + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+        windowWidth% = _max(windowWidth%,lineWidth%(i%))
+    next i%
+
+    dim buttons$(0)
+    windowUtils_split choices$, splitter$, buttons$()
+    dim buttonWidth%(lbound(buttons$) to ubound(buttons$))
+
+    sumOfButtonsWidth% = WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+
+    for i% = lbound(buttons$) to ubound(buttons$)
+        buttonWidth%(i%) = _printWidth(buttons$(i%)) + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+        sumOfButtonsWidth% = sumOfButtonsWidth% + buttonWidth%(i%)
+    next i%
+
+    windowWidth% = _max(windowWidth%,sumOfButtonsWidth%) + WINDOWUTILS_PADDING_LEFT + WINDOWUTILS_PADDING_RIGHT
+    widthToDrawOneButton% = windowWidth% / (ubound(buttons$) -  lbound(buttons$) + 1)
+
+    linesCount% = ubound(lines$) -  lbound(lines$) + 1
+    h% = 120 + linesCount% * _fontheight
+
+    wu% = windowUtils_openWindow(windowUtils(), (_width - windowWidth%)\2, (_height - h%)\2, windowWidth%, h%, &HFF99dfff, &HFFFFFFFF, &HD01AB2FF, &HFF1AB2FF)
+
+    windowUtils_drawTextLeftTop windowUtils(wu%), ttl$, (windowWidth%-titleWidth%)\2 + WINDOWUTILS_PADDING_LEFT, WINDOWUTILS_PADDING_TOP
+
+    for i% = lbound(lines$) to ubound(lines$)
+        windowUtils_drawTextLeftTop windowUtils(wu%), lines$(i%), (windowWidth%-lineWidth%(i%))\2 + WINDOWUTILS_PADDING_LEFT, WINDOWUTILS_PADDING_TOP + (2+i%) * _fontheight
+    next i%
+
+    dim btn%(lbound(buttons$) to ubound(buttons$))
+    for i% = lbound(buttons$) to ubound(buttons$)
+        btn%(i%) = windowUtils_createButton(windowUtils(wu%),buttons$(i%), (i%+0.5) * widthToDrawOneButton% - buttonWidth%(i%)\2,20)
+    next i%
+
+    do
+        _limit 24
+        windowUtils_trapMouseEvents windowUtils(wu%)
+        for i% = lbound(btn%) to ubound(btn%)
+            if windowUtils_buttonClicked(windowUtils(wu%),btn%(i%),_FALSE) = -1 then 
+                windowUtils_complexBox% = i%
+                exit do
+            end if
+        next i%
+        windowUtils_refresh windowUtils(wu%)
+    loop
+    windowUtils_closeWindow windowUtils(wu%)
+
+end function

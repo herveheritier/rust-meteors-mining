@@ -1,0 +1,17 @@
+[package]
+name = "rust-meteors-mining"
+version = "0.1.0"
+edition = "2021"
+description = "Portage en Rust de « Meteors Mining » (jeu QB64) — voir docs/PORTAGE.md"
+
+[dependencies]
+macroquad = "0.4"
+rand = "0.8"           # PRNG seedé pour la génération procédurale (Phase 3)
+rand_chacha = "0.3"    # générateur ChaCha12 (déterministe, testable)
+
+# Dépendances prévues pour les phases suivantes (à activer au besoin) :
+# rodio = "0.19"        # lecture OGG (audio) — alternative à quad-snd (Phase 4)
+
+[profile.release]
+opt-level = 3
+lto = true
