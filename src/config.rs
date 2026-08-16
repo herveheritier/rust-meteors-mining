@@ -118,14 +118,13 @@ pub const STATION_DOCK_DISTANCE: f64 = 5.0;
 pub const STATION_RADIUS: f64 = 36.0;
 /// Mapping UV de la station : `station.png` est un anneau fin (bord intérieur
 /// UV ~0.34, extérieur ~0.5) plus étroit que la bande du mesh (rayon
-/// 90-163). À l'échelle normale (÷320), les dents cardinales (rayon 160 →
-/// UV 0.0/0.5) tombent sur le pixel vide du bord de la texture (défauts à
-/// droite et en bas) ; augmenter l'échelle pousse les creux (rayon 110) sous
-/// le bord intérieur (nouveaux trous). On utilise donc un mapping radial :
-/// la bande du mesh [90, 163] est compressée dans la bande pleine de la
-/// texture [0.36, 0.48] → anneau complet. Dérive volontaire de l'original,
-/// dont la station était dégradée par le bug `computeShapeCenter shapes(0)`
-/// (sa largeur n'était jamais calculée → ratio UV divisé par 0).
+/// 110-162). Un mapping d'échelle simple ferait tomber le bord de l'anneau
+/// sur le pixel vide de la texture (défauts à droite et en bas). On utilise
+/// donc un mapping radial : la bande du mesh, incluse dans [90, 163], est
+/// compressée dans la bande pleine de la texture [0.36, 0.48] → anneau
+/// complet. Dérive volontaire de l'original, dont la station était dégradée
+/// par le bug `computeShapeCenter shapes(0)` (sa largeur n'était jamais
+/// calculée → ratio UV divisé par 0).
 pub const STATION_UV_R_INNER: f64 = 90.0;
 pub const STATION_UV_R_OUTER: f64 = 163.0;
 pub const STATION_UV_INNER: f64 = 0.36;

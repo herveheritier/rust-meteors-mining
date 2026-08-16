@@ -483,8 +483,8 @@ mod tests {
         assert_eq!(shapes[PLAYER_INDEX].who_i_am, WHOIAM_PLAYER);
         assert_eq!(shapes[PLAYER_INDEX].life, 1);
         assert_eq!(shapes[STATION_INDEX].who_i_am, WHOIAM_STATION);
-        // joueur (1) + station (34 emplacements)
-        assert_eq!(triangles.len(), 1 + 34);
+        // joueur (1) + station (66 emplacements)
+        assert_eq!(triangles.len(), 1 + 66);
         assert_eq!(stars.len(), STARS_COUNT);
         assert_eq!(elements.len(), 4);
         // positions initiales

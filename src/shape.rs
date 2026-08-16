@@ -26,42 +26,82 @@ use crate::geom::{
 /// `(p2,p3,p4)`, … (format `meshesToShape`).
 pub type Mesh = &'static [&'static [(f64, f64)]];
 
-/// Station — `reference/assets/station.bas` (1 pack de 34 points → 32 triangles).
+/// Station — anneau lisse (1 pack de 66 points → 64 triangles).
+///
+/// Dérive volontaire de l'original (`reference/assets/station.bas`, anneau
+/// étoilé à 16 dents : 34 points → 32 triangles) : les bords intérieur
+/// (r = 110) et extérieur (r = 162) sont maintenant des polygones réguliers
+/// à 32 côtés, quasi circulaires à l'échelle du rendu. Les points alternent
+/// extérieur/intérieur (éventail glissant de `meshesToShape`) pour préserver
+/// le trou central ; les deux derniers répètent les deux premiers pour
+/// fermer l'anneau, comme l'original.
 pub const STATION_MESH: Mesh = &[&[
-    (-150.0, -60.0),
-    (-110.0, -20.0),
-    (-160.0, 0.0),
-    (-110.0, 20.0),
-    (-150.0, 60.0),
-    (-90.0, 60.0),
-    (-120.0, 110.0),
-    (-60.0, 90.0),
-    (-60.0, 150.0),
-    (-20.0, 110.0),
-    (0.0, 160.0),
-    (20.0, 110.0),
-    (60.0, 150.0),
-    (60.0, 90.0),
-    (120.0, 110.0),
-    (90.0, 60.0),
-    (150.0, 60.0),
-    (110.0, 20.0),
-    (160.0, 0.0),
-    (110.0, -20.0),
-    (150.0, -60.0),
-    (90.0, -60.0),
-    (120.0, -110.0),
-    (60.0, -90.0),
-    (60.0, -150.0),
-    (20.0, -110.0),
-    (0.0, -160.0),
-    (-20.0, -110.0),
-    (-60.0, -150.0),
-    (-60.0, -90.0),
-    (-120.0, -110.0),
-    (-90.0, -60.0),
-    (-150.0, -60.0),
-    (-110.0, -20.0),
+    (162.0, 0.0),
+    (110.0, 0.0),
+    (158.9, -31.6),
+    (107.9, -21.5),
+    (149.7, -62.0),
+    (101.6, -42.1),
+    (134.7, -90.0),
+    (91.5, -61.1),
+    (114.6, -114.6),
+    (77.8, -77.8),
+    (90.0, -134.7),
+    (61.1, -91.5),
+    (62.0, -149.7),
+    (42.1, -101.6),
+    (31.6, -158.9),
+    (21.5, -107.9),
+    (0.0, -162.0),
+    (0.0, -110.0),
+    (-31.6, -158.9),
+    (-21.5, -107.9),
+    (-62.0, -149.7),
+    (-42.1, -101.6),
+    (-90.0, -134.7),
+    (-61.1, -91.5),
+    (-114.6, -114.6),
+    (-77.8, -77.8),
+    (-134.7, -90.0),
+    (-91.5, -61.1),
+    (-149.7, -62.0),
+    (-101.6, -42.1),
+    (-158.9, -31.6),
+    (-107.9, -21.5),
+    (-162.0, 0.0),
+    (-110.0, 0.0),
+    (-158.9, 31.6),
+    (-107.9, 21.5),
+    (-149.7, 62.0),
+    (-101.6, 42.1),
+    (-134.7, 90.0),
+    (-91.5, 61.1),
+    (-114.6, 114.6),
+    (-77.8, 77.8),
+    (-90.0, 134.7),
+    (-61.1, 91.5),
+    (-62.0, 149.7),
+    (-42.1, 101.6),
+    (-31.6, 158.9),
+    (-21.5, 107.9),
+    (0.0, 162.0),
+    (0.0, 110.0),
+    (31.6, 158.9),
+    (21.5, 107.9),
+    (62.0, 149.7),
+    (42.1, 101.6),
+    (90.0, 134.7),
+    (61.1, 91.5),
+    (114.6, 114.6),
+    (77.8, 77.8),
+    (134.7, 90.0),
+    (91.5, 61.1),
+    (149.7, 62.0),
+    (101.6, 42.1),
+    (158.9, 31.6),
+    (107.9, 21.5),
+    (162.0, 0.0),
+    (110.0, 0.0),
 ]];
 
 /// Alien — `reference/assets/gripper-meshes.bas` (4 packs : 16+16+5+8 → 37 triangles).
@@ -807,23 +847,23 @@ mod tests {
     }
 
     #[test]
-    fn station_mesh_builds_32_triangles_on_34_slots() {
+    fn station_mesh_builds_64_triangles_on_66_slots() {
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         let mut shape = Shape::default();
         let idx = meshes_to_shape(&mut shape, &mut shapes, &mut triangles, STATION_MESH);
         assert_eq!(idx, 0);
-        assert_eq!(shape.life, 34); // points_qty (fidèle à l'original)
+        assert_eq!(shape.life, 66); // points_qty (fidèle à l'original)
         let mut alive = 0;
         for i in shape.first_triangle..=shape.last_triangle {
             if triangles[i].life > 0 {
                 alive += 1;
             }
         }
-        assert_eq!(alive, 32);
+        assert_eq!(alive, 64);
         // ids séquentiels, partant de first_triangle
         assert_eq!(triangles[shape.first_triangle].id as usize, shape.first_triangle);
-        assert_eq!(triangles[shape.first_triangle + 31].id as usize, shape.first_triangle + 31);
+        assert_eq!(triangles[shape.first_triangle + 63].id as usize, shape.first_triangle + 63);
     }
 
     #[test]
@@ -835,7 +875,7 @@ mod tests {
         let mut triangles = Vec::new();
         let mut shape = Shape::default();
         meshes_to_shape(&mut shape, &mut shapes, &mut triangles, STATION_MESH);
-        for k in 0..32 {
+        for k in 0..64 {
             let t = &triangles[shape.first_triangle + k];
             let (ax, ay) = STATION_MESH[0][k];
             let (bx, by) = STATION_MESH[0][k + 1];
