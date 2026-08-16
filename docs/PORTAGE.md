@@ -295,6 +295,11 @@ add,fullscreen`) : la fenêtre couvre l'écran sans décorations, et le contenu 
       l'écran reste sans étoiles. Les deux corrigés au jalon M6 — puis le rendu par tuiles a été
       **remplacé** (Phase 5) par des points 1 px batchés : les tuiles coûtaient ~60 % du temps de
       frame (fill rate), voir Phase 2/5.
+- [ ] **Sens de défilement des étoiles** : le port dessinait `étoile − caméra×plan` au lieu de
+      `(étoile + caméra) × plan` — la caméra reculant quand le vaisseau avance (ex `W/2 − pos`),
+      le signe `−` faisait défiler les étoiles **dans le même sens que le vaisseau** au lieu du
+      sens inverse. Corrigé en `+` avec tests dédiés (`render::tests::star_parallax_*` : sens,
+      vitesse ×plan, rebouclage torique, culling).
 - [ ] **Vsync : miniquad force `swap_interval = 1`** (X11/GLX et EGL) — plafonne le rendu au
       rafraîchissement de l'écran alors que l'original QB64 tourne sans vsync. Désactivé via
       `Conf.platform.swap_interval = Some(0)` (champ `platform` de macroquad 0.4.16).

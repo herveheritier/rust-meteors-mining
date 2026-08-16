@@ -134,31 +134,45 @@ fn build_star_layers() -> Vec<StarLayer> {
 /// étoiles d'une couche), au lieu de dessiner la tuile 1024² entière avec
 /// blending : le rendu des tuiles coûtait ~60 % du temps de frame (fill rate
 /// du GPU virtio) et plafonnait le FPS à ~95 (au lieu de ~220 sans étoiles).
+/// Position écran d'une étoile : `(étoile + caméra) × plan` rebouclée dans la
+/// tuile périodique (torique), ex `normalizePlanPosition` de l'original.
+/// Renvoie `None` si l'étoile est hors viewport.
+///
+/// NB : la caméra recule quand le vaisseau avance (ex `W/2 - pos`) — le signe
+/// `+` fait donc défiler les étoiles en sens INVERSE du vaisseau (parallaxe
+/// correcte) ; un `-` les ferait défiler dans son sens (bug historique du
+/// port, voir `docs/PORTAGE.md` §6).
+fn star_screen_pos(sx: f32, sy: f32, camera: Point, plan: f32) -> Option<(f32, f32)> {
+    let tile = STAR_TILE as f32;
+    let offset_x = (camera.x as f32 * plan).rem_euclid(tile);
+    let offset_y = (camera.y as f32 * plan).rem_euclid(tile);
+    let mut x = sx + offset_x;
+    if x >= tile {
+        x -= tile;
+    }
+    if x >= VIEWPORT_WIDTH as f32 {
+        return None;
+    }
+    let mut y = sy + offset_y;
+    if y >= tile {
+        y -= tile;
+    }
+    if y >= VIEWPORT_HEIGHT as f32 {
+        return None;
+    }
+    Some((x, y))
+}
+
 pub fn draw_stars(assets: &Assets, camera: Point) {
     for (layer, plan_layer) in assets.star_layers.iter().enumerate() {
         let plan = (layer + 1) as f32;
-        let tile = STAR_TILE as f32;
-        let offset_x = (camera.x as f32 * plan).rem_euclid(tile);
-        let offset_y = (camera.y as f32 * plan).rem_euclid(tile);
-
         for &(sx, sy, alpha) in &plan_layer.stars {
-            // position écran : rebouclage de la tuile (torique), comme le
-            // `mod` de l'original ; on élimine les étoiles hors viewport.
-            let mut x = sx - offset_x;
-            if x < 0.0 {
-                x += tile;
+            // position écran : (étoile + caméra) × plan, rebouclée dans la
+            // tuile (torique), comme le `normalizePlanPosition` de l'original ;
+            // on élimine les étoiles hors viewport.
+            if let Some((x, y)) = star_screen_pos(sx, sy, camera, plan) {
+                draw_rectangle(x.round(), y.round(), 1.0, 1.0, Color::new(1.0, 1.0, 1.0, alpha / 255.0));
             }
-            if x >= VIEWPORT_WIDTH as f32 {
-                continue;
-            }
-            let mut y = sy - offset_y;
-            if y < 0.0 {
-                y += tile;
-            }
-            if y >= VIEWPORT_HEIGHT as f32 {
-                continue;
-            }
-            draw_rectangle(x.round(), y.round(), 1.0, 1.0, Color::new(1.0, 1.0, 1.0, alpha / 255.0));
         }
     }
 }
@@ -872,5 +886,73 @@ pub fn draw_message(state: &mut GameState) {
         let x = (VIEWPORT_WIDTH as f32 - width) / 2.0;
         let y = VIEWPORT_HEIGHT as f32 - 16.0 * (3 - i) as f32;
         draw_text(text, x, y, 16.0, argb_to_color(*color));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Parallaxe : quand le vaisseau avance (la caméra recule, ex `W/2 - pos`),
+    /// les étoiles défilent en sens INVERSE du vaisseau.
+    #[test]
+    fn star_parallax_moves_against_ship_direction() {
+        // caméra immobile → étoile à sa position de base
+        let (x0, y0) = star_screen_pos(500.0, 300.0, Point::new(0.0, 0.0), 1.0).unwrap();
+        assert_eq!(x0, 500.0);
+        assert_eq!(y0, 300.0);
+
+        // le vaisseau avance vers la droite → la caméra recule (x décroît)
+        let camera = Point::new(-120.0, -60.0);
+        let (x1, y1) = star_screen_pos(500.0, 300.0, camera, 1.0).unwrap();
+        // l'étoile se déplace à gauche et en haut : sens inverse du vaisseau
+        assert!(x1 < x0);
+        assert!(y1 < y0);
+        assert_eq!(x0 - x1, 120.0);
+        assert_eq!(y0 - y1, 60.0);
+    }
+
+    /// Parallaxe : la vitesse de défilement croît avec le plan (×1, ×2, ×3),
+    /// comme `(étoile + caméra) × plan` de l'original.
+    #[test]
+    fn star_parallax_speed_scales_with_plan() {
+        let camera = Point::new(-120.0, 0.0);
+        let (x1, _) = star_screen_pos(500.0, 300.0, camera, 1.0).unwrap();
+        let (x2, _) = star_screen_pos(500.0, 300.0, camera, 2.0).unwrap();
+        let (x3, _) = star_screen_pos(500.0, 300.0, camera, 3.0).unwrap();
+        // plan 1 : décalage de 120 px ; plan 2 : 240 ; plan 3 : 360
+        assert_eq!(500.0 - x1, 120.0);
+        assert_eq!(500.0 - x2, 240.0);
+        assert_eq!(500.0 - x3, 360.0);
+    }
+
+    /// Rebouchage torique : une étoile qui sort par la droite (ou le bas) de la
+    /// tuile réapparaît à gauche (ou en haut) — ex `normalizePlanPosition`.
+    #[test]
+    fn star_parallax_wraps_around_tile() {
+        // étoile près du bord droit de la tuile, caméra qui recule
+        let (x, _) = star_screen_pos(1000.0, 300.0, Point::new(-50.0, 0.0), 1.0).unwrap();
+        // 1000 - 50 = 950 : pas encore de rebouclage
+        assert_eq!(x, 950.0);
+
+        let (x, _) = star_screen_pos(1000.0, 300.0, Point::new(-80.0, 0.0), 1.0).unwrap();
+        // 1000 - 80 = 920 → x = 920 + 1024 = 1944 → ≥ 1024 → 920 (torique)
+        assert_eq!(x, 920.0);
+
+        // déplacement vers le haut : même chose pour y (200 + 944 = 1144 →
+        // rebouclé → 120, dans le viewport)
+        let (_, y) = star_screen_pos(500.0, 200.0, Point::new(0.0, -80.0), 1.0).unwrap();
+        assert_eq!(y, 120.0);
+    }
+
+    /// Culling : les étoiles rebouclées qui restent hors viewport sont ignorées.
+    #[test]
+    fn star_parallax_culls_off_screen() {
+        // x = 500 + offset 500 = 1000 ≥ 960 (viewport) → hors écran à droite
+        assert!(star_screen_pos(500.0, 300.0, Point::new(500.0, 0.0), 1.0).is_none());
+        // même chose côté y : y = 300 + 500 = 800 ≥ 540 → hors écran en bas
+        assert!(star_screen_pos(500.0, 300.0, Point::new(0.0, 500.0), 1.0).is_none());
+        // mais rebouclé : camera.x = -500 → offset 524 → x = 1024 → 0 → visible
+        assert!(star_screen_pos(500.0, 300.0, Point::new(-500.0, 0.0), 1.0).is_some());
     }
 }
