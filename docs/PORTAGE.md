@@ -193,7 +193,7 @@ Rendu (référence) :
 | `_printstring (x,y), s` | `draw_text(s, x, y, size, color)` (police mono) |
 | `locate r, c : print` | position calculée `(c-1)*8, (r-1)*16` (police 8×16) |
 | `_sndopen/_sndplay/_sndloop/_sndvol` | `quad-snd` (WAV) ou `rodio` (OGG) — voir §0 |
-| `_fullscreen , _smooth` | zoom plein écran : render target 960×540 + `request_new_screen_size(1920,1080)` (voir §4.1) |
+| `_fullscreen , _smooth` | zoom plein écran : render target 960×540 + vrai plein écran EWMH (`set_fullscreen` + wmctrl, voir §4.1) |
 | `_limit fps` / `timer` | boucle 60 FPS via `delta_time` / `get_time` |
 | `INP(96)` scan codes | macroquad `is_key_down(KeyCode::Up/...)` (pas besoin de scan codes) |
 | `TAU = 8*atn(1)` | `std::f64::consts::TAU` |
@@ -201,16 +201,24 @@ Rendu (référence) :
 
 ### 4.1 Plein écran = zoom (touche F)
 
-Le vrai plein écran X11 (`set_fullscreen` → `_NET_WM_STATE_FULLSCREEN`, qui démonte/remonte
-la fenêtre) n'est pas fiable sur tous les affichages (VM virtio-GPU : contexte GL perdu, gel).
-On implémente donc le plein écran comme un **zoom** :
+Le plein écran est un **vrai plein écran X11/EWMH** (`_NET_WM_STATE_FULLSCREEN`, ex `wmctrl -b
+add,fullscreen`) : la fenêtre couvre l'écran sans décorations, et le contenu 960×540 est zoomé
+(letterbox) pour la remplir — même contenu, juste plus grand.
 
+- **Entrée** : `set_fullscreen(true)` de miniquad (ClientMessage `_NET_WM_STATE` ADD, standard
+  EWMH — ne détruit ni ne recrée la fenêtre, le contexte GLX survit ; les gels observés
+  autrefois étaient la boucle `keys_pressed`, voir §6). Le WM agrandit la fenêtre à la taille
+  de l'écran.
+- **Sortie** : miniquad 0.4.11 ne peut PAS sortir du plein écran sur X11 (TODO dans
+  `linux_x11.rs` — `set_fullscreen(false)` envoie un ADD avec un atome vide, sans effet) →
+  `render::toggle_fullscreen` complète par `wmctrl -r … -b remove,fullscreen` si présent,
+  sinon par un simple `request_new_screen_size(960, 540)` (avec un WM non EWMH, la fenêtre
+  resterait plein écran).
 - Toute la vue 960×540 est rendue dans un **render target** (`render_target(960, 540)`, caméra
   `Camera2D::from_display_rect` + `render_target`, ex l'exemple officiel `letterbox.rs` de
   macroquad), puis affichée étirée dans la fenêtre (`draw_texture_ex` avec `flip_y: true` —
   le render target est stocké à l'envers).
-- En fenêtré : affichage 1:1. En « plein écran » : `request_new_screen_size(1920, 1080)`
-  (→ `XResizeWindow`, sans démonter la fenêtre) et la vue est étirée pour remplir la fenêtre
+- En fenêtré : affichage 1:1. En plein écran : la vue est étirée pour remplir la fenêtre
   (letterbox, `zoom_rect`/`zoom_scale`/`draw_zoomed` dans `src/render.rs`). Même contenu,
   juste plus grand.
 - **Souris** : les boîtes (accostage UNLOAD/CLOSE, aide CLOSE) convertissent la position
@@ -287,7 +295,8 @@ On implémente donc le plein écran comme un **zoom** :
    l'original), monde torique, caméra centrée, pause (P, gèle déplacements + collisions, rendu et
    input vivants), plein écran (F). `src/game.rs` (`update`, `player_controls`, `thrust_vector`),
    20 tests verts. Vérifié à l'écran : dérive de la station (mouvement), flamme orange,
-   pause (monde figé, seul le FPS du HUD change), plein écran 960×540 ↔ 1920×1080.
+   pause (monde figé, seul le FPS du HUD change), plein écran 960×540 ↔ 1920×1080
+   (fenêtré à l'époque ; vrai plein écran EWMH depuis, voir §4.1).
    NB : `fps` de l'original (mesuré 1×/s) est remplacé par `get_fps()` ; la formule
    `60*valeur/fps` est devenue `valeur*60*dt` (indépendante du FPS, cf. §6).
    Limite de boucle ajoutée : pacing manuel à `ATTEMPT_FPS` (600) — macroquad 0.4 n'a ni

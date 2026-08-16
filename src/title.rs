@@ -6,9 +6,9 @@
 
 use macroquad::prelude::*;
 
-use crate::config::{ATTEMPT_FPS, FULLSCREEN_HEIGHT, FULLSCREEN_WIDTH, VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
+use crate::config::{ATTEMPT_FPS, VIEWPORT_WIDTH};
 use crate::geom::Point;
-use crate::render::{argb_to_color, draw_stars, draw_zoomed, virtual_camera};
+use crate::render::{argb_to_color, draw_stars, draw_zoomed, toggle_fullscreen, virtual_camera};
 use crate::state::GameState;
 use std::time::Duration;
 
@@ -57,16 +57,20 @@ pub async fn title_loop(state: &mut GameState, assets: &crate::render::Assets, r
     let banner_cols = BANNER[0].len();
     let mut banner_colors = vec![0u32; banner_cols];
 
-    // pacing (ex `_limit ATTEMPT_FPS`)
+    // pacing (ex `_limit ATTEMPT_FPS`) — ⚠ TEMPORAIREMENT désactivé comme la
+    // boucle de jeu (tests de performance) : remettre `LIMIT_FPS` à `true`.
+    const LIMIT_FPS: bool = false;
     let target_frame = 1.0 / ATTEMPT_FPS as f64;
     let mut last_frame = get_time();
 
     loop {
-        let elapsed = get_time() - last_frame;
-        if elapsed < target_frame {
-            std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
+        if LIMIT_FPS {
+            let elapsed = get_time() - last_frame;
+            if elapsed < target_frame {
+                std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
+            }
+            last_frame = get_time();
         }
-        last_frame = get_time();
 
         // touche F : plein écran ; toute autre touche : lancement
         let mut key: Option<KeyCode> = None;
@@ -113,19 +117,7 @@ pub async fn title_loop(state: &mut GameState, assets: &crate::render::Assets, r
                 // (gel avec cadre figé, boucle sans rendu). On cède une frame
                 // (le keypress est consommé), comme l'original qui relit
                 // `inkey$` (consommant) à chaque itération.
-                state.fullscreen = !state.fullscreen;
-                request_new_screen_size(
-                    if state.fullscreen {
-                        FULLSCREEN_WIDTH as f32
-                    } else {
-                        VIEWPORT_WIDTH as f32
-                    },
-                    if state.fullscreen {
-                        FULLSCREEN_HEIGHT as f32
-                    } else {
-                        VIEWPORT_HEIGHT as f32
-                    },
-                );
+                toggle_fullscreen(state);
                 next_frame().await;
                 continue;
             }

@@ -30,7 +30,7 @@ use ::rand::SeedableRng;
 use ::rand_chacha::ChaCha12Rng;
 
 use crate::config::{
-    ATTEMPT_FPS, FULLSCREEN_HEIGHT, FULLSCREEN_WIDTH, PLAYER_INDEX, VIEWPORT_HEIGHT, VIEWPORT_WIDTH,
+    ATTEMPT_FPS, PLAYER_INDEX, VIEWPORT_HEIGHT, VIEWPORT_WIDTH,
 };
 use crate::geom::Point;
 use crate::state::GameState;
@@ -43,6 +43,13 @@ fn window_conf() -> Conf {
         window_width: VIEWPORT_WIDTH as i32,
         window_height: VIEWPORT_HEIGHT as i32,
         high_dpi: true,
+        // pas de vsync : l'original (QB64) tourne sans vsync (110 FPS) ;
+        // miniquad force `swap_interval = 1` par défaut, ce qui plafonne le
+        // rendu au rafraîchissement de l'écran.
+        platform: miniquad::conf::Platform {
+            swap_interval: Some(0),
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -101,22 +108,28 @@ async fn main() {
     // stable améliore la régularité (interpolation du centre, compteurs de
     // poussée, comptage des frames) et évite de chauffer le GPU inutilement.
     // macroquad 0.4 n'offre ni `set_target_fps` ni vsync → pacing manuel.
+    //
+    // ⚠ TEMPORAIRE : `LIMIT_FPS` passé à `false` pour tester les performances
+    // réelles (FPS non borné). Remettre à `true` pour restaurer la limite.
+    const LIMIT_FPS: bool = false;
     let target_frame = 1.0 / ATTEMPT_FPS as f64;
     let mut last_frame = get_time();
     let mut pending_fullscreen = state.fullscreen;
     loop {
-        let elapsed = get_time() - last_frame;
-        if elapsed < target_frame {
-            std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
+        if LIMIT_FPS {
+            let elapsed = get_time() - last_frame;
+            if elapsed < target_frame {
+                std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
+            }
+            last_frame = get_time();
         }
-        last_frame = get_time();
 
-        // filet de sécurité : ré-applique la taille plein écran si le titre a
-        // basculé (touche F) mais que le redimensionnement n'a pas abouti
-        // avant le lancement (voir `docs/PORTAGE.md` §7)
+        // filet de sécurité : ré-applique le plein écran si le titre a
+        // basculé (touche F) mais que la bascule n'a pas abouti avant le
+        // lancement (voir `docs/PORTAGE.md` §7)
         if pending_fullscreen {
             pending_fullscreen = false;
-            request_new_screen_size(FULLSCREEN_WIDTH as f32, FULLSCREEN_HEIGHT as f32);
+            set_fullscreen(true);
         }
 
         // Input + physique + collisions (mouvement, météores, pause, plein

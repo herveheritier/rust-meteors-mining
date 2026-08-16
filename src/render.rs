@@ -338,6 +338,34 @@ pub fn virtual_camera(rt: &RenderTarget) -> Camera2D {
     }
 }
 
+/// Bascule le plein écran : vrai plein écran EWMH (`_NET_WM_STATE_FULLSCREEN`,
+/// ex `wmctrl -b toggle,fullscreen`) — la fenêtre couvre l'écran sans
+/// décorations, et le contenu 960×540 est zoomé par `draw_zoomed` (même
+/// contenu, juste plus grand).
+///
+/// Entrée : `set_fullscreen(true)` de miniquad (ClientMessage `_NET_WM_STATE`
+/// ADD, standard EWMH). Sortie : miniquad 0.4.11 ne sait PAS sortir du plein
+/// écran sur X11 (TODO dans `linux_x11.rs` — `set_fullscreen(false)` envoie un
+/// ADD avec un atome vide, sans effet) → on complète par `wmctrl` (REMOVE) si
+/// présent, sinon par un simple redimensionnement (avec un WM non EWMH, la
+/// fenêtre resterait plein écran).
+pub fn toggle_fullscreen(state: &mut GameState) {
+    state.fullscreen = !state.fullscreen;
+    if state.fullscreen {
+        set_fullscreen(true);
+    } else {
+        set_fullscreen(false);
+        let removed = std::process::Command::new("wmctrl")
+            .args(["-r", "Meteors Mining (Rust port)", "-b", "remove,fullscreen"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !removed {
+            request_new_screen_size(VIEWPORT_WIDTH as f32, VIEWPORT_HEIGHT as f32);
+        }
+    }
+}
+
 /// Affiche la texture de la vue virtuelle dans la fenêtre, zoomée (letterbox,
 /// `flip_y` obligatoire : le render target est stocké à l'envers).
 pub fn draw_zoomed(rt: &RenderTarget) {

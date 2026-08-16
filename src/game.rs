@@ -14,7 +14,7 @@ use crate::config::*;
 use crate::garbage::{generate_garbages, moving_garbage, Garbage};
 use crate::generate::{create_alien, create_gem, create_shape, fire_bullet};
 use crate::geom::{Point, Triangle};
-use crate::render::{camera_for, choice_box_layout, help_box_layout, mouse_to_game};
+use crate::render::{camera_for, choice_box_layout, help_box_layout, mouse_to_game, toggle_fullscreen};
 use crate::shape::{compute_shape_center, detect_collision, moving_shape, resolve_elastic_collision, Shape};
 use crate::state::{Element, GameState};
 
@@ -83,29 +83,11 @@ pub fn update(
         return (Action::Continue, camera);
     }
 
-    // F : plein écran — zoom : la fenêtre est agrandie et le contenu 960×540
-    // est étiré pour la remplir (même contenu, juste plus grand).
-    //
-    // NB : `set_fullscreen` de miniquad n'est PAS utilisé : sur X11 il
-    // démonte/remonte la fenêtre (`XUnmapWindow`/`XMapWindow`), ce qui perd
-    // le contexte GLX sur certains affichages (gel + cadre figé). On passe
-    // par un simple redimensionnement (`request_new_screen_size` →
-    // `XResizeWindow`), sans danger, + le zoom du rendu (voir
-    // `docs/PORTAGE.md` §7).
+    // F : vrai plein écran (EWMH `_NET_WM_STATE_FULLSCREEN`) — la fenêtre
+    // couvre l'écran sans décorations et le contenu 960×540 est zoomé par
+    // `draw_zoomed` (même contenu, juste plus grand).
     if is_key_pressed(KeyCode::F) {
-        state.fullscreen = !state.fullscreen;
-        request_new_screen_size(
-            if state.fullscreen {
-                FULLSCREEN_WIDTH as f32
-            } else {
-                VIEWPORT_WIDTH as f32
-            },
-            if state.fullscreen {
-                FULLSCREEN_HEIGHT as f32
-            } else {
-                VIEWPORT_HEIGHT as f32
-            },
-        );
+        toggle_fullscreen(state);
         state.send_message(if state.fullscreen { "FULLSCREEN" } else { "WINDOWED" });
     }
 

@@ -45,8 +45,9 @@ cargo run --release
 La fenêtre 960×540 (taille de la vue du jeu d'origine) s'ouvre avec une boucle à 60 FPS. État
 actuel : Phases 0-2 + jalons M2 à M5 terminés — modèle de données complet, rendu (étoiles
 précalculées, vaisseau, station, caméra centrée joueur, HUD, cargo), **déplacement du vaisseau**
-(flèches : ↑ accélérer, ←/→ tourner, ↓ décélérer ; **P** pause, **F** plein écran — un zoom :
-même contenu, fenêtre agrandie à 1920×1080 et vue étirée, voir `docs/PORTAGE.md` §4.1 ;
+(flèches : ↑ accélérer, ←/→ tourner, ↓ décélérer ; **P** pause, **F** vrai plein écran — la
+vue 960×540 est étirée pour remplir l'écran (même contenu, juste plus grand), voir
+`docs/PORTAGE.md` §4.1 ;
 **ESC** quitter),
 **météores en jeu** (**G** génère un météore, **A** active/désactive la génération automatique ;
 dérive, rendu texturé, collisions, débris, messages en bas d'écran) et **combat/ressources**

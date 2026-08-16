@@ -50,14 +50,6 @@ pub const ATTEMPT_FPS: i32 = 600;
 /// Plein écran au démarrage.
 pub const FULL_SCREEN: bool = false;
 
-/// Taille « plein écran » (touche F) : la fenêtre est agrandie à cette taille
-/// et le contenu 960×540 est zoomé (étiré) pour la remplir — équivalent à un
-/// zoom (même contenu, juste plus grand). Le vrai plein écran X11
-/// (`_NET_WM_STATE_FULLSCREEN`) n'est pas fiable sur tous les affichages, on
-/// passe donc par un redimensionnement + zoom (voir `docs/PORTAGE.md` §7).
-pub const FULLSCREEN_WIDTH: f64 = 1920.0;
-pub const FULLSCREEN_HEIGHT: f64 = 1080.0;
-
 /// 2π (ex `TAU` global du jeu QB64).
 pub const TAU: f64 = TAU_F64;
 
