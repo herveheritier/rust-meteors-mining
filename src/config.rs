@@ -12,6 +12,10 @@ use std::f64::consts::TAU as TAU_F64;
 pub const VIEWPORT_WIDTH: f64 = 960.0;
 pub const VIEWPORT_HEIGHT: f64 = 540.0;
 
+/// Titre de la fenêtre (utilisé par la fenêtre macroquad ET pour retrouver
+/// la fenêtre en X11 lors du plein écran EWMH — voir `src/x11.rs`).
+pub const WINDOW_TITLE: &str = "Meteors Mining (Rust port)";
+
 /// Marge autour de la vue = taille du monde hors écran.
 pub const EXTERNAL_BORDER: f64 = 1500.0;
 

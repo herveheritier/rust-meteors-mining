@@ -25,13 +25,14 @@ mod render;
 mod shape;
 mod state;
 mod title;
+mod x11;
 
 use macroquad::prelude::*;
 use ::rand::SeedableRng;
 use ::rand_chacha::ChaCha12Rng;
 
 use crate::config::{
-    ATTEMPT_FPS, PLAYER_INDEX, VIEWPORT_HEIGHT, VIEWPORT_WIDTH,
+    ATTEMPT_FPS, PLAYER_INDEX, VIEWPORT_HEIGHT, VIEWPORT_WIDTH, WINDOW_TITLE,
 };
 use crate::geom::Point;
 use crate::state::{GameState, ViewMode};
@@ -40,7 +41,7 @@ use std::time::Duration;
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Meteors Mining (Rust port)".to_owned(),
+        window_title: WINDOW_TITLE.to_owned(),
         window_width: VIEWPORT_WIDTH as i32,
         window_height: VIEWPORT_HEIGHT as i32,
         high_dpi: true,

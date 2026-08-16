@@ -398,11 +398,12 @@ pub fn native_camera() -> Camera2D {
 ///
 /// Entrée dans les pleins écrans : `set_fullscreen(true)` de miniquad
 /// (ClientMessage `_NET_WM_STATE` ADD, standard EWMH). Retour fenêtré :
-/// miniquad 0.4.11 ne sait PAS sortir du plein écran sur X11 (TODO dans
-/// `linux_x11.rs` — `set_fullscreen(false)` envoie un ADD avec un atome vide,
-/// sans effet) → on complète par `wmctrl` (REMOVE) si présent, sinon par un
-/// simple redimensionnement (avec un WM non EWMH, la fenêtre resterait plein
-/// écran).
+/// miniquad 0.4.11 ne sait PAS sortir du plein écran sur X11 (`set_fullscreen
+/// (false)` envoie un ADD avec un atome vide, sans effet — TODO de miniquad,
+/// toujours présent en master) → on envoie nous-mêmes le ClientMessage EWMH
+/// REMOVE via libX11 (`crate::x11::set_fullscreen(false)`), sans outil
+/// externe (`wmctrl`). Sans WM EWMH, repli sur un simple redimensionnement
+/// (avec un WM non EWMH, la fenêtre resterait plein écran).
 pub fn cycle_view_mode(state: &mut GameState) {
     state.view_mode = match state.view_mode {
         ViewMode::Windowed => {
@@ -413,13 +414,12 @@ pub fn cycle_view_mode(state: &mut GameState) {
         // (render target étirée → rendu direct natif)
         ViewMode::Zoomed => ViewMode::Native,
         ViewMode::Native => {
-            set_fullscreen(false);
-            let removed = std::process::Command::new("wmctrl")
-                .args(["-r", "Meteors Mining (Rust port)", "-b", "remove,fullscreen"])
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false);
-            if !removed {
+            // NB : on n'appelle PAS `set_fullscreen(false)` de miniquad : en
+            // plus d'envoyer un ADD avec un atome vide (sans effet), il fait
+            // un `XUnmapWindow/XMapWindow` de la fenêtre qui interfère avec
+            // notre ClientMessage REMOVE (le WM peut re-appliquer le plein
+            // écran au remap). On envoie directement le REMOVE EWMH.
+            if !crate::x11::set_fullscreen(false) {
                 request_new_screen_size(VIEWPORT_WIDTH as f32, VIEWPORT_HEIGHT as f32);
             }
             ViewMode::Windowed

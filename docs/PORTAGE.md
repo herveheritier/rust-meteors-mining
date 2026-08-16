@@ -162,6 +162,7 @@ Rendu (référence) :
 | `garbage_type.bas` | `src/garbage.rs` | `Garbage`, `generate_garbages`, `moving_garbage`, `draw_garbage` |
 | `meteorsMining.bas` (point d'entrée, génération, rendu, titre) | `src/main.rs` + `src/generate.rs` + `src/render.rs` + `src/title.rs` | init, `generate_shape`, `draw_shape`, `draw_textured_triangle`, `draw_triangle`, `ejection_flow`, `next_rainbow_color`, `create_shape`, `create_alien/station/gem`, `fire_bullet`, `prepare`, `title_loop` |
 | `mainLoop.bas` | `src/game.rs` | `main_loop` (input, physique, collisions, résolution, rendu HUD) |
+| `_fullscreen` (miniquad, X11) | `src/x11.rs` | ClientMessage EWMH `_NET_WM_STATE` ADD/REMOVE via libX11 (contourne le TODO de miniquad sur la sortie plein écran X11, sans `wmctrl`) |
 | `windowUtils.*` | `src/ui.rs` | aide + boîte UNLOAD/CLOSE (réimplémentation) |
 | `assets/*.bas` (meshes) | `src/mesh.rs` ou données statiques | données `station`, `alien`, `player`, `bullet`, `gem` (voir ASSETS.md) |
 
@@ -201,7 +202,7 @@ Rendu (référence) :
 | `_printstring (x,y), s` | `draw_text(s, x, y, size, color)` (police mono) |
 | `locate r, c : print` | position calculée `(c-1)*8, (r-1)*16` (police 8×16) |
 | `_sndopen/_sndplay/_sndloop/_sndvol` | `macroquad::audio` (quad-snd/miniaudio, décode OGG) — voir §4.2 |
-| `_fullscreen , _smooth` | zoom plein écran : render target 960×540 + vrai plein écran EWMH (`set_fullscreen` + wmctrl, voir §4.1) |
+| `_fullscreen , _smooth` | zoom plein écran : render target 960×540 + vrai plein écran EWMH (`set_fullscreen` + ClientMessage REMOVE maison via `src/x11.rs`, voir §4.1) |
 | `_limit fps` / `timer` | boucle 60 FPS via `delta_time` / `get_time` |
 | `INP(96)` scan codes | macroquad `is_key_down(KeyCode::Up/...)` (pas besoin de scan codes) |
 | `TAU = 8*atn(1)` | `std::f64::consts::TAU` |
@@ -228,10 +229,15 @@ Rendu (référence) :
   la taille de l'écran. Zoomé → natif ne change pas la fenêtre (déjà plein écran), seul le
   chemin de rendu change.
 - **Sortie** : miniquad 0.4.11 ne peut PAS sortir du plein écran sur X11 (TODO dans
-  `linux_x11.rs` — `set_fullscreen(false)` envoie un ADD avec un atome vide, sans effet) →
-  `render::cycle_view_mode` complète par `wmctrl -r … -b remove,fullscreen` si présent,
-  sinon par un simple `request_new_screen_size(960, 540)` (avec un WM non EWMH, la fenêtre
-  resterait plein écran).
+  `linux_x11.rs` — `set_fullscreen(false)` envoie un ADD avec un atome vide, sans effet,
+  toujours présent en master). On envoie donc nous-mêmes le ClientMessage EWMH **REMOVE**
+  via `src/x11.rs` (`crate::x11::set_fullscreen(false)`), qui retrouve la fenêtre du jeu
+  par `XGetInputFocus` (repli par titre via `XQueryTree`/`XFetchName`) et envoie l'action
+  `_NET_WM_STATE` 0 (REMOVE) de l'atome `_NET_WM_STATE_FULLSCREEN` à la root window — sans
+  dépendre d'un outil externe (`wmctrl`). NB : on n'appelle PAS `set_fullscreen(false)` de
+  miniquad au retour fenêtré : son `XUnmapWindow`/`XMapWindow` + `XChangeProperty` (atome
+  vide) interfère avec notre REMOVE (le WM peut re-appliquer le plein écran au remap).
+  Sans WM EWMH (échec de l'envoi), repli sur `request_new_screen_size(960, 540)`.
 - **Piège du rendu direct** : `Camera2D` inverse l'axe y pour un rendu à l'écran
   (`invert_y = -1` dans `camera.rs`) alors qu'un render target ne l'inverse pas
   (`invert_y = +1`) : `native_camera` doit donc utiliser un `zoom.y` **positif**
@@ -291,40 +297,40 @@ Correspondance avec l'original (`meteorsMining.bas:103-127`) :
 
 ## 6. Pièges spécifiques au portage (checklist)
 
-- [ ] **Y vers le bas** : toute la géométrie suppose `y` croissant vers le bas (convention écran).
+- [x] **Y vers le bas** : toute la géométrie suppose `y` croissant vers le bas (convention écran).
       Ne pas « corriger » : reproduire à l'identique (y − sin(direction)…, rotation standard).
-- [ ] **Monde torique** : chaque position dessinée et chaque déplacement passe par le wrap
+- [x] **Monde torique** : chaque position dessinée et chaque déplacement passe par le wrap
       (formes, caméra, débris, points de dessin).
-- [ ] **`shapes[0]` joueur / `shapes[1]` station** : expliciter ces indices, ne pas les casser en
+- [x] **`shapes[0]` joueur / `shapes[1]` station** : expliciter ces indices, ne pas les casser en
       réutilisant des formes mortes (l'ordre de création dans `prepare` détermine les indices).
-- [ ] **Alpha des couleurs** : QB64 `_rgba32` = AARRGGBB ; macroquad = RGBA. Convertir !
-- [ ] **`_MapTriangle _seamless`** : répète la texture ; sans wrap, les UV hors [0,1] se répètent
+- [x] **Alpha des couleurs** : QB64 `_rgba32` = AARRGGBB ; macroquad = RGBA. Convertir !
+- [x] **`_MapTriangle _seamless`** : répète la texture ; sans wrap, les UV hors [0,1] se répètent
       aussi dans macroquad (`draw_triangle_texture` n'accepte que des UV [0,1]) → décaler par
       modulo (`fract`) avant de passer les UV, c'est l'équivalent `_seamless`.
-- [ ] **Déterministe vs aléatoire** : QB64 utilise `rnd` (seed via `randomize timer`) ; en Rust,
+- [x] **Déterministe vs aléatoire** : QB64 utilise `rnd` (seed via `randomize timer`) ; en Rust,
       utiliser un PRNG seedé (rand_chacha) — le seed aléatoire au lancement suffit.
-- [ ] **`fps` dans les formules de mouvement** : `60*valeur/fps` en QB64 devient `valeur*60*dt` en Rust.
+- [x] **`fps` dans les formules de mouvement** : `60*valeur/fps` en QB64 devient `valeur*60*dt` en Rust.
       Vérifier que la vitesse perçue est identique à 60 FPS.
-- [ ] **`getBorderSegments`** : ne PAS recalculer par frame (perf) ; calculer au changement de forme.
-- [ ] **Débris et balles hors limites** : même règle `DRAW_*` (±100 autour de la vue) pour la
+- [x] **`getBorderSegments`** : ne PAS recalculer par frame (perf) ; calculer au changement de forme.
+- [x] **Débris et balles hors limites** : même règle `DRAW_*` (±100 autour de la vue) pour la
       suppression des balles et le filtrage de dessin (`inner_draw_limit`).
-- [ ] **Pause** : geler déplacements ET collisions, mais continuer à dessiner (et à lire l'input).
-- [ ] **`windowUtils`** : remplacer (UI maison) — ne pas tenter de la porter en Rust.
-- [ ] **OGG** : `quad-snd`/miniaudio décode l'Ogg Vorbis directement — pas de conversion WAV
+- [x] **Pause** : geler déplacements ET collisions, mais continuer à dessiner (et à lire l'input).
+- [x] **`windowUtils`** : remplacer (UI maison) — ne pas tenter de la porter en Rust.
+- [x] **OGG** : `quad-snd`/miniaudio décode l'Ogg Vorbis directement — pas de conversion WAV
       (les `.ogg` de référence sont copiés tels quels dans `assets/`). Volume des explosions =
       `(1 - dist/hypot(W,H))^3`, boucle moteur = son en boucle (voir §4.2).
-- [ ] **Caméra plein écran natif inversée** : `Camera2D` inverse l'axe y pour un rendu direct à
+- [x] **Caméra plein écran natif inversée** : `Camera2D` inverse l'axe y pour un rendu direct à
       l'écran (`invert_y = -1` dans `camera.rs`), pas pour un render target (`+1`) : copier le
       `zoom.y` négatif de `from_display_rect` dans `native_camera` retourne la scène
       verticalement (bannière du titre en bas de l'écran). `zoom.y` doit être **positif**
       (`2/view_h`) — voir §4.1.
-- [ ] **`continue` sur une touche = gel** : ne jamais boucler sur `is_key_pressed` sans passer
+- [x] **`continue` sur une touche = gel** : ne jamais boucler sur `is_key_pressed` sans passer
       par `next_frame` (le keypress n'est consommé qu'à la fin de frame) — voir §4.1.
-- [ ] **Fan vs bande glissante dans `meshesToShape`** : l'original fait glisser les deux points
+- [x] **Fan vs bande glissante dans `meshesToShape`** : l'original fait glisser les deux points
       (`p1 = p2: p2 = p3`) → triangles consécutifs (1,2,3),(2,3,4)… qui dessinent l'anneau de la
       station. Un éventail fixe depuis `pack[0]` (bug de portage, corrigé au jalon M6) remplit
       le trou central : la station devient un foutoir de triangles au lieu d'un anneau.
-- [ ] **UV de la station (`station.png`)** : la texture est un anneau fin (bord intérieur UV
+- [x] **UV de la station (`station.png`)** : la texture est un anneau fin (bord intérieur UV
       ~0.34, extérieur ~0.5) plus étroit que la bande du mesh (rayon 90-163). À l'échelle
       normale (÷320), les dents cardinales (rayon 160 → UV 0.0/0.5) tombent sur le pixel vide
       du bord → anneau troué à droite (0°) et en bas (90°). Correction : mapping radial
@@ -332,21 +338,24 @@ Correspondance avec l'original (`meteorsMining.bas:103-127`) :
       la texture. NB : l'original était dégradé ici aussi — `createStation` appelle
       `computeShapeCenter shapes(shapeId)` (variable indéfinie = 0) → la largeur de la station
       n'était jamais calculée → ratio UV divisé par 0.
-- [ ] **Étoiles quasi invisibles/absentes** : le rendu des tuiles 1024² a deux pièges — (1) les
+- [x] **Étoiles quasi invisibles/absentes** : le rendu des tuiles 1024² a deux pièges — (1) les
       étoiles font 1 texel : le filtre **linéaire** (défaut) échantillonne entre les texels
       (offsets fractionnaires) et écrase la luminosité (~1 au lieu de 127-255) → `Nearest` ;
       (2) la boucle de tuiles doit partir de `offset - tile` (pas `offset`) sinon une partie de
       l'écran reste sans étoiles. Les deux corrigés au jalon M6 — puis le rendu par tuiles a été
       **remplacé** (Phase 5) par des points 1 px batchés : les tuiles coûtaient ~60 % du temps de
       frame (fill rate), voir Phase 2/5.
-- [ ] **Sens de défilement des étoiles** : le port dessinait `étoile − caméra×plan` au lieu de
+- [x] **Sens de défilement des étoiles** : le port dessinait `étoile − caméra×plan` au lieu de
       `(étoile + caméra) × plan` — la caméra reculant quand le vaisseau avance (ex `W/2 − pos`),
       le signe `−` faisait défiler les étoiles **dans le même sens que le vaisseau** au lieu du
       sens inverse. Corrigé en `+` avec tests dédiés (`render::tests::star_parallax_*` : sens,
       vitesse ×plan, rebouclage torique, culling).
-- [ ] **Vsync : miniquad force `swap_interval = 1`** (X11/GLX et EGL) — plafonne le rendu au
+- [x] **Vsync : miniquad force `swap_interval = 1`** (X11/GLX et EGL) — plafonne le rendu au
       rafraîchissement de l'écran alors que l'original QB64 tourne sans vsync. Désactivé via
       `Conf.platform.swap_interval = Some(0)` (champ `platform` de macroquad 0.4.16).
+- [x] **Sortie du plein écran X11** : miniquad 0.4.11 ne sait pas sortir du plein écran sur X11
+      (TODO dans `linux_x11.rs`, toujours présent en master) → le ClientMessage EWMH REMOVE est
+      envoyé par `src/x11.rs` (`crate::x11::set_fullscreen`), sans dépendre de `wmctrl` — voir §4.1.
 
 ## 7. Jalons (ordre de livraison)
 

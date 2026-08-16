@@ -48,8 +48,9 @@ actuel : Phases 0-2 + jalons M2 à M6 terminés — modèle de données complet,
 précalculées, vaisseau, station, caméra centrée joueur, HUD, cargo), **déplacement du vaisseau**
 (flèches : ↑ accélérer, ←/→ tourner, ↓ décélérer ; **P** pause, **F** fait cycler trois modes
 — fenêtré, plein écran zoomé (vue 960×540 étirée) et **plein écran natif** (rendu direct à la
-définition réelle de l'écran, sans buffer), voir `docs/PORTAGE.md` §4.1 ; **M** coupe la
-musique ; **ESC** quitter),
+définition réelle de l'écran, sans buffer), voir `docs/PORTAGE.md` §4.1 ; l'entrée/sortie du
+plein écran EWMH passe par `src/x11.rs` (ClientMessage `_NET_WM_STATE` direct, sans outil
+externe) ; **M** coupe la musique ; **ESC** quitter),
 **audio** (ambiance, musique, moteur, tirs, gemmes, explosions à volume selon la distance),
 **météores en jeu** (**G** génère un météore, **A** active/désactive la génération automatique ;
 **météores en jeu** (**G** génère un météore, **A** active/désactive la génération automatique ;
