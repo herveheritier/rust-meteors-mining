@@ -16,3 +16,5 @@
 # Systèmes d'exploitation
 .DS_Store
 Thumbs.db
+.reference/
+.docs/
