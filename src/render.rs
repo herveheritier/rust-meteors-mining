@@ -628,6 +628,17 @@ fn draw_textured_triangle(
                 ((x - shape.top_left.x) / shape.width) as f32,
                 ((y - shape.top_left.y) / shape.height) as f32,
             )
+        } else if shape.who_i_am == WHOIAM_METEOR {
+            // NB météores : la formule générique (une tuile par météore,
+            // fidèle à l'original) compresse la tuile 1254 px dans la taille
+            // de la forme → détail sub-pixel, rendu « zoom arrière ». On
+            // magnifie avec `METEOR_TEXTURE_ZOOM` pour que le motif de roche
+            // soit visible (région centrale 1/M de la tuile).
+            let r = tw / (larger * METEOR_TEXTURE_ZOOM);
+            vec2(
+                ((x * r - tw / 2.0) / tw).rem_euclid(1.0) as f32,
+                ((y * r - tw / 2.0) / tw).rem_euclid(1.0) as f32,
+            )
         } else if shape.who_i_am == WHOIAM_STATION {
             // NB station : `station.png` est un anneau fin (bord intérieur UV
             // ~0.34, extérieur ~0.5), plus étroit que la bande du mesh (rayon

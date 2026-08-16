@@ -132,6 +132,14 @@ pub const STATION_UV_OUTER: f64 = 0.48;
 /// Débris générés par triangle détruit.
 pub const GARBAGE_PER_TRIANGLE: usize = 12;
 
+/// Zoom avant appliqué à la texture des météores (`meteor_surface_tile.jpg`,)
+/// par rapport à la formule d'origine (`ratio = tw / larger`, une tuile par
+/// météore). Sans zoom, la tuile 1254 px est compressée dans la taille du
+/// météore → détail sub-pixel, rendu « zoom arrière » (bruit gris). Avec ce
+/// facteur, le motif de roche occupe `METEOR_TEXTURE_ZOOM×` plus d'écran
+/// (chaque météore affiche la région centrale 1/M de la tuile).
+pub const METEOR_TEXTURE_ZOOM: f64 = 4.0;
+
 /// Construit une couleur ARGB 32 bits au format QB64 (AARRGGBB).
 pub const fn argb32(a: u32, r: u32, g: u32, b: u32) -> u32 {
     ((a & 0xFF) << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF)
