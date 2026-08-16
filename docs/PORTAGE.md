@@ -200,38 +200,46 @@ Rendu (référence) :
 | `line (x,y)-(x,y), c` (1 px) | point 1 px (ou buffer de points) |
 | `_printstring (x,y), s` | `draw_text(s, x, y, size, color)` (police mono) |
 | `locate r, c : print` | position calculée `(c-1)*8, (r-1)*16` (police 8×16) |
-| `_sndopen/_sndplay/_sndloop/_sndvol` | `quad-snd` (WAV) ou `rodio` (OGG) — voir §0 |
+| `_sndopen/_sndplay/_sndloop/_sndvol` | `macroquad::audio` (quad-snd/miniaudio, décode OGG) — voir §4.2 |
 | `_fullscreen , _smooth` | zoom plein écran : render target 960×540 + vrai plein écran EWMH (`set_fullscreen` + wmctrl, voir §4.1) |
 | `_limit fps` / `timer` | boucle 60 FPS via `delta_time` / `get_time` |
 | `INP(96)` scan codes | macroquad `is_key_down(KeyCode::Up/...)` (pas besoin de scan codes) |
 | `TAU = 8*atn(1)` | `std::f64::consts::TAU` |
 | `_width(tex)` / `_height(tex)` | `texture.width()` / `texture.height()` |
 
-### 4.1 Plein écran = zoom (touche F)
+### 4.1 Plein écran = 3 modes cyclés par la touche F
 
-Le plein écran est un **vrai plein écran X11/EWMH** (`_NET_WM_STATE_FULLSCREEN`, ex `wmctrl -b
-add,fullscreen`) : la fenêtre couvre l'écran sans décorations, et le contenu 960×540 est zoomé
-(letterbox) pour la remplir — même contenu, juste plus grand.
+`F` fait cycler trois modes d'affichage (`state.view_mode`, ex `cycle_view_mode`) :
+**fenêtré → plein écran zoomé → plein écran natif → fenêtré**.
 
-- **Entrée** : `set_fullscreen(true)` de miniquad (ClientMessage `_NET_WM_STATE` ADD, standard
-  EWMH — ne détruit ni ne recrée la fenêtre, le contexte GLX survit ; les gels observés
-  autrefois étaient la boucle `keys_pressed`, voir §6). Le WM agrandit la fenêtre à la taille
-  de l'écran.
+1. **Fenêtré** : fenêtre 960×540, rendu direct 1:1 (pas de render target).
+2. **Plein écran zoomé** (`ViewMode::Zoomed`) : vrai plein écran X11/EWMH
+   (`_NET_WM_STATE_FULLSCREEN`, ex `wmctrl -b add,fullscreen`), la vue 960×540 est rendue
+   dans un **render target** puis étirée (letterbox) pour remplir la fenêtre — le mode
+   historique du port (`virtual_camera` + `draw_zoomed`).
+3. **Plein écran natif** (`ViewMode::Native`) : vrai plein écran EWMH, rendu **direct à la
+   définition réelle de l'écran** — une caméra zoomée (`render::native_camera`) remplace le
+   double passage render target + étirement : un seul passage de rendu, plus net (pas de
+   mise à l'échelle avec perte), même contenu 960×540 agrandi (letterbox uniforme).
+
+- **Entrée plein écran** : `set_fullscreen(true)` de miniquad (ClientMessage `_NET_WM_STATE`
+  ADD, standard EWMH — ne détruit ni ne recrée la fenêtre, le contexte GLX survit ; les gels
+  observés autrefois étaient la boucle `keys_pressed`, voir §6). Le WM agrandit la fenêtre à
+  la taille de l'écran. Zoomé → natif ne change pas la fenêtre (déjà plein écran), seul le
+  chemin de rendu change.
 - **Sortie** : miniquad 0.4.11 ne peut PAS sortir du plein écran sur X11 (TODO dans
   `linux_x11.rs` — `set_fullscreen(false)` envoie un ADD avec un atome vide, sans effet) →
-  `render::toggle_fullscreen` complète par `wmctrl -r … -b remove,fullscreen` si présent,
+  `render::cycle_view_mode` complète par `wmctrl -r … -b remove,fullscreen` si présent,
   sinon par un simple `request_new_screen_size(960, 540)` (avec un WM non EWMH, la fenêtre
   resterait plein écran).
-- Toute la vue 960×540 est rendue dans un **render target** (`render_target(960, 540)`, caméra
-  `Camera2D::from_display_rect` + `render_target`, ex l'exemple officiel `letterbox.rs` de
-  macroquad), puis affichée étirée dans la fenêtre (`draw_texture_ex` avec `flip_y: true` —
-  le render target est stocké à l'envers).
-- En fenêtré : affichage 1:1. En plein écran : la vue est étirée pour remplir la fenêtre
-  (letterbox, `zoom_rect`/`zoom_scale`/`draw_zoomed` dans `src/render.rs`). Même contenu,
-  juste plus grand.
+- **Piège du rendu direct** : `Camera2D` inverse l'axe y pour un rendu à l'écran
+  (`invert_y = -1` dans `camera.rs`) alors qu'un render target ne l'inverse pas
+  (`invert_y = +1`) : `native_camera` doit donc utiliser un `zoom.y` **positif**
+  (`2/view_h`), là où `from_display_rect` (render target) utilise `-2/h` — un signe copié
+  par erreur retourne la scène verticalement (vérifié à l'écran avant correction).
 - **Souris** : les boîtes (accostage UNLOAD/CLOSE, aide CLOSE) convertissent la position
-  fenêtre en coordonnées jeu via `mouse_to_game()` (inverse du zoom) — sinon les clics
-  seraient décalés en plein écran.
+  fenêtre en coordonnées jeu via `mouse_to_game()` (inverse du zoom) — identique dans les
+  deux pleins écrans (la zone de jeu occupe `zoom_rect`), sinon les clics seraient décalés.
 - **Piège macroquad** : ne jamais faire `continue` (ni boucler sans `next_frame`) en attendant
   une touche — `keys_pressed` n'est vidé qu'à `end_frame`, atteint seulement quand la
   coroutine rend la main à `next_frame`. Un `continue` sur F reteste `is_key_pressed(F)`
@@ -239,6 +247,36 @@ add,fullscreen`) : la fenêtre couvre l'écran sans décorations, et le contenu 
   `title_loop` cède donc une frame (`next_frame().await`) après avoir traité F, comme
   l'original qui relit `inkey$` (consommant) à chaque itération. Idem : `clear_input_queue()`
   après le titre pour que la touche de lancement ne soit pas revue par la première frame de jeu.
+
+### 4.2 Audio (Phase 4, ex `_sndopen`/`_sndplay`/`_sndloop`/`_sndvol`)
+
+Les sons de référence (`reference/assets/*.ogg`, Ogg Vorbis) sont copiés dans `assets/` et
+chargés une fois par `audio::Sounds::load()` (module `src/audio.rs`, feature `audio` de
+macroquad activée dans `Cargo.toml` — `quad-snd`/miniaudio décode l'OGG).
+
+Correspondance avec l'original (`meteorsMining.bas:103-127`) :
+
+| Original | Fichier | Port |
+|---|---|---|
+| `sh1&` `_sndplay` (tir) | mis4.ogg | `Sounds::play_bullet()` (dans `player_controls`) |
+| `sh5&` `_sndplay` (gemme, vol 0.05) | gem1.ogg | `Sounds::play_gem()` (ramassage, résolution collisions) |
+| `shexp(0..9)` `_sndvol` selon distance + `_sndplay` | exp11..20.ogg | `Sounds::play_explosion(volume)` — 1 des 10 au hasard, `v! = (1 − dist/diag)^3` |
+| `sh6&` `_sndloop` (ambiance) | bruitDeFond.ogg | `Sounds::start_ambient()` (début de partie) |
+| `sh7&` `_sndloop` vol 0.1 (musique, touche M) | music1.ogg | `Sounds::start_music()` / `toggle_music()` |
+| `sh8&`/`sh9&` `_sndloop`/`_sndpause` (moteur avant/recul) | fffff.ogg ×2 | `Sounds::engine()` / `reverse_engine()` (par frame dans `main.rs`) |
+
+- Les sons `_sndplay` (tir, gemme, explosion) passent par `game::update` (paramètre
+  `Option<&mut Sounds>`, `None` dans les tests pour un `update` silencieux).
+- Les boucles gardent leur état (`engine_on`, `music_on`…) pour ne pas relancer un son déjà
+  en lecture à chaque frame (ce qui le ferait repartir de zéro).
+- Les boucles moteur sont coupées pendant les boîtes (accostage/aide), comme l'original qui
+  fait `_sndpause sh8&/sh9&` à l'accostage.
+- `sh2&`/`sh3&`/`sh4&` (exp7.ogg, blop) sont chargés par l'original mais jamais joués — non
+  portés. `NO_MUSIC` reste documenté (voir `config.rs`) : la musique est active au
+  démarrage, la touche M la coupe.
+- **Vérifié** : enregistrement de la sortie (moniteur PulseAudio) montrant le mélange
+  musique/ambiance, et déclencheurs loggés un par un (moteur, tir, explosion) avant
+  suppression des logs.
 
 ## 5. Stratégie de test pendant le portage
 
@@ -272,8 +310,14 @@ add,fullscreen`) : la fenêtre couvre l'écran sans décorations, et le contenu 
       suppression des balles et le filtrage de dessin (`inner_draw_limit`).
 - [ ] **Pause** : geler déplacements ET collisions, mais continuer à dessiner (et à lire l'input).
 - [ ] **`windowUtils`** : remplacer (UI maison) — ne pas tenter de la porter en Rust.
-- [ ] **Conversion OGG** : si `quad-snd` est retenu, convertir les OGG en WAV (voir ASSETS.md §4).
-      Volume des explosions = `(1 - dist/hypot(W,H))^3`, boucle moteur = son en boucle.
+- [ ] **OGG** : `quad-snd`/miniaudio décode l'Ogg Vorbis directement — pas de conversion WAV
+      (les `.ogg` de référence sont copiés tels quels dans `assets/`). Volume des explosions =
+      `(1 - dist/hypot(W,H))^3`, boucle moteur = son en boucle (voir §4.2).
+- [ ] **Caméra plein écran natif inversée** : `Camera2D` inverse l'axe y pour un rendu direct à
+      l'écran (`invert_y = -1` dans `camera.rs`), pas pour un render target (`+1`) : copier le
+      `zoom.y` négatif de `from_display_rect` dans `native_camera` retourne la scène
+      verticalement (bannière du titre en bas de l'écran). `zoom.y` doit être **positif**
+      (`2/view_h`) — voir §4.1.
 - [ ] **`continue` sur une touche = gel** : ne jamais boucler sur `is_key_pressed` sans passer
       par `next_frame` (le keypress n'est consommé qu'à la fin de frame) — voir §4.1.
 - [ ] **Fan vs bande glissante dans `meshesToShape`** : l'original fait glisser les deux points

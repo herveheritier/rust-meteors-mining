@@ -15,6 +15,7 @@
 //!   collisions SAT + élastique, débris, messages, tirs, gemmes, accostage,
 //!   aide S, debug D/I), `title.rs` (écran titre).
 
+mod audio;
 mod config;
 mod game;
 mod garbage;
@@ -33,7 +34,7 @@ use crate::config::{
     ATTEMPT_FPS, PLAYER_INDEX, VIEWPORT_HEIGHT, VIEWPORT_WIDTH,
 };
 use crate::geom::Point;
-use crate::state::GameState;
+use crate::state::{GameState, ViewMode};
 use std::f64::consts::TAU;
 use std::time::Duration;
 
@@ -85,6 +86,11 @@ async fn main() {
     // Débris (vides au départ, remplis par les explosions en M3/M4)
     let mut garbages = Vec::new();
 
+    // ─── Audio (Phase 4, ex les `_sndopen` de `meteorsMining.bas`) ─────────
+    // Sons chargés une fois ; l'ambiance et la musique démarrent avec la
+    // partie (après l'écran titre), comme l'original (`mainLoop`).
+    let mut sounds = audio::Sounds::load().await;
+
     // ─── Zoom plein écran (touche F) ────────────────────────────────────────
     // La vue 960×540 est rendue dans une texture puis affichée étirée dans la
     // fenêtre (ex `letterbox.rs` de macroquad) : en fenêtré elle est affichée
@@ -99,8 +105,12 @@ async fn main() {
 
     // le keypress qui a lancé la partie (ex F du titre) est encore dans la
     // file d'input : sans ça, la première frame de jeu le verrait (ex F →
-    // `state.fullscreen` re-basculé) et annulerait le redimensionnement.
+    // `state.view_mode` re-basculé) et annulerait le redimensionnement.
     clear_input_queue();
+
+    // ambiance + musique de la partie (ex `_sndloop sh6&/sh7&` de mainLoop)
+    sounds.start_ambient();
+    sounds.start_music();
 
     // ─── Boucle principale (Phase 3 / jalons M2-M5) ─────────────────────────
     // Limitation de boucle (ex `_limit ATTEMPT_FPS` = 600 de l'original) :
@@ -114,7 +124,7 @@ async fn main() {
     const LIMIT_FPS: bool = true;
     let target_frame = 1.0 / ATTEMPT_FPS as f64;
     let mut last_frame = get_time();
-    let mut pending_fullscreen = state.fullscreen;
+    let mut pending_fullscreen = state.view_mode != ViewMode::Windowed;
     loop {
         if LIMIT_FPS {
             let elapsed = get_time() - last_frame;
@@ -132,9 +142,9 @@ async fn main() {
             set_fullscreen(true);
         }
 
-        // Input + physique + collisions (mouvement, météores, pause, plein
-        // écran) — M2/M3. La caméra est calculée par update (comme l'original,
-        // après la résolution des collisions).
+        // Input + physique + collisions (mouvement, météores, pause, modes
+        // d'affichage, musique) — M2/M3. La caméra est calculée par update
+        // (comme l'original, après la résolution des collisions).
         let dt = get_frame_time() as f64;
         let (action, camera) = game::update(
             &mut state,
@@ -143,21 +153,30 @@ async fn main() {
             &mut garbages,
             &mut elements,
             &mut rng,
+            Some(&mut sounds),
             dt,
         );
         if action == game::Action::Quit {
             break;
         }
 
+        // boucle moteur avant/recul (ex `_sndloop/_sndpause sh8&/sh9&`) :
+        // coupée pendant les boîtes (l'original la coupe à l'accostage)
+        let engine_on = state.player.thrusted != 0 && !state.dock_box && !state.help_box;
+        sounds.engine(engine_on);
+        sounds.reverse_engine(
+            state.player.revert_thrusted != 0 && !state.dock_box && !state.help_box,
+        );
+
         // --- Rendu (toujours actif, même en pause) ---
-        // En fenêtré (fenêtre = viewport 960×540) on dessine directement à
-        // l'écran ; en plein écran, dans la vue virtuelle 960×540 puis zoomée
-        // (F). Mêmes coordonnées dans les deux cas (1:1 vs render target) —
-        // on évite le double passage render target + zoom 1:1 redondant.
-        if state.fullscreen {
-            set_camera(&render::virtual_camera(&render_target));
-        } else {
-            set_default_camera();
+        // Fenêtré : dessin direct 1:1 (fenêtre = viewport 960×540). Plein
+        // écran zoomé : rendu dans la vue virtuelle 960×540 puis étirée (F,
+        // 2e mode). Plein écran natif : rendu direct à la définition réelle
+        // de l'écran via une caméra zoomée — SANS render target (F, 3e mode).
+        match state.view_mode {
+            ViewMode::Windowed => set_default_camera(),
+            ViewMode::Zoomed => set_camera(&render::virtual_camera(&render_target)),
+            ViewMode::Native => set_camera(&render::native_camera()),
         }
         clear_background(BLACK);
         render::draw_stars(&assets, camera);
@@ -215,9 +234,10 @@ async fn main() {
             render::draw_help_box();
         }
 
-        // en plein écran seul : la vue virtuelle est zoomée dans la fenêtre
-        // (en fenêtré on a dessiné directement)
-        if state.fullscreen {
+        // en plein écran zoomé seul : la vue virtuelle est étirée dans la
+        // fenêtre (fenêtré : dessin direct ; natif : rendu direct, rien à
+        // blitter)
+        if state.view_mode == ViewMode::Zoomed {
             render::draw_zoomed(&render_target);
         }
 

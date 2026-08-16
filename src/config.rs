@@ -47,9 +47,6 @@ pub const TRIANGLE_HEIGHT_MAX: i32 = 22;
 /// FPS visé par la boucle QB64 (le rendu plafonne bien plus bas).
 pub const ATTEMPT_FPS: i32 = 600;
 
-/// Plein écran au démarrage.
-pub const FULL_SCREEN: bool = false;
-
 /// 2π (ex `TAU` global du jeu QB64).
 pub const TAU: f64 = TAU_F64;
 

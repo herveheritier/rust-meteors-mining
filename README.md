@@ -46,10 +46,12 @@ La fenêtre 960×540 (taille de la vue du jeu d'origine) s'ouvre avec une boucle
 réel ~225 en fenêtré sur GPU virtio, ~65 en plein écran — voir `docs/PORTAGE.md` Phase 5). État
 actuel : Phases 0-2 + jalons M2 à M6 terminés — modèle de données complet, rendu (étoiles
 précalculées, vaisseau, station, caméra centrée joueur, HUD, cargo), **déplacement du vaisseau**
-(flèches : ↑ accélérer, ←/→ tourner, ↓ décélérer ; **P** pause, **F** vrai plein écran — la
-vue 960×540 est étirée pour remplir l'écran (même contenu, juste plus grand), voir
-`docs/PORTAGE.md` §4.1 ;
-**ESC** quitter),
+(flèches : ↑ accélérer, ←/→ tourner, ↓ décélérer ; **P** pause, **F** fait cycler trois modes
+— fenêtré, plein écran zoomé (vue 960×540 étirée) et **plein écran natif** (rendu direct à la
+définition réelle de l'écran, sans buffer), voir `docs/PORTAGE.md` §4.1 ; **M** coupe la
+musique ; **ESC** quitter),
+**audio** (ambiance, musique, moteur, tirs, gemmes, explosions à volume selon la distance),
+**météores en jeu** (**G** génère un météore, **A** active/désactive la génération automatique ;
 **météores en jeu** (**G** génère un météore, **A** active/désactive la génération automatique ;
 dérive, rendu texturé, collisions, débris, messages en bas d'écran) et **combat/ressources**
 (**Shift** tire des balles qui détruisent les météores ; les triangles minéraux laissent des

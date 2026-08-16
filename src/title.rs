@@ -8,7 +8,8 @@ use macroquad::prelude::*;
 
 use crate::config::{ATTEMPT_FPS, VIEWPORT_WIDTH};
 use crate::geom::Point;
-use crate::render::{argb_to_color, draw_stars, draw_zoomed, toggle_fullscreen, virtual_camera};
+use crate::render::{argb_to_color, cycle_view_mode, draw_stars, draw_zoomed, native_camera, virtual_camera};
+use crate::state::ViewMode;
 use crate::state::GameState;
 use std::time::Duration;
 
@@ -116,15 +117,21 @@ pub async fn title_loop(state: &mut GameState, assets: &crate::render::Assets, r
                 // (gel avec cadre figé, boucle sans rendu). On cède une frame
                 // (le keypress est consommé), comme l'original qui relit
                 // `inkey$` (consommant) à chaque itération.
-                toggle_fullscreen(state);
+                cycle_view_mode(state);
                 next_frame().await;
                 continue;
             }
             break;
         }
 
-        // rendu dans la vue virtuelle 960×540, puis zoom plein écran (F)
-        set_camera(&virtual_camera(rt));
+        // rendu selon le mode d'affichage : fenêtré → direct ; plein écran
+        // zoomé → vue virtuelle 960×540 puis étirée ; plein écran natif →
+        // rendu direct à la définition réelle de l'écran (sans buffer)
+        match state.view_mode {
+            ViewMode::Windowed => set_default_camera(),
+            ViewMode::Zoomed => set_camera(&virtual_camera(rt)),
+            ViewMode::Native => set_camera(&native_camera()),
+        }
 
         // fond noir + étoiles (caméra qui dérive vers le bas, ex titleLoop)
         clear_background(BLACK);
@@ -159,7 +166,11 @@ pub async fn title_loop(state: &mut GameState, assets: &crate::render::Assets, r
         }
 
         // invites (ex titleLoop)
-        let infos = ["[ F for fullscreen ]", "[ ESC to quit ]", "[ Hit other key to launch ]"];
+        let infos = [
+            "[ F : window / zoomed / native fullscreen ]",
+            "[ ESC to quit ]",
+            "[ Hit other key to launch ]",
+        ];
         let mut y = 10.0 * (8.0 + banner_rows as f64) + 20.0;
         for line in infos {
             let w = measure_text(line, None, 16, 1.0).width;
@@ -167,7 +178,10 @@ pub async fn title_loop(state: &mut GameState, assets: &crate::render::Assets, r
             y += 20.0;
         }
 
-        draw_zoomed(rt);
+        // étirement de la vue virtuelle uniquement en plein écran zoomé
+        if state.view_mode == ViewMode::Zoomed {
+            draw_zoomed(rt);
+        }
 
         next_frame().await
     }

@@ -10,13 +10,14 @@
 use macroquad::prelude::*;
 use ::rand::Rng;
 
+use crate::audio::Sounds;
 use crate::config::*;
 use crate::garbage::{generate_garbages, moving_garbage, Garbage};
 use crate::generate::{create_alien, create_gem, create_shape, fire_bullet};
 use crate::geom::{Point, Triangle};
-use crate::render::{camera_for, choice_box_layout, help_box_layout, mouse_to_game, toggle_fullscreen};
+use crate::render::{camera_for, choice_box_layout, cycle_view_mode, help_box_layout, mouse_to_game};
 use crate::shape::{compute_shape_center, detect_collision, moving_shape, resolve_elastic_collision, Shape};
-use crate::state::{Element, GameState};
+use crate::state::{Element, GameState, ViewMode};
 
 /// Action demandée par la boucle de jeu pour la frame courante.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +41,8 @@ pub fn update(
     garbages: &mut Vec<Garbage>,
     elements: &mut [Element],
     rng: &mut impl Rng,
+    // Sons du jeu — `None` (tests) pour un `update` silencieux.
+    mut sounds: Option<&mut Sounds>,
     dt: f64,
 ) -> (Action, Point) {
     // FPS mesurés (affichés au HUD, utilisés par les messages en Phase 4)
@@ -83,12 +86,24 @@ pub fn update(
         return (Action::Continue, camera);
     }
 
-    // F : vrai plein écran (EWMH `_NET_WM_STATE_FULLSCREEN`) — la fenêtre
-    // couvre l'écran sans décorations et le contenu 960×540 est zoomé par
-    // `draw_zoomed` (même contenu, juste plus grand).
+    // F : cycle des modes d'affichage — fenêtré → plein écran zoomé (render
+    // target étirée) → plein écran natif (définition réelle, sans buffer) →
+    // fenêtré.
     if is_key_pressed(KeyCode::F) {
-        toggle_fullscreen(state);
-        state.send_message(if state.fullscreen { "FULLSCREEN" } else { "WINDOWED" });
+        cycle_view_mode(state);
+        state.send_message(match state.view_mode {
+            ViewMode::Windowed => "WINDOWED",
+            ViewMode::Zoomed => "FULLSCREEN (ZOOMED)",
+            ViewMode::Native => "FULLSCREEN (NATIVE)",
+        });
+    }
+
+    // M : bascule la musique (ex `M : mute music` de mainLoop)
+    if is_key_pressed(KeyCode::M) {
+        if let Some(sounds) = sounds.as_deref_mut() {
+            sounds.toggle_music();
+            state.send_message(if sounds.music_on { "MUSIC ON" } else { "MUSIC OFF" });
+        }
     }
 
     // P : pause
@@ -135,8 +150,8 @@ pub fn update(
         state.player.fire -= dt;
     }
 
-    // contrôles joueur selon le mode de déplacement (inclut le tir)
-    player_controls(state, shapes, triangles, dt);
+    // contrôles joueur selon le mode de déplacement (inclut le tir + son)
+    player_controls(state, shapes, triangles, sounds.as_deref_mut(), dt);
 
     // compteurs de poussée : -5 à la pression, +1 par frame jusqu'à 0 —
     // la flamme (et le son, Phase 4) persiste ~5 frames après relâchement.
@@ -147,8 +162,8 @@ pub fn update(
         state.player.revert_thrusted += 1;
     }
 
-    // physique + collisions (détection et résolution)
-    collisions(state, shapes, triangles, garbages, elements, rng, dt);
+    // physique + collisions (détection, résolution, sons d'impact)
+    collisions(state, shapes, triangles, garbages, elements, rng, sounds, dt);
 
     // accostage à la station (ex « detect return to the base ») — peut ouvrir
     // la boîte UNLOAD/CLOSE, auquel cas le reste de la frame est gelé
@@ -190,6 +205,7 @@ fn collisions(
     garbages: &mut Vec<Garbage>,
     elements: &mut [Element],
     rng: &mut impl Rng,
+    mut sounds: Option<&mut Sounds>,
     dt: f64,
 ) {
     // remet à zéro les indicateurs de collision de tous les triangles
@@ -280,6 +296,9 @@ fn collisions(
                 elements[element].count += 1;
             }
             state.player.cargo_qty += 1;
+            if let Some(sounds) = sounds.as_mut() {
+                sounds.play_gem();
+            }
             if state.player.cargo_qty >= state.player.cargo_size {
                 state.send_message("YOUR LOADING BAY IS FULL, YOU MUST UNLOAD IT AT THE STATION");
             }
@@ -312,7 +331,16 @@ fn collisions(
                     state.max_meteor_shapes += 1;
                 }
             }
-            // débris (et son d'impact, volume selon la distance — M4)
+            // débris + son d'impact : volume selon la distance au vaisseau,
+            // un des 10 sons d'explosion au hasard (ex mainLoop :
+            // `v! = (1 - dist/diag)^3`, `shexp(s%)`)
+            if let Some(sounds) = sounds.as_mut() {
+                let dx = shapes[shape_index].position.x - shapes[PLAYER_INDEX].position.x;
+                let dy = shapes[shape_index].position.y - shapes[PLAYER_INDEX].position.y;
+                let dist = dx.hypot(dy);
+                let v = (1.0 - dist / WORLD_WIDTH.hypot(WORLD_HEIGHT)).powi(3) as f32;
+                sounds.play_explosion(rng, v);
+            }
             generate_garbages(garbages, &triangles[i], shapes, rng);
             if triangles[i].element > 0 {
                 if collid_by == WHOIAM_BULLET && triangles[i].element > 0 {
@@ -452,6 +480,7 @@ fn player_controls(
     state: &mut GameState,
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
+    sounds: Option<&mut Sounds>,
     dt: f64,
 ) {
     state.player.thrust = 0.0;
@@ -552,6 +581,9 @@ fn player_controls(
         fire_bullet(shapes, triangles);
         state.player.fire = PLAYER_FIRE_COOLDOWN;
         state.bullets_fired += 1;
+        if let Some(sounds) = sounds {
+            sounds.play_bullet();
+        }
     }
 }
 
@@ -708,7 +740,7 @@ mod tests {
         let mut rng = seed();
 
         // chevauchement : distance (2,2) < rayon cumulé (20)
-        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, 0.0);
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
         assert_eq!(triangles[0].life, 0);
         assert_eq!(triangles[1].life, 0);
@@ -742,7 +774,7 @@ mod tests {
         let mut elements = default_elements();
         let mut rng = seed();
 
-        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, 0.0);
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
         // triangles de la station intacts, le météore est détruit
         assert_eq!(triangles[0].life, 1);
@@ -771,7 +803,7 @@ mod tests {
         let mut elements = default_elements();
         let mut rng = seed();
 
-        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, 0.0);
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
         assert_eq!(shapes[0].life, 0);
         assert!(state.message_queue.contains("YOUR SPACESHIP IS DAMAGED"));
@@ -813,7 +845,7 @@ mod tests {
         let mut elements = default_elements();
         let mut rng = seed();
 
-        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, 0.0);
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
         // une gemme a été créée (forme supplémentaire WHOIAM_GEM)
         let gem = shapes.iter().find(|s| s.who_i_am == WHOIAM_GEM);
@@ -839,7 +871,7 @@ mod tests {
         let mut elements = default_elements();
         let mut rng = seed();
 
-        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, 0.0);
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
         assert_eq!(elements[2].count, 1);
         assert_eq!(state.player.cargo_qty, 1);

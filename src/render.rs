@@ -18,7 +18,7 @@ use crate::config::*;
 use crate::garbage::Garbage;
 use crate::geom::{Point, Triangle, World};
 use crate::shape::{get_border_segments, Shape};
-use crate::state::{Element, GameState};
+use crate::state::{Element, GameState, ViewMode};
 
 /// Taille d'une tuile d'étoiles précalculée (pixels monde = pixels écran).
 pub const STAR_TILE: u32 = 1024;
@@ -289,7 +289,7 @@ pub fn draw_help_box() {
         "T : dump triangles to console",
         "A : switch automatic shape generation",
         "D : display data",
-        "F : switch fullscreen",
+        "F : cycle window / zoomed / native fullscreen",
         "G : generate a shape",
         "K : kill all shapes",
     ];
@@ -365,32 +365,66 @@ pub fn virtual_camera(rt: &RenderTarget) -> Camera2D {
     }
 }
 
-/// Bascule le plein écran : vrai plein écran EWMH (`_NET_WM_STATE_FULLSCREEN`,
-/// ex `wmctrl -b toggle,fullscreen`) — la fenêtre couvre l'écran sans
-/// décorations, et le contenu 960×540 est zoomé par `draw_zoomed` (même
-/// contenu, juste plus grand).
+/// Caméra de rendu direct du plein écran **natif** (touche F, 3e mode) : la
+/// vue 960×540 est affichée à la définition réelle de l'écran SANS passer par
+/// un render target — un seul passage de rendu à la résolution native (plus
+/// net, moins de fill que le double passage rendu + étirement).
 ///
-/// Entrée : `set_fullscreen(true)` de miniquad (ClientMessage `_NET_WM_STATE`
-/// ADD, standard EWMH). Sortie : miniquad 0.4.11 ne sait PAS sortir du plein
-/// écran sur X11 (TODO dans `linux_x11.rs` — `set_fullscreen(false)` envoie un
-/// ADD avec un atome vide, sans effet) → on complète par `wmctrl` (REMOVE) si
-/// présent, sinon par un simple redimensionnement (avec un WM non EWMH, la
-/// fenêtre resterait plein écran).
-pub fn toggle_fullscreen(state: &mut GameState) {
-    state.fullscreen = !state.fullscreen;
-    if state.fullscreen {
-        set_fullscreen(true);
-    } else {
-        set_fullscreen(false);
-        let removed = std::process::Command::new("wmctrl")
-            .args(["-r", "Meteors Mining (Rust port)", "-b", "remove,fullscreen"])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if !removed {
-            request_new_screen_size(VIEWPORT_WIDTH as f32, VIEWPORT_HEIGHT as f32);
-        }
+/// La rect monde visible = écran/scale (`scale = min(W/960, H/540)`, uniforme
+/// avec letterbox) : sur un écran 16:9 c'est exactement 960×540 ; sinon la
+/// vue reste au centre avec des bandes noires, comme en mode `Zoomed`.
+///
+/// NB — signe de `zoom.y` : le rendu direct à l'écran (render target = None)
+/// inverse l'axe y (`invert_y = -1` dans `camera.rs`), contrairement au rendu
+/// dans un render target (`invert_y = +1`, ex `virtual_camera`). Pour un écran
+/// (y=0 en haut), `zoom.y` doit donc être POSITIF — un `-` (copié de
+/// `from_display_rect`) retourne la scène verticalement.
+pub fn native_camera() -> Camera2D {
+    let scale = zoom_scale();
+    let view_w = screen_width() / scale;
+    let view_h = screen_height() / scale;
+    Camera2D {
+        render_target: None,
+        zoom: vec2(2.0 / view_w, 2.0 / view_h),
+        target: vec2(view_w / 2.0, view_h / 2.0),
+        offset: vec2(0.0, 0.0),
+        ..Default::default()
     }
+}
+
+/// Fait cycler le mode d'affichage (touche F) : fenêtré → plein écran zoomé
+/// (EWMH, render target étirée) → plein écran natif (EWMH, définition réelle
+/// de l'écran, sans buffer) → fenêtré.
+///
+/// Entrée dans les pleins écrans : `set_fullscreen(true)` de miniquad
+/// (ClientMessage `_NET_WM_STATE` ADD, standard EWMH). Retour fenêtré :
+/// miniquad 0.4.11 ne sait PAS sortir du plein écran sur X11 (TODO dans
+/// `linux_x11.rs` — `set_fullscreen(false)` envoie un ADD avec un atome vide,
+/// sans effet) → on complète par `wmctrl` (REMOVE) si présent, sinon par un
+/// simple redimensionnement (avec un WM non EWMH, la fenêtre resterait plein
+/// écran).
+pub fn cycle_view_mode(state: &mut GameState) {
+    state.view_mode = match state.view_mode {
+        ViewMode::Windowed => {
+            set_fullscreen(true);
+            ViewMode::Zoomed
+        }
+        // le plein écran EWMH est déjà actif : seul le chemin de rendu change
+        // (render target étirée → rendu direct natif)
+        ViewMode::Zoomed => ViewMode::Native,
+        ViewMode::Native => {
+            set_fullscreen(false);
+            let removed = std::process::Command::new("wmctrl")
+                .args(["-r", "Meteors Mining (Rust port)", "-b", "remove,fullscreen"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !removed {
+                request_new_screen_size(VIEWPORT_WIDTH as f32, VIEWPORT_HEIGHT as f32);
+            }
+            ViewMode::Windowed
+        }
+    };
 }
 
 /// Affiche la texture de la vue virtuelle dans la fenêtre, zoomée (letterbox,

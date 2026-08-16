@@ -5,10 +5,26 @@
 //! `src/config.rs` — seul l'état mutable reste ici.
 
 use crate::config::{
-    ATTEMPT_FPS, CARGO_SIZE, FULL_SCREEN, INITIAL_MAX_METEOR_SHAPES, MOVING_MODE_DIRECTIONAL,
-    PLAYER_INDEX, WORLD_HEIGHT, WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
+    ATTEMPT_FPS, CARGO_SIZE, INITIAL_MAX_METEOR_SHAPES, MOVING_MODE_DIRECTIONAL, PLAYER_INDEX,
+    WORLD_HEIGHT, WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
 };
 use crate::geom::World;
+
+/// Mode d'affichage (touche F — cycle) : fenêtré → plein écran zoomé → plein
+/// écran natif → fenêtré.
+///
+/// - `Windowed` : fenêtre 960×540, rendu direct 1:1 (pas de render target).
+/// - `Zoomed` : plein écran EWMH, vue 960×540 rendue dans une texture puis
+///   étirée (le mode historique du port).
+/// - `Native` : plein écran EWMH, rendu direct **à la définition réelle de
+///   l'écran** (caméra zoomée), sans passage par un render target — un seul
+///   passage de rendu, image plus nette.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    Windowed,
+    Zoomed,
+    Native,
+}
 
 /// Le joueur (ex `player_type`).
 #[derive(Clone, Debug)]
@@ -109,8 +125,10 @@ pub struct GameState {
     /// Pause (touche P) : gèle déplacements et collisions, mais pas le rendu
     /// ni l'input (voir `docs/PORTAGE.md` §6).
     pub paused: bool,
-    /// Plein écran (touche F) — local de `mainLoop` devenu champ d'état.
-    pub fullscreen: bool,
+    /// Mode d'affichage (touche F, cycle) — local de `mainLoop` devenu champ
+    /// d'état : fenêtré → plein écran zoomé → plein écran natif (voir
+    /// `ViewMode`).
+    pub view_mode: ViewMode,
     /// Génération automatique des météores (touche A, ex `autoGenerateShape%`).
     pub auto_generate: bool,
     /// Nombre max de météores : 15 au départ, +1 par météore détruit (M4),
@@ -158,7 +176,7 @@ impl GameState {
             bullets_lost: 0,
             moving_mode: MOVING_MODE_DIRECTIONAL,
             paused: false,
-            fullscreen: FULL_SCREEN,
+            view_mode: ViewMode::Windowed,
             auto_generate: true,
             max_meteor_shapes: INITIAL_MAX_METEOR_SHAPES,
             dock_box: false,

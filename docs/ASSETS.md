@@ -113,8 +113,10 @@ couleur = couleur de l'élément, hérite position/vitesse/direction de la forme
 | `meteor_surface_tile.png` | `reference/assets/meteor_surface_tile.png` | **converti** : le fichier d'origine est un **JPEG déguisé en .png** (1254×1254), illisible par macroquad (crate image sans feature jpeg) → converti en vrai PNG avec `convert` |
 | `station.png` | `reference/assets/station.png` | copie directe (1163×1174 RGBA) |
 
-Les sons OGG suivront le même principe en Phase 4 (conversion OGG → WAV pour
-`quad-snd`, ou lecture directe via `rodio` — voir `docs/PORTAGE.md` §0).
+Les sons OGG (Phase 4, voir `docs/PORTAGE.md` §4.2) sont copiés **tels quels** dans
+`assets/` — `quad-snd`/miniaudio (feature `audio` de macroquad) décode l'Ogg Vorbis
+directement, aucune conversion nécessaire : `mis4.ogg`, `gem1.ogg`, `exp11.ogg`…`exp20.ogg`,
+`fffff.ogg`, `bruitDeFond.ogg`, `music1.ogg` (15 fichiers, sources dans `reference/assets/`).
 
 ## 5. Fichiers de mesh « exemple » (non utilisés)
 
