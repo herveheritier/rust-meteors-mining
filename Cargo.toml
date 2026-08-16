@@ -8,7 +8,14 @@ description = "Portage en Rust de « Meteors Mining » (jeu QB64) — voir docs/
 macroquad = { version = "0.4", features = ["audio"] }  # audio = quad-snd (Phase 4)
 rand = "0.8"           # PRNG seedé pour la génération procédurale (Phase 3)
 rand_chacha = "0.3"    # générateur ChaCha12 (déterministe, testable)
+# Active le décodage JPEG dans la crate `image` (unifiée avec celle de macroquad,
+# qui ne compile que png/tga) : la texture météore est embarquée en JPEG — c'est
+# l'asset d'origine (`reference/assets/meteor_surface_tile.jpg`, 457 Ko vs 3,1 Mo
+# en PNG) — pour réduire la taille du binaire autonome.
+image = { version = "0.24", default-features = false, features = ["jpeg"] }
 
 [profile.release]
 opt-level = 3
 lto = true
+codegen-units = 1
+strip = true

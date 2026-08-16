@@ -42,6 +42,29 @@ cd rust-meteors-mining
 cargo run --release
 ```
 
+### Exécutable autonome (fichier unique)
+
+Les textures et sons sont **intégrés dans le binaire** (`include_bytes!`), il n'y a donc
+rien à copier à côté :
+
+```bash
+cargo build --release
+./target/release/rust-meteors-mining   # lançable de n'importe où
+```
+
+Le binaire (~2,8 Mo compressé) est autonome : on peut le copier seul sur une autre machine
+(même OS) et le lancer directement, sans dossier `assets/` ni `cargo run`.
+
+Optimisations de taille appliquées (profil `release` de `Cargo.toml`) : `lto = true`,
+`codegen-units = 1`, `strip = true` ; la texture météore est embarquée en **JPEG** (asset
+d'origine, 457 Ko au lieu de 3,1 Mo en PNG — feature `jpeg` de la crate `image` activée).
+Compression finale facultative avec **UPX** (non fourni par apt, binaire statique sur
+GitHub) — à relancer après chaque `cargo build --release` :
+
+```bash
+upx --best --lzma target/release/rust-meteors-mining
+```
+
 La fenêtre 960×540 (taille de la vue du jeu d'origine) s'ouvre avec une boucle sans vsync (FPS
 réel ~225 en fenêtré sur GPU virtio, ~65 en plein écran — voir `docs/PORTAGE.md` Phase 5). État
 actuel : Phases 0-2 + jalons M2 à M6 terminés — modèle de données complet, rendu (étoiles

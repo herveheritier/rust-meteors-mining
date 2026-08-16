@@ -62,23 +62,29 @@ pub struct Assets {
 }
 
 impl Assets {
-    /// Charge les 4 textures depuis `assets/` (copie convertie des assets de
-    /// référence — NB : `reference/assets/meteor_surface_tile.png` est un JPEG
-    /// déguisé en .png, non lisible par macroquad ; la conversion est faite
-    /// une fois dans `assets/`, voir `docs/ASSETS.md` §4).
+    /// Charge les 4 textures depuis `assets/` (intégrées au binaire via
+    /// `include_bytes!`). NB : la texture météore est embarquée en JPEG — c'est
+    /// l'asset d'origine (`reference/assets/meteor_surface_tile.jpg`) — d'où la
+    /// feature `jpeg` de la crate `image` dans `Cargo.toml`.
     pub async fn load() -> Assets {
-        let orange = load_texture("assets/orange2.png")
-            .await
-            .expect("assets/orange2.png introuvable — lancer depuis la racine du projet");
-        let player = load_texture("assets/vaisseau.png")
-            .await
-            .expect("assets/vaisseau.png introuvable");
-        let meteor = load_texture("assets/meteor_surface_tile.png")
-            .await
-            .expect("assets/meteor_surface_tile.png introuvable");
-        let station = load_texture("assets/station.png")
-            .await
-            .expect("assets/station.png introuvable");
+        // Textures intégrées dans le binaire (`include_bytes!`) : l'exécutable
+        // est autonome, le dossier `assets/` n'est plus nécessaire au runtime.
+        let orange = Texture2D::from_file_with_format(
+            include_bytes!("../assets/orange2.png"),
+            Some(ImageFormat::Png),
+        );
+        let player = Texture2D::from_file_with_format(
+            include_bytes!("../assets/vaisseau.png"),
+            Some(ImageFormat::Png),
+        );
+        let meteor = Texture2D::from_file_with_format(
+            include_bytes!("../assets/meteor_surface_tile.jpg"),
+            Some(ImageFormat::Jpeg),
+        );
+        let station = Texture2D::from_file_with_format(
+            include_bytes!("../assets/station.png"),
+            Some(ImageFormat::Png),
+        );
 
         let star_layers = build_star_layers();
 

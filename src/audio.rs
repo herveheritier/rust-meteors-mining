@@ -36,26 +36,41 @@ impl Sounds {
     /// Charge tous les sons depuis `assets/` (copie des `.ogg` de référence —
     /// le backend quad-snd/miniaudio décode l'Ogg Vorbis).
     pub async fn load() -> Sounds {
-        async fn load(path: &str) -> Sound {
-            audio::load_sound(path)
+        // Sons intégrés dans le binaire (`include_bytes!`) : l'exécutable est
+        // autonome, le dossier `assets/` n'est plus nécessaire au runtime.
+        async fn load(bytes: &'static [u8], name: &str) -> Sound {
+            audio::load_sound_from_bytes(bytes)
                 .await
-                .unwrap_or_else(|e| panic!("{path} illisible — {e} (lancer depuis la racine du projet)"))
+                .unwrap_or_else(|e| panic!("{name} illisible — {e}"))
         }
 
         let mut explosions = Vec::with_capacity(10);
-        for i in 11..=20 {
-            let path = format!("assets/exp{i}.ogg");
-            explosions.push(load(&path).await);
+        for (i, bytes) in [
+            &include_bytes!("../assets/exp11.ogg")[..],
+            &include_bytes!("../assets/exp12.ogg")[..],
+            &include_bytes!("../assets/exp13.ogg")[..],
+            &include_bytes!("../assets/exp14.ogg")[..],
+            &include_bytes!("../assets/exp15.ogg")[..],
+            &include_bytes!("../assets/exp16.ogg")[..],
+            &include_bytes!("../assets/exp17.ogg")[..],
+            &include_bytes!("../assets/exp18.ogg")[..],
+            &include_bytes!("../assets/exp19.ogg")[..],
+            &include_bytes!("../assets/exp20.ogg")[..],
+        ]
+        .iter()
+        .enumerate()
+        {
+            explosions.push(load(bytes, &format!("assets/exp{}.ogg", i + 11)).await);
         }
 
         Sounds {
-            bullet: load("assets/mis4.ogg").await,
-            gem: load("assets/gem1.ogg").await,
+            bullet: load(include_bytes!("../assets/mis4.ogg"), "assets/mis4.ogg").await,
+            gem: load(include_bytes!("../assets/gem1.ogg"), "assets/gem1.ogg").await,
             explosions,
-            engine: load("assets/fffff.ogg").await,
-            reverse: load("assets/fffff.ogg").await,
-            ambient: load("assets/bruitDeFond.ogg").await,
-            music: load("assets/music1.ogg").await,
+            engine: load(include_bytes!("../assets/fffff.ogg"), "assets/fffff.ogg").await,
+            reverse: load(include_bytes!("../assets/fffff.ogg"), "assets/fffff.ogg").await,
+            ambient: load(include_bytes!("../assets/bruitDeFond.ogg"), "assets/bruitDeFond.ogg").await,
+            music: load(include_bytes!("../assets/music1.ogg"), "assets/music1.ogg").await,
             music_on: false,
             engine_on: false,
             reverse_on: false,

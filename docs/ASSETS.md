@@ -110,8 +110,8 @@ couleur = couleur de l'élément, hérite position/vitesse/direction de la forme
 |---|---|---|
 | `orange2.png` | `reference/assets/orange2.png` | copie directe (32×32 RGBA) |
 | `vaisseau.png` | `reference/assets/vaisseau.png` | copie directe (512×512 RGBA) |
-| `meteor_surface_tile.png` | `reference/assets/meteor_surface_tile.png` | **converti** : le fichier d'origine est un **JPEG déguisé en .png** (1254×1254), illisible par macroquad (crate image sans feature jpeg) → converti en vrai PNG avec `convert` |
-| `station.png` | `reference/assets/station.png` | copie directe (1163×1174 RGBA) |
+| `meteor_surface_tile.jpg` | `reference/assets/meteor_surface_tile.jpg` | copie directe du **JPEG d'origine** (1254×1254) — le portage embarque le JPEG directement (feature `jpeg` de la crate `image` activée dans `Cargo.toml`), plus léger que le PNG converti (457 Ko vs 3,1 Mo) |
+| `station.png` | `reference/assets/station.png` | copie directe (1163×1174 RGBA), recompressée sans perte (`convert -strip`) |
 
 Les sons OGG (Phase 4, voir `docs/PORTAGE.md` §4.2) sont copiés **tels quels** dans
 `assets/` — `quad-snd`/miniaudio (feature `audio` de macroquad) décode l'Ogg Vorbis
