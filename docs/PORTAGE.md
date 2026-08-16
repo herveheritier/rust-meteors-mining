@@ -67,8 +67,8 @@ Structures de données dynamiques (au lieu des tableaux QB64 globaux) :
 ### Phase 2 — Rendu ✅ (fait)
 
 > État : **terminée** (août 2026) dans `src/render.rs` : assets (`Assets::load`),
-> étoiles précalculées (une tuile 1024² par couche, 15 textures, offset
-> `camera × plan`), caméra centrée joueur (`camera_for`), triangles texturés
+> étoiles précalculées (15 couches de positions, dessinées en 1 px — voir note
+> perf ci-dessous), caméra centrée joueur (`camera_for`), triangles texturés
 > (`draw_triangle_texture` — voir note ci-dessous), formes (`draw_shape`),
 > minimap, poussée (`ejection_flow`), débris, cargo, HUD. Vérifié sur écran
 > X11 (capture) : fond noir, ~400 étoiles, station + vaisseau texturés au
@@ -90,9 +90,11 @@ Structures de données dynamiques (au lieu des tableaux QB64 globaux) :
 Rendu (référence) :
 - **Fond noir** : `clear(BLACK)`.
 - **Étoiles (gros gain de perf)** : au lieu de 100 000 `draw_rectangle` par frame, précalculer
-  15 images (une par couche) de points blancs sur fond transparent, ou un vertex buffer statique
-  rejoué avec une translation. Simplest : pour chaque couche, une `Texture2D` générée une fois
-  (`render_target`), dessinée avec offset `camera * plan`. **Fidèle et 100× plus rapide.**
+  une fois les positions des étoiles par couche (champ aléatoire de même densité que l'original),
+  puis dessiner chaque étoile en 1 px (quadrant blanc batché — un seul draw call par couche,
+  `draw_rectangle`). ⚠ La première tentative (tuiles 1024² dessinées avec blending) coûtait
+  **~60 % du temps de frame** (fill rate du GPU) et plafonnait le FPS à ~95 sur le GPU virtio :
+  les points 1 px ramènent ce coût à ~0 et le FPS à ~225 (voir Phase 5).
 - **Triangles texturés** : port de `drawTexturedTriangle` : `uv = t.a.x*ratio - tw/2` etc.,
   `ratio = tw / max(w,h)`. Le `_seamless` de QB64 (wrapping de texture) → repli des UV par
   modulo (`rem_euclid`) avant `draw_triangle_texture` (maison).
@@ -138,8 +140,14 @@ Rendu (référence) :
 - Comparer : tailles/positions des météores générés (même seed → mêmes formes), collisions,
   HUD, comportement au clavier.
 - Valider les constantes (§6 d'ANALYSE.md) une à une.
-- Perf : objectif ≥ 200 FPS en release ; profiler si besoin (le seul point chaud potentiel est le
-  rendu des étoiles → résolu par les textures précalculées).
+- Perf : objectif ≥ 200 FPS en release — **atteint** (août 2026, GPU virtio) :
+  - `swap_interval = 0` (vsync OFF) : miniquad le force à 1 par défaut et plafonne le rendu au
+    rafraîchissement ; l'original QB64 tourne sans vsync (~110 FPS).
+  - Étoiles en 1 px batché (voir plus haut) : ~95 → ~225 FPS en fenêtré (2× l'original).
+  - En fenêtré (fenêtre = viewport), on dessine directement à l'écran (pas de render target +
+    zoom 1:1 redondants).
+  - Plein écran (F, 1920×1080) : ~60-70 FPS — limite de **fill rate du GPU virtio**
+    (~200 Mpx/s, le quad de zoom fait 2 Mpx) ; sur du matériel réel ce sera sans objet.
 
 ## 2. Mapping fichier QB64 → module Rust (proposé)
 
@@ -280,13 +288,16 @@ add,fullscreen`) : la fenêtre couvre l'écran sans décorations, et le contenu 
       la texture. NB : l'original était dégradé ici aussi — `createStation` appelle
       `computeShapeCenter shapes(shapeId)` (variable indéfinie = 0) → la largeur de la station
       n'était jamais calculée → ratio UV divisé par 0.
-- [ ] **Étoiles quasi invisibles/absentes** : deux pièges dans `draw_stars` — (1) les étoiles font
-      1 texel dans la tuile 1024² : le filtre **linéaire** (défaut) échantillonne entre les texels
-      (offsets de caméra fractionnaires) et écrase la luminosité (~1 au lieu de 127-255) →
-      `set_filter(Nearest)` sur les tuiles ; (2) la boucle de tuiles doit partir de
-      `offset - tile` (pas `offset`) sinon la zone avant l'offset — souvent la moitié de l'écran,
-      voire tout l'écran pour les plans à grand offset — reste sans étoiles. Les deux corrigés
-      au jalon M6 (vérifié : couverture 65/65 cellules, luminosité 127-255).
+- [ ] **Étoiles quasi invisibles/absentes** : le rendu des tuiles 1024² a deux pièges — (1) les
+      étoiles font 1 texel : le filtre **linéaire** (défaut) échantillonne entre les texels
+      (offsets fractionnaires) et écrase la luminosité (~1 au lieu de 127-255) → `Nearest` ;
+      (2) la boucle de tuiles doit partir de `offset - tile` (pas `offset`) sinon une partie de
+      l'écran reste sans étoiles. Les deux corrigés au jalon M6 — puis le rendu par tuiles a été
+      **remplacé** (Phase 5) par des points 1 px batchés : les tuiles coûtaient ~60 % du temps de
+      frame (fill rate), voir Phase 2/5.
+- [ ] **Vsync : miniquad force `swap_interval = 1`** (X11/GLX et EGL) — plafonne le rendu au
+      rafraîchissement de l'écran alors que l'original QB64 tourne sans vsync. Désactivé via
+      `Conf.platform.swap_interval = Some(0)` (champ `platform` de macroquad 0.4.16).
 
 ## 7. Jalons (ordre de livraison)
 
@@ -300,9 +311,10 @@ add,fullscreen`) : la fenêtre couvre l'écran sans décorations, et le contenu 
    NB : `fps` de l'original (mesuré 1×/s) est remplacé par `get_fps()` ; la formule
    `60*valeur/fps` est devenue `valeur*60*dt` (indépendante du FPS, cf. §6).
    Limite de boucle ajoutée : pacing manuel à `ATTEMPT_FPS` (600) — macroquad 0.4 n'a ni
-   `set_target_fps` ni vsync configurable (miniquad 0.4.11). Mesure : sans pacing le FPS
-   réel est déjà ~60 sur cette machine (vsync pilote GLX) ; le cap borne le FPS à 600 sur
-   les machines sans vsync, comme le `_limit` de l'original.
+   `set_target_fps` ni vsync configurable (miniquad 0.4.11). NB : le vsync a depuis été
+   désactivé (`swap_interval = 0`, voir §6) et le cap à 600 ne se déclenche jamais en
+   pratique (FPS réel ~225 fenêtré / ~65 plein écran sur GPU virtio, voir Phase 5) — il
+   reste un filet anti-fuite comme le `_limit` de l'original.
 3. **M3** ✅ (août 2026) : météores en jeu. `src/game.rs` : touches **A** (génération
    automatique, ex `autoGenerateShape%`) et **G** (météore à `VIEWPORT_WIDTH/4` à droite du
    vaisseau, immobile), détection de collisions par paires (pré-filtre de distance + SAT,

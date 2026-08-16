@@ -57,9 +57,8 @@ pub async fn title_loop(state: &mut GameState, assets: &crate::render::Assets, r
     let banner_cols = BANNER[0].len();
     let mut banner_colors = vec![0u32; banner_cols];
 
-    // pacing (ex `_limit ATTEMPT_FPS`) — ⚠ TEMPORAIREMENT désactivé comme la
-    // boucle de jeu (tests de performance) : remettre `LIMIT_FPS` à `true`.
-    const LIMIT_FPS: bool = false;
+    // pacing (ex `_limit ATTEMPT_FPS`), filet anti-fuite comme l'original.
+    const LIMIT_FPS: bool = true;
     let target_frame = 1.0 / ATTEMPT_FPS as f64;
     let mut last_frame = get_time();
 

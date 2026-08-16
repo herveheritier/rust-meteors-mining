@@ -14,7 +14,7 @@ rust-meteors-mining/
 ├── assets/                ← textures utilisées par le portage (copie convertie,
 │                            voir docs/ASSETS.md §4)
 ├── src/
-│   ├── main.rs            ← boucle principale (fenêtre 960×540, 60 FPS)
+│   ├── main.rs            ← boucle principale (fenêtre 960×540, sans vsync)
 │   ├── config.rs          ← constantes (vue, monde torique, gameplay)
 │   ├── geom.rs            ← Point, World, Segment, Triangle + géométrie
 │   ├── shape.rs           ← Shape, meshes, collisions, mouvement
@@ -42,8 +42,9 @@ cd rust-meteors-mining
 cargo run --release
 ```
 
-La fenêtre 960×540 (taille de la vue du jeu d'origine) s'ouvre avec une boucle à 60 FPS. État
-actuel : Phases 0-2 + jalons M2 à M5 terminés — modèle de données complet, rendu (étoiles
+La fenêtre 960×540 (taille de la vue du jeu d'origine) s'ouvre avec une boucle sans vsync (FPS
+réel ~225 en fenêtré sur GPU virtio, ~65 en plein écran — voir `docs/PORTAGE.md` Phase 5). État
+actuel : Phases 0-2 + jalons M2 à M6 terminés — modèle de données complet, rendu (étoiles
 précalculées, vaisseau, station, caméra centrée joueur, HUD, cargo), **déplacement du vaisseau**
 (flèches : ↑ accélérer, ←/→ tourner, ↓ décélérer ; **P** pause, **F** vrai plein écran — la
 vue 960×540 est étirée pour remplir l'écran (même contenu, juste plus grand), voir

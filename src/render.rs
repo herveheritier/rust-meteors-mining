@@ -38,16 +38,27 @@ pub fn argb_to_color(argb: u32) -> Color {
 
 // ─── Assets ──────────────────────────────────────────────────────────────────
 
+/// Une couche d'étoiles : positions (dans la tuile) + alpha de chaque étoile.
+///
+/// NB : on ne garde PAS de texture par couche — dessiner 15 tuiles 1024² avec
+/// blending coûtait ~60 % du temps de frame (fill rate du GPU) ; chaque étoile
+/// est dessinée individuellement en 1 px (quadrant blanc batché), comme les
+/// `pset` de l'original, pour un coût GPU négligeable (voir `draw_stars`).
+pub struct StarLayer {
+    /// (x, y) dans la tuile [0, STAR_TILE), alpha [127, 255]
+    pub stars: Vec<(f32, f32, f32)>,
+}
+
 /// Assets chargés au démarrage (ex `_loadimage` de `meteorsMining.bas`).
 pub struct Assets {
     pub orange: Texture2D,
     pub player: Texture2D,
     pub meteor: Texture2D,
     pub station: Texture2D,
-    /// Une texture par couche de parallaxe (15), précalculée une seule fois :
-    /// c'est l'optimisation « étoiles » du plan (100× plus rapide que les
+    /// 15 couches de parallaxe, précalculées une seule fois : c'est
+    /// l'optimisation « étoiles » du plan (100× plus rapide que les
     /// 100 000 `pset` par frame de l'original).
-    pub star_layers: Vec<Texture2D>,
+    pub star_layers: Vec<StarLayer>,
 }
 
 impl Assets {
@@ -85,10 +96,11 @@ impl Assets {
 ///
 /// Dans l'original, chaque étoile est un pixel blanc d'alpha aléatoire
 /// `127..255`, positionné en « plan-espace » (`plan = (i mod 15) + 1`). Ici on
-/// génère une tuile périodique par couche avec la **même densité** : un champ
+/// génère un champ uniforme par couche avec la **même densité** : un champ
 /// aléatoire uniforme est statistiquement identique à l'original (le plan
-/// PORTAGE.md préconise cette optimisation).
-fn build_star_layers() -> Vec<Texture2D> {
+/// PORTAGE.md préconise cette optimisation). Chaque étoile est stockée par sa
+/// position dans une tuile périodique (équivalent au rebouclage torique).
+fn build_star_layers() -> Vec<StarLayer> {
     let mut rng = ChaCha12Rng::from_entropy();
     let mut layers = Vec::with_capacity(STARS_LAYERS as usize);
     for layer in 0..STARS_LAYERS {
@@ -101,51 +113,52 @@ fn build_star_layers() -> Vec<Texture2D> {
             / area)
             .round() as usize;
 
-        let mut pixels = vec![0u8; (STAR_TILE * STAR_TILE * 4) as usize];
+        let mut stars = Vec::with_capacity(n);
         for _ in 0..n {
-            let x = (rng.gen::<f64>() * STAR_TILE as f64) as u32;
-            let y = (rng.gen::<f64>() * STAR_TILE as f64) as u32;
-            let alpha = (127.0 + rng.gen::<f64>() * 128.0) as u8;
-            let idx = ((y * STAR_TILE + x) * 4) as usize;
-            pixels[idx] = 255;
-            pixels[idx + 1] = 255;
-            pixels[idx + 2] = 255;
-            pixels[idx + 3] = alpha;
+            let x = (rng.gen::<f64>() * STAR_TILE as f64) as f32;
+            let y = (rng.gen::<f64>() * STAR_TILE as f64) as f32;
+            let alpha = (127.0 + rng.gen::<f64>() * 128.0) as f32;
+            stars.push((x, y, alpha));
         }
-        let texture = Texture2D::from_rgba8(STAR_TILE as u16, STAR_TILE as u16, &pixels);
-        // filtre le plus proche : les étoiles font 1 texel — le filtre linéaire
-        // (défaut) échantillonne entre les texels et les rend quasi invisibles
-        // (luminosité ~1 au lieu de 127-255) ; le tile est dessiné à des
-        // positions fractionnaires (offset de caméra).
-        texture.set_filter(FilterMode::Nearest);
-        layers.push(texture);
+        layers.push(StarLayer { stars });
     }
     layers
 }
 
 // ─── Étoiles ─────────────────────────────────────────────────────────────────
 
-/// Dessine les étoiles : chaque couche est une tuile répétée avec un offset
-/// `camera × plan` (parallaxe), comme `pt = (star + camera) * plan` de
-/// l'original. La périodicité de la tuile équivaut au rebouclage torique.
+/// Dessine les étoiles : chaque couche est décalée de `camera × plan`
+/// (parallaxe), comme `pt = (star + camera) * plan` de l'original ; la
+/// périodicité de la tuile équivaut au rebouclage torique. Chaque étoile est
+/// un pixel 1×1 (quadrant blanc batché — un seul draw call pour toutes les
+/// étoiles d'une couche), au lieu de dessiner la tuile 1024² entière avec
+/// blending : le rendu des tuiles coûtait ~60 % du temps de frame (fill rate
+/// du GPU virtio) et plafonnait le FPS à ~95 (au lieu de ~220 sans étoiles).
 pub fn draw_stars(assets: &Assets, camera: Point) {
-    for (layer, texture) in assets.star_layers.iter().enumerate() {
+    for (layer, plan_layer) in assets.star_layers.iter().enumerate() {
         let plan = (layer + 1) as f32;
         let tile = STAR_TILE as f32;
         let offset_x = (camera.x as f32 * plan).rem_euclid(tile);
         let offset_y = (camera.y as f32 * plan).rem_euclid(tile);
 
-        // tuiles couvrant tout l'écran : partir de `offset - tile` (sinon la
-        // zone avant `offset` — souvent la moitié de l'écran — reste sans
-        // étoiles, voire l'écran entier pour les plans à grand offset)
-        let mut ty = offset_y - tile;
-        while ty < VIEWPORT_HEIGHT as f32 {
-            let mut tx = offset_x - tile;
-            while tx < VIEWPORT_WIDTH as f32 {
-                draw_texture(texture, tx, ty, WHITE);
-                tx += tile;
+        for &(sx, sy, alpha) in &plan_layer.stars {
+            // position écran : rebouclage de la tuile (torique), comme le
+            // `mod` de l'original ; on élimine les étoiles hors viewport.
+            let mut x = sx - offset_x;
+            if x < 0.0 {
+                x += tile;
             }
-            ty += tile;
+            if x >= VIEWPORT_WIDTH as f32 {
+                continue;
+            }
+            let mut y = sy - offset_y;
+            if y < 0.0 {
+                y += tile;
+            }
+            if y >= VIEWPORT_HEIGHT as f32 {
+                continue;
+            }
+            draw_rectangle(x.round(), y.round(), 1.0, 1.0, Color::new(1.0, 1.0, 1.0, alpha / 255.0));
         }
     }
 }

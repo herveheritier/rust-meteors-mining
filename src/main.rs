@@ -108,10 +108,10 @@ async fn main() {
     // stable améliore la régularité (interpolation du centre, compteurs de
     // poussée, comptage des frames) et évite de chauffer le GPU inutilement.
     // macroquad 0.4 n'offre ni `set_target_fps` ni vsync → pacing manuel.
-    //
-    // ⚠ TEMPORAIRE : `LIMIT_FPS` passé à `false` pour tester les performances
-    // réelles (FPS non borné). Remettre à `true` pour restaurer la limite.
-    const LIMIT_FPS: bool = false;
+    // NB : le cap à 600 ne se déclenche jamais ici (FPS réel ~230 en fenêtré,
+    // ~65 en plein écran sur le GPU virtio) — c'est un filet anti-fuite comme
+    // le `_limit 600` de l'original.
+    const LIMIT_FPS: bool = true;
     let target_frame = 1.0 / ATTEMPT_FPS as f64;
     let mut last_frame = get_time();
     let mut pending_fullscreen = state.fullscreen;
@@ -150,8 +150,15 @@ async fn main() {
         }
 
         // --- Rendu (toujours actif, même en pause) ---
-        // dans la vue virtuelle 960×540, puis zoom plein écran (F)
-        set_camera(&render::virtual_camera(&render_target));
+        // En fenêtré (fenêtre = viewport 960×540) on dessine directement à
+        // l'écran ; en plein écran, dans la vue virtuelle 960×540 puis zoomée
+        // (F). Mêmes coordonnées dans les deux cas (1:1 vs render target) —
+        // on évite le double passage render target + zoom 1:1 redondant.
+        if state.fullscreen {
+            set_camera(&render::virtual_camera(&render_target));
+        } else {
+            set_default_camera();
+        }
         clear_background(BLACK);
         render::draw_stars(&assets, camera);
 
@@ -208,9 +215,11 @@ async fn main() {
             render::draw_help_box();
         }
 
-        // la vue virtuelle est affichée dans la fenêtre (1:1 en fenêtré,
-        // zoomée en plein écran)
-        render::draw_zoomed(&render_target);
+        // en plein écran seul : la vue virtuelle est zoomée dans la fenêtre
+        // (en fenêtré on a dessiné directement)
+        if state.fullscreen {
+            render::draw_zoomed(&render_target);
+        }
 
         next_frame().await
     }
