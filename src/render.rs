@@ -616,7 +616,19 @@ fn draw_textured_triangle(
     let larger = shape.width.max(shape.height);
     let ratio = tw / larger;
     let uv = |x: f64, y: f64| {
-        if shape.who_i_am == WHOIAM_STATION {
+        if shape.who_i_am == WHOIAM_PLAYER {
+            // NB vaisseau : `vaisseau.png` (512×512) est une image complète du
+            // vaisseau, pas une texture tuilable. La formule générique ci-dessous
+            // (fidèle à l'original) dégénère pour le triangle joueur : les trois
+            // sommets donnent u = 0 → le GPU interpole u = 0 partout → tout le
+            // triangle échantillonne la colonne 0 de la texture (le fond gris).
+            // On étale donc la texture complète sur la boîte du vaisseau :
+            // u = (x − top_left.x)/width, v = (y − top_left.y)/height.
+            vec2(
+                ((x - shape.top_left.x) / shape.width) as f32,
+                ((y - shape.top_left.y) / shape.height) as f32,
+            )
+        } else if shape.who_i_am == WHOIAM_STATION {
             // NB station : `station.png` est un anneau fin (bord intérieur UV
             // ~0.34, extérieur ~0.5), plus étroit que la bande du mesh (rayon
             // 90-163). Une simple échelle fait tomber les dents cardinales
