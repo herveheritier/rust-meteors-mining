@@ -5,10 +5,11 @@
 //! `src/config.rs` — seul l'état mutable reste ici.
 
 use crate::config::{
-    ATTEMPT_FPS, CARGO_SIZE, INITIAL_MAX_METEOR_SHAPES, MOVING_MODE_DIRECTIONAL, PLAYER_INDEX,
-    WORLD_HEIGHT, WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
+    ATTEMPT_FPS, CARGO_SIZE, INITIAL_MAX_METEOR_SHAPES, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL,
+    PLAYER_INDEX, WORLD_HEIGHT, WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
 };
-use crate::geom::World;
+use crate::geom::{Point, World};
+use crate::scenario::{Resources, ScenarioId};
 
 /// Mode d'affichage (touche F — cycle) : fenêtré → plein écran zoomé → plein
 /// écran natif → fenêtré.
@@ -24,6 +25,17 @@ pub enum ViewMode {
     Windowed,
     Zoomed,
     Native,
+}
+
+/// Style de rendu des triangles (écran de paramétrage, touche O) :
+/// - `Textured` — les textures (`_MapTriangle` de l'original) ;
+/// - `Colored` — remplissage uni avec la couleur de l'élément / de la forme ;
+/// - `Mesh` — fil de fer (arêtes seules).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderStyle {
+    Textured,
+    Colored,
+    Mesh,
 }
 
 /// Le joueur (ex `player_type`).
@@ -122,25 +134,116 @@ pub struct GameState {
     pub bullets_fired: i32,
     pub bullets_lost: i32,
     pub moving_mode: i32,
+    /// Scénario actif (choisi à l'écran titre, touche N) — voir `scenario.rs`.
+    pub scenario: ScenarioId,
+    /// Ressources économiques du scénario (carburant, munitions, minerais,
+    /// réputation) — ignorées en jeu libre (`has_economy` = false).
+    pub resources: Resources,
+    /// Modes de déplacement débloqués (index `MOVING_MODE_*`) : en
+    /// Progression, INERTIAL est gratuit et les autres s'achètent en minerais
+    /// dans l'écran de paramétrage (touche O) ; en jeu libre, tous sont
+    /// débloqués.
+    pub unlocked_modes: [bool; MOVING_MODE_COUNT as usize],
+    /// Coût du dernier ravitaillement refusé à la station (0 = aucun) : évite
+    /// de répéter « NOT ENOUGH MINERALS » à chaque clic sur REFUEL/REARM sans
+    /// assez de minerais (`scenario::purchase_supplies`).
+    pub supplies_shortage_cost: i32,
     /// Pause (touche P) : gèle déplacements et collisions, mais pas le rendu
     /// ni l'input (voir `docs/PORTAGE.md` §6).
     pub paused: bool,
+    /// Fin de partie (scénario Survival, dernière vie perdue) : le monde est
+    /// gelé, le HUD affiche GAME OVER et seule la touche ESC (quitter) reste
+    /// active. Remis à faux par `scenario::apply_start` (nouvelle partie).
+    pub game_over: bool,
+    /// Invulnérabilité restante en secondes (scénario Survival, après un
+    /// respawn) : les impacts sont absorbés sans toucher au bouclier — le
+    /// vaisseau clignote. Décrémentée à chaque frame (`game.rs`), remise à
+    /// `respawn_invulnerability` par `scenario::player_hit`.
+    pub invulnerable: f64,
     /// Mode d'affichage (touche F, cycle) — local de `mainLoop` devenu champ
     /// d'état : fenêtré → plein écran zoomé → plein écran natif (voir
     /// `ViewMode`).
     pub view_mode: ViewMode,
     /// Génération automatique des météores (touche A, ex `autoGenerateShape%`).
     pub auto_generate: bool,
+    /// Style de rendu des triangles (écran de paramétrage) — voir
+    /// `RenderStyle`.
+    pub render_style: RenderStyle,
+    /// Index dans `WINDOW_SIZES` de la définition de fenêtre choisie (écran
+    /// de paramétrage) : 0 = 960×540 (défaut), 1 = 1280×720, etc.
+    pub window_size: i32,
+    /// Anticrénelage MSAA 4× (écran de paramétrage) : appliqué à la **création
+    /// de la fenêtre** (macroquad ne permet pas de le changer à chaud) — la
+    /// valeur prend effet au prochain lancement.
+    pub antialias: bool,
+    /// Valeur d'anticrénelage effectivement appliquée par la fenêtre au
+    /// lancement (`Conf.sample_count`). Si `antialias` en diffère, un
+    /// redémarrage est nécessaire (bouton RESTART de l'écran de paramétrage).
+    pub antialias_applied: bool,
     /// Nombre max de météores : 15 au départ, +1 par météore détruit (M4),
     /// plafonné à `SHAPES_COUNT` (ex `maxMeteorShapes%`).
     pub max_meteor_shapes: i32,
+    /// Animation d'accostage en cours (secondes restantes, 0 = aucune) :
+    /// avant d'ouvrir la boîte DOCK STATION, le vaisseau pivote vers la droite
+    /// (orientation 0) tout en se recentrant au centre de la station, pendant
+    /// `DOCK_ANIMATION_DURATION` — le monde est gelé (voir
+    /// `game::advance_dock_animation` et `render::draw_docking_line`).
+    pub dock_anim: f64,
+    /// Position du vaisseau au début de l'animation d'accostage (interpolée
+    /// vers le centre de la station).
+    pub dock_anim_from_pos: Point,
+    /// Orientation du vaisseau au début de l'animation d'accostage (interpolée
+    /// vers 0 = pointe vers la droite).
+    pub dock_anim_from_orient: f64,
+    /// Rétraction des liens d'accostage en cours (secondes restantes, 0 =
+    /// aucune) : au départ (bouton CLOSE de la boîte DOCK STATION), le vaisseau
+    /// reste au centre et les 4 traits néon se rétractent vers le bord
+    /// intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` — le monde est
+    /// gelé (voir `game::advance_dock_retract` et
+    /// `render::draw_docking_line`).
+    pub dock_retract: f64,
+    /// Liens d'accostage **attachés à quai** : vrai au lancement et après un
+    /// respawn (le vaisseau démarre à la station) — les 4 traits néon sont
+    /// tendus jusqu'au vaisseau au centre, la mire est cachée. Dès que le
+    /// joueur donne une commande de mouvement, `game::release_links` les
+    /// rétracte (comme au départ après CLOSE) puis le vaisseau est libre.
+    pub dock_links: bool,
+    /// Guide d'accostage (la mire) **affiché lors du retour à la base** : vrai
+    /// quand le vaisseau a quitté la base puis a **recroisé sa limite
+    /// extérieure en entrant** (voir `game::update_docking_guide`) — jamais
+    /// pendant qu'il quitte l'accostage ni à quai. Faux dès qu'il accoste
+    /// (`game::docking`) ou quitte la base (`game::release_links`).
+    pub docking_guide: bool,
+    /// Le vaisseau était **hors de la limite extérieure** de la base à la
+    /// frame précédente : détection du franchissement **en entrant** (retour)
+    /// par `game::update_docking_guide` (front montant de la distance).
+    pub dock_was_outside: bool,
     /// Boîte de choix DOCK STATION ouverte (accostage) — ex la boucle
     /// bloquante de `windowUtils_choiceBox` : tant qu'elle est ouverte, le
-    /// jeu est gelé et seuls les clics sur UNLOAD/CLOSE sont traités.
+    /// jeu est gelé et seuls les clics sur UNLOAD / REFUEL/REARM / UPGRADES /
+    /// CLOSE sont traités (UNLOAD et REFUEL/REARM gardent la boîte ouverte).
     pub dock_box: bool,
+    /// Atelier d'amélioration du vaisseau ouvert (bouton UPGRADES de la boîte
+    /// DOCK STATION, scénario à économie) : achats d'extensions (réservoir,
+    /// chargeur, soute) contre minerais — le jeu est gelé tant qu'il est
+    /// affiché ; CLOSE revient à la boîte DOCK STATION (toujours accosté).
+    pub workshop_box: bool,
     /// Fenêtre d'aide ouverte (touche S, ex `help` de windowUtils) : le jeu
     /// est gelé tant qu'elle est affichée (bouton CLOSE).
     pub help_box: bool,
+    /// Écran de paramétrage ouvert (touche O) : choix du mode de déplacement
+    /// du vaisseau (INERTIAL / 4 WAYS / DIRECTIONAL). Le jeu est gelé tant
+    /// qu'il est affiché ; à la fermeture, un message HUD signale le mode
+    /// activé s'il a été modifié.
+    pub settings_box: bool,
+    /// Mode de déplacement à l'ouverture de l'écran de paramétrage : s'il
+    /// diffère de `moving_mode` à la fermeture, le changement est annoncé au
+    /// HUD.
+    pub settings_previous_mode: i32,
+    /// Index du radio-bouton sous le focus clavier (flèches ↑/↓ + Entrée) de
+    /// l'écran de paramétrage, borné à `[0, MOVING_MODE_COUNT-1]`. Recentré
+    /// sur le mode courant à l'ouverture et à chaque clic.
+    pub settings_focus: i32,
     /// Affiche les données de debug des formes (touche D, ex `showData%`).
     pub show_data: bool,
     /// Affiche les informations de debug (touche I, ex `showInfo%`).
@@ -175,12 +278,33 @@ impl GameState {
             bullets_fired: 0,
             bullets_lost: 0,
             moving_mode: MOVING_MODE_DIRECTIONAL,
+            scenario: ScenarioId::FreePlay,
+            resources: Resources::default(),
+            unlocked_modes: [true; MOVING_MODE_COUNT as usize],
+            supplies_shortage_cost: 0,
             paused: false,
+            game_over: false,
+            invulnerable: 0.0,
             view_mode: ViewMode::Windowed,
             auto_generate: true,
+            render_style: RenderStyle::Textured,
+            window_size: 0,
+            antialias: false,
+            antialias_applied: false,
             max_meteor_shapes: INITIAL_MAX_METEOR_SHAPES,
+            dock_anim: 0.0,
+            dock_anim_from_pos: Point::new(0.0, 0.0),
+            dock_anim_from_orient: 0.0,
+            dock_retract: 0.0,
+            dock_links: true, // le vaisseau démarre à quai, liens attachés
+            docking_guide: false, // pas encore revenu à la base
+            dock_was_outside: false,
             dock_box: false,
+            workshop_box: false,
             help_box: false,
+            settings_box: false,
+            settings_previous_mode: MOVING_MODE_DIRECTIONAL,
+            settings_focus: MOVING_MODE_DIRECTIONAL,
             show_data: false,
             show_info: false,
             last_keycode: 0,

@@ -66,6 +66,67 @@ pub const WHOIAM_ALIEN: i32 = 5;
 pub const MOVING_MODE_INERTIAL: i32 = 0;
 pub const MOVING_MODE_4_WAYS: i32 = 1;
 pub const MOVING_MODE_DIRECTIONAL: i32 = 2;
+/// Nombre de modes de déplacement (bornes du focus clavier de l'écran de
+/// paramétrage).
+pub const MOVING_MODE_COUNT: i32 = 3;
+
+/// Libellé d'affichage d'un mode de déplacement (écran de paramétrage,
+/// message HUD d'activation).
+pub fn moving_mode_label(mode: i32) -> &'static str {
+    match mode {
+        MOVING_MODE_INERTIAL => "INERTIAL",
+        MOVING_MODE_4_WAYS => "4 WAYS",
+        MOVING_MODE_DIRECTIONAL => "DIRECTIONAL",
+        _ => "?",
+    }
+}
+
+/// Styles de rendu des triangles (écran de paramétrage, touche O).
+pub const RENDER_STYLE_TEXTURED: i32 = 0;
+pub const RENDER_STYLE_COLORED: i32 = 1;
+pub const RENDER_STYLE_MESH: i32 = 2;
+pub const RENDER_STYLE_COUNT: i32 = 3;
+
+/// Libellé d'affichage d'un style de rendu (écran de paramétrage).
+pub fn render_style_label(style: i32) -> &'static str {
+    match style {
+        RENDER_STYLE_TEXTURED => "TEXTURED",
+        RENDER_STYLE_COLORED => "COLORED",
+        RENDER_STYLE_MESH => "MESH",
+        _ => "?",
+    }
+}
+
+/// Modes d'affichage de la fenêtre (écran de paramétrage, touche O ; mêmes
+/// valeurs que `ViewMode` de `state.rs`, en entiers pour la persistance).
+pub const WINDOW_MODE_WINDOWED: i32 = 0;
+pub const WINDOW_MODE_ZOOMED: i32 = 1;
+pub const WINDOW_MODE_NATIVE: i32 = 2;
+pub const WINDOW_MODE_COUNT: i32 = 3;
+
+/// Libellé d'affichage d'un mode d'affichage (écran de paramétrage, message
+/// HUD de la touche F).
+pub fn window_mode_label(mode: i32) -> &'static str {
+    match mode {
+        WINDOW_MODE_WINDOWED => "WINDOWED",
+        WINDOW_MODE_ZOOMED => "ZOOMED",
+        WINDOW_MODE_NATIVE => "NATIVE",
+        _ => "?",
+    }
+}
+
+/// Définitions de fenêtre proposées (écran de paramétrage, touche O) :
+/// (largeur, hauteur). La vue 960×540 est rendue 1:1 dans une fenêtre à la
+/// définition native et étirée (letterbox) dans toute fenêtre plus grande.
+pub const WINDOW_SIZES: [(i32, i32); 4] = [(960, 540), (1280, 720), (1600, 900), (1920, 1080)];
+
+/// Libellé d'affichage d'une définition de fenêtre (écran de paramétrage).
+pub fn window_size_label(index: i32) -> String {
+    match WINDOW_SIZES.get(index as usize) {
+        Some(&(w, h)) => format!("{}x{}", w, h),
+        None => "?".to_string(),
+    }
+}
 
 /// Options de compilation ($LET du code QB64).
 ///
@@ -112,10 +173,45 @@ pub const CARGO_SIZE: i32 = 5;
 pub const INITIAL_MAX_METEOR_SHAPES: i32 = 15;
 /// Vitesse maximale des météores (`2*rnd`).
 pub const METEOR_VELOCITY_MAX: f64 = 2.0;
-/// Distance d'accostage de la station.
-pub const STATION_DOCK_DISTANCE: f64 = 5.0;
-/// Rayon de la station (forcé après calcul du centre).
-pub const STATION_RADIUS: f64 = 36.0;
+/// Rayon (unités monde) de la zone d'accostage de la station : le vaisseau
+/// accoste quand son **centre** entre dans ce cercle (vérification circulaire
+/// dans `docking`). Élargie par rapport à l'original (5 px) pour dépasser le
+/// rayon du vaisseau (10) — la zone est affichée par la mire au centre de la
+/// station (voir `render::draw_docking_marker`).
+pub const STATION_DOCK_DISTANCE: f64 = 15.0;
+
+/// Durée (secondes) de l'animation d'accostage avant l'ouverture de la boîte
+/// DOCK STATION : le monde est gelé, le vaisseau pivote vers la droite
+/// (orientation 0) tout en se recentrant exactement au centre de la station,
+/// et 4 traits néon relient le bord intérieur de la station aux côtés du
+/// vaisseau (voir `render::draw_docking_line` et
+/// `game::advance_dock_animation`).
+pub const DOCK_ANIMATION_DURATION: f64 = 3.0;
+
+/// Durée (secondes) de la rétraction des liens d'accostage au départ
+/// (bouton CLOSE de la boîte DOCK STATION) : le monde est gelé, le vaisseau
+/// reste au centre, les 4 traits néon se rétractent du vaisseau vers le bord
+/// intérieur de l'anneau, puis le vaisseau est libre (voir
+/// `render::draw_docking_line` et `game::advance_dock_retract`).
+pub const DOCK_RETRACT_DURATION: f64 = 1.5;
+
+/// Rayon intérieur (unités monde) de l'anneau de la station (bord intérieur
+/// du mesh, r = 110) : point de départ du trait d'accostage pendant
+/// l'animation (voir `render::draw_docking_line`).
+pub const STATION_INNER_RADIUS: f64 = 110.0;
+
+/// Vitesse maximale (unités/s) du vaisseau pour que l'accostage se **termine**
+/// (la boîte DOCK STATION ne s'ouvre que si le vaisseau est presque immobile
+/// dans la zone — voir `docking`).
+pub const STATION_DOCK_SPEED: f64 = 0.5;
+
+/// Vitesse à partir de laquelle l'approche est jugée « mauvaise » : la mire
+/// d'accostage est entièrement **rouge** (qualité 0) à cette vitesse ou au
+/// delà, et passe progressivement au **vert** (qualité 1) à mesure que le
+/// vaisseau ralentit — la qualité est interpolée sur **tout le rayon de la
+/// station** (distance au centre) et sur la vitesse, voir
+/// `render::draw_docking_marker` et `docking_approach_quality`.
+pub const DOCK_APPROACH_FULL_RED_SPEED: f64 = 3.0;
 /// Mapping UV de la station : `station.png` est un anneau fin (bord intérieur
 /// UV ~0.34, extérieur ~0.5) plus étroit que la bande du mesh (rayon
 /// 110-162). Un mapping d'échelle simple ferait tomber le bord de l'anneau

@@ -14,11 +14,13 @@ use macroquad::prelude::*;
 use ::rand::{Rng, SeedableRng};
 use ::rand_chacha::ChaCha12Rng;
 
+use crate::audio::Sounds;
 use crate::config::*;
 use crate::garbage::Garbage;
 use crate::geom::{Point, Triangle, World};
+use crate::scenario;
 use crate::shape::{get_border_segments, Shape};
-use crate::state::{Element, GameState, ViewMode};
+use crate::state::{Element, GameState, RenderStyle, ViewMode};
 
 /// Taille d'une tuile d'étoiles précalculée (pixels monde = pixels écran).
 pub const STAR_TILE: u32 = 1024;
@@ -185,48 +187,99 @@ pub fn draw_stars(assets: &Assets, camera: Point) {
 
 // ─── Boîte de choix (accostage, ex windowUtils_choiceBox) ────────────────────
 
-/// Couleurs de la boîte de choix (ex `windowUtils_choiceBox`) : fg = 0xFF99DFFF,
-/// hover = 0xFFFFFFFF, fond = 0xD01AB2FF, bordure = 0xFF1AB2FF.
-const BOX_FG: u32 = 0xFF99DFFF;
+/// Couleurs des fenêtres (boîte de choix, aide, paramétrage ; ex
+/// `windowUtils_choiceBox`). NB dérive volontaire pour le contraste : le
+/// texte passe de `0xFF99DFFF` à un bleu presque blanc `0xFFD6EEFF` et le
+/// fond est assombri (`0xD01478DC` au lieu de `0xD01AB2FF`) pour que les
+/// libellés se détachent nettement.
+const BOX_FG: u32 = 0xFFD6EEFF;
+/// Texte secondaire (descriptions des modes, valeur du volume) : plus clair
+/// que l'ancien `0xB099DFFF` (illisible), mais volontairement plus discret
+/// que `BOX_FG`.
+const BOX_FG_DIM: u32 = 0xFFC2E4FF;
 const BOX_HOVER: u32 = 0xFFFFFFFF;
-const BOX_BG: u32 = 0xD01AB2FF;
+const BOX_BG: u32 = 0xD01478DC;
 const BOX_BORDER: u32 = 0xFF1AB2FF;
+/// Panneau interne de l'écran de paramétrage (les radio-boutons de mode) :
+/// fond légèrement plus clair que la fenêtre, bordure discrète.
+const BOX_PANEL_BG: u32 = 0xE01478DC;
+const BOX_PANEL_BORDER: u32 = 0x801AB2FF;
 const BOX_PADDING: f32 = 10.0;
 
-/// Géométrie de la boîte de choix UNLOAD/CLOSE (ex `windowUtils_choiceBox`) :
-/// fenêtre de 120 px de haut centrée sur l'écran, largeur `max(300, msg+20)`,
-/// deux boutons côte à côte en bas. Renvoie les rectangles écran des boutons
-/// UNLOAD et CLOSE (pour la détection de clic côté logique).
-pub fn choice_box_layout() -> (Rect, Rect) {
-    let msg = "*** DOCK STATION ***";
-    let msg_w = measure_text(msg, None, 16, 1.0).width + 2.0 * BOX_PADDING;
-    let w = 300.0f32.max(msg_w);
-    let h = 120.0;
-    let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
-    let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
-
-    // bouton : largeur = max(largeur texte + 2*padding, 60), hauteur = 26
+/// Largeur de la boîte DOCK STATION : assez pour le titre et les boutons
+/// (3 sans atelier, 4 avec) sans chevauchement — même formule pour la
+/// géométrie (`choice_box_layout`) et le dessin (`draw_choice_box`).
+fn choice_box_width(show_upgrades: bool) -> f32 {
+    let msg_w = measure_text("*** DOCK STATION ***", None, 16, 1.0).width + 2.0 * BOX_PADDING;
     let btn_w = |label: &str| (measure_text(label, None, 16, 1.0).width + 2.0 * BOX_PADDING).max(60.0);
-    let btn_h = 26.0;
-    let w1 = btn_w("UNLOAD");
-    let w2 = btn_w("CLOSE");
-    // positions : 1er sur la moitié gauche, 2e sur la moitié droite
-    // (ex `(w\2-pw)\2 - padding` et `(3*w\2-pw)\2 - padding`)
-    let left1 = left + (w / 2.0 - w1) / 2.0 - BOX_PADDING;
-    let left2 = left + (3.0 * w / 2.0 - w2) / 2.0 - BOX_PADDING;
-    let top_btn = top + h - 20.0 - btn_h;
-    let unload = Rect::new(left1, top_btn, w1, btn_h);
-    let close = Rect::new(left2, top_btn, w2, btn_h);
-    (unload, close)
+    let labels: &[&str] = if show_upgrades {
+        &["UNLOAD", "REFUEL/REARM", "UPGRADES", "CLOSE"]
+    } else {
+        &["UNLOAD", "REFUEL/REARM", "CLOSE"]
+    };
+    let buttons: f32 =
+        labels.iter().map(|l| btn_w(l)).sum::<f32>() + (labels.len() as f32 - 1.0) * BOX_PADDING;
+    300.0f32.max(msg_w).max(buttons + 2.0 * BOX_PADDING)
 }
 
-/// Dessine la boîte de choix UNLOAD/CLOSE (accostage) avec ses deux boutons
-/// (hover = blanc, ex `windowUtils_choiceBox`).
-#[allow(dead_code)] // appelé par main.rs quand `state.dock_box`
-pub fn draw_choice_box() {
+/// Géométrie de la boîte de choix DOCK STATION (ex `windowUtils_choiceBox`) :
+/// fenêtre de 120 px de haut centrée sur l'écran, largeur assez grande pour
+/// le titre et les boutons côte à côte en bas. Renvoie les rectangles écran
+/// des boutons UNLOAD / REFUEL/REARM / [UPGRADES] / CLOSE (pour la détection
+/// de clic côté logique). Le bouton UPGRADES (atelier d'amélioration) n'est
+/// présent qu'en scénario à économie (`show_upgrades`) — rectangle vide sinon.
+pub struct ChoiceBoxLayout {
+    /// Bouton UNLOAD : décharge la soute (minerais disponibles pour
+    /// REFUEL/REARM juste après — la boîte reste ouverte).
+    pub unload: Rect,
+    /// Bouton REFUEL/REARM : achète carburant + munitions contre minerais
+    /// (`scenario::purchase_supplies`) — la boîte reste ouverte.
+    pub refuel: Rect,
+    /// Bouton UPGRADES : ouvre l'atelier d'amélioration du vaisseau
+    /// (scénario à économie) — rectangle vide sinon (aucun clic).
+    pub upgrades: Rect,
+    /// Bouton CLOSE : ferme la boîte.
+    pub close: Rect,
+}
+
+pub fn choice_box_layout(show_upgrades: bool) -> ChoiceBoxLayout {
+    let h = 120.0;
+    let btn_h = 26.0;
+    let w = choice_box_width(show_upgrades);
+    let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
+    let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
+    // boutons alignés à gauche dans la boîte (la largeur est calculée pour
+    // qu'ils tiennent sans chevauchement, marges = padding)
+    let btn_w = |label: &str| (measure_text(label, None, 16, 1.0).width + 2.0 * BOX_PADDING).max(60.0);
+    let top_btn = top + h - 20.0 - btn_h;
+    let mut x = left + BOX_PADDING;
+    let mut rects = [Rect::new(0.0, 0.0, 0.0, 0.0); 4];
+    let labels: &[&str] = if show_upgrades {
+        &["UNLOAD", "REFUEL/REARM", "UPGRADES", "CLOSE"]
+    } else {
+        &["UNLOAD", "REFUEL/REARM", "CLOSE"]
+    };
+    for (i, &label) in labels.iter().enumerate() {
+        rects[i] = Rect::new(x, top_btn, btn_w(label), btn_h);
+        x += rects[i].w + BOX_PADDING;
+    }
+    let close_i = if show_upgrades { 3 } else { 2 };
+    ChoiceBoxLayout {
+        unload: rects[0],
+        refuel: rects[1],
+        upgrades: if show_upgrades { rects[2] } else { Rect::new(0.0, 0.0, 0.0, 0.0) },
+        close: rects[close_i],
+    }
+}
+
+/// Dessine la boîte de choix DOCK STATION (accostage) avec ses boutons
+/// UNLOAD / REFUEL/REARM / [UPGRADES] / CLOSE (hover = blanc, ex
+/// `windowUtils_choiceBox`). Le bouton UPGRADES n'apparaît qu'en scénario à
+/// économie (atelier disponible).
+pub fn draw_choice_box(state: &GameState) {
+    let show_upgrades = scenario::has_economy(state);
     let msg = "*** DOCK STATION ***";
-    let msg_w = measure_text(msg, None, 16, 1.0).width + 2.0 * BOX_PADDING;
-    let w = 300.0f32.max(msg_w);
+    let w = choice_box_width(show_upgrades);
     let h = 120.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
@@ -239,10 +292,97 @@ pub fn draw_choice_box() {
     let text_w = measure_text(msg, None, 16, 1.0).width;
     draw_text(msg, left + (w - text_w) / 2.0, top + 2.0 * BOX_PADDING + 12.0, 16.0, argb_to_color(BOX_FG));
 
-    // deux boutons avec survol
-    let (unload, close) = choice_box_layout();
-    draw_box_button("UNLOAD", unload);
-    draw_box_button("CLOSE", close);
+    // boutons avec survol
+    let l = choice_box_layout(show_upgrades);
+    draw_box_button("UNLOAD", l.unload);
+    draw_box_button("REFUEL/REARM", l.refuel);
+    if show_upgrades {
+        draw_box_button("UPGRADES", l.upgrades);
+    }
+    draw_box_button("CLOSE", l.close);
+}
+
+// ─── Atelier d'amélioration du vaisseau (bouton UPGRADES) ───────────────────
+
+/// Géométrie de l'atelier d'amélioration du vaisseau (bouton UPGRADES de la
+/// boîte DOCK STATION, scénario à économie) : fenêtre centrée avec une ligne
+/// cliquable par extension (réservoir, chargeur, soute) et un bouton CLOSE
+/// (retour à la boîte DOCK STATION).
+pub struct WorkshopBoxLayout {
+    /// Ligne « réservoir de carburant » (clic = achat de l'extension).
+    pub fuel: Rect,
+    /// Ligne « chargeur de munitions » (clic = achat de l'extension).
+    pub ammo: Rect,
+    /// Ligne « soute » (clic = achat de l'extension).
+    pub cargo: Rect,
+    /// Bouton CLOSE : revient à la boîte DOCK STATION.
+    pub close: Rect,
+}
+
+pub fn workshop_box_layout() -> WorkshopBoxLayout {
+    let w = 540.0;
+    let h = 200.0;
+    let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
+    let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
+    let row_h = 30.0;
+    let row_w = w - 2.0 * BOX_PADDING;
+    let rows_top = top + 3.0 * BOX_PADDING + 22.0;
+    WorkshopBoxLayout {
+        fuel: Rect::new(left + BOX_PADDING, rows_top, row_w, row_h),
+        ammo: Rect::new(left + BOX_PADDING, rows_top + row_h + 8.0, row_w, row_h),
+        cargo: Rect::new(left + BOX_PADDING, rows_top + 2.0 * (row_h + 8.0), row_w, row_h),
+        close: Rect::new(left + w - BOX_PADDING - 90.0, top + h - 20.0 - 26.0, 90.0, 26.0),
+    }
+}
+
+/// Dessine l'atelier d'amélioration du vaisseau : une ligne par extension
+/// (réservoir, chargeur, soute) — capacité actuelle, prochaine extension avec
+/// son bonus et son coût, ou « MAX » — et le bouton CLOSE. Cliquer une ligne
+/// achète l'extension (`scenario::buy_upgrade`).
+pub fn draw_workshop_box(state: &GameState) {
+    let l = workshop_box_layout();
+    let w = 540.0;
+    let h = 200.0;
+    let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
+    let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
+
+    // fenêtre : fond + bordure
+    draw_rectangle(left, top, w, h, argb_to_color(BOX_BG));
+    draw_rectangle_lines(left, top, w, h, 2.0, argb_to_color(BOX_BORDER));
+
+    // titre centré
+    let title = "*** SHIP WORKSHOP ***";
+    let text_w = measure_text(title, None, 16, 1.0).width;
+    draw_text(
+        title,
+        left + (w - text_w) / 2.0,
+        top + 2.0 * BOX_PADDING + 12.0,
+        16.0,
+        argb_to_color(BOX_FG),
+    );
+
+    // lignes d'extension : libellé, capacité, prochaine extension (+bonus,
+    // coût) ou MAX — survol = blanc (clic = achat)
+    let m = mouse_to_game();
+    for (rect, track) in [
+        (l.fuel, crate::scenario::UpgradeTrackId::Fuel),
+        (l.ammo, crate::scenario::UpgradeTrackId::Ammo),
+        (l.cargo, crate::scenario::UpgradeTrackId::Cargo),
+    ] {
+        let line = crate::scenario::upgrade_line(state, track);
+        let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
+        let text = match line.next {
+            Some(u) => format!(
+                "{}: {} → {} (+{}) — {} MIN",
+                line.label, line.capacity, u.name, u.bonus, u.cost
+            ),
+            None => format!("{}: {} (MAX)", line.label, line.capacity),
+        };
+        draw_text(&text, rect.x + 4.0, rect.y + 18.0, 16.0, color);
+    }
+
+    // retour à la boîte DOCK STATION
+    draw_box_button("CLOSE", l.close);
 }
 
 /// Dessine un bouton de la boîte de choix (cadre + texte centré, hover blanc).
@@ -297,6 +437,7 @@ pub fn draw_help_box() {
         "D : display data",
         "F : cycle window / zoomed / native fullscreen",
         "G : generate a shape",
+        "O : settings (moving mode, graphics)",
         "K : kill all shapes",
     ];
     for (i, label) in labels.iter().enumerate() {
@@ -317,6 +458,262 @@ pub fn draw_help_box() {
     // bouton CLOSE
     draw_box_button("CLOSE", help_box_layout());
 }
+
+// ─── Écran de paramétrage (touche O) ────────────────────────────────────────
+
+/// Géométrie des contrôles de l'écran de paramétrage : fenêtre 560×440
+/// centrée en deux colonnes — à gauche le panneau « MOVING MODE » (les trois
+/// radio-boutons de déplacement, cercle + libellé + description cliquables),
+/// la case MUSIC, la case AUTO GENERATE et la barre horizontale du volume
+/// (ascenseur) ; à droite le panneau « GRAPHICS » (style de rendu, mode
+/// d'affichage fenêtré/plein écran, définition de fenêtre, anticrénelage) ;
+/// les boutons RESET et CLOSE côte à côte en bas.
+pub struct SettingsLayout {
+    /// Panneau des modes : fond + bordure + libellé « MOVING MODE » en tête,
+    /// qui regroupe les trois radio-boutons de déplacement.
+    pub modes_panel: Rect,
+    /// Lignes cliquables des radio-boutons de mode.
+    pub modes: [Rect; 3],
+    /// Ligne cliquable de la case MUSIC.
+    pub music: Rect,
+    /// Ligne cliquable de la case AUTO GENERATE.
+    pub auto_generate: Rect,
+    /// Barre horizontale du volume (ascenseur) : zone cliquable/glissable de
+    /// 22 px de haut, avec la piste de 6 px centrée à l'intérieur.
+    pub volume_track: Rect,
+    /// Panneau des options graphiques (fond + bordure + libellé « GRAPHICS »).
+    pub graphics_panel: Rect,
+    /// Ligne RENDER : style de rendu des triangles (clic = cycle TEXTURED →
+    /// COLORED → MESH).
+    pub render: Rect,
+    /// Ligne WINDOW : mode d'affichage (clic = cycle WINDOWED → ZOOMED →
+    /// NATIVE).
+    pub window_mode: Rect,
+    /// Ligne SIZE : définition de la fenêtre (clic = cycle 960×540 → …).
+    pub window_size: Rect,
+    /// Ligne cliquable de la case ANTIALIAS (MSAA, appliquée au lancement).
+    pub antialias: Rect,
+    /// Bouton RESET (réglages par défaut).
+    pub reset: Rect,
+    /// Bouton RESTART (relance le jeu — affiché uniquement quand un réglage
+    /// modifié exige un redémarrage, ex l'anticrénelage).
+    pub restart: Rect,
+    /// Bouton CLOSE (ferme l'écran).
+    pub close: Rect,
+}
+
+/// Calcule la géométrie de l'écran de paramétrage (voir `SettingsLayout`).
+pub fn settings_box_layout() -> SettingsLayout {
+    let w = 560.0;
+    let h = 440.0;
+    let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
+    let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
+    let col_w = 250.0;
+    let col_left = left + 20.0;
+    let col_right = left + w - 20.0 - col_w;
+
+    // colonne gauche : panneau des modes + audio
+    let modes_panel = Rect::new(col_left, top + 44.0, col_w, 168.0);
+    let modes = [
+        Rect::new(col_left, modes_panel.y + 22.0, col_w, 40.0),
+        Rect::new(col_left, modes_panel.y + 70.0, col_w, 40.0),
+        Rect::new(col_left, modes_panel.y + 118.0, col_w, 40.0),
+    ];
+    let music = Rect::new(col_left, top + 220.0, col_w, 26.0);
+    let auto_generate = Rect::new(col_left, top + 252.0, col_w, 26.0);
+    // volume : barre horizontale (ascenseur) sur la majeure partie de la
+    // ligne, après le libellé VOLUME ; zone de clic de 22 px de haut
+    let volume_track = Rect::new(col_left + 100.0, top + 286.0, col_w - 104.0, 22.0);
+
+    // colonne droite : panneau des options graphiques
+    let graphics_panel = Rect::new(col_right, top + 44.0, col_w, 176.0);
+    let row_w = col_w - 20.0;
+    let render = Rect::new(col_right + 10.0, top + 66.0, row_w, 26.0);
+    let window_mode = Rect::new(col_right + 10.0, top + 96.0, row_w, 26.0);
+    let window_size = Rect::new(col_right + 10.0, top + 126.0, row_w, 26.0);
+    let antialias = Rect::new(col_right + 10.0, top + 156.0, row_w, 26.0);
+
+    // boutons en bas : RESET à gauche, CLOSE à droite (ex
+    // `windowUtils_choiceBox` : 1er sur la moitié gauche, 2e sur la moitié
+    // droite) et RESTART au centre — affiché seulement si un redémarrage est
+    // nécessaire
+    let btn_w = |label: &str| (measure_text(label, None, 16, 1.0).width + 2.0 * BOX_PADDING).max(60.0);
+    let btn_h = 26.0;
+    let w1 = btn_w("RESET");
+    let w2 = btn_w("CLOSE");
+    let w3 = btn_w("RESTART");
+    let left1 = left + (w / 2.0 - w1) / 2.0 - BOX_PADDING;
+    let left2 = left + (3.0 * w / 2.0 - w2) / 2.0 - BOX_PADDING;
+    let top_btn = top + h - 20.0 - btn_h;
+    let reset = Rect::new(left1, top_btn, w1, btn_h);
+    let close = Rect::new(left2, top_btn, w2, btn_h);
+    let restart = Rect::new(left + (w - w3) / 2.0 - BOX_PADDING, top_btn, w3, btn_h);
+
+    SettingsLayout {
+        modes_panel,
+        modes,
+        music,
+        auto_generate,
+        volume_track,
+        graphics_panel,
+        render,
+        window_mode,
+        window_size,
+        antialias,
+        reset,
+        restart,
+        close,
+    }
+}
+
+/// Dessine l'écran de paramétrage (touche O) : fond, bordure, titre, les
+/// deux colonnes (panneau « MOVING MODE » + audio à gauche, panneau
+/// « GRAPHICS » à droite) et les boutons RESET / CLOSE (ex `windowUtils`).
+/// `sounds` fournit l'état musique et le volume courant.
+pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
+    let w = 560.0;
+    let h = 440.0;
+    let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
+    let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
+
+    // fenêtre : fond + bordure
+    draw_rectangle(left, top, w, h, argb_to_color(BOX_BG));
+    draw_rectangle_lines(left, top, w, h, 2.0, argb_to_color(BOX_BORDER));
+
+    // titre centré (ex drawTextLeftTop au milieu de la largeur)
+    let msg = "*** SETTINGS ***";
+    let text_w = measure_text(msg, None, 16, 1.0).width;
+    draw_text(msg, left + (w - text_w) / 2.0, top + 2.0 * BOX_PADDING + 12.0, 16.0, argb_to_color(BOX_FG));
+
+    let layout = settings_box_layout();
+    let m = mouse_to_game();
+
+    // panneau des modes : fond légèrement plus clair que la fenêtre, bordure
+    // discrète et libellé « MOVING MODE » en tête (explicite la finalité des
+    // trois radio-boutons qu'il regroupe)
+    let panel = layout.modes_panel;
+    draw_rectangle(panel.x, panel.y, panel.w, panel.h, argb_to_color(BOX_PANEL_BG));
+    draw_rectangle_lines(panel.x, panel.y, panel.w, panel.h, 1.0, argb_to_color(BOX_PANEL_BORDER));
+    draw_text("MOVING MODE", panel.x + 10.0, panel.y + 14.0, 12.0, argb_to_color(BOX_FG));
+
+    // les trois modes (ordre `MOVING_MODE_*`) en radio-boutons : anneau +
+    // point central quand sélectionné, libellé + description à droite
+    // (hover blanc, description en plus petit et plus sombre)
+    let labels = ["INERTIAL", "4 WAYS", "DIRECTIONAL"];
+    let descriptions = [
+        "THRUST / REVERSE, TURN L/R",
+        "ARROWS PUSH IN CURRENT DIR",
+        "ACCELERATE / BRAKE, TURN L/R",
+    ];
+    for (i, rect) in layout.modes.iter().enumerate() {
+        let selected = state.moving_mode == i as i32;
+        let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
+        // focus clavier (flèches ↑/↓ + Entrée) : ligne surlignée
+        if state.settings_focus == i as i32 {
+            draw_rectangle(rect.x, rect.y, rect.w, rect.h, argb_to_color(0x301AB2FF));
+        }
+        // anneau radio aligné sur le libellé (bord clair, intérieur =
+        // couleur de la fenêtre) + point central quand le mode est actif
+        let cx = rect.x + 13.0;
+        let cy = rect.y + 12.0;
+        draw_circle(cx, cy, 7.0, color);
+        draw_circle(cx, cy, 4.5, argb_to_color(BOX_PANEL_BG));
+        if selected {
+            draw_circle(cx, cy, 2.5, color);
+        }
+        // un mode verrouillé (scénario à économie) affiche son prix en
+        // minerais à côté du libellé
+        let label = match scenario::locked_cost(state, i as i32) {
+            Some(cost) => format!("{} ({} MIN)", labels[i], cost),
+            None => labels[i].to_string(),
+        };
+        draw_text(&label, rect.x + 30.0, rect.y + 18.0, 16.0, color);
+        draw_text(descriptions[i], rect.x + 30.0, rect.y + 34.0, 12.0, argb_to_color(BOX_FG_DIM));
+    }
+
+    // cases à cocher MUSIC (état depuis les sons) et AUTO GENERATE
+    draw_checkbox(layout.music, sounds.music_on, "MUSIC", m);
+    draw_checkbox(layout.auto_generate, state.auto_generate, "AUTO GENERATE", m);
+
+    // volume : barre horizontale (ascenseur) — piste, remplissage selon le
+    // volume et curseur vertical ; valeur en % centrée sous la barre (hover
+    // blanc sur toute la zone)
+    let track = layout.volume_track;
+    let vol_pct = (sounds.volume * 100.0).round() as i32;
+    let color = argb_to_color(if track.contains(m) { BOX_HOVER } else { BOX_FG });
+    draw_text("VOLUME", layout.music.x + 4.0, track.y + 15.0, 16.0, color);
+    let bar_y = track.y + (track.h - 6.0) / 2.0;
+    let fill = track.w * sounds.volume.clamp(0.0, 1.0);
+    draw_rectangle(track.x, bar_y, track.w, 6.0, argb_to_color(0x601AB2FF));
+    draw_rectangle(track.x, bar_y, fill, 6.0, color);
+    // curseur (ascenseur) : barre verticale de 14 px, centrée sur la piste
+    let thumb_x = (track.x + fill - 2.0).clamp(track.x, track.x + track.w - 4.0);
+    draw_rectangle(thumb_x, bar_y - 4.0, 4.0, 14.0, color);
+    let value = format!("{}%", vol_pct);
+    let value_w = measure_text(&value, None, 12, 1.0).width;
+    draw_text(
+        &value,
+        track.x + (track.w - value_w) / 2.0,
+        track.y + track.h + 12.0,
+        12.0,
+        argb_to_color(BOX_FG_DIM),
+    );
+
+    // panneau GRAPHICS : fond + bordure + libellé en tête, puis les lignes
+    // RENDER / WINDOW / SIZE (valeurs cyclables dans un cadre) et la case
+    // ANTIALIAS ; note si l'anticrénelage n'est effectif qu'au lancement
+    let g = layout.graphics_panel;
+    draw_rectangle(g.x, g.y, g.w, g.h, argb_to_color(BOX_PANEL_BG));
+    draw_rectangle_lines(g.x, g.y, g.w, g.h, 1.0, argb_to_color(BOX_PANEL_BORDER));
+    draw_text("GRAPHICS", g.x + 10.0, g.y + 14.0, 12.0, argb_to_color(BOX_FG));
+    draw_cycle_row(layout.render, "RENDER", render_style_label(state.render_style as i32), m);
+    draw_cycle_row(layout.window_mode, "WINDOW", window_mode_label(state.view_mode as i32), m);
+    draw_cycle_row(layout.window_size, "SIZE", &window_size_label(state.window_size), m);
+    draw_checkbox(layout.antialias, state.antialias, "ANTIALIAS", m);
+
+    // un réglage modifié qui n'est effectif qu'au lancement (l'anticrénelage)
+    // et diffère de la valeur appliquée par la fenêtre : note + bouton
+    // RESTART (relance le jeu, les réglages étant déjà enregistrés)
+    if state.antialias != state.antialias_applied {
+        draw_text(
+            "RESTART REQUIRED",
+            g.x + 30.0,
+            layout.antialias.y + 40.0,
+            12.0,
+            argb_to_color(BOX_FG_DIM),
+        );
+        draw_box_button("RESTART", layout.restart);
+    }
+
+    draw_box_button("RESET", layout.reset);
+    draw_box_button("CLOSE", layout.close);
+}
+
+/// Dessine une ligne de réglage cyclable (RENDER / WINDOW / SIZE) : libellé
+/// à gauche, valeur dans un petit cadre à droite (clic = cycle, hover blanc).
+fn draw_cycle_row(rect: Rect, label: &str, value: &str, m: Vec2) {
+    let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
+    draw_text(label, rect.x + 4.0, rect.y + 18.0, 16.0, color);
+    let value_w = measure_text(value, None, 16, 1.0).width;
+    let value_x = rect.x + rect.w - 4.0 - value_w;
+    draw_rectangle_lines(value_x - 6.0, rect.y + 3.0, value_w + 12.0, 18.0, 1.0, color);
+    draw_text(value, value_x, rect.y + 17.0, 16.0, color);
+}
+
+/// Dessine une case à cocher (carré 14×14 + libellé à droite, hover blanc) ;
+/// cochée = croix de validation.
+fn draw_checkbox(rect: Rect, checked: bool, label: &str, m: Vec2) {
+    let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
+    let x = rect.x + 4.0;
+    let y = rect.y + 6.0;
+    draw_rectangle_lines(x, y, 14.0, 14.0, 1.5, color);
+    if checked {
+        draw_line(x + 2.0, y + 7.0, x + 6.0, y + 11.0, 2.0, color);
+        draw_line(x + 6.0, y + 11.0, x + 12.0, y + 3.0, 2.0, color);
+    }
+    draw_text(label, rect.x + 26.0, rect.y + 18.0, 16.0, color);
+}
+
 
 // ─── Caméra ──────────────────────────────────────────────────────────────────
 
@@ -345,6 +742,15 @@ pub fn zoom_rect() -> Rect {
     let w = VIEWPORT_WIDTH as f32 * scale;
     let h = VIEWPORT_HEIGHT as f32 * scale;
     Rect::new((screen_width() - w) / 2.0, (screen_height() - h) / 2.0, w, h)
+}
+
+/// La fenêtre est-elle plus grande que la vue 960×540 ? (définition choisie
+/// dans l'écran de paramétrage, ou plein écran). En fenêtré, la vue est alors
+/// rendue dans la texture virtuelle puis étirée (letterbox), comme en plein
+/// écran zoomé — sinon elle est dessinée 1:1. `screen_width/height` renvoie
+/// des pixels logiques (dpi divisé), la comparaison est donc directe.
+pub fn window_scaled() -> bool {
+    screen_width() != VIEWPORT_WIDTH as f32 || screen_height() != VIEWPORT_HEIGHT as f32
 }
 
 /// Position souris de la fenêtre convertie en coordonnées du jeu (960×540),
@@ -528,6 +934,14 @@ pub fn draw_shape(
         return;
     }
 
+    // invulnérabilité post-respawn (scénario Survival) : le vaisseau
+    // clignote (~5 alternances/s) pendant la durée restante
+    if shape.who_i_am == WHOIAM_PLAYER && state.invulnerable > 0.0
+        && (state.invulnerable * 10.0) as i32 % 2 == 0
+    {
+        return; // frame « éteinte » : le vaisseau n'est pas dessiné
+    }
+
     // mode D (ex options = "D" de drawShape) : les indicateurs de bord des
     // triangles sont recalculés (comme l'original qui appelle
     // getBorderSegments à chaque frame — on ne le fait que si affiché)
@@ -553,10 +967,20 @@ pub fn draw_shape(
             || (t.life > 0
                 && inner_draw_limit(Point::new(p.x as f64, p.y as f64)))
         {
-            if shape.texture != TEXTURE_NONE {
-                draw_textured_triangle(assets, t, shape, camera, elements, &state.world);
-            } else {
-                draw_triangle(assets, t, shape, camera, elements, &state.world);
+            // style de rendu (écran de paramétrage) : texturé (défaut),
+            // colorisé (remplissage uni) ou mesh (arêtes seules)
+            match state.render_style {
+                RenderStyle::Textured => {
+                    if shape.texture != TEXTURE_NONE {
+                        draw_textured_triangle(assets, t, shape, camera, elements, &state.world);
+                    } else {
+                        draw_triangle(assets, t, shape, camera, elements, &state.world);
+                    }
+                }
+                RenderStyle::Colored => {
+                    draw_colored_triangle(t, shape, camera, elements, &state.world)
+                }
+                RenderStyle::Mesh => draw_mesh_triangle(t, shape, camera, elements, &state.world),
             }
         }
     }
@@ -719,16 +1143,82 @@ fn draw_triangle(
             WHITE,
         );
     } else {
-        let color = if t.collid {
-            argb_to_color(shape.shape_color & 0x70FFFFFF)
-        } else {
-            argb_to_color(shape.shape_color)
-        };
-        draw_dashed_line(a, b, color);
-        draw_dashed_line(b, c, color);
-        draw_dashed_line(c, a, color);
+        draw_dead_triangle(a, b, c, t, shape);
     }
 
+    draw_element_dot(t, camera, elements, world);
+}
+
+/// Triangle colorisé (style « COLORED » de l'écran de paramétrage) :
+/// remplissage uni avec la couleur de l'élément (sinon celle de la forme), à
+/// la place de la texture ; les triangles morts restent en pointillés.
+fn draw_colored_triangle(
+    t: &Triangle,
+    shape: &Shape,
+    camera: Point,
+    elements: &[Element],
+    world: &World,
+) {
+    let a = screen_point(t.real_a, camera, world);
+    let b = screen_point(t.real_b, camera, world);
+    let c = screen_point(t.real_c, camera, world);
+    if t.life <= 0 {
+        draw_dead_triangle(a, b, c, t, shape);
+        return;
+    }
+    // NB : chemin complet — `draw_triangle` (macroquad) est masqué par la
+    // fonction locale du même nom (triangles non texturés de l'original)
+    macroquad::shapes::draw_triangle(a, b, c, triangle_color(t, shape, elements));
+    draw_element_dot(t, camera, elements, world);
+}
+
+/// Triangle en fil de fer (style « MESH » de l'écran de paramétrage) :
+/// arêtes seules, dans la couleur de l'élément (sinon celle de la forme) ;
+/// les triangles morts restent en pointillés.
+fn draw_mesh_triangle(
+    t: &Triangle,
+    shape: &Shape,
+    camera: Point,
+    elements: &[Element],
+    world: &World,
+) {
+    let a = screen_point(t.real_a, camera, world);
+    let b = screen_point(t.real_b, camera, world);
+    let c = screen_point(t.real_c, camera, world);
+    if t.life <= 0 {
+        draw_dead_triangle(a, b, c, t, shape);
+        return;
+    }
+    draw_triangle_lines(a, b, c, 1.0, triangle_color(t, shape, elements));
+    draw_element_dot(t, camera, elements, world);
+}
+
+/// Couleur d'affichage d'un triangle vivant : celle de son élément minéral
+/// (ex `elements[t.element].color`) sinon la couleur de la forme.
+fn triangle_color(t: &Triangle, shape: &Shape, elements: &[Element]) -> Color {
+    if t.element > 0 {
+        argb_to_color(elements[t.element as usize].color)
+    } else {
+        argb_to_color(shape.shape_color)
+    }
+}
+
+/// Arêtes en pointillés d'un triangle mort (approximation du motif `&B…` de
+/// QB64), dans la couleur de la forme (atténuée si le triangle a été touché).
+fn draw_dead_triangle(a: Vec2, b: Vec2, c: Vec2, t: &Triangle, shape: &Shape) {
+    let color = if t.collid {
+        argb_to_color(shape.shape_color & 0x70FFFFFF)
+    } else {
+        argb_to_color(shape.shape_color)
+    };
+    draw_dashed_line(a, b, color);
+    draw_dashed_line(b, c, color);
+    draw_dashed_line(c, a, color);
+}
+
+/// Point central d'un triangle minéral (élément > 0), commun à tous les
+/// styles de rendu (ex `drawTexturedTriangle` de l'original).
+fn draw_element_dot(t: &Triangle, camera: Point, elements: &[Element], world: &World) {
     if t.element > 0 {
         let center = screen_point(t.real_center, camera, world);
         draw_circle(
@@ -810,26 +1300,399 @@ pub fn draw_cargo(state: &GameState, elements: &[Element]) {
     }
 }
 
-/// HUD : FPS, réputation, précision (ex `locate 1,1 / 1,15 / 1,30` de
-/// mainLoop). Police macroquad par défaut en attendant la police 8×16
-/// (Phase 4).
+// ─── Accostage : mire au centre de la station + HUD d'approche ──────────────
+
+/// Transparence (octet alpha ARGB) de la mire d'accostage : discrète (canal
+/// alpha volontairement bas, comme les liens d'accostage) — l'anneau et la
+/// croix sont plus légers que le point central (l'effet néon empile des
+/// halos dérivés de ces alphas, voir `neon_ring`/`neon_line`/`neon_dot`).
+const DOCK_MARKER_ALPHA: u32 = 0x66;
+const DOCK_MARKER_DOT_ALPHA: u32 = 0x99;
+
+/// Qualité de l'approche pour la mire (0 = rouge, 1 = vert) : interpolée sur
+/// **tout le rayon de la base** (0 au bord du rayon, 1 au centre) et sur la
+/// vitesse (0 à `DOCK_APPROACH_FULL_RED_SPEED` ou plus, 1 à l'arrêt) — la
+/// mire réagit dès que le vaisseau entre dans le rayon de la station.
+fn docking_approach_quality(dist: f64, speed: f64, station_radius: f64) -> f64 {
+    let dist_q = 1.0 - (dist / station_radius).clamp(0.0, 1.0);
+    let speed_q = 1.0 - (speed.abs() / DOCK_APPROACH_FULL_RED_SPEED).clamp(0.0, 1.0);
+    dist_q * speed_q
+}
+
+/// Effet néon d'un anneau : halo (3 cercles concentriques d'alpha décroissant
+/// — macroquad n'a pas de flou, on empile) + anneau principal + cœur clair.
+fn neon_ring(x: f32, y: f32, radius: f32, color: Color) {
+    for i in 1..=3 {
+        let mut halo = color;
+        halo.a = color.a * (0.5 - 0.13 * i as f32);
+        draw_circle_lines(x, y, radius + i as f32 * 2.0, 1.0, halo);
+    }
+    draw_circle_lines(x, y, radius, 1.5, color);
+    let bright = Color::new(1.0, 1.0, 1.0, color.a * 0.6);
+    draw_circle_lines(x, y, radius, 0.75, bright);
+}
+
+/// Effet néon d'un trait (croix de visée) : halo large + trait principal +
+/// cœur clair.
+fn neon_line(x1: f32, y1: f32, x2: f32, y2: f32, color: Color) {
+    let mut halo = color;
+    halo.a = color.a * 0.3;
+    draw_line(x1, y1, x2, y2, 3.0, halo);
+    draw_line(x1, y1, x2, y2, 1.2, color);
+    let bright = Color::new(1.0, 1.0, 1.0, color.a * 0.6);
+    draw_line(x1, y1, x2, y2, 0.6, bright);
+}
+
+/// Effet néon d'un point : halo + cœur + point brillant.
+fn neon_dot(x: f32, y: f32, radius: f32, color: Color) {
+    let mut halo = color;
+    halo.a = color.a * 0.35;
+    draw_circle(x, y, radius * 2.5, halo);
+    draw_circle(x, y, radius, color);
+    let bright = Color::new(1.0, 1.0, 1.0, color.a * 0.7);
+    draw_circle(x, y, radius * 0.5, bright);
+}
+
+/// Mire d'accostage au centre de la station : la **zone d'accostage** (cercle
+/// de rayon `STATION_DOCK_DISTANCE`) est affichée — cercle + croix de visée +
+/// point central, semi-transparents, légèrement pulsants et avec un **effet
+/// néon** (halo + cœur clair) — pour montrer où poser le vaisseau. La couleur
+/// passe **progressivement du rouge au vert selon la qualité de l'approche**,
+/// interpolée sur **tout le rayon de la base** (`station_radius`) : rouge au
+/// bord du rayon de la station ou trop rapide, vert au centre et presque
+/// immobile (disque clignotant = prêt à accoster). Dessinée **sous le
+/// vaisseau** (appelée avant son rendu).
+pub fn draw_docking_marker(
+    camera: Point,
+    world: &World,
+    station_position: Point,
+    station_radius: f64,
+    player_position: Point,
+    player_speed: f64,
+) {
+    let center = screen_point(station_position, camera, world);
+    if !inner_draw_limit(Point::new(center.x as f64, center.y as f64)) {
+        return; // la zone est hors écran (la distance est au HUD)
+    }
+    let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
+    let in_zone = dist < STATION_DOCK_DISTANCE;
+    // qualité de l'approche sur tout le rayon de la base (voir
+    // `docking_approach_quality`) : interpolation continue rouge → vert
+    let q = docking_approach_quality(dist, player_speed, station_radius);
+    let r = (255.0 - 195.0 * q) as u32;
+    let g = (60.0 + 195.0 * q) as u32;
+    let ring = argb_to_color((DOCK_MARKER_ALPHA << 24) | (r << 16) | (g << 8));
+    let dot = argb_to_color((DOCK_MARKER_DOT_ALPHA << 24) | (r << 16) | (g << 8));
+    // respiration : le rayon oscille légèrement pour attirer l'œil
+    let radius = STATION_DOCK_DISTANCE as f32 + 1.5 * (get_time() * 4.0).sin() as f32;
+    // anneau néon + croix de visée + point central (où poser le vaisseau)
+    neon_ring(center.x, center.y, radius, ring);
+    neon_line(center.x - radius, center.y, center.x + radius, center.y, ring);
+    neon_line(center.x, center.y - radius, center.x, center.y + radius, ring);
+    neon_dot(center.x, center.y, 2.0, dot);
+    // prêt à accoster (dans la zone, presque immobile) : disque clignotant néon
+    if in_zone && player_speed.abs() < STATION_DOCK_SPEED && (get_time() * 8.0) as i32 % 2 == 0 {
+        let mut halo = ring;
+        halo.a = ring.a * 0.3;
+        draw_circle(center.x, center.y, radius * 0.8, halo);
+        draw_circle(center.x, center.y, radius * 0.6, ring);
+    }
+}
+
+/// Transparence (octet alpha ARGB) des liens d'accostage : canal alpha bas
+/// (comme la mire) pour que les 4 liens simultanés restent discrets et
+/// laissent voir le vaisseau — l'effet néon empile des halos dérivés de cet
+/// alpha (voir `neon_line`).
+const DOCK_LINE_ALPHA: u32 = 0x66;
+
+/// Distance (unités monde, du centre du vaisseau) des points de branchement
+/// des liens d'accostage : les 4 liens se connectent en diagonale (NO, SO,
+/// SE, NE) sur un petit losange **proche du centre** — l'illusion qu'ils
+/// touchent le vaisseau (ils sont dessinés dessous).
+const DOCK_LINE_SHIP_ANCHOR: f64 = 5.0;
+
+/// La mire d'accostage est-elle visible ? Elle n'est affichée **que lors du
+/// retour à la base** (`state.docking_guide`, posé par
+/// `game::update_docking_guide` quand le vaisseau recroise la limite
+/// extérieure en entrant) : jamais pendant que le vaisseau quitte
+/// l'accostage, à quai, pendant l'animation d'accostage (il est tiré vers le
+/// centre), tant que la boîte DOCK STATION / l'atelier est ouvert (accosté)
+/// et pendant la rétraction des liens au départ — dans tous ces cas, le
+/// vaisseau est tenu par les liens ou le guide est coupé. En plus du guide,
+/// la distance au centre de la base doit être sous `station_radius` (le
+/// guide n'est actif que dans le rayon, garde défensive).
+pub fn docking_marker_visible(
+    state: &GameState,
+    player_position: Point,
+    station_position: Point,
+    station_radius: f64,
+) -> bool {
+    if state.dock_anim > 0.0
+        || state.dock_box
+        || state.workshop_box
+        || state.dock_retract > 0.0
+        || state.dock_links
+        || !state.docking_guide
+    {
+        return false; // tenu par les liens, ou pas encore revenu à la base
+    }
+    let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
+    dist < station_radius
+}
+
+/// Déformation transversale (offset perpendiculaire, en pixels écran) d'un
+/// point de câble à la fraction `t` (0 = anneau, 1 = extrémité mobile), pour
+/// une intensité d'ondulation `wave` (0 = câble tendu) à l'instant `time` :
+/// onde qui court vers le **vaisseau** (`toward_ship`, déploiement « en
+/// projection ») ou vers l'**anneau** (rétraction), enveloppe croissante
+/// vers l'extrémité mobile (`× t` — l'extrémité libre fouette).
+fn cable_wave_offset(t: f32, wave: f32, time: f32, toward_ship: bool) -> f32 {
+    let speed = if toward_ship { -18.0 } else { 18.0 };
+    (t * 12.0 + time * speed).sin() * wave * t
+}
+
+/// Enveloppe d'ondulation du lien pendant le **désamarrage** (relâchement de
+/// la tension) : maximale au largage (`r` = 0, le câble fouette), nulle une
+/// fois le lien rentré (`r` = 1), légèrement pulsante entre les deux (la
+/// tension se relâche par à-coups).
+fn retract_envelope(r: f64) -> f64 {
+    (1.0 - r) * (0.6 + 0.4 * (r * TAU * 1.5).cos())
+}
+
+/// Trace un lien d'accostage entre l'anneau (`a`) et l'extrémité mobile
+/// (vers `b`), déployé à `prog` (0 = encore sur l'anneau, 1 = tendu jusqu'à
+/// `b`) : pendant le **déploiement** (projection, `toward_ship = true`) ou
+/// la **rétraction** (relâchement de la tension, `toward_ship = false`), le
+/// câble **ondule** avec l'intensité `wave` (0 = câble tendu, voir
+/// `cable_wave_offset`) ; une fois tendu, il est droit. Dessiné en segments
+/// néon (même rendu que `neon_line`).
+fn draw_docking_cable(a: Vec2, b: Vec2, prog: f32, wave: f32, toward_ship: bool, color: Color) {
+    const SEGMENTS: usize = 14;
+    // extrémité mobile à l'avancement prog (de l'anneau vers b)
+    let ex = a.x + (b.x - a.x) * prog;
+    let ey = a.y + (b.y - a.y) * prog;
+    let dx = ex - a.x;
+    let dy = ey - a.y;
+    let len = dx.hypot(dy);
+    if len < 1.0 {
+        return; // câble pas encore déployé / entièrement rétracté
+    }
+    // direction perpendiculaire normalisée (déformation transversale)
+    let nx = -dy / len;
+    let ny = dx / len;
+    let time = get_time() as f32;
+    let mut prev = a;
+    for k in 1..=SEGMENTS {
+        let t = k as f32 / SEGMENTS as f32;
+        let offset = cable_wave_offset(t, wave, time, toward_ship);
+        let p = vec2(a.x + dx * t + nx * offset, a.y + dy * t + ny * offset);
+        neon_line(prev.x, prev.y, p.x, p.y, color);
+        prev = p;
+    }
+}
+
+/// Traits d'accostage dessinés quand le vaisseau est **tenu par les liens** :
+/// à quai (`state.dock_links`, lancement/respawn — vaisseau au centre, liens
+/// tendus), **pendant l'animation d'accostage** (avant l'ouverture de la boîte
+/// DOCK STATION, `state.dock_anim > 0`) et **pendant la rétraction au
+/// départ** (`state.dock_retract > 0`, après CLOSE ou au démarrage) : **4
+/// liens néon verts simultanés** qui relient le bord intérieur de la station
+/// (rayon `STATION_INNER_RADIUS`) au vaisseau — un par **diagonale** (NO,
+/// SO, SE, NE, angle ±π/4, plus crédible que les cardinaux), chacun partant
+/// de l'anneau de la station vers le point diagonal correspondant du
+/// vaisseau, **près de son centre** (`DOCK_LINE_SHIP_ANCHOR`, l'illusion
+/// qu'ils le touchent).
+///
+/// À l'accostage, les liens se **déploient en projection** : ils jaillissent
+/// de l'anneau vers le vaisseau pendant les ~35 % de l'animation (onde qui
+/// court vers le vaisseau), puis, tendus, le tirent au centre tout en le
+/// pivotant vers la droite. Au départ, la tension est relâchée : les liens se
+/// **rétractent en ondulant** vers l'anneau (`DOCK_RETRACT_DURATION`) jusqu'à
+/// disparaître. À quai, ils sont tendus (droits). Discrets (`DOCK_LINE_ALPHA`),
+/// dessinés **sous le vaisseau** (appelés avant son rendu, après la mire).
+pub fn draw_docking_line(
+    state: &GameState,
+    camera: Point,
+    world: &World,
+    station: &Shape,
+    player: &Shape,
+) {
+    // à quai (lancement/respawn) : liens tendus jusqu'au vaisseau au centre
+    let docked = state.dock_links;
+    let retracting = state.dock_retract > 0.0;
+    let docking = state.dock_anim > 0.0;
+    if !docked && !retracting && !docking {
+        return;
+    }
+    // avancement de la rétraction 0..1 (lissé) : 0 = liens tendus jusqu'au
+    // vaisseau, 1 = rétractés sur le bord intérieur de l'anneau (disparus) —
+    // à quai (`docked`) : liens tendus, r = 0
+    let r = if retracting {
+        let t = (1.0 - state.dock_retract / DOCK_RETRACT_DURATION).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    } else {
+        0.0
+    };
+    // avancement du déploiement « en projection » pendant l'accostage : les
+    // liens jaillissent de l'anneau vers le vaisseau pendant les ~35 % de
+    // l'animation (0 = au niveau de l'anneau, 1 = tendus jusqu'au vaisseau),
+    // puis restent tendus pendant que le vaisseau est tiré au centre
+    let deploy = if docking {
+        let t = ((1.0 - state.dock_anim / DOCK_ANIMATION_DURATION) / 0.35).clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    } else {
+        1.0
+    };
+    // bord intérieur de la station aux 4 points DIAGONAUX (NO, SO, SE, NE —
+    // angle ±π/4, plus crédible que les 4 points cardinaux), avant rotation
+    let diag = std::f64::consts::FRAC_1_SQRT_2; // cos/sin de ±π/4 ≈ 0,7071
+    let inner = [
+        Point::new(-STATION_INNER_RADIUS * diag, -STATION_INNER_RADIUS * diag), // NO
+        Point::new(-STATION_INNER_RADIUS * diag, STATION_INNER_RADIUS * diag),  // SO
+        Point::new(STATION_INNER_RADIUS * diag, STATION_INNER_RADIUS * diag),   // SE
+        Point::new(STATION_INNER_RADIUS * diag, -STATION_INNER_RADIUS * diag),  // NE
+    ];
+    // côté correspondant du vaisseau : mêmes diagonales mais **près du
+    // centre** (petit losange à ~`DOCK_LINE_SHIP_ANCHOR` du centre —
+    // l'illusion que les liens touchent le vaisseau, dessinés dessous)
+    let anchor = DOCK_LINE_SHIP_ANCHOR * diag;
+    let sides = [
+        Point::new(-anchor, -anchor), // NO
+        Point::new(-anchor, anchor),  // SO
+        Point::new(anchor, anchor),   // SE
+        Point::new(anchor, -anchor),  // NE
+    ];
+    let mut from = Point::new(0.0, 0.0);
+    let mut to = Point::new(0.0, 0.0);
+    let color = argb_to_color((DOCK_LINE_ALPHA << 24) | 0x0040FF40);
+    for (inner_local, side_local) in inner.iter().zip(sides.iter()) {
+        from.x = inner_local.x;
+        from.y = inner_local.y;
+        from.rotate_around(station.center, station.orientation);
+        let from_world = Point::new(station.position.x + from.x, station.position.y + from.y);
+        to.x = side_local.x;
+        to.y = side_local.y;
+        to.rotate_around(player.center, player.orientation);
+        let to_world = Point::new(player.position.x + to.x, player.position.y + to.y);
+        let a = screen_point(from_world, camera, world);
+        let b = screen_point(to_world, camera, world);
+        if retracting {
+            // la tension est relâchée : le câble part TENDU (longueur 1 - r,
+            // maximale au largage) et se rétracte vers l'anneau en ondulant
+            // (onde qui court vers l'anneau, enveloppe qui retombe par à-coups)
+            draw_docking_cable(a, b, (1.0 - r) as f32, (16.0 * retract_envelope(r)) as f32, false, color);
+        } else if docking {
+            // déploiement « en projection » : les liens jaillissent de
+            // l'anneau vers le vaisseau (onde qui court vers le vaisseau,
+            // plus forte tant qu'ils ne sont pas tendus)
+            draw_docking_cable(a, b, deploy as f32, 6.0 * (1.0 - deploy as f32), true, color);
+        } else {
+            // à quai : câble tendu (ligne droite)
+            neon_line(a.x, a.y, b.x, b.y, color);
+        }
+    }
+}
+
+/// HUD d'accostage (3e ligne) : distance du vaisseau au centre de la station
+/// (unités monde) et invite — « DOCK: 123 px » en approche, « DOCK: SLOW DOWN »
+/// (rouge) dans la zone mais trop rapide pour accoster, « DOCK: IN RANGE »
+/// (vert) dans la zone et presque immobile, « DOCKED » à quai (liens attachés
+/// au lancement/respawn ou boîte ouverte). La zone elle-même est visible via
+/// la mire (`draw_docking_marker`).
+pub fn draw_docking_hud(
+    state: &GameState,
+    player_position: Point,
+    station_position: Point,
+    player_speed: f64,
+) {
+    let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
+    let in_zone = dist < STATION_DOCK_DISTANCE;
+    let (text, color) = if state.dock_box || state.workshop_box || state.dock_links {
+        ("DOCKED".to_string(), 0xFF40FF40)
+    } else if in_zone && player_speed.abs() < STATION_DOCK_SPEED {
+        ("DOCK: IN RANGE".to_string(), 0xFF40FF40)
+    } else if in_zone {
+        ("DOCK: SLOW DOWN".to_string(), 0xFFFF3C00)
+    } else {
+        (format!("DOCK: {:.0} px", dist), 0xFFFFFFFF)
+    };
+    draw_text(&text, 8.0, 46.0, 16.0, argb_to_color(color));
+}
+
+/// HUD : FPS, réputation (+ rang en scénario à économie), précision (ex
+/// `locate 1,1 / 1,15 / 1,30` de mainLoop) + ligne des ressources en scénario
+/// à économie (carburant, munitions, minerais). Police macroquad par défaut
+/// en attendant la police 8×16 (Phase 4).
 pub fn draw_hud(state: &GameState) {
     draw_text(&format!("FPS:{}", state.fps), 8.0, 14.0, 16.0, WHITE);
-    draw_text(
-        &format!("REPUTATION:{}", state.meteors_destroyed),
-        8.0 + 14.0 * 8.0,
-        14.0,
-        16.0,
-        WHITE,
-    );
+    // réputation : compteur d'astéroïdes détruits (jeu libre) ou réputation
+    // du scénario (économie — croît avec les destructions et la précision) ;
+    // en économie, le rang courant (palier débloqué par la réputation, ex
+    // CADET → PILOT → ACE) est affiché à côté
+    let economy = scenario::has_economy(state);
+    let reputation = if economy {
+        state.resources.reputation as i32
+    } else {
+        state.meteors_destroyed
+    };
+    let rep_text = match scenario::current_rank(state) {
+        Some(rank) => format!("REPUTATION:{} ({})", reputation, rank),
+        None => format!("REPUTATION:{}", reputation),
+    };
+    draw_text(&rep_text, 8.0 + 14.0 * 8.0, 14.0, 16.0, WHITE);
     if state.bullets_fired > 0 {
         let precision = 100.0 * (1.0 - state.bullets_lost as f64 / state.bullets_fired as f64);
+        // en économie, le rang allonge la ligne : PRECISION est décalée à
+        // droite (col 40 au lieu de 30) pour rester lisible
+        let precision_x = if economy { 8.0 + 40.0 * 8.0 } else { 8.0 + 29.0 * 8.0 };
         draw_text(
             &format!("PRECISION:{}%", precision as i32),
-            8.0 + 29.0 * 8.0,
+            precision_x,
             14.0,
             16.0,
             WHITE,
+        );
+    }
+    // ressources du scénario sur la 2e ligne : carburant/munitions/minerais
+    // (économie — les capacités montrent les extensions d'atelier achetées)
+    // ou vies + bouclier (Survival)
+    if scenario::has_economy(state) {
+        draw_text(
+            &format!(
+                "FUEL:{:.0}/{} AMMO:{}/{} MINERALS:{}",
+                state.resources.fuel,
+                scenario::fuel_capacity(state),
+                state.resources.ammo,
+                scenario::ammo_capacity(state),
+                state.resources.minerals
+            ),
+            8.0,
+            30.0,
+            16.0,
+            WHITE,
+        );
+    } else if scenario::has_survival(state) {
+        draw_text(
+            &format!(
+                "LIVES:{} SHIELD:{:.0}",
+                state.resources.lives, state.resources.shield
+            ),
+            8.0,
+            30.0,
+            16.0,
+            WHITE,
+        );
+    }
+    // fin de partie (Survival, dernière vie perdue) : GAME OVER au centre
+    if state.game_over {
+        let msg = "GAME OVER";
+        let w = measure_text(msg, None, 32, 1.0).width;
+        draw_text(
+            msg,
+            (VIEWPORT_WIDTH as f32 - w) / 2.0,
+            VIEWPORT_HEIGHT as f32 / 2.0,
+            32.0,
+            argb_to_color(0xFFFF4040),
         );
     }
 }
@@ -1017,5 +1880,169 @@ mod tests {
         assert!(star_screen_pos(500.0, 300.0, Point::new(0.0, 500.0), 1.0).is_none());
         // mais rebouclé : camera.x = -500 → offset 524 → x = 1024 → 0 → visible
         assert!(star_screen_pos(500.0, 300.0, Point::new(-500.0, 0.0), 1.0).is_some());
+    }
+
+    /// La mire réagit dans TOUT le rayon de la base : la qualité est nulle
+    /// (rouge) au bord du rayon de la station, pleine (vert) au centre à
+    /// l'arrêt, et interpolée entre les deux — plus seulement dans la zone
+    /// d'accostage de 15 px.
+    #[test]
+    fn docking_quality_spans_the_whole_station_radius() {
+        let station_radius = 160.0;
+        // au bord du rayon de la base → rouge (qualité 0), même à l'arrêt
+        assert_eq!(docking_approach_quality(station_radius, 0.0, station_radius), 0.0);
+        // au centre, à l'arrêt → vert (qualité 1)
+        assert_eq!(docking_approach_quality(0.0, 0.0, station_radius), 1.0);
+        // à mi-rayon (80 px), à l'arrêt → qualité 0.5
+        assert_eq!(
+            docking_approach_quality(station_radius / 2.0, 0.0, station_radius),
+            0.5
+        );
+        // au centre mais trop rapide → rouge (qualité 0)
+        assert_eq!(
+            docking_approach_quality(0.0, DOCK_APPROACH_FULL_RED_SPEED, station_radius),
+            0.0
+        );
+        // au-delà du rayon de la base → rouge, quel que soit le rayon passé
+        assert_eq!(docking_approach_quality(200.0, 0.0, station_radius), 0.0);
+    }
+
+    /// La mire est pilotée par la distance au centre (sur tout le rayon de la
+    /// base) et par la vitesse de façon **multiplicative** : trop loin OU trop
+    /// rapide fait retomber la qualité vers le rouge.
+    #[test]
+    fn docking_quality_combines_distance_and_speed() {
+        let station_radius = 160.0;
+        // mi-rayon + mi-vitesse → 0.5 × 0.5 = 0.25
+        assert_eq!(
+            docking_approach_quality(
+                station_radius / 2.0,
+                DOCK_APPROACH_FULL_RED_SPEED / 2.0,
+                station_radius
+            ),
+            0.25
+        );
+        // vitesse négative (recul) traitée comme positive
+        assert_eq!(
+            docking_approach_quality(
+                station_radius / 2.0,
+                -DOCK_APPROACH_FULL_RED_SPEED / 2.0,
+                station_radius
+            ),
+            0.25
+        );
+    }
+
+    /// La mire d'accostage **disparaît quand le vaisseau est tenu par les
+    /// liens** : à quai (liens attachés), pendant l'animation d'accostage,
+    /// accosté (boîte ouverte, atelier) et pendant la rétraction des liens au
+    /// départ. Elle n'est visible que **lors du retour à la base** (`docking_guide`
+    /// actif) et dans le rayon de la station.
+    #[test]
+    fn docking_marker_hidden_while_held_by_links() {
+        let mut state = GameState::new();
+        state.dock_links = false; // le vaisseau a quitté la base
+        state.docking_guide = true; // … puis est revenu (guide actif)
+        let player = Point::new(50.0, 0.0);
+        let station = Point::new(0.0, 0.0);
+        let radius = 160.0;
+        // retour à la base : visible (guide d'accostage)
+        assert!(docking_marker_visible(&state, player, station, radius));
+        // à quai (lancement/respawn) : liens attachés → cachée
+        state.dock_links = true;
+        assert!(!docking_marker_visible(&state, player, station, radius));
+        state.dock_links = false;
+        // tenu par les liens : animation d'accostage en cours → cachée
+        state.dock_anim = 1.0;
+        assert!(!docking_marker_visible(&state, player, station, radius));
+        state.dock_anim = 0.0;
+        // accosté : boîte DOCK STATION ouverte → cachée
+        state.dock_box = true;
+        assert!(!docking_marker_visible(&state, player, station, radius));
+        state.dock_box = false;
+        // accosté : atelier ouvert → cachée
+        state.workshop_box = true;
+        assert!(!docking_marker_visible(&state, player, station, radius));
+        state.workshop_box = false;
+        // départ : rétraction des liens en cours → cachée
+        state.dock_retract = 1.0;
+        assert!(!docking_marker_visible(&state, player, station, radius));
+        state.dock_retract = 0.0;
+        // libre, dans le rayon, guide actif : visible
+        assert!(docking_marker_visible(&state, player, station, radius));
+    }
+
+    /// Le câble d'accostage **ondule en se rétractant** (et en se déployant) :
+    /// la déformation est nulle à l'anneau (ancré, t = 0) et quand l'intensité
+    /// est nulle (câble tendu) ; l'extrémité libre (t = 1) fouette (amplitude
+    /// bornée par l'intensité, croissante vers l'extrémité libre × t) ; l'onde
+    /// court dans le temps — vers l'anneau en rétraction, vers le vaisseau en
+    /// déploiement (sens opposés).
+    #[test]
+    fn docking_cable_undulates_in_both_directions() {
+        // ancré à l'anneau (t = 0) : jamais déformé
+        assert_eq!(cable_wave_offset(0.0, 10.0, 0.0, false), 0.0);
+        // câble tendu (intensité nulle) : plus d'ondulation
+        assert_eq!(cable_wave_offset(0.5, 0.0, 3.0, false), 0.0);
+        assert_eq!(cable_wave_offset(1.0, 0.0, 3.0, true), 0.0);
+        // l'extrémité libre (t = 1) fouette : amplitude bornée par
+        // l'intensité (10 px), et qui croît vers l'extrémité libre (× t)
+        for time in [0.0f32, 0.05, 0.2, 0.8, 1.5] {
+            let free = cable_wave_offset(1.0, 10.0, time, false);
+            let mid = cable_wave_offset(0.5, 10.0, time, false);
+            assert!(free.abs() <= 10.0, "fouet hors borne: {}", free);
+            assert!(free.abs() >= mid.abs(), "l'onde doit croître vers l'extrémité libre");
+        }
+        // l'onde court dans le temps (phase croissante) : l'offset varie
+        let a = cable_wave_offset(0.5, 10.0, 0.0, false);
+        let b = cable_wave_offset(0.5, 10.0, 0.1, false);
+        assert!((a - b).abs() > 1e-3, "l'onde doit se déplacer ({} vs {})", a, b);
+        // déploiement : l'onde court vers le vaisseau (sens inverse de la
+        // rétraction, qui court vers l'anneau)
+        let c = cable_wave_offset(0.5, 10.0, 0.0, true);
+        let d = cable_wave_offset(0.5, 10.0, 0.1, true);
+        assert!((c - d).abs() > 1e-3, "l'onde doit se déplacer en déploiement");
+        assert!(
+            (b - a) * (d - c) < 0.0,
+            "rétraction et déploiement doivent propager en sens inverse"
+        );
+    }
+
+    /// Au **désamarrage**, le lien part **tendu** (longueur 1 - r = 1 au
+    /// largage) et se rétracte vers l'anneau (longueur 0 à la fin), pendant
+    /// que l'ondulation (relâchement de la tension) est maximale au largage
+    /// et s'éteint une fois le lien rentré.
+    #[test]
+    fn undocking_releases_the_cable_from_taut_to_retracted() {
+        // longueur du lien = 1 - r : tendu au largage, replié à la fin
+        for r in [0.0f64, 0.25, 0.5, 0.75, 1.0] {
+            let length = 1.0 - r;
+            assert!(length >= 0.0 && length <= 1.0, "longueur hors borne");
+        }
+        // enveloppe : maximale au largage (r = 0), nulle une fois rentré
+        // (r = 1), strictement entre les deux (relâchement par à-coups)
+        assert_eq!(retract_envelope(0.0), 1.0);
+        assert_eq!(retract_envelope(1.0), 0.0);
+        assert!(retract_envelope(0.25) > 0.0 && retract_envelope(0.25) < 1.0);
+        assert!(retract_envelope(0.5) > 0.0 && retract_envelope(0.5) < 1.0);
+    }
+
+    /// La mire n'est affichée **que lors du retour à la base** : pas tant que
+    /// le guide est inactif (quitter l'accostage, en vol), et pas hors du
+    /// rayon de la station même si le guide est actif (garde défensive).
+    #[test]
+    fn docking_marker_only_when_returning() {
+        let mut state = GameState::new();
+        state.dock_links = false;
+        let station = Point::new(0.0, 0.0);
+        let radius = 160.0;
+        // guide inactif (quitte l'accostage, en vol) : cachée même dans le
+        // rayon de la base
+        assert!(!docking_marker_visible(&state, Point::new(50.0, 0.0), station, radius));
+        // guide actif : visible dans le rayon…
+        state.docking_guide = true;
+        assert!(docking_marker_visible(&state, Point::new(50.0, 0.0), station, radius));
+        // … mais pas hors du rayon (garde défensive)
+        assert!(!docking_marker_visible(&state, Point::new(radius + 1.0, 0.0), station, radius));
     }
 }

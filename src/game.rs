@@ -14,15 +14,27 @@ use crate::audio::Sounds;
 use crate::config::*;
 use crate::garbage::{generate_garbages, moving_garbage, Garbage};
 use crate::generate::{create_alien, create_gem, create_shape, fire_bullet};
+use crate::persist;
+use crate::scenario;
 use crate::geom::{Point, Triangle};
-use crate::render::{camera_for, choice_box_layout, cycle_view_mode, help_box_layout, mouse_to_game};
-use crate::shape::{compute_shape_center, detect_collision, moving_shape, resolve_elastic_collision, Shape};
-use crate::state::{Element, GameState, ViewMode};
+use crate::render::{
+    camera_for, choice_box_layout, cycle_view_mode, help_box_layout, mouse_to_game, settings_box_layout,
+    workshop_box_layout,
+};
+use crate::shape::{
+    compute_real_positions, compute_shape_center, detect_collision, moving_shape, resolve_elastic_collision,
+    Shape,
+};
+use crate::state::{Element, GameState, RenderStyle, ViewMode};
 
 /// Action demandée par la boucle de jeu pour la frame courante.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Quit,
+    /// Relance le jeu (bouton RESTART de l'écran de paramétrage, ex après
+    /// un changement d'anticrénelage) : `main.rs` relance l'exécutable puis
+    /// quitte.
+    Restart,
     Continue,
 }
 
@@ -52,9 +64,25 @@ pub fn update(
     // l'original (qui lit `camera` calculée à l'itération précédente).
     let mut camera = camera_for(state, &shapes[PLAYER_INDEX]);
 
+    // Écran de paramétrage ouvert (touche O) : le monde est gelé et seul
+    // l'input de l'écran est traité (voir `handle_settings_input`). Un clic
+    // sur RESTART demande la relance du jeu.
+    if state.settings_box {
+        let restart = handle_settings_input(state, sounds.as_deref_mut());
+        let action = if restart { Action::Restart } else { Action::Continue };
+        return (action, camera);
+    }
+
     // ESC : quitter
     if is_key_pressed(KeyCode::Escape) {
         return (Action::Quit, camera);
+    }
+
+    // Game over (scénario Survival, dernière vie perdue) : le monde est gelé
+    // — seules les touches de quitter (ESC, ci-dessus) restent actives ; le
+    // HUD affiche GAME OVER.
+    if state.game_over {
+        return (Action::Continue, camera);
     }
 
     // dernier keycode pressé (affiché par le mode I, ex `keycode = inp(96)`
@@ -73,15 +101,95 @@ pub fn update(
         return (Action::Continue, camera);
     }
 
+    // Animation d'accostage (3 s, avant la boîte DOCK STATION) : le monde est
+    // gelé — le vaisseau pivote vers la droite (orientation 0) tout en se
+    // recentrant au centre de la station (voir `advance_dock_animation` et
+    // `render::draw_docking_line`).
+    if state.dock_anim > 0.0 {
+        advance_dock_animation(state, shapes, triangles, dt);
+        return (Action::Continue, camera);
+    }
+
+    // Le vaisseau démarre de la base (lancement ou respawn : liens attachés à
+    // quai, mire cachée — voir `state.dock_links`) : dès que le joueur donne
+    // une commande de déplacement (flèches, tous modes), les liens se
+    // rétractent (même animation qu'au départ après CLOSE), puis le vaisseau
+    // est libre.
+    if state.dock_links && player_moving_input() {
+        release_links(state);
+    }
+
+    // Rétraction des liens d'accostage au départ (CLOSE de la boîte ou
+    // démarrage de la base) : le monde est gelé — le vaisseau reste au centre,
+    // les 4 traits néon se rétractent vers le bord intérieur de l'anneau
+    // (voir `advance_dock_retract` et `render::draw_docking_line`), puis le
+    // vaisseau est libre.
+    if state.dock_retract > 0.0 {
+        advance_dock_retract(state, shapes, triangles, dt);
+        return (Action::Continue, camera);
+    }
+
     // Boîte de choix DOCK STATION ouverte : le monde est gelé — seuls les
-    // clics sur UNLOAD/CLOSE sont traités (ex boucle bloquante de
-    // `windowUtils_choiceBox`).
+    // clics sur UNLOAD / REFUEL/REARM / UPGRADES / CLOSE sont traités (ex
+    // boucle bloquante de `windowUtils_choiceBox`). UNLOAD décharge la soute
+    // (minerais disponibles pour REFUEL/REARM juste après), REFUEL/REARM
+    // achète carburant + munitions (`scenario::purchase_supplies`) et
+    // UPGRADES ouvre l'atelier d'amélioration du vaisseau (scénario à
+    // économie) ; la boîte ne se ferme qu'avec CLOSE, pour décharger puis se
+    // ravitailler dans le même accostage.
     if state.dock_box {
-        if choice_box_click() {
-            // NB : l'original ignore le choix (`r%` non utilisé) — le cargo
-            // est vidé de toute façon à l'accostage (branche « else » de
-            // `docking`, frame suivante).
-            state.dock_box = false;
+        match choice_box_click(state) {
+            ChoiceClick::None => {}
+            ChoiceClick::Unload => {
+                // déchargement immédiat — NB : l'original ignore le choix
+                // (`r%` non utilisé) et vide la soute de toute façon à
+                // l'accostage (branche « else » de `docking`, frame
+                // suivante) ; ici il est anticipé pour financer le
+                // ravitaillement du même accostage
+                scenario::unload_cargo(state, elements);
+                for e in elements.iter_mut() {
+                    e.count = 0;
+                }
+                state.player.cargo_qty = 0;
+                // la progression (minerais) est persistée au déchargement
+                let _ = scenario::save_progression(state);
+            }
+            ChoiceClick::Refuel => {
+                // ravitaillement manuel (plus d'achat automatique au
+                // déchargement) : pleins si les minerais suffisent, sinon
+                // message « NOT ENOUGH MINERALS »
+                scenario::purchase_supplies(state);
+            }
+            ChoiceClick::Upgrades => {
+                // ouvre l'atelier d'amélioration (la boîte réapparaît en
+                // fermant l'atelier — on reste accosté)
+                state.dock_box = false;
+                state.workshop_box = true;
+            }
+            ChoiceClick::Close => {
+                // quitte l'accostage : les liens néon se rétractent
+                // (animation de `DOCK_RETRACT_DURATION`, monde gelé)
+                undock(state);
+            }
+        }
+        return (Action::Continue, camera);
+    }
+
+    // Atelier d'amélioration du vaisseau ouvert (bouton UPGRADES de la boîte
+    // DOCK STATION, scénario à économie) : le monde est gelé — les clics sur
+    // les lignes d'extension (achat contre minerais, `scenario::buy_upgrade`)
+    // et sur CLOSE (retour à la boîte DOCK STATION, toujours accosté) sont
+    // traités.
+    if state.workshop_box {
+        match workshop_box_click() {
+            WorkshopClick::None => {}
+            WorkshopClick::BuyFuel => buy_upgrade_and_save(state, scenario::UpgradeTrackId::Fuel),
+            WorkshopClick::BuyAmmo => buy_upgrade_and_save(state, scenario::UpgradeTrackId::Ammo),
+            WorkshopClick::BuyCargo => buy_upgrade_and_save(state, scenario::UpgradeTrackId::Cargo),
+            WorkshopClick::Close => {
+                state.workshop_box = false;
+                state.dock_box = true;
+            }
         }
         return (Action::Continue, camera);
     }
@@ -98,11 +206,12 @@ pub fn update(
         });
     }
 
-    // M : bascule la musique (ex `M : mute music` de mainLoop)
+    // M : bascule la musique (ex `M : mute music` de mainLoop) — persistée
     if is_key_pressed(KeyCode::M) {
         if let Some(sounds) = sounds.as_deref_mut() {
             sounds.toggle_music();
             state.send_message(if sounds.music_on { "MUSIC ON" } else { "MUSIC OFF" });
+            let _ = persist::set_bool("music", sounds.music_on);
         }
     }
 
@@ -111,7 +220,9 @@ pub fn update(
         state.paused = !state.paused;
     }
 
-    // A : génération automatique des météores (ex `autoGenerateShape%`)
+    // A : génération automatique des météores (ex `autoGenerateShape%`) —
+    // pour la session en cours uniquement (repart active au lancement, voir
+    // `main.rs` — non persistée)
     if is_key_pressed(KeyCode::A) {
         state.auto_generate = !state.auto_generate;
     }
@@ -135,6 +246,16 @@ pub fn update(
         state.help_box = true;
     }
 
+    // O : écran de paramétrage (choix du mode de déplacement du vaisseau) —
+    // on mémorise le mode courant pour n'annoncer le changement au HUD qu'à
+    // la fermeture, s'il a été modifié ; le focus clavier part sur le mode
+    // courant.
+    if is_key_pressed(KeyCode::O) {
+        state.settings_previous_mode = state.moving_mode;
+        state.settings_focus = state.moving_mode;
+        state.settings_box = true;
+    }
+
     // D : affichage des données des formes (ex `showData%`)
     if is_key_pressed(KeyCode::D) {
         state.show_data = !state.show_data;
@@ -150,6 +271,12 @@ pub fn update(
         state.player.fire -= dt;
     }
 
+    // invulnérabilité post-respawn (scénario Survival) : décompte à chaque
+    // frame (comme le cooldown de tir) — à 0, le vaisseau redevient vulnérable
+    if state.invulnerable > 0.0 {
+        state.invulnerable = (state.invulnerable - dt).max(0.0);
+    }
+
     // contrôles joueur selon le mode de déplacement (inclut le tir + son)
     player_controls(state, shapes, triangles, sounds.as_deref_mut(), dt);
 
@@ -162,8 +289,22 @@ pub fn update(
         state.player.revert_thrusted += 1;
     }
 
+    // scénario à économie : le carburant est consommé tant que le moteur
+    // est allumé (flamme avant/arrière) — annonce OUT OF FUEL à la rupture
+    scenario::consume_fuel(state, dt);
+
     // physique + collisions (détection, résolution, sons d'impact)
     collisions(state, shapes, triangles, garbages, elements, rng, sounds, dt);
+
+    // guide d'accostage : la mire ne s'affiche que lors du RETOUR à la base
+    // (voir `update_docking_guide`) — avant `docking`, qui peut déclencher
+    // l'animation d'accostage (et couper le guide)
+    update_docking_guide(
+        state,
+        shapes[PLAYER_INDEX].position,
+        shapes[STATION_INDEX].position,
+        shapes[STATION_INDEX].radius,
+    );
 
     // accostage à la station (ex « detect return to the base ») — peut ouvrir
     // la boîte UNLOAD/CLOSE, auquel cas le reste de la frame est gelé
@@ -308,6 +449,29 @@ fn collisions(
             // accostage (M5)
         } else if who == WHOIAM_STATION {
             // la station est indestructible
+        } else if who == WHOIAM_PLAYER && scenario::has_survival(state) {
+            // scénario Survival : le bouclier encaisse les impacts (le
+            // triangle du vaisseau n'est pas tué) ; s'il est percé, le
+            // vaisseau est détruit — une vie est perdue et il respawne à la
+            // station (bouclier rechargé par le scénario), ou la partie est
+            // terminée en dernière vie (le monde se gèle, HUD GAME OVER)
+            let shield_before = state.resources.shield;
+            let lives_before = state.resources.lives;
+            match scenario::player_hit(state, 1.0) {
+                scenario::PlayerHit::Absorbed => {}
+                scenario::PlayerHit::Destroyed(_) => respawn_player(state, shapes, triangles),
+                scenario::PlayerHit::GameOver => {
+                    // dernière vie perdue : le vaisseau reste détruit
+                    triangles[i].life = 0;
+                    shapes[PLAYER_INDEX].life = 0;
+                }
+            }
+            // la progression Survival (vies, bouclier) est persistée quand un
+            // impact l'a modifiée (pas à chaque impact absorbé par
+            // l'invulnérabilité post-respawn, qui ne change rien)
+            if state.resources.shield != shield_before || state.resources.lives != lives_before {
+                let _ = scenario::save_progression(state);
+            }
         } else {
             triangles[i].life = 0;
             shapes[shape_index].life -= 1;
@@ -321,12 +485,16 @@ fn collisions(
             }
             // si le joueur détruit un météore, la limite de météores augmente
             // (ex mainLoop : compteur + « R+1 » affiché — le bonus flottant
-            // et les sons arrivent en M4)
+            // et les sons arrivent en M4) et la réputation du scénario
+            // augmente (d'autant plus que la précision de tir est bonne)
             if collid_by == WHOIAM_BULLET
                 && who == WHOIAM_METEOR
                 && shapes[shape_index].life <= 0
             {
                 state.meteors_destroyed += 1;
+                scenario::on_meteor_destroyed(state);
+                // la réputation est persistée à chaque astéroïde détruit
+                let _ = scenario::save_progression(state);
                 if state.max_meteor_shapes < SHAPES_COUNT {
                     state.max_meteor_shapes += 1;
                 }
@@ -386,29 +554,85 @@ fn count_alive_shapes(shapes: &mut [Shape], triangles: &[Triangle]) -> i32 {
     alive
 }
 
+/// Restaure le vaisseau à la station après une destruction (scénario
+/// Survival — `scenario::PlayerHit::Destroyed`) : position, rotation et
+/// vitesse remises à zéro (comme au départ), coque et triangles réparés — le
+/// bouclier est déjà rechargé par `scenario::player_hit`. Le vaisseau se
+/// retrouve à quai, dans l'état « déjà docké » du lancement (pas de boîte
+/// DOCK STATION).
+fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
+    let p = &mut shapes[PLAYER_INDEX];
+    p.position = Point::new(0.0, 0.0); // la station est au centre du monde
+    p.direction = 0.0;
+    p.velocity = 0.0;
+    p.orientation = 0.0;
+    p.rotation = 0.0;
+    p.life = 1;
+    for j in p.first_triangle..=p.last_triangle {
+        triangles[j].life = 1;
+    }
+    // flamme et cooldown de tir coupés (le moteur ne brûle plus au respawn)
+    state.player.thrusted = 0;
+    state.player.revert_thrusted = 0;
+    state.player.fire = 0.0;
+    state.player_at_station = -1; // docké à la station (comme au lancement)
+    state.player_enter_station = 0;
+    // à quai : les liens d'accostage se rattachent au vaisseau (mire cachée)
+    // jusqu'à ce que le joueur reparte (rétraction, voir `release_links`)
+    state.dock_links = true;
+}
+
 /// Détecte le retour à la base (ex « detect return to the base » de
-/// `mainLoop`) : à moins de 5 px de la station, le vaisseau est docké.
+/// `mainLoop`) : le vaisseau est docké quand son centre entre dans la zone
+/// d'accostage — le cercle de rayon `STATION_DOCK_DISTANCE` autour du centre
+/// de la station (vérification circulaire, comme la mire affichée à l'écran)
+/// **et** qu'il est presque immobile (`STATION_DOCK_SPEED`) : il faut ralentir
+/// pour terminer l'accostage (la mire passe du rouge au vert avec la qualité
+/// de l'approche).
 ///
-/// NB : comme l'original, le choix UNLOAD/CLOSE de la boîte est ignoré
-/// (`r%` non utilisé) — le cargo est vidé de toute façon à l'accostage.
+/// NB : comme l'original, le choix UNLOAD/CLOSE de la boîte était ignoré
+/// (`r%` non utilisé) — le cargo reste vidé de toute façon à l'accostage
+/// (au plus tard à la frame suivant la fermeture de la boîte ; le bouton
+/// UNLOAD de la boîte le vide immédiatement). Le ravitaillement (carburant +
+/// munitions), lui, n'est plus automatique : il s'achète via le bouton
+/// REFUEL/REARM de la boîte DOCK STATION.
 fn docking(state: &mut GameState, shapes: &mut [Shape], elements: &mut [Element]) {
-    if (shapes[PLAYER_INDEX].position.x - shapes[STATION_INDEX].position.x).abs() < STATION_DOCK_DISTANCE
-        && (shapes[PLAYER_INDEX].position.y - shapes[STATION_INDEX].position.y).abs() < STATION_DOCK_DISTANCE
-    {
+    let dx = shapes[PLAYER_INDEX].position.x - shapes[STATION_INDEX].position.x;
+    let dy = shapes[PLAYER_INDEX].position.y - shapes[STATION_INDEX].position.y;
+    let in_zone = dx * dx + dy * dy < STATION_DOCK_DISTANCE * STATION_DOCK_DISTANCE;
+    // l'accostage se termine seulement si le vaisseau est presque immobile
+    if in_zone && shapes[PLAYER_INDEX].velocity.abs() < STATION_DOCK_SPEED {
         if state.player_at_station == 0 {
             state.player_at_station = -1;
             state.player_enter_station = -1;
             shapes[PLAYER_INDEX].velocity = 0.0;
-            state.send_message("YOU ARE DOCKED AT THE STATION");
-            state.dock_box = true; // ouvre la boîte UNLOAD/CLOSE (jeu gelé)
+            // animation d'accostage (3 s) avant la boîte DOCK STATION : le
+            // vaisseau pivote vers la droite et se recentre au centre — la
+            // boîte s'ouvre à la fin (`advance_dock_animation`)
+            state.dock_anim = DOCK_ANIMATION_DURATION;
+            state.dock_anim_from_pos = shapes[PLAYER_INDEX].position;
+            state.dock_anim_from_orient = shapes[PLAYER_INDEX].orientation;
+            // l'accostage démarre : le guide est coupé — il ne réapparaîtra
+            // qu'à un prochain retour (et pas pendant qu'on quitte l'accostage)
+            state.docking_guide = false;
         } else {
-            // déchargement : éléments vidés, soute vidée
+            // déchargement : la soute est convertie en minerais (scénario à
+            // économie) puis vidée — le ravitaillement s'achète via le
+            // bouton REFUEL/REARM de la boîte DOCK STATION
+            let had_cargo = state.player.cargo_qty > 0;
+            scenario::unload_cargo(state, elements);
             for e in elements.iter_mut() {
                 e.count = 0;
             }
             state.player.cargo_qty = 0;
             state.player_enter_station = 0;
             state.player_at_station = -1;
+            // la progression (minerais) n'est persistée que s'il y avait du
+            // cargo (cette branche tourne à chaque frame à quai — pas
+            // d'écriture du fichier de config à chaque frame)
+            if had_cargo {
+                let _ = scenario::save_progression(state);
+            }
         }
     } else {
         if state.player_at_station == -1 {
@@ -417,6 +641,146 @@ fn docking(state: &mut GameState, shapes: &mut [Shape], elements: &mut [Element]
         }
         state.player_at_station = 0;
     }
+}
+
+/// Fait avancer l'animation d'accostage d'une frame : le vaisseau pivote
+/// vers la droite (orientation 0) tout en se recentrant **exactement** au
+/// centre de la station (position 0,0), avec une interpolation lissée
+/// (smoothstep) sur `DOCK_ANIMATION_DURATION`. À la fin de l'animation, la
+/// boîte DOCK STATION s'ouvre et le message d'accostage est envoyé (comme
+/// avant, mais repoussé après l'animation).
+///
+/// Le monde est gelé pendant l'animation (appelé par `update` avant la
+/// physique) ; le trait d'accostage est dessiné par
+/// `render::draw_docking_line`.
+fn advance_dock_animation(
+    state: &mut GameState,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
+    dt: f64,
+) {
+    state.dock_anim = (state.dock_anim - dt).max(0.0);
+    // avancement 0..1 avec lissage (smoothstep) pour un mouvement fluide
+    let t = (1.0 - state.dock_anim / DOCK_ANIMATION_DURATION).clamp(0.0, 1.0);
+    let e = t * t * (3.0 - 2.0 * t);
+    let p = &mut shapes[PLAYER_INDEX];
+    // recentrage exact sur le centre de la station (0,0)
+    p.position.x = state.dock_anim_from_pos.x + (0.0 - state.dock_anim_from_pos.x) * e;
+    p.position.y = state.dock_anim_from_pos.y + (0.0 - state.dock_anim_from_pos.y) * e;
+    // pivot vers la droite : orientation 0, par le chemin le plus court
+    let delta = shortest_angle_delta(state.dock_anim_from_orient, 0.0);
+    p.orientation = state.dock_anim_from_orient + delta * e;
+    // vitesse nulle (le vaisseau est immobilisé pendant l'accostage)
+    p.velocity = 0.0;
+    p.rotation = 0.0;
+    // recalcule les positions réelles des triangles du vaisseau
+    for i in p.first_triangle..=p.last_triangle {
+        compute_real_positions(&mut triangles[i], p.position, p.center, p.orientation);
+    }
+    if state.dock_anim <= 0.0 {
+        state.dock_anim = 0.0;
+        state.send_message("YOU ARE DOCKED AT THE STATION");
+        state.dock_box = true; // ouvre la boîte UNLOAD/REFUEL/CLOSE (jeu gelé)
+    }
+}
+
+/// Le vaisseau quitte l'accostage (bouton CLOSE de la boîte DOCK STATION) :
+/// ferme la boîte puis libère le vaisseau (rétraction des liens).
+fn undock(state: &mut GameState) {
+    state.dock_box = false;
+    release_links(state);
+}
+
+/// Libère le vaisseau : détache les liens (s'ils étaient attachés à quai,
+/// lancement/respawn) et démarre la **rétraction des liens** — le vaisseau
+/// reste au centre de la station, les 4 traits néon se rétractent vers le
+/// bord intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` (monde gelé,
+/// voir `advance_dock_retract`), puis il est libre. En quittant la base, le
+/// **guide d'accostage est coupé** : la mire ne réapparaîtra qu'au retour
+/// (franchissement de la limite extérieure en entrant).
+fn release_links(state: &mut GameState) {
+    state.dock_links = false;
+    state.docking_guide = false;
+    state.dock_retract = DOCK_RETRACT_DURATION;
+}
+
+/// Met à jour le **guide d'accostage** (la mire au centre de la station) :
+/// il ne s'affiche **que lors du retour à la base** — le vaisseau doit avoir
+/// quitté la base (franchi la limite extérieure en sortant, `dock_was_outside`
+/// repassé à vrai) puis la **recroiser en entrant** (front montant : la
+/// distance passe de ≥ au rayon à < au rayon). Il ne s'affiche donc jamais
+/// pendant que le vaisseau quitte l'accostage ni à quai (les états « tenu »
+/// masquent de toute façon la mire dans `render::docking_marker_visible`).
+fn update_docking_guide(
+    state: &mut GameState,
+    player_position: Point,
+    station_position: Point,
+    station_radius: f64,
+) {
+    let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
+    let outside = dist >= station_radius;
+    if outside {
+        state.docking_guide = false;
+    } else if state.dock_was_outside {
+        // vient de franchir la limite extérieure de la base en entrant :
+        // c'est le retour — le guide s'affiche
+        state.docking_guide = true;
+    }
+    state.dock_was_outside = outside;
+}
+
+/// Le joueur donne-t-il une commande de déplacement (flèches ↑/↓/←/→, tous
+/// les modes de déplacement) ? Utilisé pour déclencher la rétraction des
+/// liens quand le vaisseau démarre de la base (voir `update`).
+fn player_moving_input() -> bool {
+    is_key_down(KeyCode::Up)
+        || is_key_down(KeyCode::Down)
+        || is_key_down(KeyCode::Left)
+        || is_key_down(KeyCode::Right)
+}
+
+/// Fait avancer la rétraction des liens d'accostage d'une frame : le vaisseau
+/// reste immobilisé exactement au centre de la station (position 0,0,
+/// orientation 0) pendant `DOCK_RETRACT_DURATION` — les liens se rétractent
+/// visuellement (voir `render::draw_docking_line`). À la fin, le vaisseau est
+/// libre (le monde se dégèle, `docking` peut le faire repartir).
+///
+/// Le monde est gelé pendant la rétraction (appelé par `update` avant la
+/// physique).
+fn advance_dock_retract(
+    state: &mut GameState,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
+    dt: f64,
+) {
+    state.dock_retract = (state.dock_retract - dt).max(0.0);
+    let p = &mut shapes[PLAYER_INDEX];
+    // le vaisseau reste exactement au centre, pointant vers la droite
+    p.position.x = 0.0;
+    p.position.y = 0.0;
+    p.orientation = 0.0;
+    p.velocity = 0.0;
+    p.rotation = 0.0;
+    // recalcule les positions réelles des triangles du vaisseau
+    for i in p.first_triangle..=p.last_triangle {
+        compute_real_positions(&mut triangles[i], p.position, p.center, p.orientation);
+    }
+    if state.dock_retract <= 0.0 {
+        state.dock_retract = 0.0;
+    }
+}
+
+/// Écart angulaire le plus court (radians, dans ]-π, π]) entre deux angles,
+/// pour pivoter vers la droite (orientation 0) sans faire un tour complet.
+fn shortest_angle_delta(from: f64, to: f64) -> f64 {
+    let mut d = (to - from) % TAU;
+    if d > std::f64::consts::PI {
+        d -= TAU;
+    }
+    if d < -std::f64::consts::PI {
+        d += TAU;
+    }
+    d
 }
 
 /// Supprime les balles sorties de la zone de dessin (ex « deletes bullets
@@ -446,16 +810,86 @@ fn delete_out_of_range_bullets(
     }
 }
 
-/// Détecte un clic sur la boîte de choix UNLOAD/CLOSE (ex
-/// `windowUtils_choiceBox`). Renvoie `true` si un bouton a été cliqué (la
-/// boîte se ferme alors — le choix lui-même est ignoré, comme l'original).
-fn choice_box_click() -> bool {
+/// Bouton cliqué sur la boîte de choix DOCK STATION (accostage).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChoiceClick {
+    None,
+    /// Décharge la soute (minerais disponibles pour REFUEL/REARM).
+    Unload,
+    /// Achète carburant + munitions contre minerais.
+    Refuel,
+    /// Ouvre l'atelier d'amélioration du vaisseau (scénario à économie).
+    Upgrades,
+    /// Ferme la boîte.
+    Close,
+}
+
+/// Détecte un clic sur la boîte de choix DOCK STATION (ex
+/// `windowUtils_choiceBox`) et renvoie le bouton cliqué (contrairement à
+/// l'original, le choix n'est plus ignoré : UNLOAD, REFUEL/REARM et UPGRADES
+/// agissent). Le bouton UPGRADES n'existe qu'en scénario à économie (la
+/// géométrie est vide sinon).
+fn choice_box_click(state: &GameState) -> ChoiceClick {
     if !is_mouse_button_pressed(MouseButton::Left) {
-        return false;
+        return ChoiceClick::None;
     }
-    let (unload_rect, close_rect) = choice_box_layout();
+    let l = choice_box_layout(scenario::has_economy(state));
     let m = mouse_to_game();
-    unload_rect.contains(m) || close_rect.contains(m)
+    if l.unload.contains(m) {
+        ChoiceClick::Unload
+    } else if l.refuel.contains(m) {
+        ChoiceClick::Refuel
+    } else if l.upgrades.contains(m) {
+        ChoiceClick::Upgrades
+    } else if l.close.contains(m) {
+        ChoiceClick::Close
+    } else {
+        ChoiceClick::None
+    }
+}
+
+/// Bouton cliqué sur l'atelier d'amélioration du vaisseau (bouton UPGRADES
+/// de la boîte DOCK STATION, scénario à économie).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WorkshopClick {
+    None,
+    /// Achète l'extension de réservoir de carburant.
+    BuyFuel,
+    /// Achète l'extension de chargeur de munitions.
+    BuyAmmo,
+    /// Achète l'extension de soute.
+    BuyCargo,
+    /// Revient à la boîte DOCK STATION (toujours accosté).
+    Close,
+}
+
+/// Détecte un clic sur l'atelier d'amélioration : une ligne d'extension
+/// (achat) ou le bouton CLOSE (retour à la boîte DOCK STATION).
+fn workshop_box_click() -> WorkshopClick {
+    if !is_mouse_button_pressed(MouseButton::Left) {
+        return WorkshopClick::None;
+    }
+    let l = workshop_box_layout();
+    let m = mouse_to_game();
+    if l.fuel.contains(m) {
+        WorkshopClick::BuyFuel
+    } else if l.ammo.contains(m) {
+        WorkshopClick::BuyAmmo
+    } else if l.cargo.contains(m) {
+        WorkshopClick::BuyCargo
+    } else if l.close.contains(m) {
+        WorkshopClick::Close
+    } else {
+        WorkshopClick::None
+    }
+}
+
+/// Achète une extension d'atelier (réservoir, chargeur ou soute) puis persiste
+/// la progression (minerais, niveaux d'extension) — les réservoirs montent à
+/// la nouvelle capacité et la soute s'agrandit dans `buy_upgrade`.
+fn buy_upgrade_and_save(state: &mut GameState, track: scenario::UpgradeTrackId) {
+    scenario::buy_upgrade(state, track);
+    let _ = scenario::save_progression(state);
 }
 
 /// Détecte un clic sur le bouton CLOSE de la fenêtre d'aide (ex
@@ -467,6 +901,315 @@ fn help_box_click() -> bool {
     let close_rect = help_box_layout();
     let m = mouse_to_game();
     close_rect.contains(m)
+}
+
+/// Clic sur l'écran de paramétrage (touche O) : un radio-bouton de mode
+/// sélectionne le mode (appliqué immédiatement, l'écran reste ouvert pour
+/// comparer), les cases MUSIC / AUTO GENERATE / ANTIALIAS basculent, un clic
+/// sur la barre du volume donne la fraction demandée (0..1), les lignes
+/// RENDER / WINDOW / SIZE font cycler leur valeur, RESET remet les réglages
+/// par défaut et CLOSE ferme l'écran.
+enum SettingsClick {
+    None,
+    Mode(i32),
+    Music,
+    AutoGenerate,
+    Volume(f32),
+    RenderStyle,
+    WindowMode,
+    WindowSize,
+    Antialias,
+    /// Relance le jeu (affiché quand un réglage modifié exige un redémarrage).
+    Restart,
+    Reset,
+    Close,
+}
+
+/// Détecte un clic sur l'écran de paramétrage (touche O) : contrôle cliqué
+/// (mode, case, volume, ligne graphique, RESTART, RESET ou CLOSE). Le bouton
+/// RESTART n'est actif que si un réglage modifié (l'anticrénelage) diffère de
+/// la valeur appliquée par la fenêtre.
+fn settings_box_click(state: &GameState) -> SettingsClick {
+    if !is_mouse_button_pressed(MouseButton::Left) {
+        return SettingsClick::None;
+    }
+    let l = settings_box_layout();
+    let m = mouse_to_game();
+    for (i, rect) in l.modes.iter().enumerate() {
+        if rect.contains(m) {
+            return SettingsClick::Mode(i as i32);
+        }
+    }
+    if l.music.contains(m) {
+        return SettingsClick::Music;
+    }
+    if l.auto_generate.contains(m) {
+        return SettingsClick::AutoGenerate;
+    }
+    if l.volume_track.contains(m) {
+        return SettingsClick::Volume(((m.x - l.volume_track.x) / l.volume_track.w).clamp(0.0, 1.0));
+    }
+    if l.render.contains(m) {
+        return SettingsClick::RenderStyle;
+    }
+    if l.window_mode.contains(m) {
+        return SettingsClick::WindowMode;
+    }
+    if l.window_size.contains(m) {
+        return SettingsClick::WindowSize;
+    }
+    if l.antialias.contains(m) {
+        return SettingsClick::Antialias;
+    }
+    if state.antialias != state.antialias_applied && l.restart.contains(m) {
+        return SettingsClick::Restart;
+    }
+    if l.reset.contains(m) {
+        return SettingsClick::Reset;
+    }
+    if l.close.contains(m) {
+        return SettingsClick::Close;
+    }
+    SettingsClick::None
+}
+
+/// Traite l'input de l'écran de paramétrage (touche O) : clavier (flèches
+/// ↑/↓ = focus radio, Entrée = applique le mode, ESC = ferme) et clic souris
+/// (radio, cases MUSIC / AUTO GENERATE / ANTIALIAS, barre de volume, lignes
+/// RENDER / WINDOW / SIZE, RESTART, RESET, CLOSE). Les réglages modifiés sont
+/// persistés immédiatement (le mode l'est à la fermeture). Utilisé par la
+/// boucle de jeu et par l'écran titre (`title.rs`). `sounds` est optionnel :
+/// absent, musique et volume ne sont pas modifiables. Renvoie `true` si le
+/// bouton RESTART a été cliqué (le jeu doit se relancer).
+pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Sounds>) -> bool {
+    let mut restart = false;
+    if is_key_pressed(KeyCode::Up) {
+        state.settings_focus = settings_focus_move(state.settings_focus, -1);
+    }
+    if is_key_pressed(KeyCode::Down) {
+        state.settings_focus = settings_focus_move(state.settings_focus, 1);
+    }
+    if is_key_pressed(KeyCode::Enter) {
+        // la sélection passe par le scénario : un mode verrouillé (scénario
+        // à économie) est payé en minerais, refusé si insuffisant ; un mode
+        // acheté est persisté (minerais déduits + mode débloqué)
+        if scenario::try_select_mode(state, state.settings_focus) {
+            let _ = scenario::save_progression(state);
+        }
+    }
+    match settings_box_click(state) {
+        SettingsClick::Mode(m) => {
+            // un clic recentre le focus clavier sur le mode choisi ; la
+            // sélection passe par le scénario (voir Entrée ci-dessus)
+            state.settings_focus = m;
+            if scenario::try_select_mode(state, m) {
+                let _ = scenario::save_progression(state);
+            }
+        }
+        SettingsClick::Music => {
+            if let Some(snd) = sounds.as_deref_mut() {
+                snd.toggle_music();
+                let _ = persist::set_bool("music", snd.music_on);
+            }
+        }
+        SettingsClick::AutoGenerate => {
+            // pour la session en cours uniquement (non persistée : la
+            // génération automatique repart active au lancement)
+            state.auto_generate = !state.auto_generate;
+        }
+        SettingsClick::Volume(fraction) => set_volume_fraction(sounds.as_deref_mut(), fraction),
+        SettingsClick::RenderStyle => {
+            state.render_style = next_render_style(state.render_style);
+            let _ = persist::save_render_style(state.render_style as i32);
+        }
+        SettingsClick::WindowMode => {
+            // même cycle que la touche F (fenêtré → zoomé → natif) ; le
+            // mode est persisté à chaque clic
+            cycle_view_mode(state);
+            let _ = persist::save_window_mode(state.view_mode as i32);
+        }
+        SettingsClick::WindowSize => {
+            state.window_size = next_window_size(state.window_size);
+            let _ = persist::save_window_size(state.window_size);
+            // en fenêtré, la nouvelle définition s'applique aussitôt ; en
+            // plein écran elle prendra effet au retour en fenêtré
+            if state.view_mode == ViewMode::Windowed {
+                let (w, h) = window_size_dims(state.window_size);
+                request_new_screen_size(w, h);
+            }
+        }
+        SettingsClick::Antialias => {
+            state.antialias = !state.antialias;
+            let _ = persist::set_bool("antialias", state.antialias);
+            state.send_message(if state.antialias {
+                "ANTIALIAS ON (NEXT LAUNCH)"
+            } else {
+                "ANTIALIAS OFF"
+            });
+        }
+        SettingsClick::Restart => restart = true,
+        SettingsClick::Reset => reset_settings(state, sounds.as_deref_mut()),
+        SettingsClick::Close => close_and_persist(state),
+        SettingsClick::None => {}
+    }
+    // glisser sur la barre de volume (bouton maintenu) : réglage continu
+    // tant que le pointeur reste sur la piste
+    if is_mouse_button_down(MouseButton::Left) {
+        let l = settings_box_layout();
+        let m = mouse_to_game();
+        if l.volume_track.contains(m) {
+            set_volume_fraction(
+                sounds.as_deref_mut(),
+                ((m.x - l.volume_track.x) / l.volume_track.w).clamp(0.0, 1.0),
+            );
+        }
+    }
+    if is_key_pressed(KeyCode::Escape) {
+        close_and_persist(state);
+    }
+    restart
+}
+
+/// Ferme l'écran de paramétrage ; renvoie `true` si le mode de déplacement a
+/// été modifié pendant l'écran (un message HUD annonce alors le mode activé).
+fn close_settings(state: &mut GameState) -> bool {
+    state.settings_box = false;
+    let changed = state.moving_mode != state.settings_previous_mode;
+    if changed {
+        state.send_message(&format!("MOVING MODE: {}", moving_mode_label(state.moving_mode)));
+    }
+    changed
+}
+
+/// Ferme l'écran de paramétrage et persiste le mode de déplacement dans le
+/// fichier de config s'il a changé (le message HUD est envoyé par
+/// `close_settings`).
+fn close_and_persist(state: &mut GameState) {
+    if close_settings(state) {
+        let _ = persist::save_moving_mode(state.moving_mode);
+    }
+}
+
+/// Déplace le focus des radio-boutons de l'écran de paramétrage (flèches
+/// haut/bas), borné à `[0, MOVING_MODE_COUNT-1]`.
+fn settings_focus_move(focus: i32, delta: i32) -> i32 {
+    (focus + delta).clamp(0, MOVING_MODE_COUNT - 1)
+}
+
+/// Remet les réglages par défaut (bouton RESET) : mode DIRECTIONAL, musique
+/// en marche, génération automatique active, volume 100 %, rendu texturé,
+/// fenêtré à 960×540, anticrénelage éteint — les valeurs par défaut ne sont
+/// réenregistrées à la fermeture que si elles ont été modifiées pendant
+/// l'écran. Partie « réglages » pure du RESET (testable sans contexte
+/// macroquad) : remet les valeurs par défaut (mode DIRECTIONAL, génération
+/// automatique, rendu texturé, fenêtre 960×540, anticrénelage éteint, focus
+/// recentré).
+fn reset_settings_fields(state: &mut GameState) {
+    // mode de déplacement : défaut du scénario (DIRECTIONAL en jeu libre,
+    // INERTIAL en Progression — le RESET ne débloque jamais un mode payant)
+    state.moving_mode = scenario::start_mode(state.scenario);
+    state.settings_focus = state.moving_mode;
+    state.auto_generate = true;
+    state.render_style = RenderStyle::Textured;
+    state.window_size = 0;
+    state.antialias = false;
+}
+
+/// Remet les réglages par défaut (bouton RESET) : champs par défaut
+/// (`reset_settings_fields`), retour fenêtré à 960×540, musique en marche,
+/// volume 100 %, et clés de réglage du fichier de config supprimées — les
+/// valeurs par défaut ne sont réenregistrées à la fermeture que si elles ont
+/// été modifiées pendant l'écran. NB : la progression d'un scénario à
+/// économie (scénario choisi, minerais, modes payés, réputation — clés
+/// `scenario`/`prog_*`) n'est pas supprimée : seuls les réglages repartent
+/// aux défauts.
+fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
+    reset_settings_fields(state);
+    apply_view_mode(state, ViewMode::Windowed);
+    if state.view_mode == ViewMode::Windowed {
+        request_new_screen_size(VIEWPORT_WIDTH as f32, VIEWPORT_HEIGHT as f32);
+    }
+    if let Some(sounds) = sounds {
+        sounds.set_volume(1.0);
+        if !sounds.music_on {
+            sounds.toggle_music();
+        }
+    }
+    // seules les clés de réglage sont supprimées — le scénario et sa
+    // progression (`scenario`, `prog_*`) survivent au RESET
+    for key in [
+        "moving_mode",
+        "music",
+        "auto_generate",
+        "volume",
+        "render_style",
+        "window_mode",
+        "window_size",
+        "antialias",
+    ] {
+        let _ = persist::delete_key(key);
+    }
+}
+
+/// Style de rendu suivant dans le cycle (TEXTURED → COLORED → MESH → …).
+fn next_render_style(style: RenderStyle) -> RenderStyle {
+    match style {
+        RenderStyle::Textured => RenderStyle::Colored,
+        RenderStyle::Colored => RenderStyle::Mesh,
+        RenderStyle::Mesh => RenderStyle::Textured,
+    }
+}
+
+/// Index de définition de fenêtre suivant dans le cycle (960×540 → 1280×720
+/// → … → retour), borné à `WINDOW_SIZES`.
+fn next_window_size(index: i32) -> i32 {
+    (index + 1) % WINDOW_SIZES.len() as i32
+}
+
+/// Dimensions `(largeur, hauteur)` de la définition de fenêtre `index`.
+fn window_size_dims(index: i32) -> (f32, f32) {
+    let (w, h) = WINDOW_SIZES[index.clamp(0, WINDOW_SIZES.len() as i32 - 1) as usize];
+    (w as f32, h as f32)
+}
+
+/// Bascule vers un mode d'affichage donné (bouton RESET) : entre dans le
+/// plein écran EWMH si la cible est zoomé/natif, en sort (ClientMessage
+/// REMOVE via libX11) sinon — voir `cycle_view_mode`.
+fn apply_view_mode(state: &mut GameState, target: ViewMode) {
+    if state.view_mode == target {
+        return;
+    }
+    match (state.view_mode, target) {
+        // fenêtré → plein écran : le chemin de rendu (zoomé ou natif) ne
+        // change que la caméra, la bascule EWMH est la même
+        (ViewMode::Windowed, _) => set_fullscreen(true),
+        // déjà en plein écran : seul le chemin de rendu change
+        (ViewMode::Zoomed, ViewMode::Native) | (ViewMode::Native, ViewMode::Zoomed) => {}
+        // plein écran → fenêtré : REMOVE EWMH (repli : redimensionnement à
+        // la définition choisie)
+        (_, ViewMode::Windowed) => {
+            if !crate::x11::set_fullscreen(false) {
+                let (w, h) = window_size_dims(state.window_size);
+                request_new_screen_size(w, h);
+            }
+        }
+        _ => {}
+    }
+    state.view_mode = target;
+}
+
+/// Applique le volume maître depuis une fraction (0..1) de la barre et le
+/// persiste. N'écrit le fichier que si la valeur change réellement (glisser
+/// sur la barre ne réécrit pas le config à chaque frame).
+fn set_volume_fraction(sounds: Option<&mut Sounds>, fraction: f32) {
+    if let Some(sounds) = sounds {
+        let pct = (fraction.clamp(0.0, 1.0) * 100.0).round() as i32;
+        let current = (sounds.volume * 100.0).round() as i32;
+        if pct != current {
+            sounds.set_volume(pct as f32 / 100.0);
+            let _ = persist::set_i32("volume", pct);
+        }
+    }
 }
 
 /// Contrôles du vaisseau selon `state.moving_mode` (port fidèle des trois
@@ -485,13 +1228,17 @@ fn player_controls(
 ) {
     state.player.thrust = 0.0;
 
+    // carburant (scénarios à économie) : les poussées avant/arrière sont
+    // bloquées quand le réservoir est vide — les rotations restent libres
+    let fuel_ok = scenario::fuel_available(state);
+
     // (portée dédiée : l'emprunt mutable de `shapes[PLAYER_INDEX]` doit se
     // terminer avant le tir, qui réemprunte tout `shapes`)
     {
     let player = &mut shapes[PLAYER_INDEX];
     match state.moving_mode {
         MOVING_MODE_DIRECTIONAL => {
-            if is_key_down(KeyCode::Up) {
+            if fuel_ok && is_key_down(KeyCode::Up) {
                 player.velocity += PLAYER_ACCELERATION * 60.0 * dt;
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
@@ -500,7 +1247,7 @@ fn player_controls(
                 player.direction -= PLAYER_ROTATION_SPEED * 60.0 * dt;
                 player.orientation = -player.direction;
             }
-            if is_key_down(KeyCode::Down) {
+            if fuel_ok && is_key_down(KeyCode::Down) {
                 if player.velocity > 0.0 {
                     // peut devenir négatif une frame (comme l'original), puis
                     // sera ramené à 0
@@ -516,7 +1263,7 @@ fn player_controls(
             }
         }
         MOVING_MODE_INERTIAL => {
-            if is_key_down(KeyCode::Up) {
+            if fuel_ok && is_key_down(KeyCode::Up) {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, 1.0, -1.0);
@@ -524,7 +1271,7 @@ fn player_controls(
             if is_key_down(KeyCode::Right) {
                 player.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
             }
-            if is_key_down(KeyCode::Down) {
+            if fuel_ok && is_key_down(KeyCode::Down) {
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, -1.0, 1.0);
                 if player.velocity > 0.0 {
                     state.player.revert_thrusted = -5;
@@ -535,7 +1282,7 @@ fn player_controls(
             }
         }
         MOVING_MODE_4_WAYS => {
-            if is_key_down(KeyCode::Up) {
+            if fuel_ok && is_key_down(KeyCode::Up) {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 let dx = player.direction.cos() * player.velocity;
@@ -544,14 +1291,14 @@ fn player_controls(
                 player.velocity = dx.hypot(dy);
                 player.orientation = -player.direction;
             }
-            if is_key_down(KeyCode::Right) {
+            if fuel_ok && is_key_down(KeyCode::Right) {
                 let dx = player.direction.cos() * player.velocity + PLAYER_ACCELERATION * 60.0 * dt;
                 let dy = player.direction.sin() * player.velocity;
                 player.direction = dy.atan2(dx);
                 player.velocity = dx.hypot(dy);
                 player.orientation = -player.direction;
             }
-            if is_key_down(KeyCode::Down) {
+            if fuel_ok && is_key_down(KeyCode::Down) {
                 let dx = player.direction.cos() * player.velocity;
                 let dy = player.direction.sin() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt;
                 player.direction = dy.atan2(dx);
@@ -561,7 +1308,7 @@ fn player_controls(
                     state.player.revert_thrusted = -5;
                 }
             }
-            if is_key_down(KeyCode::Left) {
+            if fuel_ok && is_key_down(KeyCode::Left) {
                 let dx = player.direction.cos() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt;
                 let dy = player.direction.sin() * player.velocity;
                 player.direction = dy.atan2(dx);
@@ -574,9 +1321,11 @@ fn player_controls(
     }
 
     // tir : Shift gauche/droit (ex `case 42, 54` des trois modes) — le
-    // cooldown `fire` (1/3 s) bloque les tirs suivants
+    // cooldown `fire` (1/3 s) bloque les tirs suivants ; le scénario
+    // consomme des munitions et bloque le tir quand le chargeur est vide
     if (is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift))
         && state.player.fire <= 0.0
+        && scenario::try_fire(state)
     {
         fire_bullet(shapes, triangles);
         state.player.fire = PLAYER_FIRE_COOLDOWN;
@@ -757,6 +1506,84 @@ mod tests {
     }
 
     #[test]
+    fn meteor_breaks_on_station_ring() {
+        // Dérive volontaire : le rayon de la station couvre l'anneau visible
+        // (r ≈ 110-162, plus de `radius = 36` forcé comme l'original). Un
+        // météore posé sur l'anneau (loin du centre) doit être détruit par la
+        // détection de collision par triangles (SAT), pas traverser la base.
+        let mut state = GameState::new();
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        let mut stars = Vec::new();
+        let mut elements = Vec::new();
+        let mut rng = seed();
+        crate::generate::prepare(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut stars,
+            &mut elements,
+            &mut rng,
+        );
+
+        // le rayon de collision de la station couvre l'anneau (dérive volontaire)
+        assert!(
+            shapes[STATION_INDEX].radius >= 160.0,
+            "rayon station {}",
+            shapes[STATION_INDEX].radius
+        );
+
+        // météore posé sur la bande de l'anneau, à droite du centre (x = 140)
+        let idx = crate::generate::generate_shape(
+            &mut shapes,
+            &mut triangles,
+            8,
+            TRIANGLE_BASE_MIN,
+            TRIANGLE_BASE_MAX,
+            TRIANGLE_HEIGHT_MIN,
+            TRIANGLE_HEIGHT_MAX,
+            &elements,
+            &mut rng,
+        );
+        {
+            let m = &mut shapes[idx];
+            m.who_i_am = WHOIAM_METEOR;
+            m.is_collider = true;
+            m.velocity = 0.0;
+            m.position = Point::new(140.0, 0.0);
+        }
+        // sans élément minéral : pas de gemme créée, test ciblé sur la collision
+        for i in shapes[idx].first_triangle..=shapes[idx].last_triangle {
+            triangles[i].element = 0;
+        }
+        compute_shape_center(&mut shapes[idx], &triangles);
+        let initial_life = shapes[idx].life;
+
+        let mut garbages = Vec::new();
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            1.0 / 60.0,
+        );
+
+        // le météore a perdu au moins un triangle (SAT contre l'anneau),
+        // la station est intacte
+        assert!(
+            shapes[idx].life < initial_life,
+            "météore intact sur l'anneau : life {} (initial {})",
+            shapes[idx].life,
+            initial_life
+        );
+        assert_eq!(shapes[STATION_INDEX].life, 66);
+        assert_eq!(triangles[shapes[STATION_INDEX].first_triangle].life, 1);
+    }
+
+    #[test]
     fn station_is_indestructible() {
         // la station est un collider mais ses triangles ne meurent jamais
         let mut state = GameState::new();
@@ -880,29 +1707,302 @@ mod tests {
     }
 
     #[test]
-    fn docking_opens_choice_box_and_velocity_zeroed() {
+    fn survival_shield_absorbs_player_impact() {
+        // scénario Survival : un impact météore sur le vaisseau est absorbé
+        // par le bouclier — le vaisseau et son triangle restent intacts
+        let mut state = GameState::new();
+        state.scenario = crate::scenario::ScenarioId::Survival;
+        crate::scenario::apply_start(&mut state);
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        assert_eq!(state.resources.shield, 2.0); // 3 - 1 impact absorbé
+        assert_eq!(state.resources.lives, 3);
+        assert_eq!(shapes[0].life, 1); // vaisseau intact
+        assert_eq!(triangles[0].life, 1);
+    }
+
+    #[test]
+    fn survival_destroyed_ship_respawns_at_station() {
+        // bouclier déjà vide : l'impact détruit le vaisseau — une vie perdue,
+        // respawn à la station (position réinitialisée, bouclier rechargé)
+        let mut state = GameState::new();
+        state.scenario = crate::scenario::ScenarioId::Survival;
+        crate::scenario::apply_start(&mut state);
+        state.resources.shield = 0.0;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 300.0, 200.0),
+            test_shape(WHOIAM_METEOR, 1, 1, 302.0, 202.0), // sur le vaisseau
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 300.0, 200.0), test_triangle(1, 1, 302.0, 202.0)];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        assert_eq!(state.resources.lives, 2);
+        assert_eq!(
+            state.resources.shield,
+            crate::scenario::SURVIVAL_SCENARIO.shield_capacity
+        );
+        assert_eq!(shapes[0].position, Point::new(0.0, 0.0)); // respawn station
+        assert_eq!(shapes[0].velocity, 0.0);
+        assert_eq!(shapes[0].life, 1);
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(state.player_at_station, -1);
+        assert_eq!(
+            state.invulnerable,
+            crate::scenario::SURVIVAL_SCENARIO.respawn_invulnerability
+        );
+        assert!(state.message_queue.contains("SHIP DESTROYED"));
+    }
+
+    #[test]
+    fn respawn_player_restores_ship_at_station() {
+        // restauration directe (appelée par la collision Survival) : position,
+        // vitesse, orientation, coque et flammes remises à zéro, état « à
+        // quai » comme au lancement
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 300.0, 200.0),
+            test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0)];
+        shapes[0].velocity = 4.0;
+        shapes[0].direction = 1.5;
+        state.player_at_station = 0;
+        state.player.thrusted = 3;
+
+        respawn_player(&mut state, &mut shapes, &mut triangles);
+
+        assert_eq!(shapes[0].position, Point::new(0.0, 0.0));
+        assert_eq!(shapes[0].velocity, 0.0);
+        assert_eq!(shapes[0].direction, 0.0);
+        assert_eq!(shapes[0].life, 1);
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(state.player.thrusted, 0);
+        assert_eq!(state.player_at_station, -1);
+        // à quai : les liens d'accostage se rattachent au vaisseau (mire
+        // cachée) jusqu'au départ (rétraction via `release_links`)
+        assert!(state.dock_links);
+    }
+
+    #[test]
+    fn docking_starts_animation_instead_of_opening_box_directly() {
         // le joueur revient à la station après être parti (playerAtStation = 0,
-        // ex mainLoop : la boîte n'apparaît qu'au retour) → boîte ouverte,
-        // vitesse mise à 0, message envoyé
+        // ex mainLoop : la boîte n'apparaît qu'au retour), presque immobile →
+        // l'ANIMATION d'accostage démarre (3 s) au lieu d'ouvrir la boîte
+        // immédiatement : vitesse mise à 0, message pas encore envoyé
         let mut state = GameState::new();
         state.player_at_station = 0;
         let mut shapes = vec![
             test_shape(WHOIAM_PLAYER, 0, 0, 1.0, 1.0),
             test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
         ];
-        shapes[0].velocity = 3.0;
+        shapes[0].velocity = 0.2; // < STATION_DOCK_SPEED : accostage possible
         let mut elements = default_elements();
         elements[1].count = 4;
 
         docking(&mut state, &mut shapes, &mut elements);
 
-        assert!(state.dock_box);
+        assert_eq!(state.dock_anim, DOCK_ANIMATION_DURATION);
+        assert!(!state.dock_box); // pas encore : l'animation d'abord
         assert_eq!(shapes[0].velocity, 0.0);
         assert_eq!(state.player_at_station, -1);
-        assert!(state.message_queue.contains("YOU ARE DOCKED AT THE STATION"));
-        // le cargo n'est pas vidé tant que la boîte est ouverte (le
-        // déchargement arrive à la frame suivante, comme l'original)
+        assert!(!state.message_queue.contains("YOU ARE DOCKED AT THE STATION"));
+        // le cargo n'est pas vidé tant que la boîte n'est pas ouverte
         assert_eq!(elements[1].count, 4);
+    }
+
+    #[test]
+    fn docking_animation_opens_box_after_duration_and_centers_ship() {
+        // l'animation d'accostage dure DOCK_ANIMATION_DURATION : le vaisseau
+        // pivote vers la droite (orientation 0) tout en se recentrant
+        // exactement au centre (0,0) ; à la fin, la boîte s'ouvre et le
+        // message est envoyé
+        let mut state = GameState::new();
+        state.player_at_station = 0;
+        // le vaisseau est dans la zone d'accostage (distance ≈ 14 < 15)
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 10.0, 10.0),
+            test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
+        ];
+        shapes[0].velocity = 0.2;
+        shapes[0].orientation = 2.5; // loin de 0 : il doit pivoter vers la droite
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0)];
+        let mut elements = default_elements();
+
+        docking(&mut state, &mut shapes, &mut elements);
+        assert_eq!(state.dock_anim, DOCK_ANIMATION_DURATION);
+        assert!(!state.dock_box);
+
+        // à mi-animation : le vaisseau a avancé vers le centre et pivoté
+        // (mais pas encore arrivé)
+        advance_dock_animation(&mut state, &mut shapes, &mut triangles, DOCK_ANIMATION_DURATION / 2.0);
+        assert!(shapes[0].position.x.abs() < 10.0);
+        assert!(shapes[0].orientation.abs() < 2.5);
+        assert!(!state.dock_box);
+
+        // animation terminée : centré, pointant vers la droite, boîte ouverte
+        advance_dock_animation(&mut state, &mut shapes, &mut triangles, DOCK_ANIMATION_DURATION);
+        assert_eq!(state.dock_anim, 0.0);
+        assert!(state.dock_box);
+        assert_eq!(shapes[0].position.x, 0.0);
+        assert_eq!(shapes[0].position.y, 0.0);
+        assert_eq!(shapes[0].orientation % TAU, 0.0);
+        assert!(state.message_queue.contains("YOU ARE DOCKED AT THE STATION"));
+    }
+
+    #[test]
+    fn closing_dock_box_starts_link_retraction() {
+        // CLOSE quitte l'accostage : la boîte se ferme et la **rétraction des
+        // liens** démarre (le vaisseau reste au centre, monde gelé) ; à la fin
+        // de `DOCK_RETRACT_DURATION`, le vaisseau est libre
+        let mut state = GameState::new();
+        state.dock_box = true;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0)];
+
+        undock(&mut state);
+        assert!(!state.dock_box);
+        assert_eq!(state.dock_retract, DOCK_RETRACT_DURATION);
+
+        // à mi-rétraction : le vaisseau reste exactement au centre (0,0),
+        // orientation 0, immobilisé — les liens se rétractent encore
+        advance_dock_retract(&mut state, &mut shapes, &mut triangles, DOCK_RETRACT_DURATION / 2.0);
+        assert!(state.dock_retract > 0.0);
+        assert_eq!(shapes[0].position.x, 0.0);
+        assert_eq!(shapes[0].position.y, 0.0);
+        assert_eq!(shapes[0].orientation, 0.0);
+        assert_eq!(shapes[0].velocity, 0.0);
+
+        // rétraction terminée : le vaisseau est libre (délesté de l'état)
+        advance_dock_retract(&mut state, &mut shapes, &mut triangles, DOCK_RETRACT_DURATION);
+        assert_eq!(state.dock_retract, 0.0);
+    }
+
+    #[test]
+    fn release_links_detaches_and_starts_retraction() {
+        // au lancement, le vaisseau est à quai (liens attachés, mire cachée —
+        // voir `state.dock_links`) ; dès qu'il démarre (commande de mouvement
+        // ou CLOSE après un accostage), `release_links` détache les liens et
+        // lance la rétraction (monde gelé pendant `DOCK_RETRACT_DURATION`)
+        let mut state = GameState::new();
+        assert!(state.dock_links); // à quai au lancement
+
+        release_links(&mut state);
+        assert!(!state.dock_links);
+        assert_eq!(state.dock_retract, DOCK_RETRACT_DURATION);
+    }
+
+    #[test]
+    fn docking_guide_activates_only_on_return() {
+        // la mire (guide d'accostage) ne s'affiche QUE lors du RETOUR à la
+        // base : pas à quai, pas pendant qu'on quitte l'accostage, pas en
+        // vol — elle s'active quand le vaisseau franchit la limite extérieure
+        // de la base EN ENTRANT (après l'avoir franchie en sortant)
+        let mut state = GameState::new();
+        state.dock_links = false;
+        let station = Point::new(0.0, 0.0);
+        let radius = 160.0;
+        // à quai au centre (ex juste après le départ) : pas de guide
+        update_docking_guide(&mut state, Point::new(0.0, 0.0), station, radius);
+        assert!(!state.docking_guide);
+        // le vaisseau sort : franchit la limite extérieure en sortant
+        update_docking_guide(&mut state, Point::new(radius + 1.0, 0.0), station, radius);
+        assert!(!state.docking_guide);
+        assert!(state.dock_was_outside);
+        // le vaisseau revient : franchit la limite en entrant → guide actif
+        update_docking_guide(&mut state, Point::new(radius - 1.0, 0.0), station, radius);
+        assert!(state.docking_guide);
+        assert!(!state.dock_was_outside);
+        // en approche (dans le rayon) : le guide reste actif
+        update_docking_guide(&mut state, Point::new(10.0, 0.0), station, radius);
+        assert!(state.docking_guide);
+        // l'accostage démarre : le guide est coupé (et le restera après le
+        // départ — il ne se réactive qu'à un nouveau franchissement en entrant)
+        state.docking_guide = false;
+        update_docking_guide(&mut state, Point::new(5.0, 0.0), station, radius);
+        assert!(!state.docking_guide); // toujours dans le rayon : pas de réactivation
+        update_docking_guide(&mut state, Point::new(radius + 1.0, 0.0), station, radius);
+        update_docking_guide(&mut state, Point::new(radius - 1.0, 0.0), station, radius);
+        assert!(state.docking_guide); // nouveau retour → guide réactivé
+    }
+
+    #[test]
+    fn shortest_angle_delta_takes_the_short_path() {
+        // de π vers 0 : le chemin le plus court est -π (pas +π)
+        assert_eq!(shortest_angle_delta(std::f64::consts::PI, 0.0), -std::f64::consts::PI);
+        // de 2.5 vers 0 : -2.5 (pas 3.78)
+        assert!((shortest_angle_delta(2.5, 0.0) + 2.5).abs() < 1e-12);
+        // déjà à 0 : pas de rotation
+        assert_eq!(shortest_angle_delta(0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn docking_requires_nearly_zero_velocity() {
+        // dans la zone d'accostage mais trop rapide : pas de boîte, l'état
+        // « en approche » reste ; presque immobile : l'accostage se termine
+        let mut state = GameState::new();
+        state.player_at_station = 0;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 1.0, 1.0),
+            test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
+        ];
+        shapes[0].velocity = 3.0; // > STATION_DOCK_SPEED
+        let mut elements = default_elements();
+
+        docking(&mut state, &mut shapes, &mut elements);
+        assert!(!state.dock_box);
+        assert_eq!(state.player_at_station, 0); // pas encore docké
+
+        // le vaisseau ralentit : l'accostage se termine (l'ANIMATION démarre,
+        // la boîte n'ouvrira qu'à la fin de ses 3 s)
+        shapes[0].velocity = 0.2;
+        docking(&mut state, &mut shapes, &mut elements);
+        assert_eq!(state.dock_anim, DOCK_ANIMATION_DURATION);
+        assert!(!state.dock_box);
+        assert_eq!(shapes[0].velocity, 0.0);
+    }
+
+    #[test]
+    fn docking_uses_circular_zone_matching_the_marker() {
+        // la zone d'accostage est le cercle de rayon `STATION_DOCK_DISTANCE`
+        // (comme la mire affichée au centre de la station) : un coin du carré
+        // circonscrit (12,12 — distance ≈ 17 > 15) n'accoste pas, une
+        // diagonale à distance < rayon (10,10 — ≈ 14,1 < 15) accoste
+        let mut state = GameState::new();
+        state.player_at_station = 0;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 12.0, 12.0),
+            test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
+        ];
+        let mut elements = default_elements();
+        docking(&mut state, &mut shapes, &mut elements);
+        assert!(!state.dock_box);
+        assert_eq!(state.player_at_station, 0); // pas docké (coin hors cercle)
+
+        let mut state = GameState::new();
+        state.player_at_station = 0;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 10.0, 10.0),
+            test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
+        ];
+        let mut elements = default_elements();
+        docking(&mut state, &mut shapes, &mut elements);
+        assert_eq!(state.dock_anim, DOCK_ANIMATION_DURATION); // l'animation démarre
     }
 
     #[test]
@@ -944,6 +2044,59 @@ mod tests {
         assert_eq!(elements[1].count, 0);
         assert_eq!(state.player.cargo_qty, 0);
         assert_eq!(state.player_enter_station, 0);
+    }
+
+    #[test]
+    fn docking_converts_cargo_but_does_not_buy_supplies() {
+        // scénario Progression : le déchargement à la station convertit la
+        // soute en minerais (GOLD ×4 = 20) mais n'achète plus le
+        // ravitaillement — il se paie via le bouton REFUEL/REARM de la boîte
+        // DOCK STATION : réservoirs et minerais intacts, pas de message
+        // d'achat
+        let mut state = GameState::new();
+        state.scenario = crate::scenario::ScenarioId::Progression;
+        crate::scenario::apply_start(&mut state);
+        state.player_at_station = -1; // déjà docké (boîte refermée)
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 1.0, 1.0),
+            test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
+        ];
+        let mut elements = default_elements();
+        elements[1].count = 4;
+        state.player.cargo_qty = 4;
+        state.resources.fuel = 10.0;
+        state.resources.ammo = 5;
+
+        docking(&mut state, &mut shapes, &mut elements);
+
+        assert_eq!(elements[1].count, 0);
+        assert_eq!(state.player.cargo_qty, 0);
+        assert_eq!(state.resources.minerals, 20);
+        assert_eq!(state.resources.fuel, 10.0);
+        assert_eq!(state.resources.ammo, 5);
+        assert!(state.message_queue.contains("CARGO UNLOADED: +20 MINERALS"));
+        assert!(!state.message_queue.contains("SUPPLIES PURCHASED"));
+    }
+
+    #[test]
+    fn refuel_button_purchases_supplies() {
+        // le bouton REFUEL/REARM de la boîte DOCK STATION appelle
+        // `purchase_supplies` : réservoirs pleins contre minerais (le clic
+        // lui-même est testé via le scénario — ici le paiement, pur)
+        let mut state = GameState::new();
+        state.scenario = crate::scenario::ScenarioId::Progression;
+        crate::scenario::apply_start(&mut state);
+        state.resources.minerals = 100;
+        state.resources.fuel = 10.0;
+        state.resources.ammo = 5;
+
+        assert_eq!(
+            crate::scenario::purchase_supplies(&mut state),
+            crate::scenario::SupplyOutcome::Purchased(14)
+        );
+        assert_eq!(state.resources.minerals, 86);
+        assert_eq!(state.resources.fuel, crate::scenario::fuel_capacity(&state)); // 100
+        assert_eq!(state.resources.ammo, crate::scenario::ammo_capacity(&state)); // 30
     }
 
     #[test]
@@ -1005,5 +2158,101 @@ mod tests {
         assert_eq!(alive, 1); // seul le météore d'index 2 est vivant
         assert_eq!(shapes[1].life, 0); // nettoyé
         assert_eq!(shapes[2].life, 1); // toujours vivant
+    }
+
+    #[test]
+    fn closing_settings_informs_when_mode_changed() {
+        // le mode a été modifié pendant l'écran : la fermeture annonce le
+        // mode activé au HUD
+        let mut state = GameState::new();
+        state.settings_box = true;
+        state.settings_previous_mode = MOVING_MODE_DIRECTIONAL;
+        state.moving_mode = MOVING_MODE_INERTIAL;
+
+        close_settings(&mut state);
+
+        assert!(!state.settings_box);
+        assert!(state.message_queue.contains("MOVING MODE: INERTIAL"));
+    }
+
+    #[test]
+    fn closing_settings_is_silent_when_mode_unchanged() {
+        // aucun changement pendant l'écran : pas de message à la fermeture
+        let mut state = GameState::new();
+        state.settings_box = true;
+        state.settings_previous_mode = MOVING_MODE_DIRECTIONAL;
+        state.moving_mode = MOVING_MODE_DIRECTIONAL;
+
+        close_settings(&mut state);
+
+        assert!(!state.settings_box);
+        assert!(state.message_queue.is_empty());
+    }
+
+    #[test]
+    fn moving_mode_labels_match_constants() {
+        // libellés de l'écran de paramétrage et du message HUD : ordre des
+        // constantes MOVING_MODE_*
+        assert_eq!(moving_mode_label(MOVING_MODE_INERTIAL), "INERTIAL");
+        assert_eq!(moving_mode_label(MOVING_MODE_4_WAYS), "4 WAYS");
+        assert_eq!(moving_mode_label(MOVING_MODE_DIRECTIONAL), "DIRECTIONAL");
+    }
+
+    #[test]
+    fn settings_focus_is_clamped_between_modes() {
+        // flèches ↑/↓ : le focus des radio-boutons reste dans
+        // [0, MOVING_MODE_COUNT-1]
+        assert_eq!(
+            settings_focus_move(MOVING_MODE_INERTIAL, -1),
+            MOVING_MODE_INERTIAL
+        );
+        assert_eq!(
+            settings_focus_move(MOVING_MODE_DIRECTIONAL, 1),
+            MOVING_MODE_DIRECTIONAL
+        );
+        assert_eq!(settings_focus_move(MOVING_MODE_INERTIAL, 1), MOVING_MODE_4_WAYS);
+        assert_eq!(settings_focus_move(MOVING_MODE_4_WAYS, 1), MOVING_MODE_DIRECTIONAL);
+        assert_eq!(settings_focus_move(MOVING_MODE_DIRECTIONAL, -1), MOVING_MODE_4_WAYS);
+    }
+
+    #[test]
+    fn reset_settings_restores_defaults() {
+        // bouton RESET : mode DIRECTIONAL (défaut), focus recentré,
+        // génération automatique active, rendu texturé, fenêtre 960×540 et
+        // anticrénelage éteint (sons non testables hors jeu)
+        let mut state = GameState::new();
+        state.moving_mode = MOVING_MODE_4_WAYS;
+        state.settings_focus = MOVING_MODE_INERTIAL;
+        state.auto_generate = false;
+        state.render_style = RenderStyle::Mesh;
+        state.window_size = 2;
+        state.antialias = true;
+
+        reset_settings_fields(&mut state);
+
+        assert_eq!(state.moving_mode, MOVING_MODE_DIRECTIONAL);
+        assert_eq!(state.settings_focus, MOVING_MODE_DIRECTIONAL);
+        assert!(state.auto_generate);
+        assert_eq!(state.render_style, RenderStyle::Textured);
+        assert_eq!(state.window_size, 0);
+        assert!(!state.antialias);
+    }
+
+    #[test]
+    fn render_style_and_window_size_cycle_within_bounds() {
+        // cycle RENDER : TEXTURED → COLORED → MESH → TEXTURED ; cycle SIZE :
+        // borné à WINDOW_SIZES (retour à 0 après la dernière définition)
+        let mut style = RenderStyle::Textured;
+        for expected in [RenderStyle::Colored, RenderStyle::Mesh, RenderStyle::Textured] {
+            style = next_render_style(style);
+            assert_eq!(style, expected);
+        }
+        let mut size = 0;
+        for _ in 0..WINDOW_SIZES.len() {
+            size = next_window_size(size);
+        }
+        assert_eq!(size, 0);
+        assert_eq!(window_size_dims(0), (960.0, 540.0));
+        assert_eq!(window_size_dims(3), (1920.0, 1080.0));
     }
 }

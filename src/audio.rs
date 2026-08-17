@@ -27,6 +27,9 @@ pub struct Sounds {
     music: Sound,
     /// Musique en lecture (touche M, ex `_sndpaused(sh7&)`).
     pub music_on: bool,
+    /// Volume maître (0.0..=1.0), réglable dans l'écran de paramétrage
+    /// (touche O) et persisté dans le fichier de config.
+    pub volume: f32,
     engine_on: bool,
     reverse_on: bool,
     ambient_on: bool,
@@ -72,39 +75,92 @@ impl Sounds {
             ambient: load(include_bytes!("../assets/bruitDeFond.ogg"), "assets/bruitDeFond.ogg").await,
             music: load(include_bytes!("../assets/music1.ogg"), "assets/music1.ogg").await,
             music_on: false,
+            volume: 1.0,
             engine_on: false,
             reverse_on: false,
             ambient_on: false,
         }
     }
 
-    // ─── Effets ponctuels ───────────────────────────────────────────────────
-
-    /// Tir de balle (ex `_sndplay sh1&`).
-    pub fn play_bullet(&self) {
-        audio::play_sound_once(&self.bullet);
+    /// Applique le volume maître (0.0..=1.0) à tous les sons. Les boucles en
+    /// cours (ambiance, musique, moteurs) sont relancées au nouveau volume.
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = volume.clamp(0.0, 1.0);
+        if self.ambient_on {
+            audio::stop_sound(&self.ambient);
+            audio::play_sound(
+                &self.ambient,
+                PlaySoundParams {
+                    looped: true,
+                    volume: self.volume,
+                },
+            );
+        }
+        if self.music_on {
+            audio::stop_sound(&self.music);
+            audio::play_sound(
+                &self.music,
+                PlaySoundParams {
+                    looped: true,
+                    volume: 0.1 * self.volume,
+                },
+            );
+        }
+        if self.engine_on {
+            audio::stop_sound(&self.engine);
+            audio::play_sound(
+                &self.engine,
+                PlaySoundParams {
+                    looped: true,
+                    volume: self.volume,
+                },
+            );
+        }
+        if self.reverse_on {
+            audio::stop_sound(&self.reverse);
+            audio::play_sound(
+                &self.reverse,
+                PlaySoundParams {
+                    looped: true,
+                    volume: self.volume,
+                },
+            );
+        }
     }
 
-    /// Ramassage d'une gemme (ex `_sndplay sh5&`, volume 0.05).
+    // ─── Effets ponctuels ───────────────────────────────────────────────────
+
+    /// Tir de balle (ex `_sndplay sh1&`), au volume maître.
+    pub fn play_bullet(&self) {
+        audio::play_sound(
+            &self.bullet,
+            PlaySoundParams {
+                looped: false,
+                volume: self.volume,
+            },
+        );
+    }
+
+    /// Ramassage d'une gemme (ex `_sndplay sh5&`, volume 0.05 × maître).
     pub fn play_gem(&self) {
         audio::play_sound(
             &self.gem,
             PlaySoundParams {
                 looped: false,
-                volume: 0.05,
+                volume: 0.05 * self.volume,
             },
         );
     }
 
     /// Explosion d'un triangle (ex `shexp(s%)` aléatoire) au volume donné
-    /// (déjà calculé selon la distance au vaisseau).
+    /// (déjà calculé selon la distance au vaisseau) × volume maître.
     pub fn play_explosion(&self, rng: &mut impl Rng, volume: f32) {
         let idx = rng.gen_range(0..self.explosions.len());
         audio::play_sound(
             &self.explosions[idx],
             PlaySoundParams {
                 looped: false,
-                volume: volume.max(0.0),
+                volume: (volume * self.volume).max(0.0),
             },
         );
     }
@@ -121,7 +177,7 @@ impl Sounds {
             &self.ambient,
             PlaySoundParams {
                 looped: true,
-                volume: 1.0,
+                volume: self.volume,
             },
         );
     }
@@ -138,7 +194,7 @@ impl Sounds {
                 &self.engine,
                 PlaySoundParams {
                     looped: true,
-                    volume: 1.0,
+                    volume: self.volume,
                 },
             );
         } else {
@@ -158,7 +214,7 @@ impl Sounds {
                 &self.reverse,
                 PlaySoundParams {
                     looped: true,
-                    volume: 1.0,
+                    volume: self.volume,
                 },
             );
         } else {
@@ -177,7 +233,7 @@ impl Sounds {
                 &self.music,
                 PlaySoundParams {
                     looped: true,
-                    volume: 0.1,
+                    volume: 0.1 * self.volume,
                 },
             );
             self.music_on = true;

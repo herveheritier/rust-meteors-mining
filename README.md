@@ -14,8 +14,30 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   procéduralement, avec choc élastique entre eux et débris à chaque impact.
 - **Minage** : les triangles minéraux (or, fer…) laissent des gemmes à ramasser.
 - **Soute** : 5 éléments maximum — pleine, il faut décharger à la station.
-- **Station** : accostez à moins de 5 px pour ouvrir la boîte DOCK STATION ;
-  le cargo est déchargé et le vaisseau réparé.
+- **Station** : au lancement (et après respawn) le vaisseau est **à quai**
+  au centre de la base, **tenu par 4 liens néon** (mire cachée) ; dès qu'on
+  démarre (une flèche), les **liens se rétractent** (1,5 s, monde gelé) et le
+  vaisseau est libre — hors de la base, ni lien ni cible, et **pas de mire
+  tant qu'on quitte l'accostage** : la mire n'est affichée **que lors du
+  retour**. Au **retour**, au moment où l'on **franchit la limite extérieure
+  de la base en entrant** (après l'avoir franchie en sortant), la **mire**
+  **néon** pulsante apparaît au centre (le guide d'accostage, cercle de
+  15 px, dessiné sous le vaisseau) et **réagit dans tout le rayon de la
+  base** : sa couleur passe **progressivement du rouge au vert** selon la
+  distance au centre ET la vitesse (rouge au bord du rayon ou trop rapide,
+  vert au centre et presque immobile) ; la distance est au HUD
+  (`DOCK: 123 px` / `DOCK: SLOW DOWN` / `DOCK: IN RANGE` / `DOCKED`).
+  L'accostage se termine seulement **presque immobile dans la zone** : la
+  mire **disparaît** et une **animation de 3 s** (monde gelé) **projette**
+  les **4 liens** en diagonale (**NO, SO, SE, NE**) : ils jaillissent de
+  l'anneau vers le vaisseau (onde qui court vers lui) et se branchent **près
+  de son centre** (l'illusion qu'ils le touchent), puis le pivote vers la
+  droite tout en le recentrant **exactement au centre** de la station, puis
+  la boîte DOCK STATION s'ouvre (cargo déchargé, vaisseau réparé). Au départ
+  (CLOSE), la **tension est relâchée** : les liens se **rétractent en
+  ondulant** (une onde court du vaisseau vers l'anneau, l'extrémité libre
+  fouette puis retombe — comme un câble qui se rentre), puis le vaisseau est
+  libre.
 - **Météores en continu** : génération automatique (limite 150) ou à la demande.
 - **Audio** : ambiance, musique, moteur avant/recul, tirs, gemmes et
   explosions à volume selon la distance au vaisseau.
@@ -27,7 +49,8 @@ cargo run --release
 ```
 
 La fenêtre 960 × 540 s'ouvre sur l'écran titre — appuyez sur une touche
-(autre que F) pour lancer la partie.
+(autre que F/O/N) pour lancer la partie. **N** y change de scénario (jeu
+libre ou Progression, voir « Scénarios » ci-dessous).
 
 ### Exécutable autonome
 
@@ -63,6 +86,7 @@ upx --best --lzma target/release/rust-meteors-mining
 | Shift (gauche ou droit) | Tirer |
 | P | Pause |
 | S | Aide (liste des touches, fermeture au clic sur CLOSE) |
+| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : panneau « MOVING MODE » (3 modes de déplacement en radio-boutons, clic ou flèches ↑/↓ + Entrée), cases MUSIC / AUTO GENERATE / ANTIALIAS, volume (barre horizontale cliquable/glissable) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 — clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (seule la progression du scénario — minerais, modes payés, réputation — est conservée) ; fermer avec CLOSE ou ESC (le HUD annonce le mode activé s'il a changé) |
 | G | Générer un météore près du vaisseau |
 | A | Activer/désactiver la génération automatique des météores |
 | C | Créer un alien |
@@ -71,10 +95,83 @@ upx --best --lzma target/release/rust-meteors-mining
 | D | Afficher les données des formes (debug) |
 | I | Afficher les informations (keycode, compteurs, formes/triangles vivants) |
 | ESC | Quitter |
+| N / B / 1-3 (écran titre) | Changer de scénario : N suit le cycle (jeu libre → Progression → Survival → jeu libre), B le parcourt en sens inverse, et 1/2/3 sélectionnent directement (1 = jeu libre, 2 = Progression, 3 = Survival) |
 
 Au démarrage, le vaisseau est à la station : éloignez-vous pour commencer à
-miner. Revenez à moins de 5 px de la station pour ouvrir la boîte
-DOCK STATION (UNLOAD/CLOSE).
+miner. Revenez dans la zone d'accostage en **ralentissant** : la mire au
+centre de la station passe du rouge au vert avec la vitesse (vert = prêt,
+`DOCK: IN RANGE` au HUD) pour ouvrir la boîte DOCK STATION
+(UNLOAD / REFUEL/REARM / [UPGRADES] / CLOSE) : UNLOAD décharge
+la soute, REFUEL/REARM achète carburant + munitions contre minerais,
+UPGRADES ouvre l'atelier d'amélioration du vaisseau (scénario Progression),
+CLOSE ferme — la boîte reste ouverte après UNLOAD, REFUEL/REARM et les
+achats de l'atelier pour tout faire avant de partir.
+
+## Scénarios
+
+Les scénarios (choisis à l'écran titre, touches N/B ou 1-3 — l'écran titre
+affiche leurs **règles** (`[ RULES : … ]`, dérivées des données par
+`scenario::scenario_rules`, avec les **valeurs chiffrées en surbrillance**
+dans la **couleur propre du scénario** — jaune pour Progression, cyan pour
+Survival (coûts, vies, bouclier, dégâts, rangs) — pour faire ressortir ce
+qui change au basculement ; juste après un changement (N/B/1-3), toute la
+ligne **clignote dans cette couleur** ~1,2 s pour attirer l'œil) et la
+**progression enregistrée** du scénario (`[ SAVE : … ]`,
+minerais/modes/réputation ou vies/bouclier, avec les **valeurs en
+surbrillance** dans la couleur du scénario elles aussi —
+`scenario::save_summary_segments`)) encapsulent des règles de jeu en
+**données +
+points d'accroche purs** (`src/scenario.rs`) — la boucle (`game.rs`) ne fait
+qu'appeler des fonctions testables sans macroquad :
+
+- **FREE PLAY** (défaut) — le comportement historique : aucun coût, tous les
+  modes de déplacement disponibles, carburant et munitions illimités.
+- **PROGRESSION** — l'exemple d'économie :
+  - le vaisseau démarre en mode **INERTIAL** ; les modes **4 WAYS** (20
+    minerais) et **DIRECTIONAL** (50 minerais) se débloquent dans l'écran de
+    paramétrage (O) en payant des minerais (affichés à côté du mode) ;
+  - les minerais s'obtiennent en minant : chaque gemme déchargée à la station
+    vaut selon son élément (or 5, fer 3, eau 2) ;
+  - **carburant** et **munitions** sont payants : chaque poussée consomme du
+    carburant (moteur éteint, plus de poussée — rotations libres), chaque tir
+    une munition ; les pleins s'achètent à la station (10 carburant = 1
+    minerai, 5 munitions = 1) via le bouton REFUEL/REARM de la boîte DOCK
+    STATION (plus d'achat automatique au déchargement) ;
+  - **l'atelier** (bouton UPGRADES de la boîte DOCK STATION — une sorte de
+    place de marché/atelier) permet d'acheter contre minerais des extensions
+    de vaisseau, persistées avec la progression : **réservoir** (100 de base,
+    3 extensions de +50 → 250 max), **chargeur** (30 de base, 3 extensions
+    → 70 max) et **soute** (5 emplacements de base, 2 extensions → 10 max) ;
+    à l'achat, le réservoir/chargeur repart plein à la nouvelle capacité et
+    la soute s'agrandit immédiatement ; le HUD affiche les capacités courantes
+    (`FUEL:50/150 AMMO:20/45`) ;
+  - la **réputation** croît à chaque astéroïde détruit, d'autant plus que la
+    précision de tir est bonne (gain × (1 + 2 × précision)) — affichée au HUD
+    avec FUEL / AMMO / MINERALS ; elle débloque des **rangs** (paliers
+    affichés au HUD, ex `REPUTATION:37 (ACE)`) : CADET (0) → PILOT (10) →
+    VETERAN (25) → ACE (50), chaque palier franchi est annoncé (« RANK UP:
+    PILOT ») ;
+- **SURVIVAL** — preuve que le système s'étend hors de l'économie : ni
+  minerais ni verrous (tous les modes disponibles), mais le vaisseau a des
+  **vies** (3) et un **bouclier** qui absorbe les impacts (3 points) ; quand
+  il est percé, l'impact suivant détruit le vaisseau — une vie est perdue et
+  il respawne à la station (bouclier rechargé + **2 s d'invulnérabilité**, le
+  vaisseau clignote), la dernière vie perdue termine la partie (HUD « GAME
+  OVER », seule la touche ESC quitte) ; le **multiplicateur de dégâts**
+  aggrave chaque impact (bouclier vidé plus vite). Le HUD affiche
+  `LIVES:3 SHIELD:3`.
+
+Les coûts, capacités et formules sont des constantes (`FREE_PLAY_SCENARIO`,
+`PROGRESSION_SCENARIO`, `SURVIVAL_SCENARIO`) : un nouveau scénario = une
+nouvelle constante + les accroches qu'il lui faut. La progression d'une
+partie est **persistée** dans le fichier de config (clés `scenario` +
+`prog_*`) et restaurée au lancement suivant (le dernier scénario joué reprend
+automatiquement) : minerais, modes payés et réputation en Progression
+(`prog_minerals`, `prog_modes`, `prog_reputation`), **vies et bouclier en
+Survival** (`prog_lives`, `prog_shield` — bornés aux capacités du scénario,
+une sauvegarde à 0 vie repart au départ complet) ; chaque scénario n'écrit
+que ses propres clés, sans écraser la sauvegarde de l'autre. Le carburant et
+les munitions, eux, repartent pleins à chaque lancement.
 
 ## Détails techniques
 
@@ -89,8 +186,24 @@ DOCK STATION (UNLOAD/CLOSE).
   étirée, letterbox) ou **natif** (rendu direct à la définition réelle de
   l'écran) ; la bascule EWMH passe par `src/x11.rs` (ClientMessage
   `_NET_WM_STATE` direct, sans outil externe).
-- Le jeu est testé : `cargo test` (37 tests unitaires — physique, collisions,
-  minage, accostage, nettoyage des formes).
+- Réglages persistants (`meteors_mining.cfg`, dossier de configuration
+  utilisateur — norme XDG, ex `~/.config/meteors-mining/meteors_mining.cfg`) :
+  mode de déplacement, musique (touche M), volume, style de rendu, mode
+  d'affichage, définition de fenêtre et anticrénelage — modifiables dans
+  l'écran de paramétrage (touche O) ou par les touches M/A, rechargés au
+  lancement suivant. NB : la génération automatique des météores (touche A ou
+  case AUTO GENERATE) n'est **pas** persistée — elle repart **toujours
+  active** à chaque lancement, pour que le monde ne soit jamais vide au
+  démarrage. S'y ajoutent le scénario choisi et la progression d'une partie à
+  économie (`scenario`, `prog_*`), sauvegardés à chaque changement
+  (déchargement, mode payé, astéroïde détruit) et restaurés au lancement. Le
+  RESET de l'écran de paramétrage ne supprime que les clés de réglage — la
+  progression du scénario survit. En fenêtré, une définition plus grande que
+  960×540 étire la vue (letterbox) ; l'anticrénelage MSAA est appliqué à la
+  création de la fenêtre (effectif au lancement suivant).
+- Le jeu est testé : `cargo test` (103 tests unitaires — physique, collisions,
+  minage, accostage, paramétrage, options graphiques, persistance, scénarios,
+  atelier d'amélioration).
 
 ## Structure du projet
 
@@ -102,13 +215,15 @@ rust-meteors-mining/
     ├── main.rs             ← boucle principale (fenêtre 960×540, sans vsync)
     ├── config.rs           ← constantes (vue, monde torique, gameplay)
     ├── geom.rs             ← Point, World, Segment, Triangle + géométrie
+    ├── persist.rs          ← fichier de config XDG (mode, musique, volume, graphismes, génération auto)
     ├── shape.rs            ← Shape, meshes, collisions, mouvement
     ├── garbage.rs          ← débris
     ├── state.rs            ← Player, Element, GameState, messages
     ├── generate.rs         ← génération procédurale des météores, prepare
     ├── game.rs             ← boucle de jeu (input, déplacement, collisions, pause)
     ├── render.rs           ← rendu (étoiles, triangles texturés, HUD, aide, debug)
-    ├── title.rs            ← écran titre (bannière arc-en-ciel, étoiles)
+    ├── scenario.rs         ← scénarios (règles économiques, modes, réputation, atelier d'amélioration)
+    ├── title.rs            ← écran titre (bannière arc-en-ciel, étoiles, choix du scénario)
     ├── audio.rs            ← sons et musique (ambiance, moteur, explosions)
     └── x11.rs              ← plein écran EWMH (X11)
 ```

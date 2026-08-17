@@ -227,7 +227,12 @@ pub fn create_station(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
     // l'intention est clairement de calculer celui de la station (résultat
     // identique : la station est centrée sur (0,0)) — on le fait explicitement.
     compute_shape_center(&mut shapes[idx], triangles);
-    shapes[idx].radius = STATION_RADIUS;
+    // NB dérive volontaire de l'original : celui-ci forçait `radius = 36`,
+    // bien plus petit que l'anneau visible (r ≈ 110-162). Le pré-filtre de
+    // proximité de `game.rs` (`sum_radius`) laissait alors les météores
+    // traverser l'anneau sans aucun test. On garde le rayon calculé (la
+    // géométrie réelle) : c'est la détection de collision par triangles
+    // (SAT) qui décide de la collision avec la base.
 }
 
 /// Crée une gemme à partir d'un triangle détruit (ex `createGem`).
@@ -485,6 +490,14 @@ mod tests {
         assert_eq!(shapes[STATION_INDEX].who_i_am, WHOIAM_STATION);
         // joueur (1) + station (66 emplacements)
         assert_eq!(triangles.len(), 1 + 66);
+        // le rayon de la station couvre l'anneau visible (r ≈ 110-162) : la
+        // collision est décidée par la détection de triangles (SAT), pas par
+        // un petit rayon forcé (dérive volontaire — voir `create_station`).
+        assert!(
+            shapes[STATION_INDEX].radius >= 160.0,
+            "rayon de la station {} trop petit pour couvrir l'anneau",
+            shapes[STATION_INDEX].radius
+        );
         assert_eq!(stars.len(), STARS_COUNT);
         assert_eq!(elements.len(), 4);
         // positions initiales

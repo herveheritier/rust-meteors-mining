@@ -21,7 +21,9 @@ mod game;
 mod garbage;
 mod generate;
 mod geom;
+mod persist;
 mod render;
+mod scenario;
 mod shape;
 mod state;
 mod title;
@@ -32,18 +34,26 @@ use ::rand::SeedableRng;
 use ::rand_chacha::ChaCha12Rng;
 
 use crate::config::{
-    ATTEMPT_FPS, PLAYER_INDEX, VIEWPORT_HEIGHT, VIEWPORT_WIDTH, WINDOW_TITLE,
+    ATTEMPT_FPS, PLAYER_INDEX, STATION_INDEX, VIEWPORT_HEIGHT, VIEWPORT_WIDTH, WINDOW_SIZES,
+    WINDOW_TITLE,
 };
 use crate::geom::Point;
-use crate::state::{GameState, ViewMode};
+use crate::state::{GameState, RenderStyle, ViewMode};
 use std::f64::consts::TAU;
 use std::time::Duration;
 
 fn window_conf() -> Conf {
+    // options graphiques persistées (écran de paramétrage) : définition de
+    // la fenêtre (taille initiale en fenêtré) et anticrénelage MSAA — ce
+    // dernier est fixé à la **création** de la fenêtre (macroquad ne permet
+    // pas de le changer à chaud) : il prend effet au lancement suivant
+    let (win_w, win_h) = persist::load_window_size().unwrap_or((VIEWPORT_WIDTH as i32, VIEWPORT_HEIGHT as i32));
+    let antialias = persist::get_bool("antialias").unwrap_or(false);
     Conf {
         window_title: WINDOW_TITLE.to_owned(),
-        window_width: VIEWPORT_WIDTH as i32,
-        window_height: VIEWPORT_HEIGHT as i32,
+        window_width: win_w,
+        window_height: win_h,
+        sample_count: if antialias { 4 } else { 1 },
         high_dpi: true,
         // pas de vsync : l'original (QB64) tourne sans vsync (110 FPS) ;
         // miniquad force `swap_interval = 1` par défaut, ce qui plafonne le
@@ -56,12 +66,78 @@ fn window_conf() -> Conf {
     }
 }
 
+/// Relance l'exécutable courant (bouton RESTART de l'écran de paramétrage,
+/// ex après un changement d'anticrénelage) : le fichier de config contient
+/// déjà les réglages modifiés. Renvoie `false` si la relance a échoué (le jeu
+/// continue alors normalement — le réglage s'appliquera au lancement manuel).
+fn restart_process() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    std::process::Command::new(exe).args(&args).spawn().is_ok()
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     // ─── Phase 1 : modèle de données ────────────────────────────────────────
     // L'état initial (monde torique, joueur, étoiles, station) est construit
     // par `prepare`, exactement comme le `prepare` du jeu QB64.
     let mut state = GameState::new();
+    // réglages persistés (fichier de config utilisateur, norme XDG — ex
+    // `~/.config/meteors-mining/meteors_mining.cfg`) : le mode de
+    // déplacement choisi dans l'écran de paramétrage (touche O) remplace le
+    // défaut au lancement (comme s'il venait d'être sélectionné, sans
+    // message « MODE CHANGÉ » intempestif) ; volume et musique s'appliquent
+    // aux sons ci-dessous. NB : la génération automatique des météores
+    // (touche A) n'est **pas** persistée — elle repart toujours active au
+    // lancement (défaut de `GameState`), pour que le monde ne soit jamais
+    // vide sans que le joueur l'ait demandé pour la session en cours.
+    if let Some(mode) = persist::load_moving_mode() {
+        state.moving_mode = mode;
+        state.settings_previous_mode = mode;
+    }
+    // options graphiques persistées (écran de paramétrage O) : style de
+    // rendu, mode d'affichage (fenêtré / plein écran zoomé / natif) et
+    // anticrénelage (reflété par la case, l'effet étant appliqué par
+    // `window_conf`)
+    if let Some(style) = persist::load_render_style() {
+        state.render_style = match style {
+            1 => RenderStyle::Colored,
+            2 => RenderStyle::Mesh,
+            _ => RenderStyle::Textured,
+        };
+    }
+    if let Some(mode) = persist::load_window_mode() {
+        state.view_mode = match mode {
+            1 => ViewMode::Zoomed,
+            2 => ViewMode::Native,
+            _ => ViewMode::Windowed,
+        };
+    }
+    if let Some(size) = persist::get_i32("window_size") {
+        if (0..WINDOW_SIZES.len() as i32).contains(&size) {
+            state.window_size = size;
+        }
+    }
+    if let Some(aa) = persist::get_bool("antialias") {
+        state.antialias = aa;
+    }
+    // la valeur effectivement appliquée par la fenêtre (`window_conf` lit la
+    // même clé) : si `antialias` en diffère ensuite, un redémarrage est
+    // nécessaire (bouton RESTART de l'écran de paramétrage)
+    state.antialias_applied = state.antialias;
+    // scénario (choisi à l'écran titre, touche N — défaut : jeu libre) : le
+    // dernier scénario joué est persisté (`scenario`) — on le restaure avant
+    // d'appliquer ses règles de départ (ressources initiales, modes débloqués
+    // et, en PROGRESSION, le mode de déplacement imposé INERTIAL), puis la
+    // progression enregistrée (minerais, modes payés, réputation — clés
+    // `prog_*`) est surimposée sur ces valeurs de départ
+    if let Some(id) = crate::scenario::load_scenario() {
+        state.scenario = id;
+    }
+    crate::scenario::apply_start(&mut state);
+    crate::scenario::load_progression(&mut state);
     let mut shapes = Vec::new();
     let mut triangles = Vec::new();
     let mut stars: Vec<Point> = Vec::new();
@@ -88,9 +164,21 @@ async fn main() {
     let mut garbages = Vec::new();
 
     // ─── Audio (Phase 4, ex les `_sndopen` de `meteorsMining.bas`) ─────────
-    // Sons chargés une fois ; l'ambiance et la musique démarrent avec la
-    // partie (après l'écran titre), comme l'original (`mainLoop`).
+    // Sons chargés une fois ; l'ambiance démarre avec la partie (après
+    // l'écran titre), la musique dès le lancement si activée — comme
+    // l'original (`mainLoop`) mais rendu cohérent avec l'écran de paramétrage
+    // accessible depuis le titre.
     let mut sounds = audio::Sounds::load().await;
+    // réglages audio persistés (clés `volume` et `music` du fichier de
+    // config) : volume maître avant le démarrage des boucles ; la musique
+    // démarre dès l'écran titre si activée — l'écran de paramétrage (touche
+    // O) y est accessible et sa case MUSIC doit refléter l'état réel
+    if let Some(pct) = persist::get_i32("volume") {
+        sounds.set_volume(pct as f32 / 100.0);
+    }
+    if persist::get_bool("music").unwrap_or(true) {
+        sounds.start_music();
+    }
 
     // ─── Zoom plein écran (touche F) ────────────────────────────────────────
     // La vue 960×540 est rendue dans une texture puis affichée étirée dans la
@@ -102,16 +190,29 @@ async fn main() {
     render_target.texture.set_filter(FilterMode::Linear);
 
     // ─── Écran titre (jalon M5, ex `titleLoop`) ─────────────────────────────
-    title::title_loop(&mut state, &assets, &render_target).await;
+    // `sounds` est transmis pour l'écran de paramétrage (touche O) accessible
+    // depuis le titre (musique et volume y sont réglables). `true` en retour :
+    // le bouton RESTART a été cliqué → on relance le jeu immédiatement.
+    let title_restart = title::title_loop(&mut state, &assets, &render_target, &mut sounds).await;
+    if title_restart {
+        if restart_process() {
+            return;
+        }
+    }
 
     // le keypress qui a lancé la partie (ex F du titre) est encore dans la
     // file d'input : sans ça, la première frame de jeu le verrait (ex F →
     // `state.view_mode` re-basculé) et annulerait le redimensionnement.
     clear_input_queue();
 
-    // ambiance + musique de la partie (ex `_sndloop sh6&/sh7&` de mainLoop)
+    // ambiance + musique de la partie (ex `_sndloop sh6&/sh7&` de mainLoop).
+    // La musique est relue du fichier : un changement fait pendant l'écran de
+    // paramétrage du titre est pris en compte (`start_music` est sans effet
+    // si elle est déjà en lecture).
     sounds.start_ambient();
-    sounds.start_music();
+    if persist::get_bool("music").unwrap_or(true) {
+        sounds.start_music();
+    }
 
     // ─── Boucle principale (Phase 3 / jalons M2-M5) ─────────────────────────
     // Limitation de boucle (ex `_limit ATTEMPT_FPS` = 600 de l'original) :
@@ -157,16 +258,38 @@ async fn main() {
             Some(&mut sounds),
             dt,
         );
-        if action == game::Action::Quit {
-            break;
+        match action {
+            game::Action::Quit => break,
+            // RESTART (écran de paramétrage, ex changement d'anticrénelage) :
+            // relance l'exécutable — les réglages sont déjà écrits dans le
+            // fichier de config — puis quitte (sans effet si la relance échoue)
+            game::Action::Restart => {
+                if restart_process() {
+                    break;
+                }
+            }
+            game::Action::Continue => {}
         }
 
         // boucle moteur avant/recul (ex `_sndloop/_sndpause sh8&/sh9&`) :
-        // coupée pendant les boîtes (l'original la coupe à l'accostage)
-        let engine_on = state.player.thrusted != 0 && !state.dock_box && !state.help_box;
+        // coupée pendant les boîtes (l'original la coupe à l'accostage) et
+        // pendant l'animation d'accostage / la rétraction des liens
+        let engine_on = state.player.thrusted != 0
+            && !state.dock_box
+            && !state.workshop_box
+            && !state.help_box
+            && !state.settings_box
+            && state.dock_anim <= 0.0
+            && state.dock_retract <= 0.0;
         sounds.engine(engine_on);
         sounds.reverse_engine(
-            state.player.revert_thrusted != 0 && !state.dock_box && !state.help_box,
+            state.player.revert_thrusted != 0
+                && !state.dock_box
+                && !state.workshop_box
+                && !state.help_box
+                && !state.settings_box
+                && state.dock_anim <= 0.0
+                && state.dock_retract <= 0.0,
         );
 
         // --- Rendu (toujours actif, même en pause) ---
@@ -175,7 +298,16 @@ async fn main() {
         // 2e mode). Plein écran natif : rendu direct à la définition réelle
         // de l'écran via une caméra zoomée — SANS render target (F, 3e mode).
         match state.view_mode {
-            ViewMode::Windowed => set_default_camera(),
+            // fenêtré : dessin direct 1:1 à la définition native (960×540),
+            // sinon la vue est rendue dans la texture puis étirée (letterbox)
+            // — voir `render::window_scaled`
+            ViewMode::Windowed => {
+                if render::window_scaled() {
+                    set_camera(&render::virtual_camera(&render_target));
+                } else {
+                    set_default_camera();
+                }
+            }
             ViewMode::Zoomed => set_camera(&render::virtual_camera(&render_target)),
             ViewMode::Native => set_camera(&render::native_camera()),
         }
@@ -194,6 +326,39 @@ async fn main() {
                 state.show_data,
             );
         }
+        // mire d'accostage au centre de la station : dessinée **sous le
+        // vaisseau** (par-dessus l'anneau de la station, avant le joueur) —
+        // semi-transparente, rouge → vert selon la vitesse d'approche. Elle
+        // **disparaît quand le vaisseau est tenu par les liens** (à quai,
+        // animation d'accostage, accosté, rétraction) et **réapparaît quand
+        // le vaisseau franchit la limite extérieure de la base** au retour
+        // (voir `render::docking_marker_visible`)
+        if render::docking_marker_visible(
+            &state,
+            shapes[PLAYER_INDEX].position,
+            shapes[STATION_INDEX].position,
+            shapes[STATION_INDEX].radius,
+        ) {
+            render::draw_docking_marker(
+                camera,
+                &state.world,
+                shapes[STATION_INDEX].position,
+                shapes[STATION_INDEX].radius,
+                shapes[PLAYER_INDEX].position,
+                shapes[PLAYER_INDEX].velocity,
+            );
+        }
+        // traits d'accostage : pendant l'animation (3 s, avant la boîte) ils
+        // relient le bord intérieur de la station aux côtés du vaisseau — néon
+        // vert, sous le vaisseau (après la mire) ; au départ (CLOSE), ils se
+        // rétractent vers le bord (voir `render::draw_docking_line`)
+        render::draw_docking_line(
+            &state,
+            camera,
+            &state.world,
+            &shapes[STATION_INDEX],
+            &shapes[PLAYER_INDEX],
+        );
         render::draw_shape(
             &state,
             &assets,
@@ -219,6 +384,12 @@ async fn main() {
 
         render::draw_cargo(&state, &elements);
         render::draw_hud(&state);
+        render::draw_docking_hud(
+            &state,
+            shapes[PLAYER_INDEX].position,
+            shapes[STATION_INDEX].position,
+            shapes[PLAYER_INDEX].velocity,
+        );
 
         // affichages de debug (touches D et I)
         if state.show_info {
@@ -226,19 +397,28 @@ async fn main() {
         }
         render::draw_message(&mut state);
 
-        // boîte de choix DOCK STATION (accostage) et fenêtre d'aide (touche S)
-        // par-dessus le jeu
+        // boîte de choix DOCK STATION (accostage), atelier d'amélioration
+        // (bouton UPGRADES), fenêtre d'aide (touche S) et écran de
+        // paramétrage (touche O) par-dessus le jeu
         if state.dock_box {
-            render::draw_choice_box();
+            render::draw_choice_box(&state);
+        }
+        if state.workshop_box {
+            render::draw_workshop_box(&state);
         }
         if state.help_box {
             render::draw_help_box();
         }
+        if state.settings_box {
+            render::draw_settings_box(&state, &sounds);
+        }
 
-        // en plein écran zoomé seul : la vue virtuelle est étirée dans la
-        // fenêtre (fenêtré : dessin direct ; natif : rendu direct, rien à
-        // blitter)
-        if state.view_mode == ViewMode::Zoomed {
+        // la vue virtuelle est étirée dans la fenêtre en plein écran zoomé
+        // et en fenêtré agrandi (définition choisie) — fenêtré natif : dessin
+        // direct ; natif : rendu direct, rien à blitter
+        if state.view_mode == ViewMode::Zoomed
+            || (state.view_mode == ViewMode::Windowed && render::window_scaled())
+        {
             render::draw_zoomed(&render_target);
         }
 
