@@ -207,6 +207,16 @@ pub struct Shape {
     pub is_collider: bool,
     pub life: i32,
     pub element: i32,
+    /// Quantité de minerai contenue dans un météore (1 par triangle
+    /// minéralisé au départ, +1 par gemme absorbée) : libérée en gemmes à la
+    /// position du météore quand il est détruit par la collision d'un autre
+    /// météore. 0 hors météores.
+    pub minerals: i32,
+    /// Angle (radians) de balancement actuel des membres du cosmonaute EVA :
+    /// poursuit la cible oscillante pendant la poussée et décroît vers 0 au
+    /// repos (voir `cosmonaut::animate_eva_cosmonaut`). 0 pour les autres
+    /// formes.
+    pub anim_angle: f64,
     pub show_all_parts: bool,
     pub who_i_am: i32,
 }
@@ -236,6 +246,8 @@ impl Default for Shape {
             is_collider: false,
             life: 0,
             element: 0,
+            minerals: 0,
+            anim_angle: 0.0,
             show_all_parts: false,
             who_i_am: 0,
         }

@@ -17,6 +17,7 @@
 
 mod audio;
 mod config;
+mod cosmonaut;
 mod game;
 mod garbage;
 mod generate;
@@ -144,9 +145,15 @@ async fn main() {
     let mut elements = Vec::new();
     let mut rng = ChaCha12Rng::from_entropy();
     generate::prepare(&mut state, &mut shapes, &mut triangles, &mut stars, &mut elements, &mut rng);
+    // cosmonaute EVA — le pilote contrôlé quand le vaisseau est détruit
+    // (`game.rs` : `activate_cosmonaut`/`rescue_cosmonaut`) : chargé depuis
+    // `assets/cosmonaute.json` (couleurs par face), petit, garé hors écran en
+    // bord de monde, téléporté au crash le moment venu (aucun cosmonaute
+    // décoratif près de la base)
+    state.eva_cosmonaut = cosmonaut::create_eva_cosmonaut(&mut shapes, &mut triangles) as i32;
 
     info!(
-        "Phase 1 OK : {} formes, {} triangles, {} étoiles, {} éléments",
+        "Phase 1 OK : {} formes (dont cosmonaute), {} triangles, {} étoiles, {} éléments",
         shapes.len(),
         triangles.len(),
         stars.len(),
@@ -259,7 +266,14 @@ async fn main() {
             dt,
         );
         match action {
-            game::Action::Quit => break,
+            game::Action::Quit => {
+                // filet de sécurité : la progression (minerais, modes,
+                // réputation, vies/bouclier) est écrite à la sortie, au cas
+                // où un changement n'aurait pas été persisté au moment où il
+                // s'est produit
+                let _ = crate::scenario::save_progression(&state);
+                break;
+            }
             // RESTART (écran de paramétrage, ex changement d'anticrénelage) :
             // relance l'exécutable — les réglages sont déjà écrits dans le
             // fichier de config — puis quitte (sans effet si la relance échoue)
@@ -314,8 +328,15 @@ async fn main() {
         clear_background(BLACK);
         render::draw_stars(&assets, camera);
 
-        // formes (météores, station…) puis le vaisseau joueur par-dessus
+        // formes (météores, station…) puis le vaisseau joueur par-dessus — le
+        // cosmonaute EVA est retiré de la boucle : il est dessiné **au premier
+        // plan**, après le vaisseau (c'est le pilote quand le vaisseau est
+        // détruit ; garé, il est cullé)
+        let eva = state.eva_cosmonaut as usize;
         for i in 1..shapes.len() {
+            if i == eva {
+                continue;
+            }
             render::draw_shape(
                 &state,
                 &assets,
@@ -326,16 +347,20 @@ async fn main() {
                 state.show_data,
             );
         }
+        // le pilote (vaisseau, ou cosmonaute EVA quand il est détruit) guide
+        // la mire, le HUD d'accostage et la flamme de poussée
+        let pilot = game::pilot_index(&state);
         // mire d'accostage au centre de la station : dessinée **sous le
         // vaisseau** (par-dessus l'anneau de la station, avant le joueur) —
         // semi-transparente, rouge → vert selon la vitesse d'approche. Elle
         // **disparaît quand le vaisseau est tenu par les liens** (à quai,
         // animation d'accostage, accosté, rétraction) et **réapparaît quand
         // le vaisseau franchit la limite extérieure de la base** au retour
-        // (voir `render::docking_marker_visible`)
+        // (voir `render::docking_marker_visible`) — en mode cosmonaute EVA
+        // elle est toujours visible (il doit rejoindre la base)
         if render::docking_marker_visible(
             &state,
-            shapes[PLAYER_INDEX].position,
+            shapes[pilot].position,
             shapes[STATION_INDEX].position,
             shapes[STATION_INDEX].radius,
         ) {
@@ -344,8 +369,8 @@ async fn main() {
                 &state.world,
                 shapes[STATION_INDEX].position,
                 shapes[STATION_INDEX].radius,
-                shapes[PLAYER_INDEX].position,
-                shapes[PLAYER_INDEX].velocity,
+                shapes[pilot].position,
+                shapes[pilot].velocity,
             );
         }
         // traits d'accostage : pendant l'animation (3 s, avant la boîte) ils
@@ -368,13 +393,35 @@ async fn main() {
             &elements,
             state.show_data,
         );
-
-        // effet de poussée (3 cercles orange en avant, bleu en recul)
-        if state.player.thrusted != 0 {
-            render::ejection_flow(&shapes[PLAYER_INDEX], TAU / 2.0, 0xFFFFA000, camera, &state.world);
+        // cosmonaute EVA au **premier plan** (par-dessus le vaisseau et tout
+        // le reste du monde) : dessiné **uniquement quand il est éjecté**
+        // (`cosmonaut_active`) — jamais de cosmonaute supplémentaire dans le
+        // monde quand le vaisseau est intact (garé, il n'est pas affiché)
+        if state.cosmonaut_active && state.eva_cosmonaut >= 0 {
+            render::draw_shape(
+                &state,
+                &assets,
+                &shapes[eva],
+                &mut triangles,
+                camera,
+                &elements,
+                state.show_data,
+            );
         }
-        if state.player.revert_thrusted != 0 {
-            render::ejection_flow(&shapes[PLAYER_INDEX], 0.0, 0xFF00A0FF, camera, &state.world);
+
+        // effet de poussée : le vaisseau a sa flamme classique (3 cercles
+        // orange en avant, bleu en recul) ; le cosmonaute EVA, lui, n'a qu'un
+        // **petit propulseur sur le dos** — une flamme animée, et pas de
+        // marche arrière (voir `render::draw_cosmonaut_thruster`)
+        if state.player.thrusted != 0 {
+            if state.cosmonaut_active {
+                render::draw_cosmonaut_thruster(&shapes[pilot], camera, &state.world);
+            } else {
+                render::ejection_flow(&shapes[pilot], TAU / 2.0, 0xFFFFA000, camera, &state.world);
+            }
+        }
+        if state.player.revert_thrusted != 0 && !state.cosmonaut_active {
+            render::ejection_flow(&shapes[pilot], 0.0, 0xFF00A0FF, camera, &state.world);
         }
 
         // débris
@@ -383,12 +430,17 @@ async fn main() {
         }
 
         render::draw_cargo(&state, &elements);
-        render::draw_hud(&state);
+        // HUD en haut de l'écran : stats + ressources sur une ligne, puis le
+        // statut d'accostage à la suite (même ligne — `draw_hud` renvoie la
+        // fin de ligne). La distance affichée est celle du pilote (le
+        // cosmonaute EVA quand le vaisseau est détruit)
+        let hud_end_x = render::draw_hud(&state);
         render::draw_docking_hud(
             &state,
-            shapes[PLAYER_INDEX].position,
+            shapes[pilot].position,
             shapes[STATION_INDEX].position,
-            shapes[PLAYER_INDEX].velocity,
+            shapes[pilot].velocity,
+            hud_end_x,
         );
 
         // affichages de debug (touches D et I)

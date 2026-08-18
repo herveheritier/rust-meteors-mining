@@ -26,7 +26,8 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   base** : sa couleur passe **progressivement du rouge au vert** selon la
   distance au centre ET la vitesse (rouge au bord du rayon ou trop rapide,
   vert au centre et presque immobile) ; la distance est au HUD
-  (`DOCK: 123 px` / `DOCK: SLOW DOWN` / `DOCK: IN RANGE` / `DOCKED`).
+  (`DOCK DIST: 123` — sans unité — / `DOCK: SLOW DOWN` / `DOCK: IN RANGE` /
+  `DOCKED`).
   L'accostage se termine seulement **presque immobile dans la zone** : la
   mire **disparaît** et une **animation de 3 s** (monde gelé) **projette**
   les **4 liens** en diagonale (**NO, SO, SE, NE**) : ils jaillissent de
@@ -39,6 +40,36 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   fouette puis retombe — comme un câble qui se rentre), puis le vaisseau est
   libre.
 - **Météores en continu** : génération automatique (limite 150) ou à la demande.
+- **Minerais dans les météores** : chaque météore contient une quantité de
+  minerai (un par triangle minéralisé — or, fer, eau — au départ, plus un
+  par gemme absorbée). Le minerai n'est **jamais détruit** quand son météore
+  l'est : qu'il soit détruit par un **autre météore** ou par un **missile du
+  vaisseau**, ses minerais sont **libérés en gemmes** à sa position. Le seul
+  cas de destruction de minerai : un **missile touche directement la gemme**
+  (elle est détruite, sans nouvelle gemme). Si un **météor percute une
+  gemme**, il l'**absorbe** (elle disparaît, sa quantité de minerai augmente)
+  sans être endommagé — les gemmes qu'il a mangées sont récupérables en le
+  détruisant (missile ou collision).
+- **Cosmonaute de secours** : quand le vaisseau est détruit (jeu libre ou
+  Progression), le pilote est **éjecté** — un petit **cosmonaute EVA** (le
+  personnage de `assets/cosmonaute.json`, en couleurs par face) apparaît à la
+  position du crash et devient le personnage contrôlé : il se dirige **comme
+  le vaisseau** mais avec **un seul propulseur** : la poussée est
+  **vectorielle** (↑ ajoute la poussée au **vecteur de déplacement** — pour
+  changer de direction, d'abord **s'orienter** avec ←/→, puis pousser), pas
+  de frein ni de marche arrière ; la caméra, la mire et le HUD le suivent),
+  dessiné **au premier plan** — uniquement pendant l'EVA (jamais de
+  cosmonaute supplémentaire dans le monde) — avec un **petit propulseur sur
+  le dos**
+  (flamme animée orange/jaune, vacillante, visible quand il pousse) et des
+  **membres animés** : bras et jambes **s'agitent** (bascule autour des
+  épaules/hanches) pendant la poussée puis retombent au repos. Il peut
+  **ramasser les gemmes** par proximité (même soute que le vaisseau —
+  déchargée en minerais à la station). Son **seul objectif** : **rejoindre
+  la base** — dès qu'il atteint la zone d'accostage
+  au centre de la station, il est **secouru** et le vaisseau est
+  **reconstruit** à quai (liens attachés, comme au lancement). En Survival,
+  la destruction reste gérée par les vies/bouclier (respawn à la station).
 - **Audio** : ambiance, musique, moteur avant/recul, tirs, gemmes et
   explosions à volume selon la distance au vaisseau.
 
@@ -196,7 +227,9 @@ les munitions, eux, repartent pleins à chaque lancement.
   active** à chaque lancement, pour que le monde ne soit jamais vide au
   démarrage. S'y ajoutent le scénario choisi et la progression d'une partie à
   économie (`scenario`, `prog_*`), sauvegardés à chaque changement
-  (déchargement, mode payé, astéroïde détruit) et restaurés au lancement. Le
+  (déchargement, ravitaillement, mode payé, achat à l'atelier, astéroïde
+  détruit) et restaurés au lancement (une sauvegarde finale a aussi lieu à
+  la sortie du jeu). Le
   RESET de l'écran de paramétrage ne supprime que les clés de réglage — la
   progression du scénario survit. En fenêtré, une définition plus grande que
   960×540 étire la vue (letterbox) ; l'anticrénelage MSAA est appliqué à la

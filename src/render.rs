@@ -1107,8 +1107,10 @@ fn draw_textured_triangle(
 
 /// Triangle sans texture (ex `drawTriangle`) : mappe en dur le triangle
 /// `(511,511)-(0,511)-(255,0)` de `orange2.png` (replié sur la vraie taille
-/// de la texture, équivalent `_seamless`). Les triangles morts sont dessinés
-/// en pointillés.
+/// de la texture, équivalent `_seamless`). Les triangles portant une couleur
+/// par face (`t.color != 0`, ex le cosmonaute de `cosmonaut.rs`) sont dessinés
+/// en remplissage uni à la place de la texture. Les triangles morts sont
+/// dessinés en pointillés.
 fn draw_triangle(
     assets: &Assets,
     t: &Triangle,
@@ -1122,26 +1124,31 @@ fn draw_triangle(
     let c = screen_point(t.real_c, camera, world);
 
     if t.life > 0 {
-        let texture = &assets.orange;
-        let tw = texture.width() as f64;
-        let th = texture.height() as f64;
-        // coordonnées en dur de l'original, repliées par _seamless
-        let uv = |x: f64, y: f64| {
-            vec2(
-                (x.rem_euclid(tw) / tw) as f32,
-                (y.rem_euclid(th) / th) as f32,
-            )
-        };
-        draw_triangle_texture(
-            texture,
-            a,
-            b,
-            c,
-            uv(511.0, 511.0),
-            uv(0.0, 511.0),
-            uv(255.0, 0.0),
-            WHITE,
-        );
+        if t.color != 0 {
+            // face à couleur propre (cosmonaute) : remplissage uni
+            macroquad::shapes::draw_triangle(a, b, c, triangle_color(t, shape, elements));
+        } else {
+            let texture = &assets.orange;
+            let tw = texture.width() as f64;
+            let th = texture.height() as f64;
+            // coordonnées en dur de l'original, repliées par _seamless
+            let uv = |x: f64, y: f64| {
+                vec2(
+                    (x.rem_euclid(tw) / tw) as f32,
+                    (y.rem_euclid(th) / th) as f32,
+                )
+            };
+            draw_triangle_texture(
+                texture,
+                a,
+                b,
+                c,
+                uv(511.0, 511.0),
+                uv(0.0, 511.0),
+                uv(255.0, 0.0),
+                WHITE,
+            );
+        }
     } else {
         draw_dead_triangle(a, b, c, t, shape);
     }
@@ -1194,10 +1201,13 @@ fn draw_mesh_triangle(
 }
 
 /// Couleur d'affichage d'un triangle vivant : celle de son élément minéral
-/// (ex `elements[t.element].color`) sinon la couleur de la forme.
+/// (ex `elements[t.element].color`), sinon sa couleur par face (`t.color`, ex
+/// le cosmonaute de `cosmonaut.rs`), sinon la couleur de la forme.
 fn triangle_color(t: &Triangle, shape: &Shape, elements: &[Element]) -> Color {
     if t.element > 0 {
         argb_to_color(elements[t.element as usize].color)
+    } else if t.color != 0 {
+        argb_to_color(t.color)
     } else {
         argb_to_color(shape.shape_color)
     }
@@ -1262,6 +1272,62 @@ pub fn ejection_flow(
     let mut p = Point::new(r3 * c + x, r3 * s + y);
     p.normalize_world(world);
     draw_circle(p.x as f32, p.y as f32, (3.0 + f) as f32, color);
+}
+
+/// Petit **propulseur de la combinaison EVA** : une flamme animée sur le dos
+/// du cosmonaute (dans l'axe `orientation + π`, comme la flamme du vaisseau —
+/// le dos est opposé au déplacement), dessinée quand il pousse (`thrusted`).
+/// Le cosmonaute n'a qu'**un seul propulseur** (pas de marche arrière — voir
+/// `game::cosmonaut_controls`) : une flamme extérieure orange semi-transparente
+/// et un cœur jaune, dont la longueur et la largeur **vacillent** (sinus
+/// rapide + bruit) pour un effet de combustion animé.
+pub fn draw_cosmonaut_thruster(shape: &Shape, camera: Point, world: &World) {
+    // dos du cosmonaute : opposé à l'orientation (déplacement inverse) — la
+    // flamme tourne avec la figure, toujours dans son dos
+    let back = shape.orientation + TAU / 2.0;
+    let (dx, dy) = (back.cos(), back.sin());
+    let (px, py) = (-dy, dx); // perpendiculaire : largeur de la flamme
+    let x = shape.position.x + shape.center.x;
+    let y = shape.position.y + shape.center.y;
+
+    // la flamme danse : longueur et demi-largeur animées (sinus rapide + bruit)
+    let t = get_time();
+    let n = rand::rand() as f64 / u32::MAX as f64;
+    let len = 5.0 + 2.0 * (t * 22.0).sin() + 1.5 * n;
+    let half = 1.6 + 0.5 * (t * 15.0 + 1.0).sin() + 0.4 * n;
+
+    // base de la flamme sur le dos du corps, pointe dans l'axe arrière
+    let nozzle = shape.radius * 0.9;
+    let to_screen = |p: Point| {
+        let mut q = Point::new(p.x + camera.x, p.y + camera.y);
+        q.normalize_world(world);
+        vec2(q.x as f32, q.y as f32)
+    };
+    let base = Point::new(x + dx * nozzle, y + dy * nozzle);
+    let tip = Point::new(x + dx * (nozzle + len), y + dy * (nozzle + len));
+    let l1 = Point::new(base.x + px * half, base.y + py * half);
+    let l2 = Point::new(base.x - px * half, base.y - py * half);
+    // flamme extérieure orange (semi-transparente) — chemin complet : la
+    // fonction locale `draw_triangle` (triangles non texturés) masque celle de
+    // macroquad
+    macroquad::shapes::draw_triangle(
+        to_screen(l1),
+        to_screen(l2),
+        to_screen(tip),
+        argb_to_color(0xA0FF9020),
+    );
+    // cœur jaune, plus court et plus étroit (le centre de la flamme)
+    let inner_len = nozzle + len * 0.55;
+    let inner_half = half * 0.45;
+    let itip = Point::new(x + dx * inner_len, y + dy * inner_len);
+    let i1 = Point::new(base.x + px * inner_half, base.y + py * inner_half);
+    let i2 = Point::new(base.x - px * inner_half, base.y - py * inner_half);
+    macroquad::shapes::draw_triangle(
+        to_screen(i1),
+        to_screen(i2),
+        to_screen(itip),
+        argb_to_color(0xFFFFD050),
+    );
 }
 
 /// Dessine un débris : pixel blanc 1×1 (ex `drawGarbage`).
@@ -1593,17 +1659,22 @@ pub fn draw_docking_line(
     }
 }
 
-/// HUD d'accostage (3e ligne) : distance du vaisseau au centre de la station
-/// (unités monde) et invite — « DOCK: 123 px » en approche, « DOCK: SLOW DOWN »
-/// (rouge) dans la zone mais trop rapide pour accoster, « DOCK: IN RANGE »
-/// (vert) dans la zone et presque immobile, « DOCKED » à quai (liens attachés
-/// au lancement/respawn ou boîte ouverte). La zone elle-même est visible via
-/// la mire (`draw_docking_marker`).
+/// HUD d'accostage, affiché à la **suite des stats** (même ligne, en haut de
+/// l'écran) : distance du vaisseau au centre de la station (unités monde,
+/// sans unité affichée) et invite — « DOCK DIST: 123 » en approche,
+/// « DOCK: SLOW DOWN » (rouge) dans la zone mais trop rapide pour accoster,
+/// « DOCK: IN RANGE » (vert) dans la zone et presque immobile, « DOCKED » à
+/// quai (liens attachés au lancement/respawn ou boîte ouverte). La zone
+/// elle-même est visible via la mire (`draw_docking_marker`). `x` est
+/// l'abscisse de départ — l'emplacement fixe du statut, renvoyé par
+/// `draw_hud`. La distance occupe une largeur fixe de 4 chiffres (alignée à
+/// droite) : l'affichage ne tremble pas quand elle change.
 pub fn draw_docking_hud(
     state: &GameState,
     player_position: Point,
     station_position: Point,
     player_speed: f64,
+    x: f32,
 ) {
     let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
     let in_zone = dist < STATION_DOCK_DISTANCE;
@@ -1614,21 +1685,61 @@ pub fn draw_docking_hud(
     } else if in_zone {
         ("DOCK: SLOW DOWN".to_string(), 0xFFFF3C00)
     } else {
-        (format!("DOCK: {:.0} px", dist), 0xFFFFFFFF)
+        (format!("DOCK DIST: {:>4.0}", dist), 0xFFFFFFFF)
     };
-    draw_text(&text, 8.0, 46.0, 16.0, argb_to_color(color));
+    draw_text(&text, x, 14.0, 16.0, argb_to_color(color));
 }
 
-/// HUD : FPS, réputation (+ rang en scénario à économie), précision (ex
-/// `locate 1,1 / 1,15 / 1,30` de mainLoop) + ligne des ressources en scénario
-/// à économie (carburant, munitions, minerais). Police macroquad par défaut
-/// en attendant la police 8×16 (Phase 4).
-pub fn draw_hud(state: &GameState) {
-    draw_text(&format!("FPS:{}", state.fps), 8.0, 14.0, 16.0, WHITE);
+// ─── HUD : emplacements fixes (anti-tremblement) ────────────────────────────
+//
+// Chaque segment de la ligne du haut démarre à une **colonne fixe** (grille
+// 8 px de la police 8×16 de l'original, x = 8+(col-1)*8) : contrairement à un
+// positionnement dynamique (somme des largeurs des segments précédents), un
+// segment ne bouge pas quand une valeur change de largeur. Les nombres sont
+// en outre alignés à droite sur une **largeur fixe** (`{:>n}`) : les chiffres
+// eux-mêmes ne bougent pas non plus (FPS, réputation, distance…).
+
+/// Colonne de départ du FPS (champ fixe de 3 chiffres : boucle plafonnée à
+/// 600 fps).
+const HUD_FPS_COL: i32 = 1;
+/// Colonne de départ de la réputation (+ rang) — champ fixe de 4 chiffres.
+const HUD_REPUTATION_COL: i32 = 15;
+/// Colonne de départ de la précision — champ fixe de 3 chiffres (max 100).
+const HUD_PRECISION_COL: i32 = 42;
+/// Colonne de départ des ressources du scénario (carburant, munitions,
+/// minerais — ou vies/bouclier).
+const HUD_RESOURCES_COL: i32 = 57;
+/// Largeur maximale (en caractères) du bloc de ressources en économie → le
+/// statut d'accostage démarre juste après (colonne 97).
+const HUD_RESOURCES_ECONOMY_COLS: i32 = 39;
+/// Largeur maximale (en caractères) du bloc de ressources en Survival
+/// (LIVES/SHIELD) → le statut d'accostage démarre à la colonne 74.
+const HUD_RESOURCES_SURVIVAL_COLS: i32 = 16;
+
+/// Abscisse (px) d'une colonne de la grille 8 px (x = 8+(col-1)*8).
+fn hud_col_x(col: i32) -> f32 {
+    8.0 + (col - 1) as f32 * 8.0
+}
+
+/// HUD : FPS, réputation (+ rang en scénario à économie), précision et
+/// ressources du scénario (carburant, munitions, minerais — ou vies/bouclier
+/// en Survival) sur une **seule ligne** en haut de l'écran, à des colonnes
+/// fixes (anti-tremblement). Renvoie l'abscisse de l'emplacement fixe du
+/// statut d'accostage pour que `draw_docking_hud` l'affiche sur la même
+/// ligne. Police macroquad par défaut en attendant la police 8×16 (Phase 4).
+pub fn draw_hud(state: &GameState) -> f32 {
+    // FPS : champ fixe de 3 chiffres, aligné à droite
+    draw_text(
+        &format!("FPS:{:>3}", state.fps),
+        hud_col_x(HUD_FPS_COL),
+        14.0,
+        16.0,
+        WHITE,
+    );
     // réputation : compteur d'astéroïdes détruits (jeu libre) ou réputation
     // du scénario (économie — croît avec les destructions et la précision) ;
     // en économie, le rang courant (palier débloqué par la réputation, ex
-    // CADET → PILOT → ACE) est affiché à côté
+    // CADET → PILOT → ACE) est affiché à côté — champ fixe de 4 chiffres
     let economy = scenario::has_economy(state);
     let reputation = if economy {
         state.resources.reputation as i32
@@ -1636,53 +1747,56 @@ pub fn draw_hud(state: &GameState) {
         state.meteors_destroyed
     };
     let rep_text = match scenario::current_rank(state) {
-        Some(rank) => format!("REPUTATION:{} ({})", reputation, rank),
-        None => format!("REPUTATION:{}", reputation),
+        Some(rank) => format!("REPUTATION:{:>4} ({})", reputation, rank),
+        None => format!("REPUTATION:{:>4}", reputation),
     };
-    draw_text(&rep_text, 8.0 + 14.0 * 8.0, 14.0, 16.0, WHITE);
+    draw_text(&rep_text, hud_col_x(HUD_REPUTATION_COL), 14.0, 16.0, WHITE);
+    // précision : champ fixe de 3 chiffres (max 100)
     if state.bullets_fired > 0 {
         let precision = 100.0 * (1.0 - state.bullets_lost as f64 / state.bullets_fired as f64);
-        // en économie, le rang allonge la ligne : PRECISION est décalée à
-        // droite (col 40 au lieu de 30) pour rester lisible
-        let precision_x = if economy { 8.0 + 40.0 * 8.0 } else { 8.0 + 29.0 * 8.0 };
         draw_text(
-            &format!("PRECISION:{}%", precision as i32),
-            precision_x,
+            &format!("PRECISION:{:>3}%", precision as i32),
+            hud_col_x(HUD_PRECISION_COL),
             14.0,
             16.0,
             WHITE,
         );
     }
-    // ressources du scénario sur la 2e ligne : carburant/munitions/minerais
+    // ressources du scénario, sur la même ligne : carburant/munitions/minerais
     // (économie — les capacités montrent les extensions d'atelier achetées)
-    // ou vies + bouclier (Survival)
-    if scenario::has_economy(state) {
+    // ou vies + bouclier (Survival) — champs fixes : 3/3/2/2/5 chiffres
+    let dock_col = if economy {
         draw_text(
             &format!(
-                "FUEL:{:.0}/{} AMMO:{}/{} MINERALS:{}",
+                "FUEL:{:>3.0}/{:>3} AMMO:{:>2}/{:>2} MINERALS:{:>5}",
                 state.resources.fuel,
                 scenario::fuel_capacity(state),
                 state.resources.ammo,
                 scenario::ammo_capacity(state),
                 state.resources.minerals
             ),
-            8.0,
-            30.0,
+            hud_col_x(HUD_RESOURCES_COL),
+            14.0,
             16.0,
             WHITE,
         );
+        HUD_RESOURCES_COL + HUD_RESOURCES_ECONOMY_COLS + 1
     } else if scenario::has_survival(state) {
         draw_text(
             &format!(
-                "LIVES:{} SHIELD:{:.0}",
+                "LIVES:{:>1} SHIELD:{:>1.0}",
                 state.resources.lives, state.resources.shield
             ),
-            8.0,
-            30.0,
+            hud_col_x(HUD_RESOURCES_COL),
+            14.0,
             16.0,
             WHITE,
         );
-    }
+        HUD_RESOURCES_COL + HUD_RESOURCES_SURVIVAL_COLS + 1
+    } else {
+        // jeu libre : pas de ressources — l'accostage suit PRECISION
+        HUD_RESOURCES_COL
+    };
     // fin de partie (Survival, dernière vie perdue) : GAME OVER au centre
     if state.game_over {
         let msg = "GAME OVER";
@@ -1695,6 +1809,7 @@ pub fn draw_hud(state: &GameState) {
             argb_to_color(0xFFFF4040),
         );
     }
+    hud_col_x(dock_col)
 }
 
 // ─── Affichages de debug (touches D et I) ───────────────────────────────────
@@ -1774,6 +1889,16 @@ pub fn draw_info(
         &format!("{} {} {}", elements[1].count, elements[2].count, elements[3].count),
         8.0,
         14.0 + 2.0 * 16.0,
+        16.0,
+        white,
+    );
+    // ligne 4, colonne 1 : minerais contenus dans les météores (somme des
+    // `minerals` — libérés en gemmes quand deux météores se détruisent)
+    let meteor_minerals: i32 = shapes.iter().map(|s| s.minerals).sum();
+    draw_text(
+        &format!("meteor minerals:{}", meteor_minerals),
+        8.0,
+        14.0 + 3.0 * 16.0,
         16.0,
         white,
     );

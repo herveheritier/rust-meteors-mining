@@ -246,6 +246,19 @@ pub struct Triangle {
     pub life: i32,
     pub shape_index: i32,
     pub element: i32,
+    /// Couleur ARGB 32 bits (AARRGGBB) **par face** — 0 = couleur de la forme
+    /// (`shape.shape_color`) ou de l'élément. Posée par le cosmonaute
+    /// (`cosmonaut.rs`, export « meshes-designer ») dont chaque face porte sa
+    /// propre couleur ; inutilisée par les formes procédurales.
+    pub color: u32,
+    /// Membre animé du cosmonaute EVA : 0 = aucun (reste fixe), 1 = bras,
+    /// 2 = jambe — bascule autour de `pivot` pendant la poussée (voir
+    /// `cosmonaut::animate_eva_cosmonaut`). 0 pour toutes les formes
+    /// procédurales.
+    pub limb: i32,
+    /// Pivot (articulation) du membre, en coordonnées **locales** de la forme :
+    /// rotation des sommets du triangle autour de ce point pendant l'animation.
+    pub pivot: Point,
     pub a_shape_border: bool,
     pub b_shape_border: bool,
     pub c_shape_border: bool,
@@ -278,6 +291,9 @@ impl Default for Triangle {
             life: 0,
             shape_index: 0,
             element: 0,
+            color: 0,
+            limb: 0,
+            pivot: Point::default(),
             a_shape_border: false,
             b_shape_border: false,
             c_shape_border: false,

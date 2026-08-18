@@ -61,6 +61,9 @@ pub const WHOIAM_PLAYER: i32 = 2;
 pub const WHOIAM_GEM: i32 = 3;
 pub const WHOIAM_STATION: i32 = 4;
 pub const WHOIAM_ALIEN: i32 = 5;
+/// Cosmonaute décoratif chargé depuis `assets/cosmonaute.json` (export
+/// « meshes-designer », voir `cosmonaut.rs`) : jamais détruit, aucun collider.
+pub const WHOIAM_COSMONAUT: i32 = 6;
 
 /// Modes de déplacement du vaisseau.
 pub const MOVING_MODE_INERTIAL: i32 = 0;
@@ -179,6 +182,12 @@ pub const METEOR_VELOCITY_MAX: f64 = 2.0;
 /// rayon du vaisseau (10) — la zone est affichée par la mire au centre de la
 /// station (voir `render::draw_docking_marker`).
 pub const STATION_DOCK_DISTANCE: f64 = 15.0;
+
+/// Rayon (unités monde) de ramassage des gemmes par le **cosmonaute EVA**
+/// (vaisseau détruit) : il est non-collider, les gemmes le traversent — il
+/// les ramasse par proximité (voir `game::eva_collect_gems`) et les rapporte
+/// à la station. Rayon du cosmonaute (~13) + marge généreuse.
+pub const EVA_PICKUP_RADIUS: f64 = 20.0;
 
 /// Durée (secondes) de l'animation d'accostage avant l'ouverture de la boîte
 /// DOCK STATION : le monde est gelé, le vaisseau pivote vers la droite

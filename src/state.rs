@@ -218,6 +218,14 @@ pub struct GameState {
     /// frame précédente : détection du franchissement **en entrant** (retour)
     /// par `game::update_docking_guide` (front montant de la distance).
     pub dock_was_outside: bool,
+    /// Vaisseau détruit, le joueur contrôle le **cosmonaute EVA éjecté** : son
+    /// seul objectif est de rejoindre la base (zone d'accostage au centre) où
+    /// il est secouru et le vaisseau reconstruit (voir `game::rescue_cosmonaut`).
+    /// Pendant ce temps la caméra, la mire et le HUD suivent le cosmonaute.
+    pub cosmonaut_active: bool,
+    /// Index de la forme « cosmonaute EVA » dans `shapes` (-1 tant qu'elle
+    /// n'est pas créée par `main.rs`).
+    pub eva_cosmonaut: i32,
     /// Boîte de choix DOCK STATION ouverte (accostage) — ex la boucle
     /// bloquante de `windowUtils_choiceBox` : tant qu'elle est ouverte, le
     /// jeu est gelé et seuls les clics sur UNLOAD / REFUEL/REARM / UPGRADES /
@@ -299,6 +307,8 @@ impl GameState {
             dock_links: true, // le vaisseau démarre à quai, liens attachés
             docking_guide: false, // pas encore revenu à la base
             dock_was_outside: false,
+            cosmonaut_active: false,
+            eva_cosmonaut: -1, // créé par main.rs au démarrage
             dock_box: false,
             workshop_box: false,
             help_box: false,

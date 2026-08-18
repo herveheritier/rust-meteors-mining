@@ -181,9 +181,48 @@ pub fn create_shape(
     shape.orientation = 0.0;
     shape.rotation = 0.01 - 0.02 * rng.gen::<f64>();
     shape.texture = TEXTURE_METEOR;
+    // minerais contenus : un par triangle minéralisé (or/fer/eau) — la
+    // quantité libérée en gemmes si le météore est détruit par la collision
+    // d'un autre météore (voir `release_meteor_minerals`)
+    shape.minerals = (shape.first_triangle..=shape.last_triangle)
+        .filter(|&i| triangles[i].element > 0)
+        .count() as i32;
     compute_shape_center(shape, triangles);
 
     shape_index
+}
+
+/// Libère les minerais d'un météore détruit par la collision d'un autre
+/// météore : une gemme par unité de minerai, à la position du météore (ex
+/// `createGem` en boucle). Appelé par `game.rs` quand un météore meurt sous
+/// un autre météore — le minerai n'est alors pas perdu (les triangles
+/// minéralisés détruits par collision ne donnent pas de gemme, contrairement
+/// à ceux détruits par une balle).
+pub fn release_meteor_minerals(
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    elements: &[Element],
+    meteor_index: usize,
+    rng: &mut impl Rng,
+) {
+    let minerals = shapes[meteor_index].minerals;
+    if minerals <= 0 {
+        return;
+    }
+    shapes[meteor_index].minerals = 0;
+    let center = shapes[meteor_index].center;
+    for _ in 0..minerals {
+        // une gemme par unité de minerai, à la position du météore : on
+        // fabrique un triangle source factice (élément aléatoire) pour
+        // réutiliser `create_gem` — `center = centre du météore` fait
+        // tomber la gemme sur la position du météore (rotation autour de
+        // lui-même = lui-même)
+        let mut source = Triangle::default();
+        source.element = 1 + (rng.gen::<f64>() * 3.0) as i32; // 1..=3 (or/fer/eau)
+        source.shape_index = meteor_index as i32;
+        source.center = center;
+        create_gem(shapes, triangles, elements, &source, rng);
+    }
 }
 
 /// Crée un alien (touche C, ex `createAlien`).
@@ -387,6 +426,36 @@ mod tests {
         )
     }
 
+    /// Météore de test avec `n` triangles consécutifs et `n` minerais.
+    fn test_meteor(n: i32) -> Shape {
+        let mut s = Shape::default();
+        s.who_i_am = WHOIAM_METEOR;
+        s.is_collider = true;
+        s.first_triangle = 0;
+        s.last_triangle = (n - 1).max(0) as usize;
+        s.life = n;
+        s.minerals = n;
+        s.radius = 10.0;
+        s.position = Point::new(0.0, 0.0);
+        s
+    }
+
+    /// Triangle de test rattaché à la forme `shape_index`, avec un élément
+    /// minéral (or) et une position `(x, y)`.
+    fn test_mineral_triangle(id: i32, shape_index: i32, x: f64, y: f64) -> Triangle {
+        let mut t = Triangle::default();
+        t.id = id;
+        t.shape_index = shape_index;
+        t.element = 1; // GOLD
+        t.create(Point::new(0.0, 0.0), Point::new(10.0, 0.0), Point::new(0.0, 10.0));
+        t.position = Point::new(x, y);
+        t.real_a = Point::new(t.a.x + x, t.a.y + y);
+        t.real_b = Point::new(t.b.x + x, t.b.y + y);
+        t.real_c = Point::new(t.c.x + x, t.c.y + y);
+        t.real_center = Point::new(t.center.x + x, t.center.y + y);
+        t
+    }
+
     #[test]
     fn generate_shape_produces_a_valid_shape() {
         let mut rng = seed();
@@ -419,6 +488,64 @@ mod tests {
             }
         }
         assert_eq!(border, n + 2);
+    }
+
+    #[test]
+    fn meteor_creation_counts_mineral_triangles_as_minerals() {
+        // un météore créé contient un minerai par triangle minéralisé (or,
+        // fer, eau — `element > 0`) : c'est la quantité libérée en gemmes
+        // quand deux météores se percutent et se détruisent
+        let mut rng = seed();
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        let mut state = GameState::new();
+        let elements = default_elements();
+        let idx = create_shape(&state, &mut shapes, &mut triangles, Point::new(0.0, 0.0), &elements, &mut rng);
+
+        let minerals = (shapes[idx].first_triangle..=shapes[idx].last_triangle)
+            .filter(|&i| triangles[i].element > 0)
+            .count() as i32;
+        assert_eq!(shapes[idx].minerals, minerals);
+        assert_eq!(shapes[idx].who_i_am, WHOIAM_METEOR);
+    }
+
+    #[test]
+    fn release_meteor_minerals_spawns_one_gem_per_mineral() {
+        // un météore détruit par un autre météore libère ses minerais : une
+        // gemme par unité, à sa position, et son compteur passe à 0
+        let mut rng = seed();
+        let mut shapes = vec![test_meteor(3)]; // 3 minerais, 3 triangles
+        let mut triangles = Vec::new();
+        for i in 0..3 {
+            triangles.push(test_mineral_triangle(i as i32, 0, i as f64, 0.0));
+        }
+        let mut elements = default_elements();
+
+        release_meteor_minerals(&mut shapes, &mut triangles, &elements, 0, &mut rng);
+
+        assert_eq!(shapes[0].minerals, 0);
+        let gems = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).count();
+        assert_eq!(gems, 3);
+        // chaque gemme a un élément valide (1..=3) et se trouve près du météore
+        for s in shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM) {
+            assert!((1..=3).contains(&s.element));
+            let d = (s.position.x - 0.0).hypot(s.position.y - 0.0);
+            assert!(d < 50.0, "gemme trop loin du météore : {d}");
+        }
+    }
+
+    #[test]
+    fn release_meteor_minerals_without_minerals_is_a_noop() {
+        // pas de minerai → aucune gemme, compteur inchangé (rien à libérer)
+        let mut rng = seed();
+        let mut shapes = vec![test_meteor(0)];
+        let mut triangles = Vec::new();
+        let mut elements = default_elements();
+
+        release_meteor_minerals(&mut shapes, &mut triangles, &elements, 0, &mut rng);
+
+        assert_eq!(shapes[0].minerals, 0);
+        assert!(!shapes.iter().any(|s| s.who_i_am == WHOIAM_GEM));
     }
 
     #[test]

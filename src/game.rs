@@ -12,8 +12,9 @@ use ::rand::Rng;
 
 use crate::audio::Sounds;
 use crate::config::*;
+use crate::cosmonaut::{animate_eva_cosmonaut, COSMONAUTE_EVA_PARK};
 use crate::garbage::{generate_garbages, moving_garbage, Garbage};
-use crate::generate::{create_alien, create_gem, create_shape, fire_bullet};
+use crate::generate::{create_alien, create_gem, create_shape, fire_bullet, release_meteor_minerals};
 use crate::persist;
 use crate::scenario;
 use crate::geom::{Point, Triangle};
@@ -36,6 +37,17 @@ pub enum Action {
     /// quitte.
     Restart,
     Continue,
+}
+
+/// Index de la forme **contrôlée** par le joueur : le vaisseau normalement,
+/// le cosmonaute EVA quand le vaisseau est détruit (`cosmonaut_active`) — la
+/// caméra, la mire et le HUD d'accostage suivent ce pilote (voir `main.rs`).
+pub fn pilot_index(state: &GameState) -> usize {
+    if state.cosmonaut_active {
+        state.eva_cosmonaut as usize
+    } else {
+        PLAYER_INDEX
+    }
 }
 
 /// Traite l'input, les contrôles joueur, la physique et les collisions pour
@@ -61,8 +73,10 @@ pub fn update(
     state.fps = get_fps();
 
     // Caméra de la frame précédente — utilisée par la touche G comme
-    // l'original (qui lit `camera` calculée à l'itération précédente).
-    let mut camera = camera_for(state, &shapes[PLAYER_INDEX]);
+    // l'original (qui lit `camera` calculée à l'itération précédente). Elle
+    // suit le pilote : le vaisseau, ou le cosmonaute EVA quand le vaisseau
+    // est détruit.
+    let mut camera = camera_for(state, &shapes[pilot_index(state)]);
 
     // Écran de paramétrage ouvert (touche O) : le monde est gelé et seul
     // l'input de l'écran est traité (voir `handle_settings_input`). Un clic
@@ -157,8 +171,11 @@ pub fn update(
             ChoiceClick::Refuel => {
                 // ravitaillement manuel (plus d'achat automatique au
                 // déchargement) : pleins si les minerais suffisent, sinon
-                // message « NOT ENOUGH MINERALS »
+                // message « NOT ENOUGH MINERALS » ; les minerais dépensés
+                // sont persistés (sans quoi un ravitaillement suivi d'une
+                // sortie serait gratuit au lancement suivant)
                 scenario::purchase_supplies(state);
+                let _ = scenario::save_progression(state);
             }
             ChoiceClick::Upgrades => {
                 // ouvre l'atelier d'amélioration (la boîte réapparaît en
@@ -289,32 +306,50 @@ pub fn update(
         state.player.revert_thrusted += 1;
     }
 
+    // animation des membres du cosmonaute EVA : bras et jambes qui **s'agitent
+    // pendant la poussée** puis retombent au repos (`cosmonaut::animate_eva_cosmonaut`)
+    // — avant la physique : `moving_shape` recalcule les positions réelles des
+    // triangles animés dans la foulée. Garé (vaisseau intact), il revient au repos.
+    if state.eva_cosmonaut >= 0 {
+        let eva = state.eva_cosmonaut as usize;
+        let thrusting = state.cosmonaut_active && state.player.thrusted != 0;
+        animate_eva_cosmonaut(&mut shapes[eva], triangles, thrusting, get_time(), dt);
+    }
+
     // scénario à économie : le carburant est consommé tant que le moteur
-    // est allumé (flamme avant/arrière) — annonce OUT OF FUEL à la rupture
-    scenario::consume_fuel(state, dt);
+    // est allumé (flamme avant/arrière) — annonce OUT OF FUEL à la rupture.
+    // Pas en mode cosmonaute EVA (le vaisseau est détruit, le carburant ne
+    // sert plus — la combinaison ne brûle pas le réservoir)
+    if !state.cosmonaut_active {
+        scenario::consume_fuel(state, dt);
+    }
 
     // physique + collisions (détection, résolution, sons d'impact)
     collisions(state, shapes, triangles, garbages, elements, rng, sounds, dt);
 
     // guide d'accostage : la mire ne s'affiche que lors du RETOUR à la base
     // (voir `update_docking_guide`) — avant `docking`, qui peut déclencher
-    // l'animation d'accostage (et couper le guide)
+    // l'animation d'accostage (et couper le guide). Le pilote suit le
+    // cosmonaute EVA quand le vaisseau est détruit.
+    let pilot = pilot_index(state);
     update_docking_guide(
         state,
-        shapes[PLAYER_INDEX].position,
+        shapes[pilot].position,
         shapes[STATION_INDEX].position,
         shapes[STATION_INDEX].radius,
     );
 
     // accostage à la station (ex « detect return to the base ») — peut ouvrir
-    // la boîte UNLOAD/CLOSE, auquel cas le reste de la frame est gelé
-    docking(state, shapes, elements);
+    // la boîte UNLOAD/CLOSE, auquel cas le reste de la frame est gelé. Quand
+    // le vaisseau est détruit, c'est le retour du cosmonaute EVA qui est
+    // détecté (secours : vaisseau reconstruit, voir `rescue_cosmonaut`)
+    docking(state, shapes, triangles, elements);
     if state.dock_box {
         return (Action::Continue, camera);
     }
 
     // caméra fraîche (après déplacements et résolution, comme l'original)
-    camera = camera_for(state, &shapes[PLAYER_INDEX]);
+    camera = camera_for(state, &shapes[pilot_index(state)]);
 
     // supprime les balles sorties de la zone de dessin (ex mainLoop)
     delete_out_of_range_bullets(state, shapes, triangles, camera);
@@ -472,12 +507,40 @@ fn collisions(
             if state.resources.shield != shield_before || state.resources.lives != lives_before {
                 let _ = scenario::save_progression(state);
             }
+        } else if collid_by == WHOIAM_METEOR && who == WHOIAM_GEM {
+            // un météore percute une gemme : il l'absorbe — la gemme
+            // disparaît entièrement et la quantité de minerai du météore
+            // augmente (`minerals`, libérée si le météore est lui-même
+            // détruit par un autre météore). Le météore le plus proche de la
+            // gemme est celui qui l'a percutée (`collid_by` ne porte que le
+            // type, pas l'index). Une seule fois par gemme (toute la gemme
+            // est tuée au premier triangle).
+            if shapes[shape_index].life > 0 {
+                let gem_pos = shapes[shape_index].position;
+                if let Some(meteor) = nearest_meteor(shapes, gem_pos) {
+                    shapes[meteor].minerals += 1;
+                }
+                shapes[shape_index].life = 0;
+                for j in shapes[shape_index].first_triangle..=shapes[shape_index].last_triangle {
+                    triangles[j].life = 0;
+                }
+            }
+        } else if collid_by == WHOIAM_GEM && who == WHOIAM_METEOR {
+            // déjà résolu côté gemme (absorption) : le météore n'est pas
+            // endommagé en avalant la gemme
         } else {
             triangles[i].life = 0;
             shapes[shape_index].life -= 1;
             if who == WHOIAM_PLAYER {
                 state.send_message("YOUR SPACESHIP IS DAMAGED, THE STATION CAN CARRY OUT REPAIRS");
                 state.send_message("REPAIRS ARE NOT FREE OF CHARGE");
+                // vaisseau détruit (jeu libre/Progression — le Survival a son
+                // propre respawn) : le cosmonaute est éjecté à la position du
+                // crash — le joueur le contrôle pour rejoindre la base (une
+                // seule fois : `cosmonaut_active`)
+                if shapes[shape_index].life <= 0 && !state.cosmonaut_active {
+                    activate_cosmonaut(state, shapes, triangles);
+                }
             }
             // collision vaisseau/gemme non résolue parce que soute pleine
             if collid_by == WHOIAM_PLAYER && who == WHOIAM_GEM {
@@ -510,12 +573,32 @@ fn collisions(
                 sounds.play_explosion(rng, v);
             }
             generate_garbages(garbages, &triangles[i], shapes, rng);
-            if triangles[i].element > 0 {
+            // un triangle minéralisé d'un MÉTÉORE détruit par un missile
+            // libère son minerai : une gemme apparaît (le minerai n'est pas
+            // détruit avec le météore). Un missile qui touche directement
+            // une gemme, elle, la détruit — pas de nouvelle gemme : c'est le
+            // seul cas de destruction de minerai (`who == WHOIAM_GEM` n'entre
+            // pas ici).
+            if triangles[i].element > 0 && who == WHOIAM_METEOR {
                 if collid_by == WHOIAM_BULLET && triangles[i].element > 0 {
-                    // une gemme apparaît (M4) — copie du triangle source
                     let source = triangles[i];
                     create_gem(shapes, triangles, elements, &source, rng);
+                    if shapes[shape_index].minerals > 0 {
+                        shapes[shape_index].minerals -= 1;
+                    }
                 }
+            }
+            // le météore est détruit (par un autre météore ou par un missile
+            // du vaisseau) : ses minerais restants — absorbés de gemmes
+            // mangées — sont libérés en gemmes à sa position, jamais détruits
+            // avec lui. Une seule fois : `minerals` passe à 0 dans
+            // `release_meteor_minerals`, les triangles suivants du même
+            // météore ne relibèrent rien.
+            if who == WHOIAM_METEOR
+                && shapes[shape_index].life <= 0
+                && (collid_by == WHOIAM_METEOR || collid_by == WHOIAM_BULLET)
+            {
+                release_meteor_minerals(shapes, triangles, elements, shape_index, rng);
             }
         }
 
@@ -528,6 +611,84 @@ fn collisions(
             previous_shape_index = shape_index as i32;
         }
     }
+
+    // ramassage des gemmes par le **cosmonaute EVA** (vaisseau détruit) : il
+    // les ramasse par proximité (non-collider — les gemmes le traversent) et
+    // les **rapporte à la station** : la soute est déchargée à l'accostage
+    // après le secours (`docking`/`rescue_cosmonaut`), comme pour le vaisseau
+    eva_collect_gems(state, shapes, triangles, elements, sounds);
+}
+
+/// Ramassage des gemmes par le **cosmonaute EVA** : chaque gemme dont le
+/// centre entre dans le rayon `EVA_PICKUP_RADIUS` du cosmonaute est ramassée
+/// — détruite, son élément est compté dans la **même soute que le vaisseau**
+/// (déchargée en minerais à la station après le secours). Soute pleine, plus
+/// de ramassage. Sans effet quand le vaisseau est intact (`cosmonaut_active`
+/// faux) : le cosmonaute garé ne ramasse rien.
+fn eva_collect_gems(
+    state: &mut GameState,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
+    elements: &mut [Element],
+    mut sounds: Option<&mut Sounds>,
+) {
+    if !state.cosmonaut_active {
+        return;
+    }
+    let eva = state.eva_cosmonaut as usize;
+    if eva >= shapes.len() {
+        return;
+    }
+    let pos = shapes[eva].position;
+    for g in 0..shapes.len() {
+        if g == eva || shapes[g].who_i_am != WHOIAM_GEM || shapes[g].life <= 0 {
+            continue;
+        }
+        // soute pleine : plus de ramassage
+        if state.player.cargo_qty >= state.player.cargo_size {
+            return;
+        }
+        let d = (shapes[g].position.x - pos.x).hypot(shapes[g].position.y - pos.y);
+        if d > EVA_PICKUP_RADIUS {
+            continue;
+        }
+        // ramassage : la gemme est détruite, son élément compté dans la soute
+        let first = shapes[g].first_triangle;
+        let element = triangles[first].element as usize;
+        if element < elements.len() {
+            elements[element].count += 1;
+        }
+        state.player.cargo_qty += 1;
+        shapes[g].life = 0;
+        for j in shapes[g].first_triangle..=shapes[g].last_triangle {
+            triangles[j].life = 0;
+        }
+        if let Some(sounds) = sounds.as_mut() {
+            sounds.play_gem();
+        }
+        if state.player.cargo_qty >= state.player.cargo_size {
+            state.send_message("YOUR LOADING BAY IS FULL, YOU MUST UNLOAD IT AT THE STATION");
+        }
+    }
+}
+
+/// Météore vivant le plus proche d'une position donnée — utilisé par
+/// l'absorption d'une gemme : `collid_by` ne porte que le type
+/// (`WHOIAM_METEOR`), pas l'index de la forme qui a percuté la gemme — on
+/// attribue donc l'absorption au météore le plus proche de la gemme (celui
+/// qui vient de la percuter).
+fn nearest_meteor(shapes: &[Shape], pos: Point) -> Option<usize> {
+    let mut best: Option<(usize, f64)> = None;
+    for (i, s) in shapes.iter().enumerate() {
+        if s.who_i_am != WHOIAM_METEOR || s.life <= 0 {
+            continue;
+        }
+        let d = (s.position.x - pos.x).hypot(s.position.y - pos.y);
+        if best.map_or(true, |(_, bd)| d < bd) {
+            best = Some((i, d));
+        }
+    }
+    best.map(|(i, _)| i)
 }
 
 /// Compte les formes vivantes et nettoie les formes « oubliées » par la
@@ -582,6 +743,51 @@ fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [
     state.dock_links = true;
 }
 
+/// Le vaisseau est détruit (jeu libre/Progression) : le joueur devient le
+/// **cosmonaute éjecté** — il apparaît à la position du crash (le vaisseau
+/// détruit reste invisible sur place, ses triangles sont morts) et doit
+/// rejoindre la base (voir `rescue_cosmonaut`). La caméra, la mire et le HUD
+/// suivent le cosmonaute (`pilot_index`).
+fn activate_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
+    let idx = state.eva_cosmonaut as usize;
+    if idx >= shapes.len() {
+        return; // cosmonaute EVA absent (jamais créé) : rien à éjecter
+    }
+    let crash = shapes[PLAYER_INDEX].position;
+    let c = &mut shapes[idx];
+    c.position = crash;
+    c.direction = 0.0;
+    c.velocity = 0.0;
+    c.orientation = 0.0;
+    c.rotation = 0.0;
+    for j in c.first_triangle..=c.last_triangle {
+        compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
+    }
+    state.cosmonaut_active = true;
+    state.docking_guide = true; // la mire guide le retour
+    state.send_message("SHIP DESTROYED — RETURN TO THE STATION");
+}
+
+/// Le cosmonaute EVA a rejoint la base : il est **secouru** — le vaisseau est
+/// reconstruit à la station (même état qu'au lancement, `respawn_player`), le
+/// cosmonaute retourne à son poste (garé hors écran en bord de monde) et le
+/// contrôle revient au vaisseau (qui démarre à quai, liens attachés).
+fn rescue_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
+    respawn_player(state, shapes, triangles);
+    let idx = state.eva_cosmonaut as usize;
+    let c = &mut shapes[idx];
+    c.position = COSMONAUTE_EVA_PARK;
+    c.direction = 0.0;
+    c.velocity = 0.0;
+    c.orientation = 0.0;
+    c.rotation = 0.0;
+    for j in c.first_triangle..=c.last_triangle {
+        compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
+    }
+    state.cosmonaut_active = false;
+    state.send_message("RESCUED — THE STATION REBUILT YOUR SHIP");
+}
+
 /// Détecte le retour à la base (ex « detect return to the base » de
 /// `mainLoop`) : le vaisseau est docké quand son centre entre dans la zone
 /// d'accostage — le cercle de rayon `STATION_DOCK_DISTANCE` autour du centre
@@ -596,7 +802,23 @@ fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [
 /// UNLOAD de la boîte le vide immédiatement). Le ravitaillement (carburant +
 /// munitions), lui, n'est plus automatique : il s'achète via le bouton
 /// REFUEL/REARM de la boîte DOCK STATION.
-fn docking(state: &mut GameState, shapes: &mut [Shape], elements: &mut [Element]) {
+fn docking(
+    state: &mut GameState,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
+    elements: &mut [Element],
+) {
+    // vaisseau détruit : le cosmonaute EVA rejoint la base — dès qu'il atteint
+    // la zone d'accostage (cercle de rayon `STATION_DOCK_DISTANCE` au centre,
+    // la station est en (0,0)), il est secouru : le vaisseau est reconstruit
+    // à la station et le contrôle y revient (voir `rescue_cosmonaut`)
+    if state.cosmonaut_active {
+        let c = &shapes[state.eva_cosmonaut as usize];
+        if c.position.x.hypot(c.position.y) < STATION_DOCK_DISTANCE {
+            rescue_cosmonaut(state, shapes, triangles);
+        }
+        return;
+    }
     let dx = shapes[PLAYER_INDEX].position.x - shapes[STATION_INDEX].position.x;
     let dy = shapes[PLAYER_INDEX].position.y - shapes[STATION_INDEX].position.y;
     let in_zone = dx * dx + dy * dy < STATION_DOCK_DISTANCE * STATION_DOCK_DISTANCE;
@@ -717,6 +939,13 @@ fn update_docking_guide(
     station_position: Point,
     station_radius: f64,
 ) {
+    // vaisseau détruit : le cosmonaute éjecté doit TOUJOURS voir la mire —
+    // elle le guide vers la base (le « retour » classique ne s'applique pas)
+    if state.cosmonaut_active {
+        state.docking_guide = true;
+        state.dock_was_outside = true;
+        return;
+    }
     let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
     let outside = dist >= station_radius;
     if outside {
@@ -1226,6 +1455,12 @@ fn player_controls(
     sounds: Option<&mut Sounds>,
     dt: f64,
 ) {
+    // vaisseau détruit : le joueur contrôle le cosmonaute EVA éjecté (seul
+    // objectif : rejoindre la base) — pas de tir ni de carburant
+    if state.cosmonaut_active {
+        cosmonaut_controls(state, shapes, dt);
+        return;
+    }
     state.player.thrust = 0.0;
 
     // carburant (scénarios à économie) : les poussées avant/arrière sont
@@ -1333,6 +1568,39 @@ fn player_controls(
         if let Some(sounds) = sounds {
             sounds.play_bullet();
         }
+    }
+}
+
+/// Contrôles du **cosmonaute EVA** (vaisseau détruit — voir
+/// `activate_cosmonaut`) : la poussée est **vectorielle** (comme le mode
+/// INERTIAL du vaisseau) — ↑ exerce une poussée dans l'orientation qui
+/// **s'ajoute au vecteur de déplacement** (`thrust_vector`) ; pour changer de
+/// direction il faut d'abord **s'orienter** (←/→ font tourner la figure, sans
+/// modifier la trajectoire en cours) **puis pousser** : le mouvement dévie
+/// progressivement. Un seul propulseur : pas de frein ni de marche arrière. Il
+/// faut doser la poussée pour rejoindre la base (`docking`/`rescue_cosmonaut`).
+/// Sans tir ni carburant.
+fn cosmonaut_controls(state: &mut GameState, shapes: &mut [Shape], dt: f64) {
+    let idx = state.eva_cosmonaut as usize;
+    if idx >= shapes.len() {
+        return;
+    }
+    let c = &mut shapes[idx];
+    state.player.thrust = 0.0;
+    // poussée vectorielle : la poussée (selon l'orientation) s'ajoute au
+    // vecteur de déplacement actuel, direction et vitesse recalculées
+    if is_key_down(KeyCode::Up) {
+        state.player.thrust = 0.1;
+        state.player.thrusted = -5;
+        thrust_vector(c, PLAYER_ACCELERATION * 60.0 * dt, c.orientation, 1.0, -1.0);
+    }
+    // orientation seule : la figure tourne, la trajectoire ne change pas
+    // (elle ne sera déviée que par une poussée ultérieure)
+    if is_key_down(KeyCode::Right) {
+        c.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
+    }
+    if is_key_down(KeyCode::Left) {
+        c.orientation -= PLAYER_ROTATION_SPEED * 60.0 * dt;
     }
 }
 
@@ -1503,6 +1771,65 @@ mod tests {
         assert!(garbages.len() <= 4 * GARBAGE_PER_TRIANGLE);
         // le centre est recalculé (vie <= 0 → inchangé, pas de panique)
         compute_shape_center(&mut shapes[0], &triangles);
+    }
+
+    #[test]
+    fn meteor_meteor_collision_releases_minerals() {
+        // deux météores se percutent et sont détruits : leurs minerais sont
+        // libérés en gemmes à leur position (une gemme par unité de minerai)
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_METEOR, 0, 1, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 2, 3, 2.0, 2.0),
+        ];
+        shapes[0].minerals = 2; // le premier météore contient 2 minerais
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 0, 0.0, 0.0),
+            test_triangle(2, 1, 2.0, 2.0),
+            test_triangle(3, 1, 2.0, 2.0),
+        ];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // les deux météores sont détruits, les minerais du premier libérés
+        assert_eq!(shapes[0].life, 0);
+        assert_eq!(shapes[1].life, 0);
+        assert_eq!(shapes[0].minerals, 0);
+        let gems = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).count();
+        assert_eq!(gems, 2);
+    }
+
+    #[test]
+    fn meteor_absorbs_gem_increasing_its_minerals() {
+        // un météore percute une gemme : il l'absorbe — la gemme disparaît
+        // et la quantité de minerai du météore augmente (sans endommager le
+        // météore)
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_GEM, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
+        ];
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 1, 2.0, 2.0),
+        ];
+        triangles[0].element = 1; // GOLD
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // la gemme a été absorbée (détruite), le météore a gagné un minerai
+        assert_eq!(shapes[0].life, 0);
+        assert_eq!(shapes[1].minerals, 1);
+        // le météore n'est pas endommagé par l'absorption
+        assert_eq!(shapes[1].life, 1);
+        assert_eq!(triangles[1].life, 1);
     }
 
     #[test]
@@ -1683,6 +2010,56 @@ mod tests {
     }
 
     #[test]
+    fn missile_destroying_meteor_releases_absorbed_minerals() {
+        // un missile détruit un météore qui contient des minerais absorbés
+        // (gemmes mangées, sans triangle minéralisé restant) : les minerais
+        // sont libérés en gemmes — pas détruits avec le météore
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_BULLET, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
+        ];
+        shapes[1].minerals = 3; // 3 minerais absorbés, plus de triangle minéralisé
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // le météore est détruit et ses minerais libérés (pas détruits)
+        assert_eq!(shapes[1].life, 0);
+        assert_eq!(shapes[1].minerals, 0);
+        let gems = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).count();
+        assert_eq!(gems, 3, "les 3 minerais absorbés doivent être libérés");
+    }
+
+    #[test]
+    fn missile_hitting_gem_directly_destroys_it() {
+        // un missile qui touche directement une gemme la DÉTRUIT : c'est le
+        // seul cas de destruction de minerai — aucune nouvelle gemme n'est
+        // créée (pas de « libération »)
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_BULLET, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_GEM, 1, 1, 2.0, 2.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        triangles[1].element = 1; // GOLD
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // la gemme est détruite et aucune nouvelle gemme n'est apparue
+        assert_eq!(shapes[1].life, 0);
+        assert_eq!(triangles[1].life, 0);
+        let gems = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).count();
+        assert_eq!(gems, 1, "la gemme détruite ne doit pas être dupliquée");
+    }
+
+    #[test]
     fn player_collects_gem_into_cargo() {
         // le vaisseau ramasse une gemme : élément compté, soute remplie
         let mut state = GameState::new();
@@ -1810,9 +2187,10 @@ mod tests {
         ];
         shapes[0].velocity = 0.2; // < STATION_DOCK_SPEED : accostage possible
         let mut elements = default_elements();
+        let mut triangles = Vec::new();
         elements[1].count = 4;
 
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
 
         assert_eq!(state.dock_anim, DOCK_ANIMATION_DURATION);
         assert!(!state.dock_box); // pas encore : l'animation d'abord
@@ -1841,7 +2219,7 @@ mod tests {
         let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0)];
         let mut elements = default_elements();
 
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
         assert_eq!(state.dock_anim, DOCK_ANIMATION_DURATION);
         assert!(!state.dock_box);
 
@@ -1963,15 +2341,16 @@ mod tests {
         ];
         shapes[0].velocity = 3.0; // > STATION_DOCK_SPEED
         let mut elements = default_elements();
+        let mut triangles = Vec::new();
 
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
         assert!(!state.dock_box);
         assert_eq!(state.player_at_station, 0); // pas encore docké
 
         // le vaisseau ralentit : l'accostage se termine (l'ANIMATION démarre,
         // la boîte n'ouvrira qu'à la fin de ses 3 s)
         shapes[0].velocity = 0.2;
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
         assert_eq!(state.dock_anim, DOCK_ANIMATION_DURATION);
         assert!(!state.dock_box);
         assert_eq!(shapes[0].velocity, 0.0);
@@ -1990,7 +2369,8 @@ mod tests {
             test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
         ];
         let mut elements = default_elements();
-        docking(&mut state, &mut shapes, &mut elements);
+        let mut triangles = Vec::new();
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
         assert!(!state.dock_box);
         assert_eq!(state.player_at_station, 0); // pas docké (coin hors cercle)
 
@@ -2001,7 +2381,7 @@ mod tests {
             test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
         ];
         let mut elements = default_elements();
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
         assert_eq!(state.dock_anim, DOCK_ANIMATION_DURATION); // l'animation démarre
     }
 
@@ -2015,10 +2395,11 @@ mod tests {
             test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
         ];
         let mut elements = default_elements();
+        let mut triangles = Vec::new();
         elements[1].count = 4;
         state.player.cargo_qty = 4;
 
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
 
         assert!(!state.dock_box);
         assert_eq!(elements[1].count, 0);
@@ -2035,10 +2416,11 @@ mod tests {
         ];
         state.player_at_station = -1; // déjà docké (boîte refermée)
         let mut elements = default_elements();
+        let mut triangles = Vec::new();
         elements[1].count = 4;
         state.player.cargo_qty = 4;
 
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
 
         assert!(!state.dock_box);
         assert_eq!(elements[1].count, 0);
@@ -2062,12 +2444,13 @@ mod tests {
             test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
         ];
         let mut elements = default_elements();
+        let mut triangles = Vec::new();
         elements[1].count = 4;
         state.player.cargo_qty = 4;
         state.resources.fuel = 10.0;
         state.resources.ammo = 5;
 
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
 
         assert_eq!(elements[1].count, 0);
         assert_eq!(state.player.cargo_qty, 0);
@@ -2109,8 +2492,9 @@ mod tests {
             test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
         ];
         let mut elements = default_elements();
+        let mut triangles = Vec::new();
 
-        docking(&mut state, &mut shapes, &mut elements);
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
 
         assert_eq!(state.player_at_station, 0);
         assert!(state.message_queue.contains("YOU ARE LIVING THE STATION"));
@@ -2254,5 +2638,172 @@ mod tests {
         assert_eq!(size, 0);
         assert_eq!(window_size_dims(0), (960.0, 540.0));
         assert_eq!(window_size_dims(3), (1920.0, 1080.0));
+    }
+
+    /// Vaisseau joueur (1 triangle) + cosmonaute EVA (non-collider) + météore
+    /// qui chevauche le vaisseau : le décor du test d'éjection.
+    fn ejection_scene() -> (GameState, Vec<Shape>, Vec<Triangle>) {
+        let mut state = GameState::new();
+        // joueur : 1 triangle à (0,0)
+        let player = test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0);
+        // cosmonaute EVA : garé en bord de monde, non-collider (les météores
+        // le traversent : son seul objectif est de rejoindre la base)
+        let mut eva = test_shape(WHOIAM_COSMONAUT, 1, 1, -1400.0, -1400.0);
+        eva.is_collider = false;
+        // météore : 1 triangle, chevauche le vaisseau (distance 2 < rayons 20)
+        let meteor = test_shape(WHOIAM_METEOR, 2, 2, 2.0, 2.0);
+        let shapes = vec![player, eva, meteor];
+        let triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 1, -1400.0, -1400.0),
+            test_triangle(2, 2, 2.0, 2.0),
+        ];
+        state.eva_cosmonaut = 1;
+        (state, shapes, triangles)
+    }
+
+    #[test]
+    fn destroyed_ship_ejects_the_cosmonaut() {
+        // le vaisseau détruit → le cosmonaute EVA apparaît à la position du
+        // crash et devient le pilote (`cosmonaut_active`) ; le vaisseau est
+        // mort, invisible
+        let (mut state, mut shapes, mut triangles) = ejection_scene();
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // le vaisseau est détruit, le cosmonaute éjecté au point du crash
+        assert_eq!(shapes[PLAYER_INDEX].life, 0);
+        assert!(state.cosmonaut_active);
+        assert_eq!(shapes[state.eva_cosmonaut as usize].position, shapes[PLAYER_INDEX].position);
+        // le pilote suivi par la caméra/mire/HUD est le cosmonaute
+        assert_eq!(pilot_index(&state), state.eva_cosmonaut as usize);
+        // le cosmonaute n'a pas été endommagé par la collision
+        assert_eq!(shapes[state.eva_cosmonaut as usize].life, 1);
+    }
+
+    #[test]
+    fn cosmonaut_reaching_the_station_is_rescued() {
+        // le cosmonaute EVA atteint la zone d'accostage (centre de la station)
+        // → il est secouru : le vaisseau est reconstruit à la station (état de
+        // lancement) et le cosmonaute retourne à son poste
+        let (mut state, mut shapes, mut triangles) = ejection_scene();
+        // le vaisseau est détruit et le cosmonaute éjecté au centre (la zone)
+        shapes[PLAYER_INDEX].life = 0;
+        triangles[0].life = 0;
+        state.cosmonaut_active = true;
+        let eva = state.eva_cosmonaut as usize;
+        shapes[eva].position = Point::new(0.0, 0.0);
+        let mut elements = default_elements();
+
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
+
+        // secouru : le contrôle revient au vaisseau, reconstruit à quai
+        assert!(!state.cosmonaut_active);
+        assert_eq!(shapes[PLAYER_INDEX].life, 1);
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(shapes[PLAYER_INDEX].position, Point::new(0.0, 0.0));
+        assert!(state.dock_links); // démarre à quai, comme au lancement
+        assert_eq!(state.player_at_station, -1);
+        // le cosmonaute est garé hors écran, à son poste
+        assert_eq!(shapes[eva].position, COSMONAUTE_EVA_PARK);
+        assert_eq!(pilot_index(&state), PLAYER_INDEX);
+    }
+
+    #[test]
+    fn cosmonaut_far_from_the_station_is_not_rescued() {
+        // le cosmonaute n'est pas encore arrivé : pas de secours, le vaisseau
+        // reste détruit
+        let (mut state, mut shapes, mut triangles) = ejection_scene();
+        shapes[PLAYER_INDEX].life = 0;
+        triangles[0].life = 0;
+        state.cosmonaut_active = true;
+        let eva = state.eva_cosmonaut as usize;
+        shapes[eva].position = Point::new(300.0, 200.0); // loin de la base
+        let mut elements = default_elements();
+
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
+
+        assert!(state.cosmonaut_active);
+        assert_eq!(shapes[PLAYER_INDEX].life, 0);
+        assert_eq!(shapes[eva].position, Point::new(300.0, 200.0));
+    }
+
+    #[test]
+    fn eva_cosmonaut_picks_up_nearby_gems() {
+        // le cosmonaute EVA ramasse une gemme proche : gemme détruite, son
+        // élément compté dans la soute (rapportée à la station au secours)
+        let mut state = GameState::new();
+        state.cosmonaut_active = true;
+        state.eva_cosmonaut = 1;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_COSMONAUT, 1, 1, 100.0, 100.0),
+            test_shape(WHOIAM_GEM, 2, 2, 105.0, 100.0), // à 5 unités
+        ];
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 1, 100.0, 100.0),
+            test_triangle(2, 2, 105.0, 100.0),
+        ];
+        triangles[2].element = 1; // GOLD
+        let mut elements = default_elements();
+
+        eva_collect_gems(&mut state, &mut shapes, &mut triangles, &mut elements, None);
+
+        assert_eq!(shapes[2].life, 0, "la gemme est ramassée");
+        assert_eq!(triangles[2].life, 0);
+        assert_eq!(elements[1].count, 1);
+        assert_eq!(state.player.cargo_qty, 1);
+        // le cosmonaute n'est pas touché par le ramassage
+        assert_eq!(shapes[1].life, 1);
+    }
+
+    #[test]
+    fn eva_cosmonaut_ignores_distant_or_inactive_gems() {
+        // gemme trop loin du cosmonaute : pas de ramassage
+        let mut state = GameState::new();
+        state.cosmonaut_active = true;
+        state.eva_cosmonaut = 1;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_COSMONAUT, 1, 1, 100.0, 100.0),
+            test_shape(WHOIAM_GEM, 2, 2, 200.0, 100.0), // à 100 unités
+        ];
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 1, 100.0, 100.0),
+            test_triangle(2, 2, 200.0, 100.0),
+        ];
+        triangles[2].element = 1;
+        let mut elements = default_elements();
+
+        eva_collect_gems(&mut state, &mut shapes, &mut triangles, &mut elements, None);
+
+        assert_eq!(shapes[2].life, 1, "gemme trop loin");
+        assert_eq!(state.player.cargo_qty, 0);
+
+        // vaisseau intact (pas d'EVA) : le cosmonaute garé ne ramasse rien
+        let mut state = GameState::new();
+        state.eva_cosmonaut = 1;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_COSMONAUT, 1, 1, 100.0, 100.0),
+            test_shape(WHOIAM_GEM, 2, 2, 105.0, 100.0),
+        ];
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 1, 100.0, 100.0),
+            test_triangle(2, 2, 105.0, 100.0),
+        ];
+        triangles[2].element = 1;
+        let mut elements = default_elements();
+
+        eva_collect_gems(&mut state, &mut shapes, &mut triangles, &mut elements, None);
+
+        assert_eq!(shapes[2].life, 1, "vaisseau intact : pas d'EVA");
+        assert_eq!(state.player.cargo_qty, 0);
     }
 }

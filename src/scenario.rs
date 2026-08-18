@@ -1086,9 +1086,10 @@ pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
 
 /// Enregistre la progression courante dans le fichier de config utilisateur
 /// (voir `save_progression_to`). Appelé à chaque modification de la
-/// progression (déchargement, achat de mode, astéroïde détruit, achat
-/// d'extension à l'atelier, impact subi) et après un changement de scénario
-/// (écran titre, touche N).
+/// progression (déchargement, ravitaillement REFUEL/REARM, achat de mode,
+/// astéroïde détruit, achat d'extension à l'atelier, impact subi), après un
+/// changement de scénario (écran titre, touche N) et à la sortie du jeu
+/// (filet de sécurité dans `main.rs`).
 pub fn save_progression(state: &GameState) -> io::Result<()> {
     save_progression_to(&crate::persist::config_path(), state)
 }
@@ -1743,6 +1744,30 @@ mod tests {
         assert_eq!(fresh.unlocked_modes, [true, true, false]);
         assert_eq!(fresh.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
         assert_eq!(fresh.resources.ammo, PROGRESSION_SCENARIO.start_ammo);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn refuel_spent_minerals_are_persisted() {
+        // un ravitaillement déduit des minerais : la sauvegarde doit conserver
+        // la valeur déduite — pas de ravitaillement gratuit au lancement
+        // suivant (le jeu écrit la progression après chaque REFUEL/REARM)
+        let p = temp_path("refuel.cfg");
+        let _ = std::fs::remove_file(&p);
+        let mut s = progression_state();
+        s.resources.minerals = 100;
+        s.resources.fuel = 50.0;
+        s.resources.ammo = 10;
+        let cost = match purchase_supplies(&mut s) {
+            SupplyOutcome::Purchased(c) => c,
+            _ => panic!("achat attendu"),
+        };
+        assert_eq!(s.resources.minerals, 100 - cost);
+        save_progression_to(&p, &s).unwrap();
+
+        let mut fresh = progression_state();
+        load_progression_from(&p, &mut fresh);
+        assert_eq!(fresh.resources.minerals, 100 - cost); // dépense conservée
         let _ = std::fs::remove_file(&p);
     }
 
