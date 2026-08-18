@@ -349,37 +349,10 @@ pub fn prepare(
     // éléments (indice 0 factice, 1=GOLD, 2=IRON, 3=WATER)
     *elements = default_elements();
 
-    // vaisseau joueur (shapes[0])
-    let mut shape = Shape::default();
-    let mut t = Triangle::default();
-    t.create(
-        Point::new(PLAYER_POINTS[0].0, PLAYER_POINTS[0].1),
-        Point::new(PLAYER_POINTS[1].0, PLAYER_POINTS[1].1),
-        Point::new(PLAYER_POINTS[2].0, PLAYER_POINTS[2].1),
-    );
-    t.id = 0;
-    t.element = 0;
-    t.shape_index = 0;
-    triangles.push(t);
-    shape.life = 1;
-    shape.first_triangle = 0;
-    shape.last_triangle = 0;
-    shape.id = 0;
-    shape.who_i_am = WHOIAM_PLAYER;
-    shape.show_all_parts = true;
-    shape.is_collider = true;
-    shape.shape_color = 0x80FFFFFF;
-    shape.texture = TEXTURE_PLAYER;
-    shape.position = Point::new(0.0, 0.0);
-    shape.direction = 0.0;
-    shape.velocity = 0.0;
-    shape.orientation = 0.0;
-    shape.rotation = 0.0;
-    shape.center = Point::new(0.0, 0.0);
-    shape.target_center = Point::new(0.0, 0.0);
-    shape.radius = 10.0;
-    shapes.push(shape);
-    compute_shape_center(&mut shapes[PLAYER_INDEX], triangles);
+    // vaisseau joueur (shapes[0]) : mesh coloré de `assets/vaisseau.json`
+    // (remplace l'ancien triangle texturé `vaisseau.png` — 35 faces, couleur
+    // par face, nez vers la droite = orientation 0 du départ à quai)
+    crate::vaisseau::create_player_vaisseau(shapes, triangles);
 
     // étoiles : 100 000, positions étirées par leur plan de parallaxe
     // (plan = (i mod 15) + 1, avec i 1-based comme l'original)
@@ -613,10 +586,13 @@ mod tests {
 
         assert_eq!(shapes.len(), 2);
         assert_eq!(shapes[PLAYER_INDEX].who_i_am, WHOIAM_PLAYER);
-        assert_eq!(shapes[PLAYER_INDEX].life, 1);
+        // vaisseau mesh : une Triangle par face du fichier (compte dérivé du
+        // fichier embarqué — l'éditeur peut le ré-exporter)
+        let player_faces = crate::vaisseau::vaisseau_face_count();
+        assert_eq!(shapes[PLAYER_INDEX].life as usize, player_faces);
         assert_eq!(shapes[STATION_INDEX].who_i_am, WHOIAM_STATION);
-        // joueur (1) + station (66 emplacements)
-        assert_eq!(triangles.len(), 1 + 66);
+        // joueur (faces) + station (66 emplacements)
+        assert_eq!(triangles.len(), player_faces + 66);
         // le rayon de la station couvre l'anneau visible (r ≈ 110-162) : la
         // collision est décidée par la détection de triangles (SAT), pas par
         // un petit rayon forcé (dérive volontaire — voir `create_station`).

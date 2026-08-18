@@ -247,7 +247,7 @@ les munitions, eux, repartent pleins à chaque lancement.
 ```
 rust-meteors-mining/
 ├── Cargo.toml              ← projet Rust (macroquad, rand, image)
-├── assets/                 ← textures (.png/.jpg) et sons (.ogg) intégrés au binaire
+├── assets/                 ← textures (.png/.jpg), sons (.ogg) et meshes (.json) intégrés au binaire
 └── src/
     ├── main.rs             ← boucle principale (fenêtre 960×540, sans vsync)
     ├── config.rs           ← constantes (vue, monde torique, gameplay)
@@ -262,5 +262,7 @@ rust-meteors-mining/
     ├── scenario.rs         ← scénarios (règles économiques, modes, réputation, atelier d'amélioration)
     ├── title.rs            ← écran titre (bannière arc-en-ciel, étoiles, choix du scénario)
     ├── audio.rs            ← sons et musique (ambiance, moteur, explosions)
+    ├── cosmonaut.rs        ← cosmonaute EVA (mesh `cosmonaute.json`, couleurs par face)
+    ├── vaisseau.rs         ← vaisseau joueur (mesh `vaisseau.json`, couleurs par face)
     └── x11.rs              ← plein écran EWMH (X11)
 ```

@@ -32,6 +32,12 @@ pub const COSMONAUTE_JSON: &str = include_str!("../assets/cosmonaute.json");
 /// dans la zone d'accostage (rayon 15).
 pub const COSMONAUTE_EVA_SCALE: f64 = 1.5;
 
+/// Couleur par défaut d'une face **sans champ `color`** dans le fichier :
+/// l'éditeur « meshes-designer » n'exporte pas de couleur pour les faces
+/// non peintes — gris clair neutre, opaque (sinon `serde` refuserait le
+/// fichier entier à la première face sans couleur).
+const DEFAULT_FACE_COLOR: [f32; 4] = [0.8, 0.8, 0.8, 1.0];
+
 /// Poste « garé » du cosmonaute EVA : en bord de monde (coin sud-ouest), loin
 /// de la caméra de départ — invisible tant que le vaisseau n'est pas détruit
 /// (`game.rs` le téléporte au crash, puis le ramène ici après le secours).
@@ -68,8 +74,16 @@ struct Plane {
 struct Face {
     /// Indices des 3 sommets de la face dans `verts`.
     v: [usize; 3],
-    /// Couleur RGBA de la face, flottants 0..1.
+    /// Couleur RGBA de la face, flottants 0..1 — **optionnelle** : les faces
+    /// non peintes de l'éditeur n'en portent pas, `DEFAULT_FACE_COLOR` est
+    /// alors utilisée (au lieu de faire échouer le chargement du fichier).
+    #[serde(default = "default_face_color")]
     color: [f32; 4],
+}
+
+/// Valeur par défaut de `Face::color` (voir `DEFAULT_FACE_COLOR`).
+fn default_face_color() -> [f32; 4] {
+    DEFAULT_FACE_COLOR
 }
 
 /// RGBA (flottants 0..1) → ARGB 32 bits au format QB64 (AARRGGBB).

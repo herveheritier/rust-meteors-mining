@@ -543,20 +543,41 @@ fn collisions(
         } else if collid_by == WHOIAM_GEM && who == WHOIAM_METEOR {
             // déjà résolu côté gemme (absorption) : le météore n'est pas
             // endommagé en avalant la gemme
-        } else {
-            triangles[i].life = 0;
-            shapes[shape_index].life -= 1;
-            if who == WHOIAM_PLAYER {
+        } else if who == WHOIAM_PLAYER {
+            // vaisseau joueur : mesh multi-triangles (35 faces) mais toujours
+            // « 1 impact = détruit » (l'ancien triangle unique valait 1 vie)
+            // — tous les triangles meurent en même temps, le vaisseau ne
+            // s'effrite pas impact après impact (une seule fois : `life`
+            // passe à 0, les autres triangles en collision de la même frame
+            // ne refont rien)
+            if shapes[shape_index].life > 0 {
+                shapes[shape_index].life = 0;
+                for j in shapes[shape_index].first_triangle..=shapes[shape_index].last_triangle {
+                    triangles[j].life = 0;
+                }
                 state.send_message("YOUR SPACESHIP IS DAMAGED, THE STATION CAN CARRY OUT REPAIRS");
                 state.send_message("REPAIRS ARE NOT FREE OF CHARGE");
                 // vaisseau détruit (jeu libre/Progression — le Survival a son
                 // propre respawn) : le cosmonaute est éjecté à la position du
                 // crash — le joueur le contrôle pour rejoindre la base (une
                 // seule fois : `cosmonaut_active`)
-                if shapes[shape_index].life <= 0 && !state.cosmonaut_active {
+                if !state.cosmonaut_active {
                     activate_cosmonaut(state, shapes, triangles);
                 }
+                // débris du crash + son d'impact (comme pour toute forme
+                // détruite — voir la branche générique ci-dessous)
+                if let Some(sounds) = sounds.as_mut() {
+                    let dx = shapes[shape_index].position.x - shapes[PLAYER_INDEX].position.x;
+                    let dy = shapes[shape_index].position.y - shapes[PLAYER_INDEX].position.y;
+                    let dist = dx.hypot(dy);
+                    let v = (1.0 - dist / WORLD_WIDTH.hypot(WORLD_HEIGHT)).powi(3) as f32;
+                    sounds.play_explosion(rng, v);
+                }
+                generate_garbages(garbages, &triangles[i], shapes, rng);
             }
+        } else {
+            triangles[i].life = 0;
+            shapes[shape_index].life -= 1;
             // collision vaisseau/gemme non résolue parce que soute pleine
             if collid_by == WHOIAM_PLAYER && who == WHOIAM_GEM {
                 state.send_message("YOU CANNOT TAKE ANY ADDITIONAL RESOURCES, UNLOAD AT THE STATION");
@@ -743,7 +764,9 @@ fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [
     p.velocity = 0.0;
     p.orientation = 0.0;
     p.rotation = 0.0;
-    p.life = 1;
+    // le vaisseau est un mesh multi-triangles (35 faces) : toutes les faces
+    // revivent (l'invariant du jeu : `life` = nombre de triangles vivants)
+    p.life = (p.last_triangle - p.first_triangle + 1) as i32;
     for j in p.first_triangle..=p.last_triangle {
         triangles[j].life = 1;
     }
@@ -2845,6 +2868,8 @@ mod tests {
         let to = state.eva_recovery_to_pos;
         assert!(state.eva_recovery <= 0.0);
         assert!(state.eva_crossfade > 0.0);
+        // vaisseau reconstruit : toutes ses faces revivent (`life` = nombre
+        // de triangles — 1 ici, la scène de test est un vaisseau à 1 triangle)
         assert_eq!(shapes[PLAYER_INDEX].life, 1);
         assert!(state.dock_links); // démarre à quai, comme au lancement
         assert_eq!(shapes[eva].position, to); // sur l'anneau (cosmonaute éjecté au centre : vers la droite)

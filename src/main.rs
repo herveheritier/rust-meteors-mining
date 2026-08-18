@@ -28,6 +28,7 @@ mod scenario;
 mod shape;
 mod state;
 mod title;
+mod vaisseau;
 mod x11;
 
 use macroquad::prelude::*;

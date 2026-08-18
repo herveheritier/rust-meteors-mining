@@ -172,9 +172,6 @@ pub const GEM_MESH: Mesh = &[&[
 /// Balle — `data 1,-2,-2, -2,2, 2,0` → 1 triangle (voir `fireBullet`).
 pub const BULLET_POINTS: &[(f64, f64)] = &[(-2.0, -2.0), (-2.0, 2.0), (2.0, 0.0)];
 
-/// Vaisseau joueur — `data 1, -10,-10, -10,10, 10,0, 0` → 1 triangle (voir `prepare`).
-pub const PLAYER_POINTS: &[(f64, f64)] = &[(-10.0, -10.0), (-10.0, 10.0), (10.0, 0.0)];
-
 // ─── Shape ───────────────────────────────────────────────────────────────────
 
 /// Une forme : un assemblage de triangles (ex `shape_type`).
