@@ -66,10 +66,14 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   épaules/hanches) pendant la poussée puis retombent au repos. Il peut
   **ramasser les gemmes** par proximité (même soute que le vaisseau —
   déchargée en minerais à la station). Son **seul objectif** : **rejoindre
-  la base** — dès qu'il atteint la zone d'accostage
-  au centre de la station, il est **secouru** et le vaisseau est
-  **reconstruit** à quai (liens attachés, comme au lancement). En Survival,
-  la destruction reste gérée par les vies/bouclier (respawn à la station).
+  la base** — dès qu'il atteint la zone d'accostage au centre de la
+  station, la **récupération** s'anime : un **cordon orange** jaillit de
+  l'anneau jusqu'à lui et le **ramène sur l'anneau** (~2,5 s, monde gelé,
+  ondulation qui s'affaisse quand la tension monte), puis un **fondu
+  enchaîné** (2 s) l'efface pendant que le **vaisseau reconstruit apparaît
+  au centre de la station, liens attachés** (la caméra glisse de l'anneau
+  vers le centre). En Survival, la destruction reste gérée par les
+  vies/bouclier (respawn à la station).
 - **Audio** : ambiance, musique, moteur avant/recul, tirs, gemmes et
   explosions à volume selon la distance au vaisseau.
 

@@ -35,8 +35,8 @@ use ::rand::SeedableRng;
 use ::rand_chacha::ChaCha12Rng;
 
 use crate::config::{
-    ATTEMPT_FPS, PLAYER_INDEX, STATION_INDEX, VIEWPORT_HEIGHT, VIEWPORT_WIDTH, WINDOW_SIZES,
-    WINDOW_TITLE,
+    ATTEMPT_FPS, EVA_CROSSFADE_DURATION, PLAYER_INDEX, STATION_INDEX, VIEWPORT_HEIGHT,
+    VIEWPORT_WIDTH, WINDOW_SIZES, WINDOW_TITLE,
 };
 use crate::geom::Point;
 use crate::state::{GameState, RenderStyle, ViewMode};
@@ -345,11 +345,23 @@ async fn main() {
                 camera,
                 &elements,
                 state.show_data,
+                1.0,
             );
         }
         // le pilote (vaisseau, ou cosmonaute EVA quand il est détruit) guide
         // la mire, le HUD d'accostage et la flamme de poussée
         let pilot = game::pilot_index(&state);
+        // fondu enchaîné de la récupération EVA : pendant `eva_crossfade`, le
+        // cosmonaute ramené sur l'anneau s'efface (`cosmonaut_fade` 1→0)
+        // pendant que le vaisseau reconstruit apparaît au centre avec ses
+        // liens (`ship_fade` 0→1). En dehors, tout est opaque (1.0)
+        let cross = state.eva_crossfade / EVA_CROSSFADE_DURATION; // 1 → 0
+        let ship_fade = (1.0 - cross).clamp(0.0, 1.0) as f32;
+        let cosmonaut_fade = if state.eva_crossfade > 0.0 {
+            cross.clamp(0.0, 1.0) as f32
+        } else {
+            1.0
+        };
         // mire d'accostage au centre de la station : dessinée **sous le
         // vaisseau** (par-dessus l'anneau de la station, avant le joueur) —
         // semi-transparente, rouge → vert selon la vitesse d'approche. Elle
@@ -376,13 +388,16 @@ async fn main() {
         // traits d'accostage : pendant l'animation (3 s, avant la boîte) ils
         // relient le bord intérieur de la station aux côtés du vaisseau — néon
         // vert, sous le vaisseau (après la mire) ; au départ (CLOSE), ils se
-        // rétractent vers le bord (voir `render::draw_docking_line`)
+        // rétractent vers le bord (voir `render::draw_docking_line`). Pendant
+        // le fondu enchaîné de la récupération EVA, ils apparaissent avec le
+        // vaisseau reconstruit (`ship_fade`)
         render::draw_docking_line(
             &state,
             camera,
             &state.world,
             &shapes[STATION_INDEX],
             &shapes[PLAYER_INDEX],
+            ship_fade,
         );
         render::draw_shape(
             &state,
@@ -392,12 +407,17 @@ async fn main() {
             camera,
             &elements,
             state.show_data,
+            ship_fade,
         );
         // cosmonaute EVA au **premier plan** (par-dessus le vaisseau et tout
         // le reste du monde) : dessiné **uniquement quand il est éjecté**
         // (`cosmonaut_active`) — jamais de cosmonaute supplémentaire dans le
-        // monde quand le vaisseau est intact (garé, il n'est pas affiché)
+        // monde quand le vaisseau est intact (garé, il n'est pas affiché).
+        // Pendant sa récupération, le cordon orange est dessiné **sous lui**
+        // (`draw_eva_recovery_cable`) ; pendant le fondu enchaîné, il s'efface
+        // (`cosmonaut_fade`)
         if state.cosmonaut_active && state.eva_cosmonaut >= 0 {
+            render::draw_eva_recovery_cable(&state, camera, &state.world, &shapes[eva]);
             render::draw_shape(
                 &state,
                 &assets,
@@ -406,6 +426,7 @@ async fn main() {
                 camera,
                 &elements,
                 state.show_data,
+                cosmonaut_fade,
             );
         }
 

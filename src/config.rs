@@ -189,6 +189,21 @@ pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 /// à la station. Rayon du cosmonaute (~13) + marge généreuse.
 pub const EVA_PICKUP_RADIUS: f64 = 20.0;
 
+/// Durée (secondes) de la **récupération** du cosmonaute EVA par la station
+/// (vaisseau détruit, il a rejoint la zone d'accostage) : un cordon jaillit
+/// de l'anneau jusqu'à lui puis le ramène sur l'anneau — le monde est gelé
+/// (voir `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
+pub const EVA_RECOVERY_DURATION: f64 = 2.5;
+/// Durée (secondes) du **fondu enchaîné** après la récupération : le
+/// cosmonaute ramené sur l'anneau s'efface pendant que le vaisseau
+/// reconstruit apparaît au centre de la station, liens attachés (voir
+/// `game::advance_eva_crossfade`).
+pub const EVA_CROSSFADE_DURATION: f64 = 2.0;
+/// Couleur (ARGB) du cordon de récupération du cosmonaute EVA : orange néon,
+/// distincte des liens d'accostage verts (voir
+/// `render::draw_eva_recovery_cable`).
+pub const EVA_RECOVERY_CABLE_COLOR: u32 = 0xFFFFA040;
+
 /// Durée (secondes) de l'animation d'accostage avant l'ouverture de la boîte
 /// DOCK STATION : le monde est gelé, le vaisseau pivote vers la droite
 /// (orientation 0) tout en se recentrant exactement au centre de la station,

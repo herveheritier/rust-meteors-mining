@@ -226,6 +226,23 @@ pub struct GameState {
     /// Index de la forme « cosmonaute EVA » dans `shapes` (-1 tant qu'elle
     /// n'est pas créée par `main.rs`).
     pub eva_cosmonaut: i32,
+    /// Récupération du cosmonaute EVA en cours (secondes restantes, 0 =
+    /// aucune) : vaisseau détruit, il a rejoint la zone d'accostage — un
+    /// cordon jaillit de l'anneau jusqu'à lui et le ramène sur l'anneau
+    /// pendant `EVA_RECOVERY_DURATION` (monde gelé, voir
+    /// `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
+    pub eva_recovery: f64,
+    /// Position du cosmonaute au début de la récupération (interpolée vers
+    /// `eva_recovery_to_pos`, le point de l'anneau où le cordon le ramène).
+    pub eva_recovery_from_pos: Point,
+    /// Point de l'anneau (rayon `STATION_INNER_RADIUS`) où le cordon ramène
+    /// le cosmonaute — dans sa direction au moment de la récupération.
+    pub eva_recovery_to_pos: Point,
+    /// Fondu enchaîné de la récupération en cours (secondes restantes, 0 =
+    /// aucune) : le cosmonaute sur l'anneau s'efface pendant que le vaisseau
+    /// reconstruit apparaît au centre de la station, liens attachés, pendant
+    /// `EVA_CROSSFADE_DURATION` (voir `game::advance_eva_crossfade`).
+    pub eva_crossfade: f64,
     /// Boîte de choix DOCK STATION ouverte (accostage) — ex la boucle
     /// bloquante de `windowUtils_choiceBox` : tant qu'elle est ouverte, le
     /// jeu est gelé et seuls les clics sur UNLOAD / REFUEL/REARM / UPGRADES /
@@ -309,6 +326,10 @@ impl GameState {
             dock_was_outside: false,
             cosmonaut_active: false,
             eva_cosmonaut: -1, // créé par main.rs au démarrage
+            eva_recovery: 0.0,
+            eva_recovery_from_pos: Point::new(0.0, 0.0),
+            eva_recovery_to_pos: Point::new(0.0, 0.0),
+            eva_crossfade: 0.0,
             dock_box: false,
             workshop_box: false,
             help_box: false,

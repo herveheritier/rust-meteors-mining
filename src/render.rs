@@ -921,6 +921,11 @@ fn draw_dashed_line(a: Vec2, b: Vec2, color: Color) {
 ///
 /// NB : l'original recalcule `getBorderSegments` à chaque frame (inutile :
 /// les bords ne servent qu'à la génération et au debug) — on ne le fait pas.
+///
+/// `fade` (0..1) est l'opacité globale de la forme — utilisée par le fondu
+/// enchaîné de la récupération EVA : le cosmonaute s'efface pendant que le
+/// vaisseau reconstruit apparaît (`main.rs`). 1.0 pour toutes les autres
+/// formes.
 pub fn draw_shape(
     state: &GameState,
     assets: &Assets,
@@ -929,6 +934,7 @@ pub fn draw_shape(
     camera: Point,
     elements: &[Element],
     show_data: bool,
+    fade: f32,
 ) {
     if shape.life <= 0 {
         return;
@@ -972,15 +978,15 @@ pub fn draw_shape(
             match state.render_style {
                 RenderStyle::Textured => {
                     if shape.texture != TEXTURE_NONE {
-                        draw_textured_triangle(assets, t, shape, camera, elements, &state.world);
+                        draw_textured_triangle(assets, t, shape, camera, elements, &state.world, fade);
                     } else {
-                        draw_triangle(assets, t, shape, camera, elements, &state.world);
+                        draw_triangle(assets, t, shape, camera, elements, &state.world, fade);
                     }
                 }
                 RenderStyle::Colored => {
-                    draw_colored_triangle(t, shape, camera, elements, &state.world)
+                    draw_colored_triangle(t, shape, camera, elements, &state.world, fade)
                 }
-                RenderStyle::Mesh => draw_mesh_triangle(t, shape, camera, elements, &state.world),
+                RenderStyle::Mesh => draw_mesh_triangle(t, shape, camera, elements, &state.world, fade),
             }
         }
     }
@@ -1022,6 +1028,7 @@ fn draw_textured_triangle(
     camera: Point,
     elements: &[Element],
     world: &World,
+    fade: f32,
 ) {
     let a = screen_point(t.real_a, camera, world);
     let b = screen_point(t.real_b, camera, world);
@@ -1092,7 +1099,8 @@ fn draw_textured_triangle(
     let uv_a = uv(t.a.x, t.a.y);
     let uv_b = uv(t.b.x, t.b.y);
     let uv_c = uv(t.c.x, t.c.y);
-    draw_triangle_texture(texture, a, b, c, uv_a, uv_b, uv_c, WHITE);
+    // teinte blanche à l'opacité demandée (fondu enchaîné de la récupération)
+    draw_triangle_texture(texture, a, b, c, uv_a, uv_b, uv_c, Color::new(1.0, 1.0, 1.0, fade));
 
     if t.element > 0 {
         let center = screen_point(t.real_center, camera, world);
@@ -1118,6 +1126,7 @@ fn draw_triangle(
     camera: Point,
     elements: &[Element],
     world: &World,
+    fade: f32,
 ) {
     let a = screen_point(t.real_a, camera, world);
     let b = screen_point(t.real_b, camera, world);
@@ -1125,8 +1134,14 @@ fn draw_triangle(
 
     if t.life > 0 {
         if t.color != 0 {
-            // face à couleur propre (cosmonaute) : remplissage uni
-            macroquad::shapes::draw_triangle(a, b, c, triangle_color(t, shape, elements));
+            // face à couleur propre (cosmonaute) : remplissage uni, atténué
+            // par l'opacité demandée (fondu enchaîné de la récupération)
+            macroquad::shapes::draw_triangle(
+                a,
+                b,
+                c,
+                fade_color(triangle_color(t, shape, elements), fade),
+            );
         } else {
             let texture = &assets.orange;
             let tw = texture.width() as f64;
@@ -1146,7 +1161,7 @@ fn draw_triangle(
                 uv(511.0, 511.0),
                 uv(0.0, 511.0),
                 uv(255.0, 0.0),
-                WHITE,
+                Color::new(1.0, 1.0, 1.0, fade),
             );
         }
     } else {
@@ -1165,6 +1180,7 @@ fn draw_colored_triangle(
     camera: Point,
     elements: &[Element],
     world: &World,
+    fade: f32,
 ) {
     let a = screen_point(t.real_a, camera, world);
     let b = screen_point(t.real_b, camera, world);
@@ -1175,7 +1191,7 @@ fn draw_colored_triangle(
     }
     // NB : chemin complet — `draw_triangle` (macroquad) est masqué par la
     // fonction locale du même nom (triangles non texturés de l'original)
-    macroquad::shapes::draw_triangle(a, b, c, triangle_color(t, shape, elements));
+    macroquad::shapes::draw_triangle(a, b, c, fade_color(triangle_color(t, shape, elements), fade));
     draw_element_dot(t, camera, elements, world);
 }
 
@@ -1188,6 +1204,7 @@ fn draw_mesh_triangle(
     camera: Point,
     elements: &[Element],
     world: &World,
+    fade: f32,
 ) {
     let a = screen_point(t.real_a, camera, world);
     let b = screen_point(t.real_b, camera, world);
@@ -1196,8 +1213,15 @@ fn draw_mesh_triangle(
         draw_dead_triangle(a, b, c, t, shape);
         return;
     }
-    draw_triangle_lines(a, b, c, 1.0, triangle_color(t, shape, elements));
+    draw_triangle_lines(a, b, c, 1.0, fade_color(triangle_color(t, shape, elements), fade));
     draw_element_dot(t, camera, elements, world);
+}
+
+/// Applique un facteur d'opacité (0..1) à une couleur — utilisé par le fondu
+/// enchaîné de la récupération EVA (`draw_shape`, paramètre `fade`) : le
+/// cosmonaute s'efface pendant que le vaisseau reconstruit apparaît.
+fn fade_color(color: Color, fade: f32) -> Color {
+    Color::new(color.r, color.g, color.b, color.a * fade)
 }
 
 /// Couleur d'affichage d'un triangle vivant : celle de son élément minéral
@@ -1498,6 +1522,8 @@ pub fn docking_marker_visible(
         || state.workshop_box
         || state.dock_retract > 0.0
         || state.dock_links
+        || state.eva_recovery > 0.0
+        || state.eva_crossfade > 0.0
         || !state.docking_guide
     {
         return false; // tenu par les liens, ou pas encore revenu à la base
@@ -1582,6 +1608,7 @@ pub fn draw_docking_line(
     world: &World,
     station: &Shape,
     player: &Shape,
+    fade: f32,
 ) {
     // à quai (lancement/respawn) : liens tendus jusqu'au vaisseau au centre
     let docked = state.dock_links;
@@ -1630,7 +1657,10 @@ pub fn draw_docking_line(
     ];
     let mut from = Point::new(0.0, 0.0);
     let mut to = Point::new(0.0, 0.0);
-    let color = argb_to_color((DOCK_LINE_ALPHA << 24) | 0x0040FF40);
+    let mut color = argb_to_color((DOCK_LINE_ALPHA << 24) | 0x0040FF40);
+    // fondu enchaîné de la récupération EVA : les liens apparaissent avec le
+    // vaisseau reconstruit (`fade` = opacité du vaisseau)
+    color.a *= fade;
     for (inner_local, side_local) in inner.iter().zip(sides.iter()) {
         from.x = inner_local.x;
         from.y = inner_local.y;
@@ -1659,6 +1689,49 @@ pub fn draw_docking_line(
     }
 }
 
+/// Cordon de **récupération** du cosmonaute EVA (vaisseau détruit, il a
+/// rejoint la base) : pendant la récupération (`state.eva_recovery > 0`), un
+/// cordon **orange** jaillit de l'anneau jusqu'au cosmonaute (déploiement sur
+/// les ~30 % du début) puis, tendu, le **ramène sur l'anneau** — son
+/// ondulation s'affaisse à mesure que la tension monte ; pendant le fondu
+/// enchaîné (`state.eva_crossfade > 0`), il reste tendu et **s'efface avec le
+/// cosmonaute**. Dessiné **sous le cosmonaute** (appelé avant son rendu).
+pub fn draw_eva_recovery_cable(
+    state: &GameState,
+    camera: Point,
+    world: &World,
+    cosmonaut: &Shape,
+) {
+    if state.eva_recovery <= 0.0 && state.eva_crossfade <= 0.0 {
+        return;
+    }
+    let pos = cosmonaut.position;
+    let r = pos.x.hypot(pos.y);
+    if r < 1.0 {
+        return; // cosmonaute au centre : le cordon n'a pas encore d'ancrage
+    }
+    // ancrage sur l'anneau, dans la direction du cosmonaute (il est ramené
+    // radialement — le cordon reste tendu le long du rayon)
+    let anchor = Point::new(pos.x / r * STATION_INNER_RADIUS, pos.y / r * STATION_INNER_RADIUS);
+    let a = screen_point(anchor, camera, world);
+    let b = screen_point(pos, camera, world);
+    let mut color = argb_to_color(EVA_RECOVERY_CABLE_COLOR);
+    if state.eva_crossfade > 0.0 {
+        // fondu enchaîné : le cordon s'efface avec le cosmonaute
+        let t = (1.0 - state.eva_crossfade / EVA_CROSSFADE_DURATION).clamp(0.0, 1.0) as f32;
+        color.a *= 1.0 - t;
+        draw_docking_cable(a, b, 1.0, 0.0, true, color); // tendu
+    } else {
+        // récupération : déploiement rapide vers le cosmonaute (les ~30 % du
+        // début), puis cordon tendu qui tire — ondulation forte tant que le
+        // câble est lâche, nulle une fois la tension installée
+        let t = (1.0 - state.eva_recovery / EVA_RECOVERY_DURATION).clamp(0.0, 1.0) as f32;
+        let deploy = (t / 0.3).clamp(0.0, 1.0);
+        let wave = 10.0 * (1.0 - t);
+        draw_docking_cable(a, b, deploy, wave, true, color);
+    }
+}
+
 /// HUD d'accostage, affiché à la **suite des stats** (même ligne, en haut de
 /// l'écran) : distance du vaisseau au centre de la station (unités monde,
 /// sans unité affichée) et invite — « DOCK DIST: 123 » en approche,
@@ -1678,7 +1751,13 @@ pub fn draw_docking_hud(
 ) {
     let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
     let in_zone = dist < STATION_DOCK_DISTANCE;
-    let (text, color) = if state.dock_box || state.workshop_box || state.dock_links {
+    // récupération du cosmonaute / fondu enchaîné : considéré comme accosté
+    let (text, color) = if state.dock_box
+        || state.workshop_box
+        || state.dock_links
+        || state.eva_recovery > 0.0
+        || state.eva_crossfade > 0.0
+    {
         ("DOCKED".to_string(), 0xFF40FF40)
     } else if in_zone && player_speed.abs() < STATION_DOCK_SPEED {
         ("DOCK: IN RANGE".to_string(), 0xFF40FF40)

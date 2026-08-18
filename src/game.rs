@@ -124,6 +124,21 @@ pub fn update(
         return (Action::Continue, camera);
     }
 
+    // Récupération du cosmonaute EVA (vaisseau détruit, il a rejoint la base) :
+    // le monde est gelé — un cordon jaillit de l'anneau jusqu'à lui puis le
+    // ramène sur l'anneau (`advance_eva_recovery`, cordon dessiné par
+    // `render::draw_eva_recovery_cable`), puis le **fondu enchaîné** fait
+    // apparaître le vaisseau reconstruit au centre, liens attachés
+    // (`advance_eva_crossfade` — la caméra glisse de l'anneau vers le centre).
+    if state.eva_recovery > 0.0 {
+        advance_eva_recovery(state, shapes, triangles, dt);
+        return (Action::Continue, camera);
+    }
+    if state.eva_crossfade > 0.0 {
+        let camera = advance_eva_crossfade(state, shapes, triangles, dt);
+        return (Action::Continue, camera);
+    }
+
     // Le vaisseau démarre de la base (lancement ou respawn : liens attachés à
     // quai, mire cachée — voir `state.dock_links`) : dès que le joueur donne
     // une commande de déplacement (flèches, tous modes), les liens se
@@ -788,6 +803,117 @@ fn rescue_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &mut
     state.send_message("RESCUED — THE STATION REBUILT YOUR SHIP");
 }
 
+/// Le cosmonaute EVA a atteint la zone d'accostage (vaisseau détruit) : la
+/// station le **récupère** — un cordon va jaillir de l'anneau jusqu'à lui et
+/// le ramener sur l'anneau (voir `advance_eva_recovery` et
+/// `render::draw_eva_recovery_cable`). Le monde sera gelé : `docking` est
+/// appelée dans la frame, la suite est traitée en tête de `update` (les
+/// frames suivantes retournent avant la physique). Après la récupération, le
+/// fondu enchaîné fait apparaître le vaisseau reconstruit
+/// (`advance_eva_crossfade`, terminé par `rescue_cosmonaut`).
+fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
+    let idx = state.eva_cosmonaut as usize;
+    if idx >= shapes.len() {
+        return; // cosmonaute EVA absent : rien à récupérer
+    }
+    let c = &shapes[idx];
+    state.eva_recovery_from_pos = c.position;
+    // point de l'anneau dans la direction du cosmonaute (le cordon le ramène
+    // radialement sur le bord intérieur de l'anneau, comme les liens)
+    let r = c.position.x.hypot(c.position.y);
+    state.eva_recovery_to_pos = if r < 1.0 {
+        Point::new(STATION_INNER_RADIUS, 0.0) // au centre : vers la droite
+    } else {
+        Point::new(
+            c.position.x / r * STATION_INNER_RADIUS,
+            c.position.y / r * STATION_INNER_RADIUS,
+        )
+    };
+    state.eva_recovery = EVA_RECOVERY_DURATION;
+    // le cosmonaute est immobilisé pendant que le cordon le tire
+    let c = &mut shapes[idx];
+    c.velocity = 0.0;
+    c.direction = 0.0;
+    c.rotation = 0.0;
+    c.orientation = 0.0;
+    for j in c.first_triangle..=c.last_triangle {
+        compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
+    }
+    state.player.thrusted = 0; // flamme coupée : plus de poussée
+    state.player.revert_thrusted = 0;
+    state.send_message("STATION RECOVERY — HOLD ON");
+}
+
+/// Fait avancer la **récupération** du cosmonaute EVA d'une frame : le cordon
+/// (jailli de l'anneau vers lui) le **ramène sur l'anneau** — sa position est
+/// interpolée (smoothstep) de `eva_recovery_from_pos` vers `eva_recovery_to_pos`
+/// pendant `EVA_RECOVERY_DURATION`, vitesse nulle, le monde est gelé. À la
+/// fin, le **fondu enchaîné** démarre : le vaisseau est reconstruit au centre
+/// de la station (`respawn_player`, liens attachés) et le cosmonaute s'efface
+/// pendant que le vaisseau apparaît (`advance_eva_crossfade`).
+fn advance_eva_recovery(
+    state: &mut GameState,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
+    dt: f64,
+) {
+    state.eva_recovery = (state.eva_recovery - dt).max(0.0);
+    // avancement 0..1 avec lissage (smoothstep) pour un mouvement fluide
+    let t = (1.0 - state.eva_recovery / EVA_RECOVERY_DURATION).clamp(0.0, 1.0);
+    let e = t * t * (3.0 - 2.0 * t);
+    let idx = state.eva_cosmonaut as usize;
+    let c = &mut shapes[idx];
+    c.position.x =
+        state.eva_recovery_from_pos.x + (state.eva_recovery_to_pos.x - state.eva_recovery_from_pos.x) * e;
+    c.position.y =
+        state.eva_recovery_from_pos.y + (state.eva_recovery_to_pos.y - state.eva_recovery_from_pos.y) * e;
+    c.velocity = 0.0;
+    c.rotation = 0.0;
+    for j in c.first_triangle..=c.last_triangle {
+        compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
+    }
+    if state.eva_recovery <= 0.0 {
+        state.eva_recovery = 0.0;
+        // le cosmonaute est sur l'anneau : le vaisseau est reconstruit au
+        // centre de la station (liens attachés) — le fondu enchaîné le fait
+        // apparaître pendant que le cosmonaute s'efface
+        respawn_player(state, shapes, triangles);
+        state.eva_crossfade = EVA_CROSSFADE_DURATION;
+    }
+}
+
+/// Fait avancer le **fondu enchaîné** de la récupération d'une frame : le
+/// cosmonaute ramené sur l'anneau s'efface (alpha décroissant, rendu par
+/// `main.rs`) pendant que le vaisseau reconstruit apparaît au centre de la
+/// station, liens attachés (alpha croissant) — la caméra glisse de l'anneau
+/// vers le centre (renvoyée à `update`). À la fin, le secours est terminé :
+/// le cosmonaute retourne à son poste et le contrôle revient au vaisseau
+/// (`rescue_cosmonaut`).
+fn advance_eva_crossfade(
+    state: &mut GameState,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
+    dt: f64,
+) -> Point {
+    state.eva_crossfade = (state.eva_crossfade - dt).max(0.0);
+    // caméra : glisse du cosmonaute (sur l'anneau) vers le centre de la
+    // station où le vaisseau apparaît — interpolée (smoothstep) sur la durée
+    let idx = state.eva_cosmonaut as usize;
+    let pos = shapes[idx].position;
+    let t = (1.0 - state.eva_crossfade / EVA_CROSSFADE_DURATION).clamp(0.0, 1.0);
+    let e = t * t * (3.0 - 2.0 * t);
+    let mut camera = Point::new(
+        VIEWPORT_WIDTH / 2.0 - pos.x * (1.0 - e),
+        VIEWPORT_HEIGHT / 2.0 - pos.y * (1.0 - e),
+    );
+    camera.normalize_world(&state.world);
+    if state.eva_crossfade <= 0.0 {
+        state.eva_crossfade = 0.0;
+        rescue_cosmonaut(state, shapes, triangles);
+    }
+    camera
+}
+
 /// Détecte le retour à la base (ex « detect return to the base » de
 /// `mainLoop`) : le vaisseau est docké quand son centre entre dans la zone
 /// d'accostage — le cercle de rayon `STATION_DOCK_DISTANCE` autour du centre
@@ -810,12 +936,15 @@ fn docking(
 ) {
     // vaisseau détruit : le cosmonaute EVA rejoint la base — dès qu'il atteint
     // la zone d'accostage (cercle de rayon `STATION_DOCK_DISTANCE` au centre,
-    // la station est en (0,0)), il est secouru : le vaisseau est reconstruit
-    // à la station et le contrôle y revient (voir `rescue_cosmonaut`)
+    // la station est en (0,0)), la **récupération** démarre : un cordon
+    // jaillit de l'anneau et le ramène sur l'anneau, puis le fondu enchaîné
+    // fait apparaître le vaisseau reconstruit (le monde est gelé — la suite
+    // est traitée en tête de `update` : `advance_eva_recovery` puis
+    // `advance_eva_crossfade`, qui termine par `rescue_cosmonaut`)
     if state.cosmonaut_active {
         let c = &shapes[state.eva_cosmonaut as usize];
-        if c.position.x.hypot(c.position.y) < STATION_DOCK_DISTANCE {
-            rescue_cosmonaut(state, shapes, triangles);
+        if state.eva_recovery <= 0.0 && c.position.x.hypot(c.position.y) < STATION_DOCK_DISTANCE {
+            start_eva_recovery(state, shapes, triangles);
         }
         return;
     }
@@ -2685,10 +2814,12 @@ mod tests {
     }
 
     #[test]
-    fn cosmonaut_reaching_the_station_is_rescued() {
+    fn cosmonaut_reaching_the_station_starts_recovery_then_is_rescued() {
         // le cosmonaute EVA atteint la zone d'accostage (centre de la station)
-        // → il est secouru : le vaisseau est reconstruit à la station (état de
-        // lancement) et le cosmonaute retourne à son poste
+        // → la RÉCUPÉRATION démarre : un cordon le ramène sur l'anneau
+        // (`eva_recovery`), puis le fondu enchaîné fait apparaître le vaisseau
+        // reconstruit au centre (`eva_crossfade`) — à la fin, il est secouru :
+        // contrôle revenu au vaisseau, cosmonaute garé à son poste
         let (mut state, mut shapes, mut triangles) = ejection_scene();
         // le vaisseau est détruit et le cosmonaute éjecté au centre (la zone)
         shapes[PLAYER_INDEX].life = 0;
@@ -2700,14 +2831,29 @@ mod tests {
 
         docking(&mut state, &mut shapes, &mut triangles, &mut elements);
 
-        // secouru : le contrôle revient au vaisseau, reconstruit à quai
-        assert!(!state.cosmonaut_active);
+        // la récupération démarre (pas de secours immédiat) : le monde est
+        // gelé, le cosmonaute reste le pilote
+        assert!(state.eva_recovery > 0.0);
+        assert!(state.cosmonaut_active);
+        assert_eq!(pilot_index(&state), eva);
+        assert_eq!(shapes[PLAYER_INDEX].life, 0); // vaisseau pas encore reconstruit
+
+        // récupération terminée : le cosmonaute est ramené sur l'anneau (le
+        // rayon cible), le vaisseau reconstruit au centre (liens attachés),
+        // le fondu enchaîné démarre
+        advance_eva_recovery(&mut state, &mut shapes, &mut triangles, EVA_RECOVERY_DURATION);
+        let to = state.eva_recovery_to_pos;
+        assert!(state.eva_recovery <= 0.0);
+        assert!(state.eva_crossfade > 0.0);
         assert_eq!(shapes[PLAYER_INDEX].life, 1);
-        assert_eq!(triangles[0].life, 1);
-        assert_eq!(shapes[PLAYER_INDEX].position, Point::new(0.0, 0.0));
         assert!(state.dock_links); // démarre à quai, comme au lancement
-        assert_eq!(state.player_at_station, -1);
-        // le cosmonaute est garé hors écran, à son poste
+        assert_eq!(shapes[eva].position, to); // sur l'anneau (cosmonaute éjecté au centre : vers la droite)
+
+        // fondu terminé : le secours est complet — contrôle revenu au
+        // vaisseau, cosmonaute garé à son poste
+        advance_eva_crossfade(&mut state, &mut shapes, &mut triangles, EVA_CROSSFADE_DURATION);
+        assert!(!state.cosmonaut_active);
+        assert_eq!(shapes[PLAYER_INDEX].position, Point::new(0.0, 0.0));
         assert_eq!(shapes[eva].position, COSMONAUTE_EVA_PARK);
         assert_eq!(pilot_index(&state), PLAYER_INDEX);
     }
