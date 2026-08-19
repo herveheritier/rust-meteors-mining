@@ -9,8 +9,9 @@
 //! - `music`            — musique en marche (0/1, touche M)
 //! - `volume`           — volume maître en pourcentage (0..100)
 //! - `render_style`     — style de rendu des triangles (0..2, écran O)
-//! - `window_mode`      — fenêtré / plein écran zoomé / natif (0..2, écran O)
 //! - `window_size`      — index dans `WINDOW_SIZES` (0..3, écran O)
+//!   (le mode d'affichage fenêtré / zoomé / natif n'est, lui, **pas**
+//!   persisté : le jeu démarre toujours fenêtré, cycle F prévisible)
 //! - `antialias`        — MSAA 4× (0/1, écran O ; appliqué au lancement)
 //! - `scenario`         — scénario choisi (0 = jeu libre, 1 = Progression,
 //!   2 = Survival, touche N de l'écran titre)
@@ -36,9 +37,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::config::{
-    MOVING_MODE_COUNT, RENDER_STYLE_COUNT, WINDOW_MODE_COUNT, WINDOW_SIZES,
-};
+use crate::config::{MOVING_MODE_COUNT, RENDER_STYLE_COUNT, WINDOW_SIZES};
 
 /// Nom du fichier de configuration (dans le dossier de configuration
 /// utilisateur, sous `meteors-mining/`).
@@ -206,23 +205,6 @@ pub fn save_render_style(style: i32) -> io::Result<()> {
     set_i32("render_style", style)
 }
 
-/// Lit le mode d'affichage enregistré (fenêtré / zoomé / natif), borné à
-/// `[0, WINDOW_MODE_COUNT-1]` (sinon `None`).
-pub fn load_window_mode() -> Option<i32> {
-    load_window_mode_from(&config_path())
-}
-
-/// Lit `window_mode` dans un fichier donné (version testable).
-pub fn load_window_mode_from(path: &Path) -> Option<i32> {
-    let mode = get_i32_from(path, "window_mode")?;
-    (0..WINDOW_MODE_COUNT).contains(&mode).then_some(mode)
-}
-
-/// Enregistre le mode d'affichage (les autres clés sont conservées).
-pub fn save_window_mode(mode: i32) -> io::Result<()> {
-    set_i32("window_mode", mode)
-}
-
 /// Lit la définition de fenêtre enregistrée `(largeur, hauteur)` (index borné
 /// dans `WINDOW_SIZES`, sinon `None`).
 pub fn load_window_size() -> Option<(i32, i32)> {
@@ -385,15 +367,13 @@ mod tests {
 
     #[test]
     fn graphics_keys_round_trip_and_are_bounded() {
-        // style de rendu, mode d'affichage et définition de fenêtre : aller-
-        // retour, et valeurs hors bornes ignorées (défaut conservé)
+        // style de rendu et définition de fenêtre : aller-retour, et valeurs
+        // hors bornes ignorées (défaut conservé)
         let p = temp_path("graphics.cfg");
         let _ = fs::remove_file(&p);
         set_i32_to(&p, "render_style", 2).unwrap();
-        set_i32_to(&p, "window_mode", 1).unwrap();
         set_i32_to(&p, "window_size", 3).unwrap();
         assert_eq!(get_i32_from(&p, "render_style"), Some(2));
-        assert_eq!(get_i32_from(&p, "window_mode"), Some(1));
         assert_eq!(load_window_size_from(&p), Some((1920, 1080)));
         // hors bornes → None (comportement des wrappers de chargement)
         fs::write(&p, "render_style=9\nwindow_size=banane\n").unwrap();

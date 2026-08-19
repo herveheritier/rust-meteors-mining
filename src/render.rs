@@ -804,36 +804,58 @@ pub fn native_camera() -> Camera2D {
     }
 }
 
+/// Sort du plein écran EWMH : ClientMessage REMOVE via libX11 — miniquad
+/// 0.4.11 ne sait PAS sortir du plein écran sur X11 (`set_fullscreen(false)`
+/// envoie un ADD avec un atome vide, sans effet — TODO de miniquad, toujours
+/// présent en master) → on envoie nous-mêmes le REMOVE EWMH
+/// (`crate::x11::set_fullscreen(false)`), sans outil externe (`wmctrl`). Sans
+/// WM EWMH, repli sur un simple redimensionnement à la définition de la vue
+/// (avec un WM non EWMH, la fenêtre resterait plein écran).
+///
+/// NB : on n'appelle PAS `set_fullscreen(false)` de miniquad : en plus
+/// d'envoyer un ADD avec un atome vide (sans effet), il fait un
+/// `XUnmapWindow/XMapWindow` de la fenêtre qui interfère avec notre
+/// ClientMessage REMOVE (le WM peut re-appliquer le plein écran au remap).
+fn exit_fullscreen() {
+    if !crate::x11::set_fullscreen(false) {
+        request_new_screen_size(VIEWPORT_WIDTH as f32, VIEWPORT_HEIGHT as f32);
+    }
+}
+
+/// Entre en plein écran EWMH **proprement** : ClientMessage `_NET_WM_STATE`
+/// ADD via libX11 (`crate::x11::set_fullscreen(true)`), sans unmap/remap —
+/// celui de miniquad (`set_fullscreen(true)`) fait `XUnmapWindow`/
+/// `XMapWindow` + `XSync` : la fenêtre vacille (le focus peut quitter le jeu
+/// le temps de la bascule) et la touche F relâchée pendant cette fenêtre est
+/// perdue — la pression suivante est alors avalée par le filtre de répétition
+/// de macroquad (il faut presser F deux fois pour changer de mode). Repli sur
+/// miniquad si l'X11 direct n'est pas joignable (hors Linux, display absent).
+pub fn enter_fullscreen() {
+    if !crate::x11::set_fullscreen(true) {
+        set_fullscreen(true);
+    }
+}
+
 /// Fait cycler le mode d'affichage (touche F) : fenêtré → plein écran zoomé
 /// (EWMH, render target étirée) → plein écran natif (EWMH, définition réelle
-/// de l'écran, sans buffer) → fenêtré.
+/// de l'écran, sans buffer) → fenêtré. NB : la bascule zoomé → natif ne
+/// change rien de visible (deux pleins écrans, même image) — le HUD annonce
+/// le mode (« FULLSCREEN (ZOOMED) » / « FULLSCREEN (NATIVE) »).
 ///
-/// Entrée dans les pleins écrans : `set_fullscreen(true)` de miniquad
-/// (ClientMessage `_NET_WM_STATE` ADD, standard EWMH). Retour fenêtré :
-/// miniquad 0.4.11 ne sait PAS sortir du plein écran sur X11 (`set_fullscreen
-/// (false)` envoie un ADD avec un atome vide, sans effet — TODO de miniquad,
-/// toujours présent en master) → on envoie nous-mêmes le ClientMessage EWMH
-/// REMOVE via libX11 (`crate::x11::set_fullscreen(false)`), sans outil
-/// externe (`wmctrl`). Sans WM EWMH, repli sur un simple redimensionnement
-/// (avec un WM non EWMH, la fenêtre resterait plein écran).
+/// Entrée dans les pleins écrans : `enter_fullscreen` (ClientMessage EWMH
+/// ADD propre, repli miniquad). Retour fenêtré : `exit_fullscreen` (REMOVE
+/// EWMH via libX11, repli redimensionnement).
 pub fn cycle_view_mode(state: &mut GameState) {
     state.view_mode = match state.view_mode {
         ViewMode::Windowed => {
-            set_fullscreen(true);
+            enter_fullscreen();
             ViewMode::Zoomed
         }
         // le plein écran EWMH est déjà actif : seul le chemin de rendu change
         // (render target étirée → rendu direct natif)
         ViewMode::Zoomed => ViewMode::Native,
         ViewMode::Native => {
-            // NB : on n'appelle PAS `set_fullscreen(false)` de miniquad : en
-            // plus d'envoyer un ADD avec un atome vide (sans effet), il fait
-            // un `XUnmapWindow/XMapWindow` de la fenêtre qui interfère avec
-            // notre ClientMessage REMOVE (le WM peut re-appliquer le plein
-            // écran au remap). On envoie directement le REMOVE EWMH.
-            if !crate::x11::set_fullscreen(false) {
-                request_new_screen_size(VIEWPORT_WIDTH as f32, VIEWPORT_HEIGHT as f32);
-            }
+            exit_fullscreen();
             ViewMode::Windowed
         }
     };

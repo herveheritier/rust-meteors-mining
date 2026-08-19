@@ -10,8 +10,11 @@
 //! Le mesh est converti en une `Shape` + ses `Triangle` du modèle du jeu
 //! (`geom.rs`/`shape.rs`) : une `Triangle` par face via `Triangle::create`,
 //! couleur RGBA → ARGB 32 bits (`argb32`), axe y **retourné** (l'éditeur
-//! travaille y vers le haut, le jeu y vers le bas) et mise à l'échelle
-//! (`COSMONAUTE_EVA_SCALE`). `create_eva_cosmonaut` construit le **pilote
+//! travaille y vers le haut, le jeu y vers le bas), mise à l'échelle et
+//! rotation autour du centre de rotation choisi — les constantes
+//! `COSMONAUTE_EVA_SCALE`, `COSMONAUTE_ORIENTATION_DEGREES` et
+//! `COSMONAUTE_CENTER_X/Y_PERCENT` de `src/marketplace.rs` (fichier généré
+//! par l'outil de gestion). `create_eva_cosmonaut` construit le **pilote
 //! éjecté** quand le vaisseau est détruit (taille vaisseau, ~26 unités) :
 //! garé hors écran en bord de monde et téléporté par `game.rs`
 //! (`activate_cosmonaut`/`rescue_cosmonaut`). Décoratif (`is_collider =
@@ -21,16 +24,11 @@ use serde::Deserialize;
 
 use crate::config::{argb32, TEXTURE_NONE, WHOIAM_COSMONAUT};
 use crate::geom::{Point, Triangle};
+use crate::marketplace::{
+    COSMONAUTE_CENTER_X_PERCENT, COSMONAUTE_CENTER_Y_PERCENT, COSMONAUTE_EVA_SCALE,
+    COSMONAUTE_JSON, COSMONAUTE_ORIENTATION_DEGREES,
+};
 use crate::shape::{compute_shape_center, free_shape, Shape};
-
-/// Le fichier est embarqué dans le binaire (`include_str!`), comme les
-/// textures et les sons : pas d'accès au système de fichiers au runtime.
-pub const COSMONAUTE_JSON: &str = include_str!("../assets/cosmonaute.json");
-
-/// Échelle du cosmonaute EVA (pilote éjecté, vaisseau détruit) : ~17 unités
-/// éditeur × 1,5 → ~26 unités monde — la taille du vaisseau, manœuvrable
-/// dans la zone d'accostage (rayon 15).
-pub const COSMONAUTE_EVA_SCALE: f64 = 1.5;
 
 /// Couleur par défaut d'une face **sans champ `color`** dans le fichier :
 /// l'éditeur « meshes-designer » n'exporte pas de couleur pour les faces
@@ -97,26 +95,76 @@ fn rgba_to_argb(rgba: [f32; 4]) -> u32 {
 /// est cullé (hors limites de dessin) ; une fois éjecté, la caméra le suit
 /// donc il est toujours affiché.
 pub fn create_eva_cosmonaut(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) -> usize {
-    build_cosmonaut(shapes, triangles, COSMONAUTE_EVA_SCALE, COSMONAUTE_EVA_PARK)
+    build_cosmonaut(
+        shapes,
+        triangles,
+        COSMONAUTE_EVA_SCALE,
+        COSMONAUTE_ORIENTATION_DEGREES,
+        Point::new(COSMONAUTE_CENTER_X_PERCENT, COSMONAUTE_CENTER_Y_PERCENT),
+        COSMONAUTE_EVA_PARK,
+    )
 }
 
-/// Construit une forme « cosmonaute » à partir de `assets/cosmonaute.json` :
+/// Construit une forme « cosmonaute » à partir du mesh `COSMONAUTE_JSON` :
 /// une `Triangle` par face du fichier, à la suite des triangles existants,
-/// mise à l'échelle `scale` et posée à `position` (les sommets sont en
-/// coordonnées locales, la forme se dessine autour de sa position). Garé, il
-/// n'est pas dessiné (culling, `show_all_parts = false`) ; éjecté, la caméra
-/// le suit donc il est toujours affiché. Renvoie l'index de la forme créée
-/// (réutilise une forme détruite au même nombre de triangles quand c'est
-/// possible, comme `meshes_to_shape`).
+/// mise à l'échelle `scale`, tournée de `−orientation_degrees` autour du
+/// pivot `center_percent` (position en **pourcentage de la boîte englobante**
+/// du mesh, 50/50 = centre géométrique) et posée à `position` (les sommets
+/// sont en coordonnées locales, la forme se dessine autour de sa position).
+/// Garé, il n'est pas dessiné (culling, `show_all_parts = false`) ; éjecté,
+/// la caméra le suit donc il est toujours affiché. Renvoie l'index de la
+/// forme créée (réutilise une forme détruite au même nombre de triangles
+/// quand c'est possible, comme `meshes_to_shape`).
 fn build_cosmonaut(
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
     scale: f64,
+    orientation_degrees: f64,
+    center_percent: Point,
     position: Point,
 ) -> usize {
     let file: CosmonautFile =
         serde_json::from_str(COSMONAUTE_JSON).expect("assets/cosmonaute.json : JSON invalide");
     let nbr = file.planes.iter().map(|p| p.faces.len()).sum();
+
+    // boîte englobante du mesh dans le repère de l'éditeur (y vers le haut) —
+    // sert à situer le centre de rotation en pourcentage (même schéma que
+    // `build_vaisseau`)
+    let mut minx = f64::MAX;
+    let mut miny = f64::MAX;
+    let mut maxx = f64::MIN;
+    let mut maxy = f64::MIN;
+    for plane in &file.planes {
+        for v in &plane.verts {
+            minx = minx.min(v[0]);
+            miny = miny.min(v[1]);
+            maxx = maxx.max(v[0]);
+            maxy = maxy.max(v[1]);
+        }
+    }
+    // centre de rotation : pivot en % de la boîte englobante (50/50 = centre)
+    let pivot_editor = Point::new(
+        minx + center_percent.x / 100.0 * (maxx - minx),
+        miny + center_percent.y / 100.0 * (maxy - miny),
+    );
+    // orientation : angle de l'avant du mesh dans l'éditeur (degrés, sens
+    // trigonométrique : 0 = à droite, +90 = en haut) — le mesh est tourné de
+    // −orientation autour du pivot pour ramener l'avant sur +x (l'orientation
+    // 0 du jeu, celle du départ)
+    let angle = -orientation_degrees.to_radians();
+    let (sin_a, cos_a) = angle.sin_cos();
+    // sommet éditeur (y↑) → repère local du jeu (y↓) : rotation autour du
+    // pivot, mise à l'échelle, axe y retourné
+    let pt = |v: [f64; 2]| {
+        let dx = v[0] - pivot_editor.x;
+        let dy = v[1] - pivot_editor.y;
+        Point::new(
+            (pivot_editor.x + dx * cos_a - dy * sin_a) * scale,
+            -(pivot_editor.y + dx * sin_a + dy * cos_a) * scale,
+        )
+    };
+    // le pivot dans le repère local du jeu (le cosmonaute pivote autour de lui)
+    let pivot = Point::new(pivot_editor.x * scale, -pivot_editor.y * scale);
 
     // emplacement de la forme : réutilise un slot mort au même nombre de
     // triangles, sinon alloue — même schéma que `meshes_to_shape`
@@ -203,14 +251,15 @@ fn build_cosmonaut(
     for (plane, &(limb, pivot)) in file.planes.iter().zip(limbs.iter()) {
         for face in &plane.faces {
             let [i, j, l] = face.v;
-            // axe y retourné (éditeur y↑ → jeu y↓) + mise à l'échelle
-            let pt = |v: [f64; 2]| Point::new(v[0] * scale, -v[1] * scale);
+            // rotation autour du pivot + axe y retourné (éditeur y↑ → jeu y↓)
+            // + mise à l'échelle (closure `pt` définie plus haut)
             let mut t = Triangle::default();
             t.create(pt(plane.verts[i]), pt(plane.verts[j]), pt(plane.verts[l]));
             t.color = rgba_to_argb(face.color);
-            // membre + articulation (repère local, y retourné + échelle)
+            // membre + articulation (repère local, même transformation que
+            // les sommets : la rotation est appliquée au pivot aussi)
             t.limb = limb;
-            t.pivot = Point::new(pivot.x * scale, -pivot.y * scale);
+            t.pivot = pt([pivot.x, pivot.y]);
             t.shape_index = shape_index as i32;
             t.id = (first + k) as i32;
             triangles[first + k] = t;
@@ -220,10 +269,13 @@ fn build_cosmonaut(
     debug_assert_eq!(k, nbr);
 
     compute_shape_center(shape, triangles);
-    // centre fixe : `moving_shape` fait converger `center` vers
-    // `target_center` (÷100 par frame) — posés égaux, le cosmonaute reste
-    // immobile à sa position (vitesse et rotation nulles).
-    shape.center = shape.target_center;
+    // centre de rotation : le pivot choisi (src/marketplace.rs), pas le
+    // centroïde des faces — le cosmonaute pivote autour de ce point dans le
+    // jeu (tours pendant la poussée). `moving_shape` fait converger `center`
+    // vers `target_center` (÷100 par frame) — posés égaux, le cosmonaute
+    // reste stable dès le départ (pas de dérive).
+    shape.target_center = pivot;
+    shape.center = pivot;
     shape_index
 }
 
@@ -412,6 +464,56 @@ mod tests {
             "la jambe doit revenir au repos"
         );
         assert_eq!(triangles[fixed].a, fixed_rest);
+    }
+
+    #[test]
+    fn eva_cosmonaut_orientation_rotates_the_mesh_around_the_pivot() {
+        // orientation 90 = l'avant du mesh est « vers le haut » dans
+        // l'éditeur : le mesh est tourné de −90° autour du centre de rotation
+        // — le personnage (debout dans l'éditeur) se couche sur le côté et la
+        // boîte pivote de 90° (la largeur ≈ l'ancienne hauteur, ~17,1)
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        build_cosmonaut(&mut shapes, &mut triangles, 1.0, 90.0, Point::new(50.0, 50.0), Point::default());
+        let s = &shapes[0];
+        assert!(s.width > s.height, "boîte pivotée : {} > {}", s.width, s.height);
+        // le centre de rotation reste le centre de la boîte englobante
+        let cx = (s.top_left.x + s.bottom_right.x) / 2.0;
+        let cy = (s.top_left.y + s.bottom_right.y) / 2.0;
+        assert!((s.target_center.x - cx).abs() < 1e-9, "centre x {}", s.target_center.x);
+        assert!((s.target_center.y - cy).abs() < 1e-9, "centre y {}", s.target_center.y);
+    }
+
+    #[test]
+    fn eva_cosmonaut_rotation_center_moves_with_the_bbox_percentage() {
+        // centre de rotation 0 %/0 % = coin haut-gauche de la boîte englobante
+        // (repère éditeur, y↑) : dans le jeu (y↓), le pivot est le coin
+        // bas-gauche de la boîte — le cosmonaute s'étend à droite et vers le bas
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        build_cosmonaut(&mut shapes, &mut triangles, 1.0, 0.0, Point::new(0.0, 0.0), Point::default());
+        let s = &shapes[0];
+        let expected = Point::new(s.top_left.x, s.bottom_right.y);
+        assert!(
+            (s.target_center.x - expected.x).abs() < 1e-9
+                && (s.target_center.y - expected.y).abs() < 1e-9,
+            "pivot {:?} attendu {:?}",
+            s.target_center,
+            expected
+        );
+        // centre 100 %/100 % = coin bas-droit de l'éditeur → haut-droit du jeu
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        build_cosmonaut(&mut shapes, &mut triangles, 1.0, 0.0, Point::new(100.0, 100.0), Point::default());
+        let s = &shapes[0];
+        let expected = Point::new(s.bottom_right.x, s.top_left.y);
+        assert!(
+            (s.target_center.x - expected.x).abs() < 1e-9
+                && (s.target_center.y - expected.y).abs() < 1e-9,
+            "pivot {:?} attendu {:?}",
+            s.target_center,
+            expected
+        );
     }
 
     #[test]

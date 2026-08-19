@@ -101,11 +101,10 @@ pub fn render_style_label(style: i32) -> &'static str {
 }
 
 /// Modes d'affichage de la fenêtre (écran de paramétrage, touche O ; mêmes
-/// valeurs que `ViewMode` de `state.rs`, en entiers pour la persistance).
+/// valeurs que `ViewMode` de `state.rs`, en entiers pour l'affichage).
 pub const WINDOW_MODE_WINDOWED: i32 = 0;
 pub const WINDOW_MODE_ZOOMED: i32 = 1;
 pub const WINDOW_MODE_NATIVE: i32 = 2;
-pub const WINDOW_MODE_COUNT: i32 = 3;
 
 /// Libellé d'affichage d'un mode d'affichage (écran de paramétrage, message
 /// HUD de la touche F).
@@ -188,6 +187,12 @@ pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 /// les ramasse par proximité (voir `game::eva_collect_gems`) et les rapporte
 /// à la station. Rayon du cosmonaute (~13) + marge généreuse.
 pub const EVA_PICKUP_RADIUS: f64 = 20.0;
+
+/// Rayon (unités monde) du cercle d'éparpillement des minerais de la soute
+/// quand le vaisseau est détruit (`generate::eject_cargo_gems`) : les gemmes
+/// rejetées jaillissent dans un cercle de ce rayon autour du crash (au-delà
+/// du rayon de ramassage du cosmonaute, pour qu'elles restent à ramasser).
+pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 
 /// Durée (secondes) de la **récupération** du cosmonaute EVA par la station
 /// (vaisseau détruit, il a rejoint la zone d'accostage) : un cordon jaillit

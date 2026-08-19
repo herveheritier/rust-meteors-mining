@@ -1,0 +1,2324 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Place de marché — Meteors Mining (éditeur)</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #12161f;
+    --panel-2: #0f131c;
+    --border: #262e3f;
+    --border-soft: #1c2330;
+    --text: #e6e9f0;
+    --muted: #8b93a7;
+    --accent: #39ff88;      /* vert néon des liens d'accostage */
+    --orange: #ffa040;      /* orange du cordon de récupération EVA */
+    --gold: #ffd700;
+    --red: #ff5c5c;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 500px at 70% -10%, #14203a 0%, transparent 60%),
+      radial-gradient(900px 400px at -10% 110%, #141a2c 0%, transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    padding: 24px 20px 60px;
+  }
+  a { color: var(--accent); }
+
+  header { max-width: 1080px; margin: 0 auto 18px; }
+  h1 {
+    font-size: 24px;
+    margin: 0 0 4px;
+    letter-spacing: 0.5px;
+  }
+  h1 .starbar { color: var(--accent); }
+  .subtitle { color: var(--muted); margin: 0 0 10px; max-width: 900px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-size: 12px;
+    padding: 3px 9px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--muted);
+    background: var(--panel-2);
+  }
+  .badge b { color: var(--text); font-weight: 600; }
+
+  .layout {
+    max-width: 1240px;
+    margin: 0 auto;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .sidebar {
+    width: 240px;
+    flex: none;
+    position: sticky;
+    top: 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .side-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin: 4px 0 0;
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 4px;
+  }
+  .file-actions { display: flex; flex-direction: column; gap: 6px; }
+  .file-actions button { width: 100%; text-align: left; }
+  .file-actions .save-status { margin-left: 0; }
+  #card-nav { display: flex; flex-direction: column; gap: 3px; }
+  .nav-item {
+    text-align: left;
+    font-size: 13px;
+    padding: 6px 9px;
+    border-radius: 5px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid transparent;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nav-item:hover { color: var(--text); border-color: var(--border); }
+  .nav-item.active {
+    color: var(--accent);
+    border-color: #2c7a4f;
+    background: linear-gradient(180deg, #173a2a, #10291d);
+    font-weight: 600;
+  }
+  .content { flex: 1; min-width: 0; }
+  .card-nav-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .card-counter { color: var(--muted); font-size: 12.5px; letter-spacing: 0.4px; }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 14px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary {
+    background: linear-gradient(180deg, #173a2a, #10291d);
+    border-color: #2c7a4f;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  button.primary:hover { border-color: var(--accent); }
+  button.danger:hover { border-color: var(--red); color: var(--red); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.save-dirty {
+    background: linear-gradient(180deg, #5c2020, #3a1212);
+    border-color: #d34545;
+    color: #ffd7d7;
+    font-weight: 600;
+  }
+  button.save-dirty:hover { border-color: var(--red); color: #fff; }
+  .save-status { color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+  .content .card { max-width: none; }
+  .card-slot { min-width: 0; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card h2 {
+    margin: 0;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: 0.4px;
+  }
+  .card h2 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .card h2 .const {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--border-soft);
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-left: auto;
+  }
+  .card .desc { color: var(--muted); font-size: 12.5px; margin: 0; }
+
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+  input[type=text], input[type=number] {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 8px;
+    width: 100%;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  input[type=number] { width: 100%; }
+  .hint { font-size: 11.5px; color: var(--muted); }
+
+  .ship-preview-wrap { display: flex; gap: 14px; align-items: flex-start; }
+  .ship-preview {
+    background: #0a0d14;
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    width: 280px;
+    height: 200px;
+    flex: none;
+    cursor: crosshair;
+    touch-action: none; /* la molette = rotation (Ctrl+molette = zoom), pas de défilement */
+  }
+  .ship-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .ship-fields .field { margin: 0; }
+
+  h3.section {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin: 2px 0 -2px;
+    border-bottom: 1px solid var(--border-soft);
+    padding-bottom: 4px;
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th {
+    text-align: left;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 3px 6px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  td { padding: 4px 6px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; }
+  td .grow { display: flex; gap: 4px; }
+  td input { padding: 3px 6px; font-size: 13px; }
+  .mini {
+    font-size: 11px;
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    background: var(--panel-2);
+    color: var(--muted);
+    padding: 2px 7px;
+    cursor: pointer;
+    line-height: 1.3;
+  }
+  .mini:hover { color: var(--text); border-color: var(--muted); }
+  .mini.del:hover { color: var(--red); border-color: var(--red); }
+  .add-row { margin-top: 8px; }
+
+  .preview td.max { color: var(--accent); font-weight: 600; }
+  .eff { color: var(--orange); font-size: 12px; }
+  .warn { color: var(--gold); }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 10px; }
+  .summary .kv .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+  .summary .kv .v { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .summary .kv .v.orange { color: var(--orange); }
+  .summary .kv .sub { font-size: 12px; color: var(--muted); }
+
+  .eco-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-top: 10px; }
+  .eco-group {
+    background: var(--panel-2);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .eco-group h4 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 600; }
+  .eco-group .hint { margin: 0; }
+
+  footer {
+    max-width: 1080px;
+    margin: 24px auto 0;
+    color: var(--muted);
+    font-size: 12.5px;
+    border-top: 1px solid var(--border-soft);
+    padding-top: 12px;
+  }
+  footer code { font-family: var(--mono); color: var(--text); font-size: 12px; }
+  .toast {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #10291d;
+    border: 1px solid #2c7a4f;
+    color: var(--accent);
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.25s;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span class="starbar">✦</span> Place de marché — éditeur <span class="starbar">✦</span></h1>
+  <p class="subtitle">
+    Application de gestion du jeu <b>Meteors Mining</b> : elle sert à la <b>mise au point des objets
+    vendus sur la place de marché</b> accessible depuis la base — l'atelier d'amélioration du
+    vaisseau et l'économie de la station (bouton <code>UPGRADES</code> de la boîte DOCK STATION,
+    scénario Progression). Chaque modification est enregistrée automatiquement : en mode serveur,
+    <code>src/marketplace.rs</code> se charge à l'ouverture et « 💾 Enregistrer le fichier » l'écrit
+    directement dans le projet (<code>src/scenario.rs</code> n'a plus besoin d'être modifié).
+  </p>
+  <div class="badges">
+    <span class="badge">Scénario : <b>PROGRESSION</b></span>
+    <span class="badge" id="badge-monnaie">Monnaie : <b>minerais</b> (or 5, fer 3, eau 2)</span>
+    <span class="badge">Sauvegarde : <b>automatique</b> (localStorage)</span>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <h3 class="side-title">Fichier</h3>
+    <div class="file-actions">
+      <button id="btn-import-rs" title="Ouvrir src/marketplace.rs : lien direct (chargement + enregistrement) ou simple import (parse du Rust)">Ouvrir marketplace.rs</button>
+      <button id="btn-save-rs" class="primary" title="Enregistre l'export directement dans le fichier lié — sinon choisir src/marketplace.rs (ou téléchargement en repli)">Enregistrer le fichier</button>
+      <button id="btn-download-json">JSON ↓</button>
+      <button id="btn-import-json">JSON ↑</button>
+      <span class="save-status" id="save-status"></span>
+      <span class="save-status" id="rust-file-status"></span>
+    </div>
+    <h3 class="side-title">Cartes</h3>
+    <nav id="card-nav" aria-label="Cartes de l'éditeur"></nav>
+  </aside>
+
+  <main class="content">
+    <div class="card-nav-top">
+      <button id="btn-prev" title="Carte précédente (←)">◀ Précédente</button>
+      <span class="card-counter" id="card-counter">1 / 8</span>
+      <button id="btn-next" title="Carte suivante (→)">Suivante ▶</button>
+    </div>
+    <div class="card-slot" id="card-slot"></div>
+  </main>
+</div>
+
+<footer>
+  <p>
+    <b>Dans le jeu</b> : les données ci-dessus sont les lignes d'atelier
+    <code>FUEL_UPGRADE_TRACK</code>, <code>AMMO_UPGRADE_TRACK</code>, <code>CARGO_UPGRADE_TRACK</code>
+    (avec leurs extensions), l'économie de la station (<code>ELEMENT_VALUES</code>,
+    <code>MODE_COSTS</code>, <code>FUEL_PRICE</code>/<code>FUEL_STEP</code>,
+    <code>AMMO_PRICE</code>/<code>AMMO_STEP</code>), les rangs de réputation
+    (<code>PROGRESSION_RANKS</code> : seuils, noms et remises — lus par <code>src/scenario.rs</code>),
+    le vaisseau joueur
+    (<code>VAISSEAU_JSON</code>, <code>VAISSEAU_SCALE</code>, <code>VAISSEAU_ORIENTATION_DEGREES</code>,
+    <code>VAISSEAU_CENTER_X/Y_PERCENT</code> — lus par <code>src/vaisseau.rs</code>) et le cosmonaute EVA
+    (<code>COSMONAUTE_JSON</code>, <code>COSMONAUTE_EVA_SCALE</code>,
+    <code>COSMONAUTE_ORIENTATION_DEGREES</code>, <code>COSMONAUTE_CENTER_X/Y_PERCENT</code> — lus par
+    <code>src/cosmonaut.rs</code>) de
+    <code>src/marketplace.rs</code> — un fichier <b>généré</b> par cet outil, importé par
+    <code>src/scenario.rs</code>. Les extensions sont
+    achetées au bouton <code>UPGRADES</code> de la boîte DOCK STATION (atelier « SHIP WORKSHOP »,
+    scénario Progression), persistées avec la progression
+    (<code>prog_up_fuel</code>, <code>prog_up_ammo</code>, <code>prog_up_cargo</code>). Avec
+    Chrome/Edge, « Ouvrir marketplace.rs » <b>lie</b> le fichier (lecture + écriture directe) :
+    « 💾 Enregistrer le fichier » l'écrit ensuite sans copier/coller ; sans cette API, l'import
+    et le téléchargement restent disponibles.
+  </p>
+  <p>
+    <b>Serveur local (recommandé avec le navigateur intégré de VSCode)</b> : lancez
+    <code>node tools/marketplace-editor/server.mjs</code> puis ouvrez <code>http://localhost:8123</code>
+    — <code>src/marketplace.rs</code> est <b>chargé automatiquement</b> à l'ouverture, et
+    « 💾 Enregistrer le fichier » l'écrit directement dans le projet, dans tous les navigateurs
+    (sans sélecteur de fichiers ni API particulière).
+  </p>
+  <p>
+    <b>Constante liée (non éditée ici)</b> : <code>CARGO_SIZE = 5</code> dans
+    <code>src/config.rs</code> (capacité de base de la soute, référencée par
+    <code>CARGO_UPGRADE_TRACK</code>).
+  </p>
+</footer>
+
+<datalist id="ship-assets"></datalist>
+<datalist id="cosmonaut-assets"></datalist>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ─── Données par défaut = valeurs actuelles du jeu (src/marketplace.rs) ──── */
+
+const DEFAULT_DATA = {
+  app: "meteors-mining-marketplace-editor",
+  version: 1,
+  tracks: [
+    {
+      id: "fuel",
+      label: "FUEL TANK",
+      base: 100,
+      subject: "Extensions de réservoir",
+      lineTitle: "réservoir de carburant",
+      unit: "unités",
+      tiers: [
+        { name: "RÉSERVOIR SUPPLÉMENTAIRE", cost: 10, bonus: 30 },
+        { name: "RÉSERVOIR HAUTE CAPACITÉ", cost: 30, bonus: 40 },
+        { name: "RÉSERVOIR DOUBLE", cost: 60, bonus: 50 },
+      ],
+    },
+    {
+      id: "ammo",
+      label: "MAGAZINE",
+      base: 30,
+      subject: "Extensions de chargeur",
+      lineTitle: "chargeur de munitions",
+      unit: "munitions",
+      tiers: [
+        { name: "CHARGEUR ÉLARGI", cost: 10, bonus: 10 },
+        { name: "CHARGEUR HAUTE CAPACITÉ", cost: 20, bonus: 15 },
+        { name: "CHARGEUR DOUBLE", cost: 40, bonus: 15 },
+      ],
+    },
+    {
+      id: "cargo",
+      label: "CARGO BAY",
+      base: 5,
+      subject: "Extensions de soute",
+      lineTitle: "soute",
+      unit: "emplacements",
+      tiers: [
+        { name: "SOUTE AGRANDIE", cost: 20, bonus: 2 },
+        { name: "SOUTE HAUTE CAPACITÉ", cost: 40, bonus: 3 },
+      ],
+    },
+  ],
+  economy: {
+    gems: { gold: 5, iron: 3, water: 2 },
+    modes: [0, 20, 50], // INERTIAL (gratuit au départ), 4 WAYS, DIRECTIONAL
+    fuelPrice: 1, // minerais par pas de ravitaillement
+    fuelStep: 10, // unités de carburant par plein facturé
+    ammoPrice: 1,
+    ammoStep: 5,
+  },
+  reputation: {
+    // rangs : seuil de réputation, nom affiché et remise (%) sur les coûts
+    // de la station (atelier, ravitaillement, modes) dès ce rang atteint
+    ranks: [
+      { threshold: 0, name: "CADET", discountPercent: 0 },
+      { threshold: 10, name: "PILOT", discountPercent: 5 },
+      { threshold: 25, name: "VETERAN", discountPercent: 10 },
+      { threshold: 50, name: "ACE", discountPercent: 15 },
+    ],
+    // poids de la précision de tir : la remise du rang est multipliée par
+    // (1 + poids × précision) — 1.0 = 100 % de précision → remise doublée
+    discountPrecisionWeight: 1.0,
+  },
+  ship: {
+    asset: "assets/vaisseau.json", // mesh « meshes-designer » du vaisseau joueur
+    scalePercent: 100, // échelle en % de la taille d'origine du mesh
+    orientationDeg: 0, // angle du nez du mesh dans l'éditeur (0 = droite, +90 = haut)
+    centerXPercent: 50, // centre de rotation, % de la largeur du mesh (50 = centre)
+    centerYPercent: 50, // centre de rotation, % de la hauteur du mesh
+  },
+  cosmonaut: {
+    asset: "assets/cosmonaute.json", // mesh « meshes-designer » du cosmonaute EVA
+    scalePercent: 150, // échelle en % de la taille d'origine du mesh (~17 unités → ~26)
+    orientationDeg: 0, // angle de l'avant du mesh dans l'éditeur (0 = droite, +90 = haut)
+    centerXPercent: 50, // centre de rotation, % de la largeur du mesh (50 = centre)
+    centerYPercent: 50, // centre de rotation, % de la hauteur du mesh
+  },
+};
+
+const STORAGE_KEY = "meteors-mining-marketplace-editor.v1";
+const VIEW_KEY = "meteors-mining-marketplace-editor.view"; // carte ouverte (id) — retrouvée au prochain lancement
+const CARGO_SIZE = 5; // src/config.rs — capacité de base de la soute
+
+/* ─── Utilitaires ─────────────────────────────────────────────────────────── */
+
+function deepClone(o) { return JSON.parse(JSON.stringify(o)); }
+
+function int(value) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
+
+function pos(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+function rustEscape(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove("show"), 1800);
+}
+
+/* ─── État ────────────────────────────────────────────────────────────────── */
+
+let data = load();
+
+// Poignée du fichier src/marketplace.rs lié (API File System Access) : une
+// fois ouvert avec « Ouvrir marketplace.rs », l'enregistrement s'y écrit
+// directement — sans copier/coller. `null` = aucun fichier lié.
+let rustHandle = null;
+
+// Mode serveur local (server.mjs) : la page est servie en http et le fichier
+// du projet est accessible en fetch — chargement automatique à l'ouverture
+// et enregistrement direct (fonctionne dans tous les navigateurs).
+const SERVER_MODE = typeof location !== "undefined" && /^https?:$/.test(location.protocol);
+
+// Dernier état « enregistré » (instantané JSON) : le bouton d'enregistrement
+// passe en rouge avec un caractère d'alerte (⚠) dès qu'une valeur diffère, et
+// se grise (désactivé) sinon.
+let lastSnapshot = null;
+
+function setSnapshot() {
+  lastSnapshot = JSON.stringify(data);
+}
+
+function isDirty() {
+  return lastSnapshot !== null && JSON.stringify(data) !== lastSnapshot;
+}
+
+function updateSaveButton() {
+  const btn = document.getElementById("btn-save-rs");
+  if (!btn) return;
+  const dirty = isDirty();
+  btn.disabled = !dirty;
+  btn.classList.toggle("save-dirty", dirty);
+  btn.textContent = dirty ? "⚠ Enregistrer le fichier" : "Enregistrer le fichier";
+  btn.title = dirty
+    ? "Des valeurs ont été modifiées — enregistre les changements dans src/marketplace.rs"
+    : "Aucune modification — rien à enregistrer";
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.tracks) && parsed.tracks.length === 3) {
+        return normalize(parsed);
+      }
+    }
+  } catch (_) { /* données corrompues → valeurs du jeu */ }
+  return deepClone(DEFAULT_DATA);
+}
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const el = document.getElementById("save-status");
+    el.textContent = "Enregistré ✓ " + new Date().toLocaleTimeString("fr-FR");
+  } catch (_) { /* stockage indisponible : pas grave, l'export JSON reste possible */ }
+}
+
+/* ─── Calculs de mise au point ────────────────────────────────────────────── */
+
+function capacityAt(track, level) {
+  let cap = track.base;
+  for (let i = 0; i < Math.min(level, track.tiers.length); i++) cap += track.tiers[i].bonus;
+  return cap;
+}
+
+function trackTotals(track) {
+  let cost = 0, bonus = 0;
+  for (const t of track.tiers) { cost += t.cost; bonus += t.bonus; }
+  return { cost, max: track.base + bonus, count: track.tiers.length };
+}
+
+/* ─── Rendu ───────────────────────────────────────────────────────────────── */
+
+const TRACK_META = {
+  fuel: { const: "FUEL_UPGRADES", trackConst: "FUEL_UPGRADE_TRACK", dot: "#39ff88", title: "Réservoir de carburant" },
+  ammo: { const: "AMMO_UPGRADES", trackConst: "AMMO_UPGRADE_TRACK", dot: "#ffd700", title: "Chargeur de munitions" },
+  cargo:{ const: "CARGO_UPGRADES", trackConst: "CARGO_UPGRADE_TRACK", dot: "#ffa040", title: "Soute" },
+};
+
+// Cartes de l'éditeur : une seule affichée à la fois (navigation ◀/▶ ou
+// clic direct dans l'encart de gauche). L'ordre est l'ordre de navigation.
+const VIEWS = [
+  { id: "ship", label: "Vaisseau joueur", build: shipCard },
+  { id: "cosmonaut", label: "Cosmonaute EVA", build: cosmonautCard },
+  { id: "fuel", label: "Réservoir de carburant", build: () => trackCard(trackById("fuel")) },
+  { id: "ammo", label: "Chargeur de munitions", build: () => trackCard(trackById("ammo")) },
+  { id: "cargo", label: "Soute", build: () => trackCard(trackById("cargo")) },
+  { id: "economy", label: "Économie de la station", build: economyCard },
+  { id: "reputation", label: "Réputation", build: reputationCard },
+  { id: "summary", label: "Vue de mise au point — synthèse", build: summaryCard },
+];
+
+// Carte affichée : index dans VIEWS (0 = vaisseau joueur). La carte ouverte
+// est mémorisée dans localStorage pour être retrouvée au prochain lancement.
+let currentView = restoreCurrentView();
+
+function restoreCurrentView() {
+  try {
+    const saved = localStorage.getItem(VIEW_KEY);
+    const i = VIEWS.findIndex(v => v.id === saved);
+    if (i >= 0) return i;
+  } catch (_) { /* stockage indisponible → première carte */ }
+  return 0;
+}
+
+function saveCurrentView() {
+  try { localStorage.setItem(VIEW_KEY, VIEWS[currentView].id); } catch (_) {}
+}
+
+function trackById(id) {
+  for (const t of data.tracks) if (t.id === id) return t;
+  return data.tracks[0];
+}
+
+function render() {
+  renderNav();
+  renderCurrentCard();
+  updateSaveButton();
+}
+
+// Encart de navigation (à gauche) : liste des cartes, clic = aller à la carte.
+function renderNav() {
+  const nav = document.getElementById("card-nav");
+  if (!nav) return;
+  nav.innerHTML = "";
+  VIEWS.forEach((view, i) => {
+    const item = el("button", "nav-item" + (i === currentView ? " active" : ""), view.label);
+    item.addEventListener("click", () => goToView(i));
+    nav.appendChild(item);
+  });
+}
+
+// Affiche une seule carte à la fois dans l'emplacement principal, et met à
+// jour compteur et boutons précédent/suivant.
+function renderCurrentCard() {
+  const slot = document.getElementById("card-slot");
+  if (!slot) return;
+  slot.innerHTML = "";
+  const view = VIEWS[currentView];
+  slot.appendChild(view.build());
+  // aperçus mesh : rendu asynchrone (fetch du mesh en mode serveur)
+  if (view.id === "ship") refreshMeshPreview(data.ship, "ship-preview");
+  if (view.id === "cosmonaut") refreshMeshPreview(data.cosmonaut, "cosmonaut-preview");
+  // compteur et boutons précédent/suivant
+  const counter = document.getElementById("card-counter");
+  if (counter) counter.textContent = (currentView + 1) + " / " + VIEWS.length;
+  const prev = document.getElementById("btn-prev");
+  const next = document.getElementById("btn-next");
+  if (prev) prev.disabled = currentView === 0;
+  if (next) next.disabled = currentView === VIEWS.length - 1;
+}
+
+function goToView(i) {
+  if (i < 0 || i >= VIEWS.length) return;
+  currentView = i;
+  saveCurrentView();
+  render();
+}
+
+function nextCard(dir) {
+  goToView(currentView + dir);
+}
+
+function trackCard(track) {
+  const meta = TRACK_META[track.id];
+  const card = el("div", "card");
+  const total = trackTotals(track);
+
+  // en-tête
+  const h = el("h2");
+  h.appendChild(el("span", "dot", "", { style: "background:" + meta.dot }));
+  h.appendChild(document.createTextNode(meta.title));
+  const constBadge = el("span", "const", meta.trackConst);
+  h.appendChild(constBadge);
+  card.appendChild(h);
+
+  card.appendChild(el("p", "desc",
+    "Capacité de base + extensions achetées dans l'ordre : " + track.base + " → " + total.max +
+    " " + track.unit + " (max). Coût total : " + total.cost + " minerais."));
+
+  // paramètres de la ligne
+  const grid = el("div", "field-grid");
+  grid.appendChild(field("label", "Libellé Rust (label)", textInput(track, "label")));
+  grid.appendChild(field("base", "Capacité de base", numberInput(track, "base")));
+  grid.appendChild(field("subject", "Sujet (commentaire)", textInput(track, "subject")));
+  grid.appendChild(field("lineTitle", "Titre de la ligne (commentaire)", textInput(track, "lineTitle")));
+  grid.appendChild(field("unit", "Unité (commentaire)", textInput(track, "unit"), true));
+  card.appendChild(grid);
+
+  // extensions
+  card.appendChild(el("h3", "section", "Extensions (achetées dans l'ordre)"));
+  const table = el("table");
+  const thead = el("thead");
+  const hr = el("tr");
+  for (const thText of ["", "Nom", "Coût", "Bonus", "Coût/bonus", ""]) {
+    const th = el("th", thText === "Coût" || thText === "Bonus" || thText === "Coût/bonus" ? "num" : "", thText);
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  track.tiers.forEach((tier, i) => {
+    const tr = el("tr");
+    const tdNum = el("td", "", String(i + 1));
+    tr.appendChild(tdNum);
+
+    const tdName = el("td");
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = tier.name;
+    nameInput.placeholder = "Nom de l'extension";
+    nameInput.id = track.id + "-tier-" + i + "-name";
+    nameInput.addEventListener("input", () => { tier.name = nameInput.value; afterEdit(); });
+    tdName.appendChild(nameInput);
+    tr.appendChild(tdName);
+
+    tr.appendChild(numTd(tier, "cost", "Coût (minerais)", track.id + "-tier-" + i + "-cost"));
+    tr.appendChild(numTd(tier, "bonus", "Bonus de capacité", track.id + "-tier-" + i + "-bonus"));
+
+    const tdEff = el("td", "num");
+    const eff = tier.bonus > 0 ? (tier.cost / tier.bonus).toFixed(1) : "—";
+    tdEff.appendChild(el("span", "eff", eff));
+    tr.appendChild(tdEff);
+
+    const tdAct = el("td");
+    const acts = el("div", "grow");
+    const up = el("button", "mini", "↑");
+    up.title = "Monter";
+    up.disabled = i === 0;
+    up.addEventListener("click", () => { move(track, i, -1); });
+    const down = el("button", "mini", "↓");
+    down.title = "Descendre";
+    down.disabled = i === track.tiers.length - 1;
+    down.addEventListener("click", () => { move(track, i, +1); });
+    const del = el("button", "mini del", "✕");
+    del.title = "Supprimer";
+    del.addEventListener("click", () => { track.tiers.splice(i, 1); afterEdit(); });
+    acts.appendChild(up); acts.appendChild(down); acts.appendChild(del);
+    tdAct.appendChild(acts);
+    tr.appendChild(tdAct);
+
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  card.appendChild(table);
+
+  const addBtn = el("button", "add-row", "＋ Ajouter une extension");
+  addBtn.addEventListener("click", () => {
+    track.tiers.push({ name: "NOUVELLE EXTENSION", cost: 0, bonus: 0 });
+    afterEdit();
+  });
+  card.appendChild(addBtn);
+
+  // aperçu de la progression (mise au point)
+  card.appendChild(el("h3", "section", "Progression des capacités"));
+  const prev = el("table", "preview");
+  const pHead = el("thead");
+  const pHr = el("tr");
+  for (const thText of ["Niveau", "Capacité", "Extension", "Coût", "Coût cumulé"]) {
+    const th = el("th", thText === "Capacité" || thText === "Coût" || thText === "Coût cumulé" ? "num" : "", thText);
+    pHr.appendChild(th);
+  }
+  pHead.appendChild(pHr);
+  prev.appendChild(pHead);
+  const pBody = el("tbody");
+  let cum = 0;
+  // niveau 0 (base)
+  let row = el("tr");
+  row.appendChild(el("td", "", "0"));
+  row.appendChild(el("td", "num", String(track.base)));
+  row.appendChild(el("td", "", "— base —"));
+  row.appendChild(el("td", "num", ""));
+  row.appendChild(el("td", "num", "0"));
+  pBody.appendChild(row);
+  track.tiers.forEach((tier, i) => {
+    cum += tier.cost;
+    const level = i + 1;
+    row = el("tr", level === track.tiers.length ? "max" : "");
+    row.appendChild(el("td", "", String(level)));
+    row.appendChild(el("td", "num", String(capacityAt(track, level))));
+    row.appendChild(el("td", "", tier.name));
+    row.appendChild(el("td", "num", String(tier.cost)));
+    row.appendChild(el("td", "num", String(cum)));
+    pBody.appendChild(row);
+  });
+  prev.appendChild(pBody);
+  card.appendChild(prev);
+  if (track.tiers.length === 0) {
+    card.appendChild(el("p", "hint warn", "⚠ Aucune extension : la ligne est d'office au niveau maximum."));
+  }
+
+  return card;
+}
+
+/* ─── Vaisseau joueur et cosmonaute EVA (asset, échelle, orientation, ────── */
+/* ─── centre de rotation) ─────────────────────────────────────────────────── */
+
+// Cache de l'aperçu : mesh JSON déjà chargé (par asset) — évite de re-fetch
+// à chaque frappe. `null` = à recharger (asset changé).
+let meshCache = null;
+
+function parseMeshJson(text) {
+  const file = JSON.parse(text);
+  if (!Array.isArray(file.planes) || file.planes.length === 0) {
+    throw new Error("fichier « meshes-designer » attendu (champ planes)");
+  }
+  const tris = [];
+  for (const pl of file.planes) {
+    const verts = pl.verts || [];
+    for (const f of pl.faces || []) {
+      const [i, j, k] = f.v;
+      if (verts[i] && verts[j] && verts[k]) {
+        // couleur RGBA (flottants 0..1) — canal alpha conservé (l'aperçu
+        // l'applique, comme `rgba_to_argb` du jeu) ; faces non peintes :
+        // gris opaque, comme `DEFAULT_FACE_COLOR` de src/vaisseau.rs
+        tris.push({ a: verts[i], b: verts[j], c: verts[k], color: f.color || [0.8, 0.8, 0.8, 1.0] });
+      }
+    }
+  }
+  return { tris };
+}
+
+// Charge le mesh de l'asset choisi (mode serveur : assets/ du projet ; en
+// mode fichier, seul un mesh importé manuellement est disponible).
+async function ensureMesh(asset) {
+  if (meshCache && meshCache.asset === asset) return meshCache.mesh;
+  if (!SERVER_MODE) {
+    meshCache = { asset, mesh: null };
+    return null;
+  }
+  try {
+    const res = await fetch("/assets/" + encodeURIComponent(asset.split("/").pop()));
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const mesh = parseMeshJson(await res.text());
+    meshCache = { asset, mesh };
+    return mesh;
+  } catch (_) {
+    meshCache = { asset, mesh: null };
+    return null;
+  }
+}
+
+// L'aperçu reproduit la construction du jeu (src/vaisseau.rs / src/cosmonaut.rs) :
+// rotation du mesh de −orientation autour du pivot (repère éditeur y↑), échelle,
+// axe y retourné — le mesh tel qu'il apparaîtra en jeu (avant aligné sur +x).
+function meshTransform(cfg, mesh) {
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (const t of mesh.tris) {
+    for (const v of [t.a, t.b, t.c]) {
+      minx = Math.min(minx, v[0]); miny = Math.min(miny, v[1]);
+      maxx = Math.max(maxx, v[0]); maxy = Math.max(maxy, v[1]);
+    }
+  }
+  const px = minx + (cfg.centerXPercent / 100) * (maxx - minx);
+  const py = miny + (cfg.centerYPercent / 100) * (maxy - miny);
+  const scale = Math.max(cfg.scalePercent, 1) / 100;
+  const ang = (-cfg.orientationDeg * Math.PI) / 180;
+  const cos = Math.cos(ang), sin = Math.sin(ang);
+  const tf = v => {
+    const dx = v[0] - px, dy = v[1] - py;
+    const rx = px + dx * cos - dy * sin;
+    const ry = py + dx * sin + dy * cos;
+    return [rx * scale, -ry * scale];
+  };
+  return {
+    tf,
+    pivot: [px * scale, -py * scale],
+    px, py, scale, cos, sin,
+    bounds: { minx, miny, maxx, maxy },
+  };
+}
+
+// Transforme un point de l'aperçu (pixels) en coordonnées mesh en % de la
+// boîte englobante — sert au clic « centre de rotation au point visé ».
+// Même échelle de dessin que drawMeshPreview (marge 12 px).
+function pixelToMeshPercent(canvas, mesh, cfg, px, py) {
+  const W = canvas.width, H = canvas.height;
+  const view = meshTransform(cfg, mesh);
+  let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
+  for (const t of mesh.tris) {
+    for (const v of [t.a, t.b, t.c]) {
+      const p = view.tf(v);
+      bx1 = Math.min(bx1, p[0]); by1 = Math.min(by1, p[1]);
+      bx2 = Math.max(bx2, p[0]); by2 = Math.max(by2, p[1]);
+    }
+  }
+  const pad = 12;
+  const w = bx2 - bx1 || 1, h = by2 - by1 || 1;
+  const s = Math.min((W - 2 * pad) / w, (H - 2 * pad) / h);
+  const ox = W / 2 - ((bx1 + bx2) / 2) * s;
+  const oy = H / 2 - ((by1 + by2) / 2) * s;
+  // pixel → espace transformé (échelle + axe y retourné)
+  const xm = (px - ox) / s;
+  const ym = (py - oy) / s;
+  const rx = xm / view.scale;
+  const ry = -ym / view.scale;
+  // rotation inverse autour du pivot (R(-ang) : cos/sin du même angle)
+  const dx = rx - view.px, dy = ry - view.py;
+  const vx = view.px + dx * view.cos + dy * view.sin;
+  const vy = view.py - dx * view.sin + dy * view.cos;
+  const b = view.bounds;
+  if (b.maxx <= b.minx || b.maxy <= b.miny) return null;
+  return [
+    Math.max(0, Math.min(100, ((vx - b.minx) / (b.maxx - b.minx)) * 100)),
+    Math.max(0, Math.min(100, ((vy - b.miny) / (b.maxy - b.miny)) * 100)),
+  ];
+}
+
+// Interactions souris sur l'aperçu du mesh :
+// - clic = centre de rotation au point visé (comme les champs X/Y %) ;
+// - molette = rotation (orientation), ±5° par cran ;
+// - Ctrl/Cmd + molette = zoom (échelle), ×1,1 par cran (plage 1–1000 %).
+function attachMeshInteractions(canvas, cfg) {
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      // zoom : facteur multiplicatif (plage du champ Échelle 1–1000) ; si
+      // l'arrondi ne change rien (ex. 1 × 1,1 → 1), on décale de ±1
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      let v = Math.max(1, Math.min(1000, Math.round(cfg.scalePercent * factor)));
+      if (v === cfg.scalePercent) {
+        v = Math.max(1, Math.min(1000, cfg.scalePercent + (e.deltaY < 0 ? 1 : -1)));
+      }
+      cfg.scalePercent = v;
+    } else {
+      // rotation (comportement par défaut)
+      const step = 5;
+      cfg.orientationDeg = Math.max(-360, Math.min(360,
+        Math.round(cfg.orientationDeg + (e.deltaY < 0 ? step : -step))));
+    }
+    afterEdit();
+  }, { passive: false });
+
+  canvas.addEventListener("click", (e) => {
+    const mesh = meshCache && meshCache.mesh;
+    if (!mesh) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const pt = pixelToMeshPercent(canvas, mesh, cfg, px, py);
+    if (!pt) return;
+    cfg.centerXPercent = Math.round(pt[0]);
+    cfg.centerYPercent = Math.round(pt[1]);
+    afterEdit();
+  });
+}
+
+function drawMeshPreview(canvas, mesh, cfg) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  if (!mesh) {
+    ctx.fillStyle = "#8b93a7";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Aperçu indisponible", W / 2, H / 2 - 6);
+    ctx.fillText(
+      SERVER_MODE ? "— mesh introuvable dans assets/" : "— « Charger un mesh » pour l'aperçu",
+      W / 2, H / 2 + 10);
+    return;
+  }
+  const { tf, pivot } = meshTransform(cfg, mesh);
+  // boîte englobante transformée → échelle de dessin (avec marge)
+  let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
+  for (const t of mesh.tris) {
+    for (const v of [t.a, t.b, t.c]) {
+      const p = tf(v);
+      bx1 = Math.min(bx1, p[0]); by1 = Math.min(by1, p[1]);
+      bx2 = Math.max(bx2, p[0]); by2 = Math.max(by2, p[1]);
+    }
+  }
+  const pad = 12;
+  const w = bx2 - bx1 || 1, h = by2 - by1 || 1;
+  const s = Math.min((W - 2 * pad) / w, (H - 2 * pad) / h);
+  const ox = W / 2 - ((bx1 + bx2) / 2) * s;
+  const oy = H / 2 - ((by1 + by2) / 2) * s;
+  const px = p => [ox + p[0] * s, oy + p[1] * s];
+  // faces (couleurs du fichier)
+  for (const t of mesh.tris) {
+    const [ax, ay] = px(tf(t.a));
+    const [bxx, byy] = px(tf(t.b));
+    const [cx, cy] = px(tf(t.c));
+    ctx.beginPath();
+    ctx.moveTo(ax, ay); ctx.lineTo(bxx, byy); ctx.lineTo(cx, cy); ctx.closePath();
+    const c = t.color;
+    // canal alpha du fichier (0..1) — 1 = opaque ; les faces translucides
+    // (verrière, ombrages…) laissent voir ce qui est derrière, comme dans le
+    // jeu (rgba_to_argb)
+    const a = Math.max(0, Math.min(1, c.length > 3 ? c[3] : 1));
+    ctx.fillStyle = "rgba(" + Math.round(c[0] * 255) + "," + Math.round(c[1] * 255) + "," +
+      Math.round(c[2] * 255) + "," + a + ")";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+  // centre de rotation : croix + anneau (le pivot autour duquel le vaisseau
+  // pivote dans le jeu)
+  const [qx, qy] = px(pivot);
+  ctx.strokeStyle = "#39ff88";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(qx - 5, qy); ctx.lineTo(qx + 5, qy);
+  ctx.moveTo(qx, qy - 5); ctx.lineTo(qx, qy + 5);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(qx, qy, 9, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+async function refreshMeshPreview(cfg, canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  drawMeshPreview(canvas, await ensureMesh(cfg.asset), cfg);
+}
+
+// Remplit une datalist de choix d'asset : en mode serveur, les meshes réels
+// de assets/ du projet ; sinon suggestions par défaut + valeur courante.
+async function populateAssets(datalistId, currentAsset) {
+  const dl = document.getElementById(datalistId);
+  if (!dl) return;
+  const names = new Set();
+  if (SERVER_MODE) {
+    try {
+      const res = await fetch("/list-assets");
+      if (res.ok) {
+        const j = await res.json();
+        for (const n of j.assets || []) names.add("assets/" + n);
+      }
+    } catch (_) { /* silencieux : suggestions par défaut */ }
+  }
+  names.add("assets/vaisseau.json");
+  names.add("assets/cosmonaute.json");
+  names.add(currentAsset);
+  dl.innerHTML = "";
+  for (const n of names) {
+    const o = document.createElement("option");
+    o.value = n;
+    dl.appendChild(o);
+  }
+}
+
+function meshNumberInput(cfg, prefix, key, min, max) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.id = prefix + "-" + key;
+  input.min = String(min);
+  input.max = String(max);
+  input.step = "1";
+  input.value = cfg[key];
+  input.addEventListener("input", () => {
+    const v = parseFloat(input.value);
+    cfg[key] = Math.min(max, Math.max(min, Number.isFinite(v) ? v : 0));
+    afterEdit();
+  });
+  return input;
+}
+
+function meshAssetInput(cfg, prefix, datalistId) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = prefix + "-asset";
+  input.setAttribute("list", datalistId); // input.list est en lecture seule
+  input.value = cfg.asset;
+  input.spellcheck = false;
+  input.placeholder = "assets/mon-mesh.json";
+  input.addEventListener("input", () => {
+    cfg.asset = input.value.trim();
+    meshCache = null; // recharger l'aperçu du nouveau mesh
+    afterEdit();
+  });
+  return input;
+}
+
+// Mode fichier : charge un mesh JSON pour l'aperçu uniquement (l'export Rust
+// référence le chemin saisi dans le champ Asset, pas ce fichier).
+function loadPreviewFile(cfg, canvasId) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const mesh = parseMeshJson(String(reader.result));
+        meshCache = { asset: "local:" + file.name, mesh };
+        refreshMeshPreview(cfg, canvasId);
+        toast("Aperçu chargé : " + file.name);
+      } catch (err) {
+        toast("Mesh invalide : " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+// Carte commune vaisseau / cosmonaute : aperçu du mesh + champs (asset,
+// échelle, orientation, centre de rotation).
+function meshCard(opts) {
+  const cfg = opts.cfg;
+  const card = el("div", "card");
+  const h = el("h2");
+  h.appendChild(el("span", "dot", "", { style: "background:" + opts.dot }));
+  h.appendChild(document.createTextNode(opts.title));
+  h.appendChild(el("span", "const", opts.badge));
+  card.appendChild(h);
+  card.appendChild(el("p", "desc", opts.desc));
+
+  const wrap = el("div", "ship-preview-wrap");
+  const canvas = document.createElement("canvas");
+  canvas.id = opts.canvasId;
+  canvas.className = "ship-preview";
+  canvas.width = 280;
+  canvas.height = 200;
+  // souris : clic = centre de rotation, molette = rotation, Ctrl+molette = zoom
+  attachMeshInteractions(canvas, cfg);
+  wrap.appendChild(canvas);
+  const fields = el("div", "ship-fields");
+  fields.appendChild(field("Asset (mesh JSON, chemin projet)", opts.prefix + "-asset", meshAssetInput(cfg, opts.prefix, opts.datalistId)));
+  const loadBtn = el("button", "mini", "📂 Charger un mesh (aperçu)");
+  loadBtn.title = "Lit un fichier mesh JSON pour l'aperçu uniquement — l'export Rust référence le chemin du champ Asset";
+  loadBtn.addEventListener("click", () => loadPreviewFile(cfg, opts.canvasId));
+  fields.appendChild(loadBtn);
+  wrap.appendChild(fields);
+  card.appendChild(wrap);
+
+  const grid = el("div", "field-grid");
+  grid.appendChild(field("Échelle (%)", opts.prefix + "-scalePercent", meshNumberInput(cfg, opts.prefix, "scalePercent", 1, 1000)));
+  grid.appendChild(field("Orientation (°)", opts.prefix + "-orientationDeg", meshNumberInput(cfg, opts.prefix, "orientationDeg", -360, 360)));
+  grid.appendChild(field("Centre de rotation X (%)", opts.prefix + "-centerXPercent", meshNumberInput(cfg, opts.prefix, "centerXPercent", 0, 100)));
+  grid.appendChild(field("Centre de rotation Y (%)", opts.prefix + "-centerYPercent", meshNumberInput(cfg, opts.prefix, "centerYPercent", 0, 100)));
+  card.appendChild(grid);
+
+  const hintP = el("p", "hint");
+  hintP.innerHTML = opts.hint; // <b>…</b> des contrôles souris
+  card.appendChild(hintP);
+  return card;
+}
+
+function shipCard() {
+  return meshCard({
+    cfg: data.ship,
+    prefix: "ship",
+    canvasId: "ship-preview",
+    datalistId: "ship-assets",
+    dot: "#6ab7ff",
+    title: "Vaisseau joueur",
+    badge: "VAISSEAU_*",
+    desc: "Mesh du vaisseau (format « meshes-designer », assets/*.json), échelle, orientation du nez et " +
+      "centre de rotation — constantes VAISSEAU_JSON / VAISSEAU_SCALE / " +
+      "VAISSEAU_ORIENTATION_DEGREES / VAISSEAU_CENTER_X/Y_PERCENT de " +
+      "src/marketplace.rs (lues par src/vaisseau.rs).",
+    hint: "L'aperçu montre le vaisseau tel qu'il volera (nez aligné sur l'avant, axe y du jeu). " +
+      "Orientation = angle du nez du mesh dans l'éditeur : 0 = nez vers la droite, +90 = vers le haut — " +
+      "le jeu tourne le mesh pour le ramener nez à droite. Le centre de rotation est le pivot autour " +
+      "duquel le vaisseau pivote (50/50 = centre de la boîte englobante). Sur l'aperçu : <b>molette = " +
+      "rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), <b>clic = centre de " +
+      "rotation au point visé</b>.",
+  });
+}
+
+function cosmonautCard() {
+  return meshCard({
+    cfg: data.cosmonaut,
+    prefix: "cosmonaut",
+    canvasId: "cosmonaut-preview",
+    datalistId: "cosmonaut-assets",
+    dot: "#ff8c5a",
+    title: "Cosmonaute EVA",
+    badge: "COSMONAUTE_*",
+    desc: "Mesh du cosmonaute EVA (pilote éjecté, vaisseau détruit — format « meshes-designer », " +
+      "assets/*.json), échelle, orientation de l'avant et centre de rotation — constantes " +
+      "COSMONAUTE_JSON / COSMONAUTE_EVA_SCALE / COSMONAUTE_ORIENTATION_DEGREES / " +
+      "COSMONAUTE_CENTER_X/Y_PERCENT de src/marketplace.rs (lues par src/cosmonaut.rs).",
+    hint: "L'aperçu montre le cosmonaute tel qu'il apparaîtra en jeu (debout, axe y du jeu). " +
+      "Orientation = angle de l'avant du mesh dans l'éditeur : 0 = face à droite, +90 = vers le haut — " +
+      "le jeu tourne le mesh pour ramener l'avant à droite. Le centre de rotation est le pivot autour " +
+      "duquel le cosmonaute pivote (50/50 = centre de la boîte englobante). Sur l'aperçu : <b>molette = " +
+      "rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), <b>clic = centre de " +
+      "rotation au point visé</b>.",
+  });
+}
+
+function field(labelText, key, input, full) {
+  const f = el("div", "field" + (full ? " full" : ""));
+  const l = el("label", "", labelText);
+  l.htmlFor = input.id || key;
+  f.appendChild(l);
+  f.appendChild(input);
+  return f;
+}
+
+function textInput(track, key) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.id = track.id + "-" + key;
+  input.value = track[key];
+  input.addEventListener("input", () => { track[key] = input.value; afterEdit(); });
+  return input;
+}
+
+function numberInput(track, key) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "0";
+  input.step = "1";
+  input.id = track.id + "-" + key;
+  input.value = track[key];
+  input.addEventListener("input", () => { track[key] = int(input.value); afterEdit(); });
+  return input;
+}
+
+function numTd(tier, key, title, id) {
+  const td = el("td", "num");
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "0";
+  input.step = "1";
+  input.id = id;
+  input.value = tier[key];
+  input.title = title;
+  input.addEventListener("input", () => { tier[key] = int(input.value); afterEdit(); });
+  td.appendChild(input);
+  return td;
+}
+
+function move(track, i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= track.tiers.length) return;
+  const tmp = track.tiers[i];
+  track.tiers[i] = track.tiers[j];
+  track.tiers[j] = tmp;
+  afterEdit();
+}
+
+function afterEdit() {
+  // le rendu recrée les champs : on conserve le focus et la position du
+  // curseur pour permettre la saisie continue (plusieurs caractères)
+  const active = document.activeElement;
+  const focusId = active && active.id ? active.id : null;
+  const selStart = active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+  save();
+  render();
+  if (focusId) {
+    const el = document.getElementById(focusId);
+    if (el && typeof el.focus === "function") {
+      el.focus();
+      if (selStart !== null && typeof el.setSelectionRange === "function") {
+        el.setSelectionRange(selStart, selStart);
+      }
+    }
+  }
+}
+
+function el(tag, cls, text, attrs) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined && text !== "") node.textContent = text;
+  if (attrs) for (const k in attrs) node.setAttribute(k, attrs[k]);
+  return node;
+}
+
+/* ─── Synthèse ────────────────────────────────────────────────────────────── */
+
+function summaryCard() {
+  const card = el("div", "card");
+  card.appendChild(el("h3", "section", "Vue de mise au point — synthèse"));
+  const host = el("div", "summary-grid");
+  const byId = Object.fromEntries(data.tracks.map(t => [t.id, t]));
+  const fuel = trackTotals(byId.fuel);
+  const ammo = trackTotals(byId.ammo);
+  const cargo = trackTotals(byId.cargo);
+  const totalCost = fuel.cost + ammo.cost + cargo.cost;
+  const eco = data.economy;
+
+  // coût total pour tout maxer, converti en gemmes (valeur éditée par ligne)
+  const gemDefs = [
+    { label: "or", value: eco.gems.gold },
+    { label: "fer", value: eco.gems.iron },
+    { label: "eau", value: eco.gems.water },
+  ].filter(g => g.value > 0);
+  const gemText = gemDefs
+    .map(g => {
+      const n = Math.ceil(totalCost / g.value);
+      return n + " gemme" + (n > 1 ? "s" : "") + " d'" + g.label;
+    })
+    .join(" · ");
+
+  // coût d'un plein complet aux capacités maximales (économie de la station)
+  const fullFuel = Math.ceil(fuel.max / eco.fuelStep) * eco.fuelPrice;
+  const fullAmmo = Math.ceil(ammo.max / eco.ammoStep) * eco.ammoPrice;
+
+  const items = [
+    { k: "Coût total (tout maxer)", v: totalCost + " minerais", cls: "", sub: gemDefs.length > 0 ? "soit " + gemText : "gemmes sans valeur (0)" },
+    { k: "Réservoir max", v: fuel.max + " unités", cls: "", sub: fuel.count + " extension" + (fuel.count > 1 ? "s" : "") + " · " + fuel.cost + " minerais" },
+    { k: "Chargeur max", v: ammo.max + " munitions", cls: "", sub: ammo.count + " extension" + (ammo.count > 1 ? "s" : "") + " · " + ammo.cost + " minerais" },
+    { k: "Soute max", v: cargo.max + " emplacements", cls: "orange", sub: cargo.count + " extension" + (cargo.count > 1 ? "s" : "") + " · " + cargo.cost + " minerais" },
+    { k: "Plein complet (max)", v: (fullFuel + fullAmmo) + " minerais", cls: "", sub: "carburant " + fullFuel + " + munitions " + fullAmmo + " · " + eco.fuelPrice + " m/" + eco.fuelStep + " u, " + eco.ammoPrice + " m/" + eco.ammoStep + " mun." },
+  ];
+  // coût pour tout maxer avec la remise de réputation de chaque rang — la
+  // précision de tir amplifie la remise (jusqu'à ×(1 + poids) à 100 %)
+  const weight = data.reputation.discountPrecisionWeight;
+  for (const r of data.reputation.ranks) {
+    const discounted = discountedCost(totalCost, r.discountPercent);
+    const boosted = Math.min(100, Math.round(r.discountPercent * (1 + weight * 1)));
+    const discountedMax = discountedCost(totalCost, boosted);
+    items.push({
+      k: "Maxer à " + r.name + " (−" + r.discountPercent + " %)",
+      v: discounted + " minerais",
+      cls: r.discountPercent > 0 ? "orange" : "",
+      sub: "seuil " + r.threshold + " · économie " + (totalCost - discounted) + " minerais" +
+        (r.discountPercent > 0 && boosted > r.discountPercent
+          ? " · 100 % de précision → −" + boosted + " % (" + discountedMax + ")"
+          : ""),
+    });
+  }
+  for (const it of items) {
+    const box = el("div", "kv");
+    box.appendChild(el("div", "k", it.k));
+    box.appendChild(el("div", "v" + (it.cls ? " " + it.cls : ""), String(it.v)));
+    box.appendChild(el("div", "sub", it.sub));
+    host.appendChild(box);
+  }
+  card.appendChild(host);
+  return card;
+}
+
+/* ─── Économie de la station ──────────────────────────────────────────────── */
+
+function economyNumber(id, setter, value, min, step, title) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.id = id;
+  input.min = String(min);
+  input.step = step || "1";
+  input.value = value;
+  if (title) input.title = title;
+  input.addEventListener("input", () => { setter(input.value); afterEdit(); });
+  return input;
+}
+
+function economyCard() {
+  const card = el("div", "card");
+  const h = el("h3", "section");
+  h.appendChild(document.createTextNode("Économie de la station "));
+  h.appendChild(el("span", "hint", "— constantes du scénario (src/marketplace.rs)"));
+  card.appendChild(h);
+  const host = el("div", "eco-grid");
+  const eco = data.economy;
+  const intSetter = (obj, key) => v => { obj[key] = int(v); };
+  const floatSetter = (obj, key) => v => { obj[key] = pos(v); };
+
+  // valeur des gemmes (minerais par gemme déchargée à la station)
+  const gems = el("div", "eco-group");
+  gems.appendChild(el("h4", "", "Valeur des gemmes (minerais)"));
+  const gGrid = el("div", "field-grid");
+  gGrid.appendChild(field("GOLD (or)", "eco-gold", economyNumber("eco-gold", intSetter(eco.gems, "gold"), eco.gems.gold, 0, "1")));
+  gGrid.appendChild(field("IRON (fer)", "eco-iron", economyNumber("eco-iron", intSetter(eco.gems, "iron"), eco.gems.iron, 0, "1")));
+  gGrid.appendChild(field("WATER (eau)", "eco-water", economyNumber("eco-water", intSetter(eco.gems, "water"), eco.gems.water, 0, "1")));
+  gems.appendChild(gGrid);
+  gems.appendChild(el("p", "hint", "Prix d'une gemme déchargée à la station (ELEMENT_VALUES)."));
+  host.appendChild(gems);
+
+  // coûts des modes de déplacement
+  const modes = el("div", "eco-group");
+  modes.appendChild(el("h4", "", "Coûts des modes de déplacement (minerais)"));
+  const mGrid = el("div", "field-grid");
+  const inertial = document.createElement("input");
+  inertial.type = "number";
+  inertial.id = "eco-mode-0";
+  inertial.value = "0";
+  inertial.disabled = true;
+  inertial.title = "INERTIAL est le mode de départ : toujours débloqué, coût fixé à 0.";
+  mGrid.appendChild(field("INERTIAL", "eco-mode-0", inertial));
+  mGrid.appendChild(field("4 WAYS", "eco-mode-1", economyNumber("eco-mode-1", intSetter(eco.modes, 1), eco.modes[1], 0, "1")));
+  mGrid.appendChild(field("DIRECTIONAL", "eco-mode-2", economyNumber("eco-mode-2", intSetter(eco.modes, 2), eco.modes[2], 0, "1")));
+  modes.appendChild(mGrid);
+  modes.appendChild(el("p", "hint", "0 = mode déjà débloqué au départ. INERTIAL reste gratuit."));
+  host.appendChild(modes);
+
+  // ravitaillement à la station
+  const refuel = el("div", "eco-group");
+  refuel.appendChild(el("h4", "", "Ravitaillement à la station"));
+  const rGrid = el("div", "field-grid");
+  rGrid.appendChild(field("Carburant — prix (minerais)", "eco-fuel-price", economyNumber("eco-fuel-price", intSetter(eco, "fuelPrice"), eco.fuelPrice, 0, "1")));
+  rGrid.appendChild(field("Carburant — pas (unités)", "eco-fuel-step", economyNumber("eco-fuel-step", floatSetter(eco, "fuelStep"), eco.fuelStep, 1, "any")));
+  rGrid.appendChild(field("Munitions — prix (minerais)", "eco-ammo-price", economyNumber("eco-ammo-price", intSetter(eco, "ammoPrice"), eco.ammoPrice, 0, "1")));
+  rGrid.appendChild(field("Munitions — pas (munitions)", "eco-ammo-step", economyNumber("eco-ammo-step", floatSetter(eco, "ammoStep"), eco.ammoStep, 1, "any")));
+  refuel.appendChild(rGrid);
+  // coût d'un plein complet aux capacités maximales (mise au point)
+  const byId = Object.fromEntries(data.tracks.map(t => [t.id, t]));
+  const fullFuel = Math.ceil(trackTotals(byId.fuel).max / eco.fuelStep) * eco.fuelPrice;
+  const fullAmmo = Math.ceil(trackTotals(byId.ammo).max / eco.ammoStep) * eco.ammoPrice;
+  refuel.appendChild(el("p", "hint", "Plein complet (capacités max) : " + fullFuel + " + " + fullAmmo + " = " + (fullFuel + fullAmmo) + " minerais."));
+  host.appendChild(refuel);
+
+  // badge d'en-tête (monnaie et valeur des gemmes)
+  const badge = document.getElementById("badge-monnaie");
+  if (badge) {
+    badge.innerHTML = "Monnaie : <b>minerais</b> (or " + eco.gems.gold + ", fer " + eco.gems.iron + ", eau " + eco.gems.water + ")";
+  }
+  card.appendChild(host);
+  return card;
+}
+
+/* ─── Réputation (rangs et remises sur les coûts) ─────────────────────────── */
+
+// Coût après remise de réputation (même formule que `discounted_cost` du jeu :
+// × (100 − remise) / 100, arrondi à l'entier inférieur).
+function discountedCost(cost, discountPercent) {
+  const d = Math.max(0, Math.min(100, discountPercent));
+  return Math.floor(cost * (100 - d) / 100);
+}
+
+// Remise du plus haut rang atteint pour une réputation donnée (0 sans rang).
+function discountAt(ranks, reputation) {
+  let d = 0;
+  for (const r of ranks) {
+    if (reputation >= r.threshold) d = r.discountPercent;
+  }
+  return d;
+}
+
+function reputationCard() {
+  const card = el("div", "card");
+  const h = el("h3", "section");
+  h.appendChild(document.createTextNode("Réputation "));
+  h.appendChild(el("span", "hint", "— rangs et remises sur les coûts de la station (src/marketplace.rs)"));
+  card.appendChild(h);
+  const host = el("div", "eco-grid");
+  const group = el("div", "eco-group");
+  group.appendChild(el("h4", "", "Rangs de réputation (seuil · nom · remise %)"));
+  group.appendChild(el("p", "hint",
+    "La remise du rang atteint s'applique à tous les coûts de la station : extensions d'atelier " +
+    "(réservoir, chargeur, soute), ravitaillement (carburant, munitions) et déblocage des modes de " +
+    "déplacement — constantes PROGRESSION_RANKS et DISCOUNT_PRECISION_WEIGHT de " +
+    "src/marketplace.rs (lues par src/scenario.rs). Le gain de réputation reste codé dans " +
+    "src/scenario.rs : astéroïdes détruits (bonus de précision) et minerais déchargés (commerce)."));
+
+  // poids de la précision de tir sur la remise (multiplie la remise du rang)
+  const weightGrid = el("div", "field-grid");
+  const weightInput = document.createElement("input");
+  weightInput.type = "number";
+  weightInput.min = "0";
+  weightInput.step = "0.1";
+  weightInput.id = "reputation-precision-weight";
+  weightInput.value = data.reputation.discountPrecisionWeight;
+  weightInput.addEventListener("input", () => {
+    const v = parseFloat(weightInput.value);
+    data.reputation.discountPrecisionWeight = Number.isFinite(v) ? Math.max(0, v) : 0;
+    afterEdit();
+  });
+  weightGrid.appendChild(field("Poids de la précision sur la remise", "reputation-precision-weight", weightInput));
+  group.appendChild(weightGrid);
+  group.appendChild(el("p", "hint",
+    "La remise du rang est multipliée par (1 + poids × précision de tir), précision en 0..1 (part " +
+    "de tirs non perdus). 0 = la précision n'influe pas sur les coûts ; 1.0 = 100 % de précision → " +
+    "remise doublée."));
+
+  const ranks = data.reputation.ranks;
+  const table = el("table");
+  const thead = el("thead");
+  const hr = el("tr");
+  for (const thText of ["", "Seuil", "Nom (HUD)", "Remise %", "Ex. 20 minerais", ""]) {
+    const th = el("th", thText === "Seuil" || thText === "Remise %" || thText === "Ex. 20 minerais" ? "num" : "", thText);
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = el("tbody");
+  ranks.forEach((rank, i) => {
+    const tr = el("tr");
+    tr.appendChild(el("td", "", String(i + 1)));
+
+    const tdThr = el("td");
+    const thrInput = document.createElement("input");
+    thrInput.type = "number";
+    thrInput.min = "0";
+    thrInput.step = "0.5";
+    thrInput.id = "rank-" + i + "-threshold";
+    thrInput.value = rank.threshold;
+    thrInput.addEventListener("input", () => {
+      const v = parseFloat(thrInput.value);
+      rank.threshold = Number.isFinite(v) ? Math.max(0, v) : 0;
+      afterEdit();
+    });
+    tdThr.appendChild(thrInput);
+    tr.appendChild(tdThr);
+
+    const tdName = el("td");
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.id = "rank-" + i + "-name";
+    nameInput.value = rank.name;
+    nameInput.placeholder = "CADET";
+    nameInput.addEventListener("input", () => { rank.name = nameInput.value; afterEdit(); });
+    tdName.appendChild(nameInput);
+    tr.appendChild(tdName);
+
+    const tdDisc = el("td");
+    const discInput = document.createElement("input");
+    discInput.type = "number";
+    discInput.min = "0";
+    discInput.max = "100";
+    discInput.step = "1";
+    discInput.id = "rank-" + i + "-discount";
+    discInput.value = rank.discountPercent;
+    discInput.addEventListener("input", () => {
+      const v = parseFloat(discInput.value);
+      rank.discountPercent = Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : 0;
+      afterEdit();
+    });
+    tdDisc.appendChild(discInput);
+    tr.appendChild(tdDisc);
+
+    tr.appendChild(el("td", "num", String(discountedCost(20, rank.discountPercent))));
+
+    const tdAct = el("td");
+    const acts = el("div", "grow");
+    const up = el("button", "mini", "↑");
+    up.title = "Monter";
+    up.disabled = i === 0;
+    up.addEventListener("click", () => moveRank(ranks, i, -1));
+    const down = el("button", "mini", "↓");
+    down.title = "Descendre";
+    down.disabled = i === ranks.length - 1;
+    down.addEventListener("click", () => moveRank(ranks, i, +1));
+    const del = el("button", "mini del", "✕");
+    del.title = "Supprimer";
+    del.addEventListener("click", () => { ranks.splice(i, 1); afterEdit(); });
+    acts.appendChild(up); acts.appendChild(down); acts.appendChild(del);
+    tdAct.appendChild(acts);
+    tr.appendChild(tdAct);
+
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  group.appendChild(table);
+
+  const addBtn = el("button", "mini", "+ Ajouter un rang");
+  addBtn.addEventListener("click", () => {
+    const last = ranks[ranks.length - 1];
+    ranks.push({
+      threshold: last ? Math.round(last.threshold + 25) : 0,
+      name: "RANG",
+      discountPercent: last ? Math.min(100, last.discountPercent + 5) : 0,
+    });
+    afterEdit();
+  });
+  group.appendChild(addBtn);
+
+  // aperçu de la courbe de remise : coût remisé d'un achat à 100 minerais
+  const curve = el("p", "hint");
+  curve.textContent = "Aperçu — coût remisé d'un achat à 100 minerais : " +
+    ranks.map(r => r.name + " " + r.threshold + " (" + r.discountPercent + " % → " +
+      discountedCost(100, r.discountPercent) + ")").join(" · ") || "—";
+  group.appendChild(curve);
+
+  host.appendChild(group);
+  card.appendChild(host);
+  return card;
+}
+
+function moveRank(ranks, i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= ranks.length) return;
+  const tmp = ranks[i];
+  ranks[i] = ranks[j];
+  ranks[j] = tmp;
+  afterEdit();
+}
+
+/* ─── Export du code Rust ─────────────────────────────────────────────────── */
+
+// En-tête du fichier généré src/marketplace.rs : documentation de module et
+// imports (CARGO_SIZE, MOVING_MODE_COUNT). L'économie (gemmes, modes,
+// ravitaillement) est produite par economyConsts, les types par RUST_TYPES
+// et les trois lignes d'atelier par tierConst/trackConst — voir exportRust.
+const RUST_HEADER = `//! Place de marché de la station — extensions de vaisseau de l'atelier,
+//! réglages du vaisseau joueur et économie (scénario Progression, bouton
+//! UPGRADES de la boîte DOCK STATION).
+//!
+//! Fichier **généré** par \`tools/marketplace-editor/index.html\` — ne pas
+//! éditer à la main : régénérez-le depuis l'outil de gestion, puis
+//! recompilez (\`cargo build --release\`). Les tests (\`cargo test\`) valident
+//! les nouvelles valeurs.
+
+use crate::config::{CARGO_SIZE, MOVING_MODE_COUNT};
+`;
+
+// Définitions des types d'atelier (partie stable du fichier généré).
+const RUST_TYPES = `/// Une extension de vaisseau achetable à l'atelier de la station (scénario
+/// Progression, bouton UPGRADES de la boîte DOCK STATION) : ajoute de la
+/// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en minerais.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShipUpgrade {
+    /// Nom de l'extension (atelier, HUD).
+    pub name: &'static str,
+    /// Coût en minerais.
+    pub cost: i32,
+    /// Capacité ajoutée (carburant, munitions ou soute).
+    pub bonus: i32,
+}
+
+/// Une ligne d'amélioration du vaisseau (atelier) : capacité de base et
+/// extensions successives achetées **dans l'ordre** — le niveau est le nombre
+/// d'extensions possédées (\`tiers[i]\` s'achète au niveau \`i+1\`).
+#[derive(Clone, Copy, Debug)]
+pub struct UpgradeTrack {
+    /// Libellé de la ligne (atelier).
+    pub label: &'static str,
+    /// Capacité de base (niveau 0).
+    pub base: i32,
+    /// Extensions par niveau, achetées dans l'ordre.
+    pub tiers: &'static [ShipUpgrade],
+}
+
+/// Rang de réputation : palier débloqué à partir d'un seuil de réputation,
+/// avec le nom affiché (HUD, message « RANK UP ») et la **remise** accordée
+/// sur les coûts de la station (pourcentage 0..100) dès ce rang atteint.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReputationRank {
+    /// Réputation minimale pour atteindre ce rang.
+    pub threshold: f64,
+    /// Nom du rang (HUD, message « RANK UP »).
+    pub name: &'static str,
+    /// Remise sur les coûts de la station (atelier, ravitaillement, modes de
+    /// déplacement) accordée dès ce rang atteint.
+    pub discount_percent: i32,
+}
+`;
+
+// Constantes économiques du scénario Progression (valeur des gemmes, coûts
+// des modes de déplacement, prix du ravitaillement).
+// Formate un nombre flottant pour l'export Rust (1 → « 1.0 », 12.5 → « 12.5 »).
+function fmtFloat(n) {
+  return Number.isInteger(n) ? n + ".0" : String(n);
+}
+
+// Constantes du vaisseau joueur : mesh, échelle, orientation et centre de
+// rotation — lues par src/vaisseau.rs à la construction du vaisseau. Le
+// chemin du mesh est relatif à la racine du projet ; l'include_str! est
+// résolu depuis src/ (d'où le « ../ »).
+function shipConsts() {
+  const s = data.ship;
+  const scale = s.scalePercent / 100;
+  const orient = ((s.orientationDeg % 360) + 360) % 360;
+  const assetPath = String(s.asset).replace(/^(\.\.?\/)+/, "");
+  return [
+    "/// Vaisseau joueur — mesh « meshes-designer » et réglages (échelle,",
+    "/// orientation, centre de rotation). Données générées par l'outil de",
+    "/// gestion : `src/vaisseau.rs` les lit pour construire le vaisseau.",
+    "///",
+    "/// Fichier mesh embarqué au compile (`include_str!`) : chemin relatif",
+    "/// à la racine du projet.",
+    'pub const VAISSEAU_JSON: &str = include_str!("../' + assetPath + '");',
+    "",
+    "/// Échelle du vaisseau (multiplicateur des sommets du mesh) : 1.0 = 100 %.",
+    "pub const VAISSEAU_SCALE: f64 = " + fmtFloat(scale) + ";",
+    "",
+    "/// Orientation de départ du vaisseau (degrés) : angle du nez du mesh",
+    "/// dans l'éditeur « meshes-designer » (0 = nez vers la droite, +90 =",
+    "/// vers le haut). Le mesh est tourné de −orientation à la construction.",
+    "pub const VAISSEAU_ORIENTATION_DEGREES: f64 = " + fmtFloat(orient) + ";",
+    "",
+    "/// Centre de rotation du vaisseau : position du pivot en pourcentage de",
+    "/// la boîte englobante du mesh (50 = centre), axe x.",
+    "pub const VAISSEAU_CENTER_X_PERCENT: f64 = " + fmtFloat(s.centerXPercent) + ";",
+    "",
+    "/// Centre de rotation du vaisseau (voir `VAISSEAU_CENTER_X_PERCENT`), axe y.",
+    "pub const VAISSEAU_CENTER_Y_PERCENT: f64 = " + fmtFloat(s.centerYPercent) + ";",
+  ].join("\n");
+}
+
+// Constantes du cosmonaute EVA : mesh, échelle, orientation et centre de
+// rotation — lues par src/cosmonaut.rs à la construction du pilote éjecté.
+// Même format que shipConsts (le chemin du mesh est relatif à la racine du
+// projet ; l'include_str! est résolu depuis src/, d'où le « ../ »).
+function cosmonautConsts() {
+  const c = data.cosmonaut;
+  const scale = c.scalePercent / 100;
+  const orient = ((c.orientationDeg % 360) + 360) % 360;
+  const assetPath = String(c.asset).replace(/^(\.\.?\/)+/, "");
+  return [
+    "/// Cosmonaute EVA (pilote éjecté, vaisseau détruit) — mesh « meshes-designer »",
+    "/// et réglages (échelle, orientation, centre de rotation). Données générées",
+    "/// par l'outil de gestion : `src/cosmonaut.rs` les lit pour construire le",
+    "/// pilote contrôlé en mode EVA (scénarios Progression et Survival).",
+    "///",
+    "/// Fichier mesh embarqué au compile (`include_str!`) : chemin relatif",
+    "/// à la racine du projet.",
+    'pub const COSMONAUTE_JSON: &str = include_str!("../' + assetPath + '");',
+    "",
+    "/// Échelle du cosmonaute EVA (multiplicateur des sommets du mesh) : 1.0 = 100 %.",
+    "pub const COSMONAUTE_EVA_SCALE: f64 = " + fmtFloat(scale) + ";",
+    "",
+    "/// Orientation du cosmonaute EVA (degrés) : angle de l'avant du mesh dans",
+    "/// l'éditeur « meshes-designer » (0 = face à droite, +90 = vers le haut).",
+    "/// Le mesh est tourné de −orientation à la construction.",
+    "pub const COSMONAUTE_ORIENTATION_DEGREES: f64 = " + fmtFloat(orient) + ";",
+    "",
+    "/// Centre de rotation du cosmonaute EVA : position du pivot en pourcentage de",
+    "/// la boîte englobante du mesh (50 = centre), axe x.",
+    "pub const COSMONAUTE_CENTER_X_PERCENT: f64 = " + fmtFloat(c.centerXPercent) + ";",
+    "",
+    "/// Centre de rotation du cosmonaute EVA (voir `COSMONAUTE_CENTER_X_PERCENT`),",
+    "/// axe y.",
+    "pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = " + fmtFloat(c.centerYPercent) + ";",
+  ].join("\n");
+}
+
+function economyConsts() {
+  const e = data.economy;
+  const g = e.gems;
+  const modeParts = ["INERTIAL", "4 WAYS", "DIRECTIONAL"]
+    .map((name, i) => name + " " + (e.modes[i] === 0 ? "gratuit" : e.modes[i]))
+    .join(", ");
+  return [
+    "/// Valeur en minerais d'une gemme par élément (index 1..3 = GOLD, IRON,",
+    "/// WATER — voir `default_elements` ; 0 = sans valeur).",
+    "pub const ELEMENT_VALUES: [i32; 4] = [0, " + g.gold + ", " + g.iron + ", " + g.water + "];",
+    "",
+    "/// Coût en minerais pour débloquer chaque mode de déplacement (index",
+    "/// `MOVING_MODE_*` ; 0 = déjà débloqué) : " + modeParts + ".",
+    "pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [" + e.modes.join(", ") + "];",
+    "",
+    "/// Prix (minerais) d'un plein de carburant par pas de `fuel_step` unités.",
+    "pub const FUEL_PRICE: i32 = " + e.fuelPrice + ";",
+    "",
+    "/// Pas de ravitaillement en carburant (unités par plein facturé).",
+    "pub const FUEL_STEP: f64 = " + (Number.isInteger(e.fuelStep) ? e.fuelStep + ".0" : String(e.fuelStep)) + ";",
+    "",
+    "/// Prix (minerais) d'un plein de munitions par pas de `ammo_step` unités.",
+    "pub const AMMO_PRICE: i32 = " + e.ammoPrice + ";",
+    "",
+    "/// Pas de ravitaillement en munitions.",
+    "pub const AMMO_STEP: i32 = " + e.ammoStep + ";",
+  ].join("\n");
+}
+
+// Rangs de réputation du scénario Progression : seuil, nom affiché (HUD,
+// « RANK UP ») et remise (%) sur les coûts de la station — lus par
+// src/scenario.rs (`rank_at`, `current_discount`), ainsi que le poids de la
+// précision de tir qui amplifie la remise (`DISCOUNT_PRECISION_WEIGHT`).
+function reputationConsts() {
+  const rep = data.reputation;
+  const ranks = rep.ranks;
+  const lines = [
+    "/// Poids de la **précision de tir** sur la remise de réputation : la remise",
+    "/// du rang est multipliée par `1 + poids × précision` (précision en 0..1 =",
+    "/// part de tirs non perdus) — 1.0 = 100 % de précision → remise doublée.",
+    "/// 0 = la précision n'influe pas sur les coûts.",
+    "pub const DISCOUNT_PRECISION_WEIGHT: f64 = " + fmtFloat(rep.discountPrecisionWeight) + ";",
+    "",
+    "/// Rangs de réputation du scénario Progression (seuils croissants, remise",
+    "/// croissante) : " + ranks.map(r => r.name + " (" + fmtFloat(r.threshold) + ")" +
+      (r.discountPercent > 0 ? ", −" + r.discountPercent + " %" : "")).join(" → ") + ".",
+    "/// Générés par l'outil de gestion.",
+    "pub const PROGRESSION_RANKS: &[ReputationRank] = &[",
+  ];
+  for (const r of ranks) {
+    lines.push(
+      '    ReputationRank { threshold: ' + fmtFloat(r.threshold) + ', name: "' +
+      rustEscape(r.name) + '", discount_percent: ' + r.discountPercent + " },"
+    );
+  }
+  lines.push("];");
+  return lines.join("\n");
+}
+
+function exportRust() {
+  const parts = [
+    RUST_HEADER.replace(/\s+$/, ""),
+    "",
+    economyConsts(),
+    "",
+    reputationConsts(),
+    "",
+    shipConsts(),
+    "",
+    cosmonautConsts(),
+    "",
+    RUST_TYPES.replace(/\s+$/, ""),
+  ];
+  for (const track of data.tracks) {
+    const meta = TRACK_META[track.id];
+    parts.push("");
+    parts.push(tierConst(track, meta));
+    parts.push("");
+    parts.push(trackConst(track, meta));
+  }
+  // un seul saut de ligne final (le fichier se termine par « };\n »)
+  return parts.join("\n").replace(/\n{2,}$/, "\n") + "\n";
+}
+
+function tierConst(track, meta) {
+  const caps = [track.base];
+  for (const t of track.tiers) caps.push(caps[caps.length - 1] + t.bonus);
+  const prog = caps.join(" → ");
+  const comment = track.tiers.length === 0
+    ? "/// " + track.subject + " (Progression) : aucune extension — " + track.base + " " + track.unit + "."
+    : "/// " + track.subject + " (Progression) : " + prog + " " + track.unit + ".";
+  const lines = [comment, "const " + meta.const + ": &[ShipUpgrade] = &["];
+  for (const t of track.tiers) {
+    lines.push('    ShipUpgrade { name: "' + rustEscape(t.name) + '", cost: ' + t.cost + ", bonus: " + t.bonus + " },");
+  }
+  lines.push("];");
+  return lines.join("\n");
+}
+
+function trackConst(track, meta) {
+  const total = trackTotals(track);
+  const n = total.count;
+  const plural = n > 1 ? "s" : "";
+  const comment = n === 0
+    ? "/// Ligne « " + track.lineTitle + " » (atelier, Progression) : " + track.base + " de base (aucune extension)."
+    : "/// Ligne « " + track.lineTitle + " » (atelier, Progression) : " + track.base + " de base,\n/// " + n + " extension" + plural + " → " + total.max + " max.";
+  // la soute référence la constante CARGO_SIZE de src/config.rs quand elle
+  // reste à sa valeur de base (fidélité au code existant)
+  const base = track.id === "cargo" && track.base === CARGO_SIZE ? "CARGO_SIZE" : String(track.base);
+  return comment + "\n" +
+    "pub const " + meta.trackConst + ": UpgradeTrack = UpgradeTrack {\n" +
+    '    label: "' + rustEscape(track.label) + '",\n' +
+    "    base: " + base + ",\n" +
+    "    tiers: " + meta.const + ",\n" +
+    "};";
+}
+
+/* ─── Actions ─────────────────────────────────────────────────────────────── */
+
+function download(filename, text, mime) {
+  const blob = new Blob([text], { type: mime || "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function downloadJson() {
+  download("marketplace.json", JSON.stringify(data, null, 2), "application/json");
+  toast("Fichier marketplace.json téléchargé");
+}
+
+function importJson() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!Array.isArray(parsed.tracks) || parsed.tracks.length !== 3) {
+          throw new Error("fichier invalide (3 lignes attendues)");
+        }
+        data = normalize(parsed);
+        setSnapshot();
+        save();
+        render();
+        toast("Import réussi ✓");
+      } catch (err) {
+        toast("Import refusé : " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+// Affiche l'état du fichier lié dans la barre d'outils.
+function setRustStatus(name) {
+  const el = document.getElementById("rust-file-status");
+  if (el) el.textContent = name ? "Lié : " + name + " — enregistrement direct" : "";
+}
+
+// Charge src/marketplace.rs du projet (mode serveur) et l'applique à
+// l'éditeur. Renvoie `true` si le chargement a abouti ; en cas d'échec, les
+// valeurs affichées restent celles du jeu (silencieux).
+async function loadProjectFile() {
+  try {
+    const res = await fetch("marketplace.rs");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const parsed = parseRust(await res.text());
+    if (parsed.tracks.length === 0) {
+      throw new Error("fichier non reconnu (src/marketplace.rs attendu)");
+    }
+    data = normalize(parsed);
+    setSnapshot();
+    save();
+    render();
+    setRustStatus("src/marketplace.rs (projet)");
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+// Ouvre src/marketplace.rs : avec l'API File System Access (Chrome/Edge), le
+// fichier est **lié** en lecture (chargement garanti, sans demande de
+// permission) ; la permission d'écriture n'est demandée qu'au moment
+// d'enregistrer (voir saveRustFile). Sans l'API : simple import du contenu
+// via le sélecteur classique (parse du Rust).
+async function importRust() {
+  const apply = (text, name) => {
+    try {
+      const parsed = parseRust(text);
+      if (parsed.tracks.length === 0) {
+        throw new Error("fichier non reconnu (src/marketplace.rs attendu)");
+      }
+      data = normalize(parsed);
+      setSnapshot();
+      save();
+      render();
+      setRustStatus(name);
+      toast("Import Rust réussi ✓ (" + parsed.tracks.length + " lignes)" + (name ? " — fichier lié" : ""));
+    } catch (err) {
+      toast("Import refusé : " + err.message);
+    }
+  };
+
+  // mode serveur local (server.mjs) : le fichier du projet est chargé
+  // directement, sans sélecteur — fonctionne dans tous les navigateurs, y
+  // compris le navigateur intégré de VSCode (webview sans API File System
+  // Access)
+  if (SERVER_MODE) {
+    const ok = await loadProjectFile();
+    if (!ok) toast("Chargement du projet impossible — valeurs du jeu affichées");
+    return;
+  }
+
+  if (window.showOpenFilePicker) {
+    let handle;
+    try {
+      [handle] = await window.showOpenFilePicker({
+        types: [{ description: "Fichier Rust (marketplace.rs)", accept: { "text/plain": [".rs"] } }],
+        multiple: false,
+      });
+      rustHandle = handle;
+      const file = await handle.getFile();
+      apply(await file.text(), handle.name);
+      return;
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+      // API présente mais inutilisable (ex : navigateur intégré de VSCode) :
+      // on retombe sur le sélecteur de fichiers classique
+      toast("Sélecteur système indisponible (" + (err.name || "erreur") + ") — sélecteur de fichiers");
+    }
+  }
+
+  // repli : sélecteur classique (navigateur sans API d'accès aux fichiers)
+  rustHandle = null;
+  setRustStatus(null);
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".rs,text/plain";
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => apply(String(reader.result), null);
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+// Enregistre l'export directement dans le fichier lié (ou demande le fichier
+// avec l'API File System Access, ou télécharge en dernier recours).
+async function saveRustFile() {
+  const text = exportRust();
+
+  // mode serveur local (server.mjs) : écriture directe dans le projet
+  if (SERVER_MODE) {
+    try {
+      const res = await fetch("marketplace.rs", {
+        method: "PUT",
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+        body: text,
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setSnapshot();
+      updateSaveButton();
+      setRustStatus("src/marketplace.rs (projet)");
+      toast("Enregistré dans src/marketplace.rs ✓ — recompilez (cargo build --release)");
+    } catch (err) {
+      toast("Enregistrement dans le projet impossible : " + err.message + " — fichier téléchargé à la place");
+      download("marketplace.rs", text);
+    }
+    return;
+  }
+
+  const write = async handle => {
+    const writable = await handle.createWritable();
+    await writable.write(text);
+    await writable.close();
+  };
+  try {
+    if (rustHandle) {
+      // l'ouverture s'est faite en lecture seule : la permission d'écriture
+      // est demandée ici, au moment d'enregistrer
+      let perm = "granted";
+      if (rustHandle.queryPermission) {
+        perm = await rustHandle.queryPermission({ mode: "readwrite" });
+      }
+      if (perm !== "granted" && rustHandle.requestPermission) {
+        perm = await rustHandle.requestPermission({ mode: "readwrite" });
+      }
+      if (perm !== "granted") {
+        throw new Error("permission d'écriture refusée");
+      }
+      await write(rustHandle);
+      setSnapshot();
+      updateSaveButton();
+      toast("Enregistré dans " + rustHandle.name + " ✓ — recompilez (cargo build --release)");
+      return;
+    }
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: "marketplace.rs",
+        types: [{ description: "Fichier Rust (marketplace.rs)", accept: { "text/plain": [".rs"] } }],
+      });
+      rustHandle = handle;
+      setRustStatus(handle.name);
+      await write(handle);
+      setSnapshot();
+      updateSaveButton();
+      toast("Enregistré dans " + handle.name + " ✓ — recompilez (cargo build --release)");
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") return; // dialogue annulé
+    toast("Enregistrement impossible (" + (err.message || err.name || "erreur") + ") — fichier téléchargé à la place");
+    download("marketplace.rs", text);
+    return;
+  }
+  download("marketplace.rs", text);
+  toast("Fichier marketplace.rs téléchargé (repli : API d'accès aux fichiers indisponible)");
+}
+
+/* ─── Parse du fichier Rust généré (src/marketplace.rs) ───────────────────── */
+
+function rustUnescape(s) {
+  return s.replace(/\\(["\\\\])/g, "$1");
+}
+
+// Extrait l'unité de capacité d'un commentaire de génération, ex :
+// « 100 → 150 → 200 → 250 unités. » → « unités » ; « aucune extension — 5
+// emplacements. » → « emplacements ».
+function unitFromComment(prog) {
+  const tail = prog.split("→").pop().trim().replace(/\.$/, "");
+  const m = tail.match(/\S+$/);
+  return m ? m[0] : "";
+}
+
+// Les extensions d'un bloc `const …: &[ShipUpgrade] = &[ … ];`.
+function parseTiers(block) {
+  const tiers = [];
+  const re = /ShipUpgrade\s*\{\s*name:\s*"((?:[^"\\\\]|\\.)*)"\s*,\s*cost:\s*(\d+)\s*,\s*bonus:\s*(\d+)\s*\}/g;
+  let m;
+  while ((m = re.exec(block)) !== null) {
+    tiers.push({
+      name: rustUnescape(m[1]),
+      cost: parseInt(m[2], 10),
+      bonus: parseInt(m[3], 10),
+    });
+  }
+  return tiers;
+}
+
+// Complète un objet ligne à partir du bloc `UpgradeTrack { label, base, … }`
+// (base peut être un entier ou la constante `CARGO_SIZE`).
+function fillTrackFields(track, block) {
+  const label = block.match(/label:\s*"((?:[^"\\\\]|\\.)*)"/);
+  if (label) track.label = rustUnescape(label[1]);
+  const base = block.match(/base:\s*([A-Za-z0-9_]+)/);
+  if (base) track.base = base[1] === "CARGO_SIZE" ? CARGO_SIZE : parseInt(base[1], 10);
+}
+
+// Parse un fichier src/marketplace.rs (format généré par cet outil) et
+// renvoie un état partiel { tracks, economy } — les valeurs manquantes
+// retombent sur les valeurs du jeu via normalize().
+function parseRust(text) {
+  const out = { tracks: [], economy: {}, reputation: {}, ship: {}, cosmonaut: {} };
+  const grab = re => {
+    const m = text.match(re);
+    return m ? m[1] : null;
+  };
+
+  // ── économie ──
+  const gems = grab(/ELEMENT_VALUES\s*:\s*\[i32; 4\]\s*=\s*\[([^\]]*)\]/);
+  if (gems) {
+    const v = gems.split(",").map(s => parseInt(s, 10));
+    if (v.length === 4 && v.slice(1).every(Number.isFinite)) {
+      out.economy.gems = { gold: v[1], iron: v[2], water: v[3] };
+    }
+  }
+  const modes = grab(/MODE_COSTS[^=]*=\s*\[([^\]]*)\]/);
+  if (modes) {
+    const v = modes.split(",").map(s => parseInt(s, 10));
+    if (v.length === 3 && v.every(Number.isFinite)) out.economy.modes = v;
+  }
+  const price = name => {
+    const m = text.match(new RegExp(name + "\\s*:\\s*(?:i32|f64)\\s*=\\s*([0-9.]+)"));
+    if (!m) return null;
+    return m[1].includes(".") ? parseFloat(m[1]) : parseInt(m[1], 10);
+  };
+  const fuelPrice = price("FUEL_PRICE");
+  const fuelStep = price("FUEL_STEP");
+  const ammoPrice = price("AMMO_PRICE");
+  const ammoStep = price("AMMO_STEP");
+  if (fuelPrice !== null) out.economy.fuelPrice = fuelPrice;
+  if (fuelStep !== null) out.economy.fuelStep = fuelStep;
+  if (ammoPrice !== null) out.economy.ammoPrice = ammoPrice;
+  if (ammoStep !== null) out.economy.ammoStep = ammoStep;
+
+  // ── réputation (poids de précision + rangs : seuil, nom, remise) ──
+  const precWeight = grab(/pub const DISCOUNT_PRECISION_WEIGHT: f64 = ([0-9.]+);/);
+  if (precWeight) out.reputation.discountPrecisionWeight = parseFloat(precWeight);
+  const ranksBlock = text.match(/pub const PROGRESSION_RANKS: &\[ReputationRank\] = &\[([\s\S]*?)\n\];/);
+  if (ranksBlock) {
+    const ranks = [];
+    const re = /ReputationRank\s*\{\s*threshold:\s*([0-9.]+)\s*,\s*name:\s*"((?:[^"\\]|\\.)*)"\s*,\s*discount_percent:\s*(\d+)\s*\}/g;
+    let m;
+    while ((m = re.exec(ranksBlock[1])) !== null) {
+      ranks.push({
+        threshold: parseFloat(m[1]),
+        name: rustUnescape(m[2]),
+        discountPercent: parseInt(m[3], 10),
+      });
+    }
+    if (ranks.length > 0) out.reputation.ranks = ranks;
+  }
+
+  // ── vaisseau joueur (mesh, échelle, orientation, centre de rotation) ──
+  const asset = grab(/pub const VAISSEAU_JSON: &str = include_str!\("([^"]+)"\)/);
+  if (asset) out.ship.asset = asset.replace(/^\.\.\//, "");
+  const scale = grab(/pub const VAISSEAU_SCALE: f64 = ([0-9.]+);/);
+  if (scale) out.ship.scalePercent = Math.round(parseFloat(scale) * 100);
+  const orient = grab(/pub const VAISSEAU_ORIENTATION_DEGREES: f64 = (-?[0-9.]+);/);
+  if (orient) out.ship.orientationDeg = parseFloat(orient);
+  const cx = grab(/pub const VAISSEAU_CENTER_X_PERCENT: f64 = (-?[0-9.]+);/);
+  if (cx) out.ship.centerXPercent = parseFloat(cx);
+  const cy = grab(/pub const VAISSEAU_CENTER_Y_PERCENT: f64 = (-?[0-9.]+);/);
+  if (cy) out.ship.centerYPercent = parseFloat(cy);
+
+  // ── cosmonaute EVA (mesh, échelle, orientation, centre de rotation) ──
+  const casset = grab(/pub const COSMONAUTE_JSON: &str = include_str!\("([^"]+)"\)/);
+  if (casset) out.cosmonaut.asset = casset.replace(/^\.\.\//, "");
+  const cscale = grab(/pub const COSMONAUTE_EVA_SCALE: f64 = ([0-9.]+);/);
+  if (cscale) out.cosmonaut.scalePercent = Math.round(parseFloat(cscale) * 100);
+  const corient = grab(/pub const COSMONAUTE_ORIENTATION_DEGREES: f64 = (-?[0-9.]+);/);
+  if (corient) out.cosmonaut.orientationDeg = parseFloat(corient);
+  const ccx = grab(/pub const COSMONAUTE_CENTER_X_PERCENT: f64 = (-?[0-9.]+);/);
+  if (ccx) out.cosmonaut.centerXPercent = parseFloat(ccx);
+  const ccy = grab(/pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = (-?[0-9.]+);/);
+  if (ccy) out.cosmonaut.centerYPercent = parseFloat(ccy);
+
+  // ── lignes d'atelier (par identifiant de constante) ──
+  for (const [id, meta] of Object.entries(TRACK_META)) {
+    // format généré : doc du sujet + const des extensions + doc de la ligne +
+    // const de la ligne (label, base, tiers)
+    const strict = text.match(new RegExp(
+      "///\\s*([^\\n(]*?)\\s*\\(Progression\\)\\s*:\\s*([^\\n]*)\\n" +
+      "const " + meta.const + ": &\\[ShipUpgrade\\] = &\\[([\\s\\S]*?)\\n\\]\\s*;\\s*" +
+      "///\\s*Ligne\\s*«\\s*([^»]*)»[\\s\\S]*?" +
+      "pub const " + meta.trackConst + ": UpgradeTrack = UpgradeTrack \\{([^}]*)\\}"
+    ));
+    const tiersBlock = strict ? strict[3] : null;
+    const trackBlock = strict ? strict[5] : null;
+    if (!trackBlock) {
+      // repli : fichier édité à la main (commentaires modifiés/supprimés) — on
+      // ne lit que les constantes, le reste reprend les valeurs du jeu
+      const looseTrack = text.match(new RegExp(
+        "pub const " + meta.trackConst + ": UpgradeTrack = UpgradeTrack \\{([^}]*)\\}"
+      ));
+      const looseTiers = text.match(new RegExp(
+        "const " + meta.const + ": &\\[ShipUpgrade\\] = &\\[([\\s\\S]*?)\\n\\]\\s*;"
+      ));
+      const track = { id };
+      if (looseTrack) fillTrackFields(track, looseTrack[1]);
+      if (looseTiers) track.tiers = parseTiers(looseTiers[1]);
+      out.tracks.push(track);
+      continue;
+    }
+    const track = {
+      id,
+      subject: strict[1].trim(),
+      unit: unitFromComment(strict[2]),
+      lineTitle: strict[4].trim(),
+      tiers: parseTiers(tiersBlock),
+    };
+    fillTrackFields(track, trackBlock);
+    out.tracks.push(track);
+  }
+  return out;
+}
+
+function normalize(parsed) {
+  // reconstruit un état complet et propre à partir d'un JSON importé
+  const out = deepClone(DEFAULT_DATA);
+  parsed.tracks.forEach((t, i) => {
+    const dst = out.tracks[i];
+    if (typeof t.label === "string" && t.label) dst.label = t.label;
+    if (Number.isFinite(t.base)) dst.base = int(t.base);
+    if (typeof t.subject === "string") dst.subject = t.subject;
+    if (typeof t.lineTitle === "string") dst.lineTitle = t.lineTitle;
+    if (typeof t.unit === "string") dst.unit = t.unit;
+    if (Array.isArray(t.tiers)) {
+      dst.tiers = t.tiers.map(tier => ({
+        name: typeof tier.name === "string" ? tier.name : "EXTENSION",
+        cost: Number.isFinite(tier.cost) ? int(tier.cost) : 0,
+        bonus: Number.isFinite(tier.bonus) ? int(tier.bonus) : 0,
+      }));
+    }
+  });
+  // économie de la station (valeurs manquantes → valeurs du jeu)
+  const eco = parsed.economy || {};
+  const gems = eco.gems || {};
+  if (Number.isFinite(gems.gold)) out.economy.gems.gold = int(gems.gold);
+  if (Number.isFinite(gems.iron)) out.economy.gems.iron = int(gems.iron);
+  if (Number.isFinite(gems.water)) out.economy.gems.water = int(gems.water);
+  if (Array.isArray(eco.modes) && eco.modes.length === 3) {
+    out.economy.modes = eco.modes.map(m => (Number.isFinite(m) ? Math.max(0, m) : 0));
+  }
+  if (Number.isFinite(eco.fuelPrice)) out.economy.fuelPrice = int(eco.fuelPrice);
+  if (Number.isFinite(eco.fuelStep) && eco.fuelStep > 0) out.economy.fuelStep = eco.fuelStep;
+  if (Number.isFinite(eco.ammoPrice)) out.economy.ammoPrice = int(eco.ammoPrice);
+  if (Number.isFinite(eco.ammoStep) && eco.ammoStep > 0) out.economy.ammoStep = Math.round(eco.ammoStep);
+  // réputation (valeurs manquantes → valeurs du jeu) : poids de précision,
+  // puis rangs aux seuils triés croissants (le jeu prend le plus haut palier
+  // dont le seuil est atteint)
+  const reputation = parsed.reputation || {};
+  if (Number.isFinite(reputation.discountPrecisionWeight) && reputation.discountPrecisionWeight >= 0) {
+    out.reputation.discountPrecisionWeight = reputation.discountPrecisionWeight;
+  }
+  if (Array.isArray(reputation.ranks) && reputation.ranks.length > 0) {
+    out.reputation.ranks = reputation.ranks
+      .map(r => ({
+        threshold: Number.isFinite(r.threshold) ? Math.max(0, r.threshold) : 0,
+        name: typeof r.name === "string" && r.name ? r.name : "RANG",
+        discountPercent: Number.isFinite(r.discountPercent)
+          ? Math.max(0, Math.min(100, Math.round(r.discountPercent)))
+          : 0,
+      }))
+      .sort((a, b) => a.threshold - b.threshold);
+  }
+  // vaisseau joueur (valeurs manquantes → valeurs du jeu)
+  const ship = parsed.ship || {};
+  if (typeof ship.asset === "string" && ship.asset) out.ship.asset = ship.asset;
+  if (Number.isFinite(ship.scalePercent)) {
+    out.ship.scalePercent = Math.max(1, Math.min(1000, Math.round(ship.scalePercent)));
+  }
+  if (Number.isFinite(ship.orientationDeg)) out.ship.orientationDeg = ship.orientationDeg;
+  if (Number.isFinite(ship.centerXPercent)) {
+    out.ship.centerXPercent = Math.max(0, Math.min(100, ship.centerXPercent));
+  }
+  if (Number.isFinite(ship.centerYPercent)) {
+    out.ship.centerYPercent = Math.max(0, Math.min(100, ship.centerYPercent));
+  }
+  // cosmonaute EVA (valeurs manquantes → valeurs du jeu)
+  const cosmonaut = parsed.cosmonaut || {};
+  if (typeof cosmonaut.asset === "string" && cosmonaut.asset) out.cosmonaut.asset = cosmonaut.asset;
+  if (Number.isFinite(cosmonaut.scalePercent)) {
+    out.cosmonaut.scalePercent = Math.max(1, Math.min(1000, Math.round(cosmonaut.scalePercent)));
+  }
+  if (Number.isFinite(cosmonaut.orientationDeg)) out.cosmonaut.orientationDeg = cosmonaut.orientationDeg;
+  if (Number.isFinite(cosmonaut.centerXPercent)) {
+    out.cosmonaut.centerXPercent = Math.max(0, Math.min(100, cosmonaut.centerXPercent));
+  }
+  if (Number.isFinite(cosmonaut.centerYPercent)) {
+    out.cosmonaut.centerYPercent = Math.max(0, Math.min(100, cosmonaut.centerYPercent));
+  }
+  return out;
+}
+
+/* ─── Câblage des boutons ─────────────────────────────────────────────────── */
+
+document.getElementById("btn-download-json").addEventListener("click", downloadJson);
+document.getElementById("btn-import-json").addEventListener("click", importJson);
+document.getElementById("btn-import-rs").addEventListener("click", importRust);
+document.getElementById("btn-save-rs").addEventListener("click", saveRustFile);
+document.getElementById("btn-prev").addEventListener("click", () => nextCard(-1));
+document.getElementById("btn-next").addEventListener("click", () => nextCard(+1));
+
+// Navigation clavier : flèches ← / → = carte précédente / suivante. Ignorée
+// quand on saisit dans un champ (input, textarea, select, contenu éditable)
+// pour ne pas gêner le curseur ni la liste de suggestions d'assets.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+  e.preventDefault();
+  nextCard(e.key === "ArrowLeft" ? -1 : +1);
+});
+
+/* ─── Premier rendu ───────────────────────────────────────────────────────── */
+
+render();
+setSnapshot(); // état de départ : rien de modifié → bouton grisé
+// suggestions d'asset (mode serveur : meshes réels de assets/) — vaisseau et cosmonaute
+populateAssets("ship-assets", data.ship.asset);
+populateAssets("cosmonaut-assets", data.cosmonaut.asset);
+
+// mode serveur local : le fichier du projet (src/marketplace.rs) est chargé
+// automatiquement dès l'ouverture — aucune action nécessaire
+if (SERVER_MODE) {
+  loadProjectFile();
+}
+</script>
+</body>
+</html>

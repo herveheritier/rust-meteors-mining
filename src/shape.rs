@@ -209,6 +209,13 @@ pub struct Shape {
     /// position du météore quand il est détruit par la collision d'un autre
     /// météore. 0 hors météores.
     pub minerals: i32,
+    /// Gemme **rejetée de la soute** du vaisseau détruit (`eject_cargo_gems`) :
+    /// les météores ne l'absorbent **pas** (elle doit rester ramassable par le
+    /// cosmonaute EVA, ou le vaisseau ressuscité en Survival) — seule la
+    /// résolution de collision la ramasse (vaisseau) ou la proximité
+    /// (cosmonaute). `false` pour les gemmes libérées par un météore détruit
+    /// (`create_gem`), qui, elles, restent absorbables.
+    pub ejected_cargo: bool,
     /// Angle (radians) de balancement actuel des membres du cosmonaute EVA :
     /// poursuit la cible oscillante pendant la poussée et décroît vers 0 au
     /// repos (voir `cosmonaut::animate_eva_cosmonaut`). 0 pour les autres
@@ -244,6 +251,7 @@ impl Default for Shape {
             life: 0,
             element: 0,
             minerals: 0,
+            ejected_cargo: false,
             anim_angle: 0.0,
             show_all_parts: false,
             who_i_am: 0,

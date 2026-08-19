@@ -65,8 +65,11 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   **membres animés** : bras et jambes **s'agitent** (bascule autour des
   épaules/hanches) pendant la poussée puis retombent au repos. Il peut
   **ramasser les gemmes** par proximité (même soute que le vaisseau —
-  déchargée en minerais à la station). Son **seul objectif** : **rejoindre
-  la base** — dès qu'il atteint la zone d'accostage au centre de la
+  déchargée en minerais à la station). Au crash, les minerais collectés
+  sont **rejetés autour** du vaisseau détruit (une gemme par minerai,
+  éparpillée à proximité, soute vidée) — le cosmonaute, ou le vaisseau
+  ressuscité en Survival, peut les ramasser à nouveau. Son **seul
+  objectif** : **rejoindre la base** — dès qu'il atteint la zone d'accostage au centre de la
   station, la **récupération** s'anime : un **cordon orange** jaillit de
   l'anneau jusqu'à lui et le **ramène sur l'anneau** (~2,5 s, monde gelé,
   ondulation qui s'affaisse quand la tension monte), puis un **fondu
@@ -208,6 +211,105 @@ une sauvegarde à 0 vie repart au départ complet) ; chaque scénario n'écrit
 que ses propres clés, sans écraser la sauvegarde de l'autre. Le carburant et
 les munitions, eux, repartent pleins à chaque lancement.
 
+## Outil de gestion : la place de marché
+
+Une **application de gestion dédiée** accompagne le jeu : son but est la
+**mise au point des objets vendus sur la place de marché** accessible depuis
+la base — les extensions de vaisseau de l'atelier (bouton `UPGRADES` de la
+boîte DOCK STATION, scénario Progression).
+
+`tools/marketplace-editor/index.html` est une **page unique, autonome** (HTML
++ CSS + JS embarqués, aucune dépendance, fonctionne hors ligne en ouvrant le
+fichier dans un navigateur — comme l'éditeur « meshes-designer » pour les
+meshes) qui permet de : les cartes s'affichent **une à la fois** (navigation
+**◀/▶** en haut de page, **flèches ← / →** du clavier, ou clic direct dans
+la **liste des cartes** de l'encart de gauche, qui regroupe aussi les boutons
+d'ouverture, d'enregistrement et d'export/import JSON) ;
+
+- **éditer les trois lignes d'amélioration** (réservoir `FUEL TANK`, chargeur
+  `MAGAZINE`, soute `CARGO BAY`) : libellé Rust, capacité de base et
+  extensions successives (nom, coût en minerais, bonus de capacité), avec
+  ajout / suppression / réordonnancement des extensions ;
+- **suivre la mise au point en direct** : pour chaque ligne, la progression
+  des capacités par niveau, le coût cumulé et l'efficacité (minerais par
+  unité de bonus) ; en synthèse, le coût total pour tout maxer (converti en
+  gemmes d'or/fer/eau à ramasser) et les capacités finales ;
+- **éditer l'économie de la station** : valeur des gemmes en minerais
+  (`ELEMENT_VALUES` : or/fer/eau), coûts des modes de déplacement
+  (`MODE_COSTS` : 4 WAYS, DIRECTIONAL — INERTIAL reste gratuit au départ) et
+  prix du ravitaillement (`FUEL_PRICE`/`FUEL_STEP`, `AMMO_PRICE`/`AMMO_STEP`) ;
+- **régler la réputation** : rangs du scénario Progression (seuil de
+  réputation, nom affiché au HUD et **remise en %** sur les coûts de la
+  station — `PROGRESSION_RANKS` de `src/marketplace.rs`, lus par
+  `src/scenario.rs`) avec ajout / suppression / réordonnancement des rangs ;
+  la remise du rang atteint s'applique à **tous les coûts** : extensions
+  d'atelier, ravitaillement (carburant, munitions) et déblocage des modes de
+  déplacement — la synthèse montre le coût pour tout maxer remisé à chaque
+  rang ; la **précision de tir** amplifie la remise (poids
+  `DISCOUNT_PRECISION_WEIGHT` : remise × `1 + poids × précision`, 1.0 =
+  100 % de précision → remise doublée — la synthèse montre aussi le coût à
+  100 % de précision) ; le gain de réputation reste codé dans
+  `src/scenario.rs` : astéroïdes détruits (bonus de précision) et minerais
+  déchargés à la station (`reputation_per_mineral` — le commerce est
+  récompensé) ;
+- **régler le vaisseau joueur** : choix du mesh (`assets/*.json`, format
+  « meshes-designer », avec **aperçu en direct** sur la page — le vaisseau
+  tel qu'il volera, pivot marqué d'une croix), échelle en %, orientation en
+  degrés (angle du nez du mesh dans l'éditeur : 0 = à droite, 90 = en haut)
+  et centre de rotation en % de la boîte englobante du mesh (50/50 = centre)
+  — sur l'aperçu, la **molette** tourne le mesh (orientation),
+  **Ctrl/Cmd + molette** zoome (échelle) et le **clic** place le centre de
+  rotation au point visé ; constantes `VAISSEAU_JSON`, `VAISSEAU_SCALE`,
+  `VAISSEAU_ORIENTATION_DEGREES`, `VAISSEAU_CENTER_X/Y_PERCENT` de
+  `src/marketplace.rs`, lues par `src/vaisseau.rs` ; le mesh choisi est
+  embarqué au compile (`include_str!`), il doit exister dans le projet ;
+- **régler le cosmonaute EVA** (le pilote éjecté quand le vaisseau est
+  détruit) : même principe que le vaisseau — choix du mesh (`assets/*.json`,
+  aperçu en direct, pivot marqué d'une croix), échelle en % (150 % par
+  défaut : ~17 unités éditeur → ~26 unités monde), orientation en degrés et
+  centre de rotation en % de la boîte englobante (mêmes réglages souris :
+  molette = orientation, Ctrl/Cmd + molette = zoom, clic = centre) — constantes
+  `COSMONAUTE_JSON`, `COSMONAUTE_EVA_SCALE`, `COSMONAUTE_ORIENTATION_DEGREES`,
+  `COSMONAUTE_CENTER_X/Y_PERCENT` de `src/marketplace.rs`, lues par
+  `src/cosmonaut.rs` (l'animation bras/jambes suit le mesh) ;
+- **charger / enregistrer directement** : `src/marketplace.rs` est **chargé
+  automatiquement à l'ouverture** (mode serveur) et « 💾 Enregistrer le
+  fichier » l'écrit dans le projet (fetch GET/PUT en mode serveur, API File
+  System Access avec Chrome/Edge en fichier local, sinon sélecteur de
+  fichiers et téléchargement en repli). Le fichier **complet** est régénéré
+  (documentation, constantes économiques, rangs de réputation
+  `PROGRESSION_RANKS`, constantes `VAISSEAU_*` du vaisseau et `COSMONAUTE_*`
+  du cosmonaute EVA, types `ShipUpgrade` + `UpgradeTrack` + `ReputationRank`
+  et lignes `FUEL_UPGRADE_TRACK` … `CARGO_UPGRADE_TRACK`)
+  dans le style exact du code du jeu ; on recompile ensuite
+  (`cargo build --release` — les tests `cargo test` valident les nouvelles
+  valeurs) et `src/scenario.rs` n'a plus besoin d'être modifié : il importe
+  déjà ces données depuis `src/marketplace.rs` ;
+- **sauvegarder / restaurer** ses réglages : enregistrement automatique dans
+  le navigateur (localStorage) et export/import d'un fichier
+  `marketplace.json` ; la **carte ouverte** (vaisseau, soute, réputation…)
+  est aussi mémorisée et **retrouvée au prochain lancement** de la page.
+
+La seule constante liée non éditée par l'outil est `CARGO_SIZE`
+(`src/config.rs`, capacité de base de la soute) — rappelée en pied de page.
+
+**Serveur local** : pour charger et enregistrer `src/marketplace.rs` du projet
+directement (sans copier/coller ni API de navigateur), lancez
+
+```bash
+node tools/marketplace-editor/server.mjs
+```
+
+puis ouvrez `http://localhost:8123` — le fichier `src/marketplace.rs` est
+**chargé automatiquement** à l'ouverture (aucune action nécessaire) et
+« 💾 Enregistrer le fichier » l'écrit directement (fetch GET/PUT). Le serveur
+expose aussi la **liste des meshes** (`GET /list-assets`,
+`GET /assets/<fichier>`) pour le choix de l'asset du vaisseau et son aperçu.
+C'est la méthode recommandée avec le navigateur intégré de VSCode, qui
+n'expose pas l'API File System Access. En ouvrant la page en fichier local
+(`file://`), Chrome/Edge utilisent l'API File System Access, les autres
+navigateurs le sélecteur de fichiers classique.
+
 ## Détails techniques
 
 - Rust (édition 2021) + macroquad 0.4, sans vsync (boucle plafonnée, physique
@@ -248,6 +350,8 @@ les munitions, eux, repartent pleins à chaque lancement.
 rust-meteors-mining/
 ├── Cargo.toml              ← projet Rust (macroquad, rand, image)
 ├── assets/                 ← textures (.png/.jpg), sons (.ogg) et meshes (.json) intégrés au binaire
+├── tools/
+│   └── marketplace-editor/ ← application de gestion de la place de marché (page unique, export Rust)
 └── src/
     ├── main.rs             ← boucle principale (fenêtre 960×540, sans vsync)
     ├── config.rs           ← constantes (vue, monde torique, gameplay)

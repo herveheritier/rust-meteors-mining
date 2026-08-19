@@ -131,7 +131,6 @@ pub async fn title_loop(
         // scénario ; toute autre touche : lancement
         let mut key: Option<KeyCode> = None;
         for k in [
-            KeyCode::F,
             KeyCode::Escape,
             KeyCode::Enter,
             KeyCode::Space,
@@ -168,18 +167,22 @@ pub async fn title_loop(
                 break;
             }
         }
+        // F : détection robuste (front montant de `is_key_down` — une pression
+        // avalée par le filtre de répétition de macroquad après une bascule
+        // plein écran reste comptée, voir `game::f_pressed`)
+        //
+        // NB : on ne fait PAS `continue` ici — `keys_pressed` n'est vidé qu'à
+        // `end_frame`, atteint seulement quand la coroutine rend la main à
+        // `next_frame` : un `continue` re-testerait F à l'infini (gel avec
+        // cadre figé, boucle sans rendu). On cède une frame (le keypress est
+        // consommé), comme l'original qui relit `inkey$` (consommant) à chaque
+        // itération.
+        if game::f_pressed(state) {
+            cycle_view_mode(state);
+            next_frame().await;
+            continue;
+        }
         if let Some(k) = key {
-            if k == KeyCode::F {
-                // NB : on ne fait PAS `continue` ici — `keys_pressed` n'est vidé
-                // qu'à `end_frame`, atteint seulement quand la coroutine rend la
-                // main à `next_frame` : un `continue` re-testerait F à l'infini
-                // (gel avec cadre figé, boucle sans rendu). On cède une frame
-                // (le keypress est consommé), comme l'original qui relit
-                // `inkey$` (consommant) à chaque itération.
-                cycle_view_mode(state);
-                next_frame().await;
-                continue;
-            }
             if k == KeyCode::O {
                 // ouvre l'écran de paramétrage (mêmes initialisations que la
                 // touche O du jeu) ; sous-boucle d'input + rendu jusqu'à la

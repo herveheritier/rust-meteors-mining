@@ -14,13 +14,15 @@ use crate::audio::Sounds;
 use crate::config::*;
 use crate::cosmonaut::{animate_eva_cosmonaut, COSMONAUTE_EVA_PARK};
 use crate::garbage::{generate_garbages, moving_garbage, Garbage};
-use crate::generate::{create_alien, create_gem, create_shape, fire_bullet, release_meteor_minerals};
+use crate::generate::{
+    create_alien, create_gem, create_shape, eject_cargo_gems, fire_bullet, release_meteor_minerals,
+};
 use crate::persist;
 use crate::scenario;
 use crate::geom::{Point, Triangle};
 use crate::render::{
-    camera_for, choice_box_layout, cycle_view_mode, help_box_layout, mouse_to_game, settings_box_layout,
-    workshop_box_layout,
+    camera_for, choice_box_layout, cycle_view_mode, enter_fullscreen, help_box_layout, mouse_to_game,
+    settings_box_layout, workshop_box_layout,
 };
 use crate::shape::{
     compute_real_positions, compute_shape_center, detect_collision, moving_shape, resolve_elastic_collision,
@@ -37,6 +39,21 @@ pub enum Action {
     /// quitte.
     Restart,
     Continue,
+}
+
+/// Front montant de la touche F (mode d'affichage) : vrai une seule fois par
+/// pression physique. Plus robuste que `is_key_pressed` seul : quand le
+/// serveur X marque un KeyDown comme **répétition** (relâchement perdu
+/// pendant la bascule plein écran — `XUnmapWindow/XMapWindow` de miniquad,
+/// voir `render::enter_fullscreen`), macroquad n'ajoute pas la touche à
+/// `keys_pressed` (il avale la pression) mais `is_key_down` passe quand même
+/// à vrai — le front montant rattrape la pression. `state.f_was_down` porte
+/// l'état de la frame précédente.
+pub fn f_pressed(state: &mut GameState) -> bool {
+    let down = is_key_down(KeyCode::F);
+    let pressed = is_key_pressed(KeyCode::F) || (down && !state.f_was_down);
+    state.f_was_down = down;
+    pressed
 }
 
 /// Index de la forme **contrôlée** par le joueur : le vaisseau normalement,
@@ -228,8 +245,11 @@ pub fn update(
 
     // F : cycle des modes d'affichage — fenêtré → plein écran zoomé (render
     // target étirée) → plein écran natif (définition réelle, sans buffer) →
-    // fenêtré.
-    if is_key_pressed(KeyCode::F) {
+    // fenêtré (le HUD annonce le mode activé à chaque pression). Détection
+    // robuste (`f_pressed`) : une pression avalée par le filtre de répétition
+    // de macroquad après une bascule plein écran reste comptée — sans quoi il
+    // faut presser F deux fois pour changer de mode.
+    if f_pressed(state) {
         cycle_view_mode(state);
         state.send_message(match state.view_mode {
             ViewMode::Windowed => "WINDOWED",
@@ -509,11 +529,19 @@ fn collisions(
             let lives_before = state.resources.lives;
             match scenario::player_hit(state, 1.0) {
                 scenario::PlayerHit::Absorbed => {}
-                scenario::PlayerHit::Destroyed(_) => respawn_player(state, shapes, triangles),
+                scenario::PlayerHit::Destroyed(_) => {
+                    // les minerais collectés sont rejetés autour du crash
+                    // avant le respawn (la position du vaisseau est encore
+                    // celle du crash) — à récupérer en revenant sur place
+                    eject_cargo_gems(state, shapes, triangles, elements, rng);
+                    respawn_player(state, shapes, triangles);
+                }
                 scenario::PlayerHit::GameOver => {
-                    // dernière vie perdue : le vaisseau reste détruit
+                    // dernière vie perdue : le vaisseau reste détruit — son
+                    // chargement est rejeté autour du crash comme ailleurs
                     triangles[i].life = 0;
                     shapes[PLAYER_INDEX].life = 0;
+                    eject_cargo_gems(state, shapes, triangles, elements, rng);
                 }
             }
             // la progression Survival (vies, bouclier) est persistée quand un
@@ -529,8 +557,13 @@ fn collisions(
             // détruit par un autre météore). Le météore le plus proche de la
             // gemme est celui qui l'a percutée (`collid_by` ne porte que le
             // type, pas l'index). Une seule fois par gemme (toute la gemme
-            // est tuée au premier triangle).
-            if shapes[shape_index].life > 0 {
+            // est tuée au premier triangle). NB : une gemme **rejetée de la
+            // soute** du vaisseau détruit (`ejected_cargo`) n'est PAS absorbée
+            // — elle doit rester ramassable par le cosmonaute EVA (ou le
+            // vaisseau ressuscité en Survival), le minerai n'est pas perdu
+            // avec le crash ; sans choc élastique (météore/gemme), elle
+            // traverse simplement le météore.
+            if shapes[shape_index].life > 0 && !shapes[shape_index].ejected_cargo {
                 let gem_pos = shapes[shape_index].position;
                 if let Some(meteor) = nearest_meteor(shapes, gem_pos) {
                     shapes[meteor].minerals += 1;
@@ -542,7 +575,8 @@ fn collisions(
             }
         } else if collid_by == WHOIAM_GEM && who == WHOIAM_METEOR {
             // déjà résolu côté gemme (absorption) : le météore n'est pas
-            // endommagé en avalant la gemme
+            // endommagé en avalant la gemme (une gemme de soute, elle,
+            // traverse sans rien faire)
         } else if who == WHOIAM_PLAYER {
             // vaisseau joueur : mesh multi-triangles (35 faces) mais toujours
             // « 1 impact = détruit » (l'ancien triangle unique valait 1 vie)
@@ -564,6 +598,10 @@ fn collisions(
                 if !state.cosmonaut_active {
                     activate_cosmonaut(state, shapes, triangles);
                 }
+                // les minerais collectés sont **rejetés autour** du crash :
+                // la soute est vidée en gemmes éparpillées à proximité, que
+                // le cosmonaute pourra ramasser pour les ramener à la station
+                eject_cargo_gems(state, shapes, triangles, elements, rng);
                 // débris du crash + son d'impact (comme pour toute forme
                 // détruite — voir la branche générique ci-dessous)
                 if let Some(sounds) = sounds.as_mut() {
@@ -1404,10 +1442,10 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             let _ = persist::save_render_style(state.render_style as i32);
         }
         SettingsClick::WindowMode => {
-            // même cycle que la touche F (fenêtré → zoomé → natif) ; le
-            // mode est persisté à chaque clic
+            // même cycle que la touche F (fenêtré → zoomé → natif) — pour la
+            // session en cours uniquement (non persisté : le jeu démarre
+            // toujours fenêtré, cycle F prévisible)
             cycle_view_mode(state);
-            let _ = persist::save_window_mode(state.view_mode as i32);
         }
         SettingsClick::WindowSize => {
             state.window_size = next_window_size(state.window_size);
@@ -1524,7 +1562,6 @@ fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
         "auto_generate",
         "volume",
         "render_style",
-        "window_mode",
         "window_size",
         "antialias",
     ] {
@@ -1562,8 +1599,9 @@ fn apply_view_mode(state: &mut GameState, target: ViewMode) {
     }
     match (state.view_mode, target) {
         // fenêtré → plein écran : le chemin de rendu (zoomé ou natif) ne
-        // change que la caméra, la bascule EWMH est la même
-        (ViewMode::Windowed, _) => set_fullscreen(true),
+        // change que la caméra, la bascule EWMH est la même (entrée propre,
+        // sans l'unmap/remap de miniquad — voir `render::enter_fullscreen`)
+        (ViewMode::Windowed, _) => enter_fullscreen(),
         // déjà en plein écran : seul le chemin de rendu change
         (ViewMode::Zoomed, ViewMode::Native) | (ViewMode::Native, ViewMode::Zoomed) => {}
         // plein écran → fenêtré : REMOVE EWMH (repli : redimensionnement à
@@ -2976,5 +3014,52 @@ mod tests {
 
         assert_eq!(shapes[2].life, 1, "vaisseau intact : pas d'EVA");
         assert_eq!(state.player.cargo_qty, 0);
+    }
+
+    #[test]
+    fn ejected_cargo_gems_are_not_absorbed_by_meteors() {
+        // REGRESSION : les minerais de la soute rejetés au crash étaient
+        // absorbés par le météore du crash (encore vivant, posé sur le
+        // vaisseau détruit) AVANT que le cosmonaute ne puisse les ramasser —
+        // le minerai était perdu. Une gemme de soute (`ejected_cargo`)
+        // chevauchant un météore doit **survivre** à la collision, quand une
+        // gemme normale (minerai libéré d'un météore détruit) est absorbée.
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_GEM, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        triangles[0].element = 1; // GOLD
+        shapes[0].ejected_cargo = true; // gemme de soute (rejetée au crash)
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // la gemme de soute survit (pas absorbée), le météore n'a rien gagné
+        assert_eq!(shapes[0].life, 1, "la gemme de soute ne doit pas être absorbée");
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(shapes[1].minerals, 0);
+        assert_eq!(shapes[1].life, 1);
+
+        // une gemme NORMALE au même endroit, elle, est absorbée par le météore
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_GEM, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        triangles[0].element = 1; // GOLD
+        // ejected_cargo reste false (défaut) : la gemme est absorbée
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        assert_eq!(shapes[0].life, 0, "une gemme normale est absorbée");
+        assert_eq!(shapes[1].minerals, 1);
     }
 }

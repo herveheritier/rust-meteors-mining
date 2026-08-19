@@ -290,6 +290,9 @@ pub fn create_gem(
     shape.who_i_am = WHOIAM_GEM;
     shape.is_collider = true;
     shape.element = source_triangle.element;
+    // gemme libérée par un météore détruit : reste absorbable par un autre
+    // météore (rejette explicitement le drapeau — le slot peut être réutilisé)
+    shape.ejected_cargo = false;
     if shape.element < 1 || shape.element as usize >= elements.len() {
         eprintln!("createGem: element hors limites: {}", shape.element);
     } else {
@@ -313,6 +316,92 @@ pub fn create_gem(
     shape.radius = 10.0;
     let id = shape.id as usize;
     shapes[id] = shape;
+}
+
+/// Crée une gemme d'élément donné à une **position imposée** (ex éjection de
+/// la soute du vaisseau détruit — `eject_cargo_gems`) : même mesh, même
+/// élément et même couleur qu'`create_gem`, mais position, direction et
+/// vitesse données (au lieu d'être dérivées du triangle source).
+fn create_gem_at(
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    elements: &[Element],
+    element: i32,
+    position: Point,
+    direction: f64,
+    velocity: f64,
+) {
+    let mut shape = Shape::default();
+    let _idx = meshes_to_shape(&mut shape, shapes, triangles, GEM_MESH);
+    for i in shape.first_triangle..=shape.last_triangle {
+        triangles[i].element = element;
+    }
+    shape.who_i_am = WHOIAM_GEM;
+    shape.is_collider = true;
+    shape.element = element;
+    // gemme de soute (rejetée au crash) : les météores ne l'absorbent pas —
+    // elle doit rester ramassable par le cosmonaute / le vaisseau ressuscité
+    shape.ejected_cargo = true;
+    if element < 1 || element as usize >= elements.len() {
+        eprintln!("createGem: element hors limites: {}", element);
+    } else {
+        shape.shape_color = elements[element as usize].color;
+    }
+    shape.life = (shape.last_triangle - shape.first_triangle + 1) as i32;
+    shape.position = position;
+    shape.direction = direction;
+    shape.velocity = velocity;
+    shape.orientation = 0.0;
+    shape.rotation = 0.0;
+    shape.center = Point::new(0.0, 0.0);
+    shape.radius = 10.0;
+    let id = shape.id as usize;
+    shapes[id] = shape;
+}
+
+/// Le vaisseau vient d'être détruit : les minerais collectés dans la soute
+/// sont **rejetés autour** du crash — une gemme par minerai, éparpillée dans
+/// un cercle autour du vaisseau détruit (rayon `CARGO_EJECT_SPREAD`) avec une
+/// petite vitesse de dérive aléatoire — et la soute est vidée. Le cosmonaute
+/// EVA (jeu libre/Progression) ou le vaisseau ressuscité (Survival) peuvent
+/// les ramasser à nouveau : le minerai n'est pas perdu avec le vaisseau.
+/// Sans effet quand la soute est vide. Appelé par `game.rs` quand le
+/// vaisseau meurt (tous scénarios).
+pub fn eject_cargo_gems(
+    state: &mut GameState,
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    elements: &mut [Element],
+    rng: &mut impl Rng,
+) {
+    if state.player.cargo_qty <= 0 {
+        return;
+    }
+    // position du crash : le vaisseau détruit reste sur place (triangles
+    // morts) — les gemmes jaillissent autour de lui
+    let crash = shapes[PLAYER_INDEX].position;
+    for e in 1..elements.len() {
+        let count = elements[e].count;
+        elements[e].count = 0;
+        for _ in 0..count {
+            // position éparpillée dans un cercle autour du crash + petite
+            // vitesse de dérive : le chargement « se renverse » autour du
+            // vaisseau détruit
+            let ang = rng.gen::<f64>() * TAU;
+            let dist = CARGO_EJECT_SPREAD * rng.gen::<f64>();
+            let pos = Point::new(crash.x + ang.cos() * dist, crash.y + ang.sin() * dist);
+            create_gem_at(
+                shapes,
+                triangles,
+                elements,
+                e as i32,
+                pos,
+                rng.gen::<f64>() * TAU,            // direction de dérive aléatoire
+                0.15 + 0.35 * rng.gen::<f64>(), // vitesse : lent (facile à ramasser)
+            );
+        }
+    }
+    state.player.cargo_qty = 0;
 }
 
 /// Tire une balle depuis le vaisseau (ex `fireBullet`).
@@ -518,6 +607,63 @@ mod tests {
         release_meteor_minerals(&mut shapes, &mut triangles, &elements, 0, &mut rng);
 
         assert_eq!(shapes[0].minerals, 0);
+        assert!(!shapes.iter().any(|s| s.who_i_am == WHOIAM_GEM));
+    }
+
+    #[test]
+    fn eject_cargo_gems_spawns_one_gem_per_mineral_around_the_crash() {
+        // le vaisseau est détruit : les minerais de la soute sont rejetés en
+        // gemmes éparpillées autour du crash et la soute est vidée (le
+        // cosmonaute EVA ou le vaisseau ressuscité pourront les ramasser)
+        let mut rng = seed();
+        // vaisseau joueur (index 0) au point du crash
+        let mut player = Shape::default();
+        player.who_i_am = WHOIAM_PLAYER;
+        player.position = Point::new(100.0, 100.0);
+        let mut shapes = vec![player];
+        let mut triangles = Vec::new();
+        let mut elements = default_elements();
+        elements[1].count = 2; // GOLD ×2
+        elements[2].count = 1; // IRON ×1
+        elements[3].count = 1; // WATER ×1
+        let mut state = GameState::new();
+        state.player.cargo_qty = 4;
+
+        eject_cargo_gems(&mut state, &mut shapes, &mut triangles, &mut elements, &mut rng);
+
+        assert_eq!(state.player.cargo_qty, 0, "la soute doit être vidée");
+        assert!(elements.iter().all(|e| e.count == 0), "les compteurs doivent être remis à zéro");
+        let gems: Vec<&Shape> = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).collect();
+        assert_eq!(gems.len(), 4, "une gemme par minerai de la soute");
+        // répartition par élément conservée (2 or, 1 fer, 1 eau) et gemmes
+        // éparpillées dans le cercle de rayon CARGO_EJECT_SPREAD autour du crash
+        let mut gold = 0;
+        for s in &gems {
+            assert!((1..=3).contains(&s.element), "élément de gemme invalide");
+            if s.element == 1 {
+                gold += 1;
+            }
+            let d = (s.position.x - 100.0).hypot(s.position.y - 100.0);
+            assert!(d < CARGO_EJECT_SPREAD + 1.0, "gemme trop loin du crash : {d}");
+        }
+        assert_eq!(gold, 2);
+    }
+
+    #[test]
+    fn eject_cargo_gems_with_empty_cargo_is_a_noop() {
+        // soute vide → aucune gemme rejetée, rien ne change
+        let mut rng = seed();
+        let mut player = Shape::default();
+        player.who_i_am = WHOIAM_PLAYER;
+        player.position = Point::new(100.0, 100.0);
+        let mut shapes = vec![player];
+        let mut triangles = Vec::new();
+        let mut elements = default_elements();
+        let mut state = GameState::new();
+
+        eject_cargo_gems(&mut state, &mut shapes, &mut triangles, &mut elements, &mut rng);
+
+        assert_eq!(state.player.cargo_qty, 0);
         assert!(!shapes.iter().any(|s| s.who_i_am == WHOIAM_GEM));
     }
 

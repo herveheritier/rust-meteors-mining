@@ -22,6 +22,7 @@ mod game;
 mod garbage;
 mod generate;
 mod geom;
+mod marketplace;
 mod persist;
 mod render;
 mod scenario;
@@ -100,21 +101,16 @@ async fn main() {
         state.settings_previous_mode = mode;
     }
     // options graphiques persistées (écran de paramétrage O) : style de
-    // rendu, mode d'affichage (fenêtré / plein écran zoomé / natif) et
-    // anticrénelage (reflété par la case, l'effet étant appliqué par
-    // `window_conf`)
+    // rendu et anticrénelage (reflété par la case, l'effet étant appliqué
+    // par `window_conf`). NB : le mode d'affichage (fenêtré / plein écran
+    // zoomé / natif, touche F ou clic WINDOW de l'écran O) n'est **pas**
+    // persisté — le jeu démarre toujours fenêtré, pour que le cycle F soit
+    // prévisible (3 pressions de F = cycle complet).
     if let Some(style) = persist::load_render_style() {
         state.render_style = match style {
             1 => RenderStyle::Colored,
             2 => RenderStyle::Mesh,
             _ => RenderStyle::Textured,
-        };
-    }
-    if let Some(mode) = persist::load_window_mode() {
-        state.view_mode = match mode {
-            1 => ViewMode::Zoomed,
-            2 => ViewMode::Native,
-            _ => ViewMode::Windowed,
         };
     }
     if let Some(size) = persist::get_i32("window_size") {
@@ -246,10 +242,10 @@ async fn main() {
 
         // filet de sécurité : ré-applique le plein écran si le titre a
         // basculé (touche F) mais que la bascule n'a pas abouti avant le
-        // lancement (voir `docs/PORTAGE.md` §7)
+        // lancement (entrée propre — voir `render::enter_fullscreen`)
         if pending_fullscreen {
             pending_fullscreen = false;
-            set_fullscreen(true);
+            render::enter_fullscreen();
         }
 
         // Input + physique + collisions (mouvement, météores, pause, modes

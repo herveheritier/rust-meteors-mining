@@ -15,7 +15,8 @@
 //!   déchargées à la station) pour débloquer les autres modes de déplacement ;
 //!   chaque poussée consomme du carburant et chaque tir des munitions
 //!   (remplis à la station, contre minerais) ; détruire des astéroïdes
-//!   augmente la réputation, d'autant plus que la précision de tir est bonne.
+//!   augmente la réputation, d'autant plus que la précision de tir est bonne,
+//!   et décharger de la cargaison en rapporte aussi (commerce récompensé).
 //!   À la station, un **atelier** (bouton UPGRADES de la boîte DOCK STATION)
 //!   permet d'acheter contre minerais des **extensions de vaisseau** :
 //!   réservoir de carburant, chargeur de munitions et soute (capacités
@@ -38,7 +39,7 @@ use std::io;
 use std::path::Path;
 
 use crate::config::{
-    moving_mode_label, CARGO_SIZE, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, MOVING_MODE_INERTIAL,
+    moving_mode_label, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, MOVING_MODE_INERTIAL,
 };
 use crate::state::{Element, GameState};
 
@@ -80,54 +81,19 @@ pub struct Resources {
     pub cargo_level: i32,
 }
 
-/// Valeur en minerais d'une gemme par élément (index 1..3 = GOLD, IRON,
-/// WATER — voir `default_elements` ; 0 = sans valeur).
-pub const ELEMENT_VALUES: [i32; 4] = [0, 5, 3, 2];
-
-/// Rang de réputation : palier débloqué à partir d'un seuil de réputation,
-/// avec le nom affiché (HUD et message « RANK UP »). Ex Progression :
-/// CADET (0) → PILOT (10) → VETERAN (25) → ACE (50).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ReputationRank {
-    /// Réputation minimale pour atteindre ce rang.
-    pub threshold: f64,
-    /// Nom du rang (HUD, message « RANK UP »).
-    pub name: &'static str,
-}
-
-/// Rangs de réputation du scénario Progression (seuils croissants).
-pub const PROGRESSION_RANKS: &[ReputationRank] = &[
-    ReputationRank { threshold: 0.0, name: "CADET" },
-    ReputationRank { threshold: 10.0, name: "PILOT" },
-    ReputationRank { threshold: 25.0, name: "VETERAN" },
-    ReputationRank { threshold: 50.0, name: "ACE" },
-];
-
-/// Une extension de vaisseau achetable à l'atelier de la station (scénario
-/// Progression, bouton UPGRADES de la boîte DOCK STATION) : ajoute de la
-/// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en minerais.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ShipUpgrade {
-    /// Nom de l'extension (atelier, HUD).
-    pub name: &'static str,
-    /// Coût en minerais.
-    pub cost: i32,
-    /// Capacité ajoutée (carburant, munitions ou soute).
-    pub bonus: i32,
-}
-
-/// Une ligne d'amélioration du vaisseau (atelier) : capacité de base et
-/// extensions successives achetées **dans l'ordre** — le niveau est le nombre
-/// d'extensions possédées (`tiers[i]` s'achète au niveau `i+1`).
-#[derive(Clone, Copy, Debug)]
-pub struct UpgradeTrack {
-    /// Libellé de la ligne (atelier).
-    pub label: &'static str,
-    /// Capacité de base (niveau 0).
-    pub base: i32,
-    /// Extensions par niveau, achetées dans l'ordre.
-    pub tiers: &'static [ShipUpgrade],
-}
+/// Types et données de la place de marché — extensions de vaisseau de
+/// l'atelier de la station, économie et rangs de réputation (scénario
+/// Progression, bouton UPGRADES de la boîte DOCK STATION). Définis dans
+/// `src/marketplace.rs`, un **fichier généré** par l'outil de gestion
+/// `tools/marketplace-editor/index.html` : pour ajuster les objets vendus, les
+/// prix ou les rangs (seuils, noms, remises), régénérez ce fichier depuis
+/// l'éditeur — rien à modifier ici. Réexportés pour l'API publique du module
+/// (types, rangs, trois lignes d'atelier et constantes économiques).
+pub use crate::marketplace::{
+    ReputationRank, ShipUpgrade, UpgradeTrack, DISCOUNT_PRECISION_WEIGHT, PROGRESSION_RANKS,
+    AMMO_UPGRADE_TRACK, CARGO_UPGRADE_TRACK, FUEL_UPGRADE_TRACK, AMMO_PRICE, AMMO_STEP,
+    ELEMENT_VALUES, FUEL_PRICE, FUEL_STEP, MODE_COSTS,
+};
 
 /// Ligne d'amélioration du vaisseau à l'atelier (index des trois lignes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,50 +105,6 @@ pub enum UpgradeTrackId {
     /// Soute (cargaison de gemmes).
     Cargo,
 }
-
-/// Extensions de réservoir (Progression) : 100 → 150 → 200 → 250 unités.
-const FUEL_UPGRADES: &[ShipUpgrade] = &[
-    ShipUpgrade { name: "RÉSERVOIR SUPPLÉMENTAIRE", cost: 15, bonus: 50 },
-    ShipUpgrade { name: "RÉSERVOIR HAUTE CAPACITÉ", cost: 30, bonus: 50 },
-    ShipUpgrade { name: "RÉSERVOIR DOUBLE", cost: 60, bonus: 50 },
-];
-
-/// Extensions de chargeur (Progression) : 30 → 40 → 55 → 70 munitions.
-const AMMO_UPGRADES: &[ShipUpgrade] = &[
-    ShipUpgrade { name: "CHARGEUR ÉLARGI", cost: 10, bonus: 10 },
-    ShipUpgrade { name: "CHARGEUR HAUTE CAPACITÉ", cost: 20, bonus: 15 },
-    ShipUpgrade { name: "CHARGEUR DOUBLE", cost: 40, bonus: 15 },
-];
-
-/// Extensions de soute (Progression) : 5 → 7 → 10 emplacements.
-const CARGO_UPGRADES: &[ShipUpgrade] = &[
-    ShipUpgrade { name: "SOUTE AGRANDIE", cost: 20, bonus: 2 },
-    ShipUpgrade { name: "SOUTE HAUTE CAPACITÉ", cost: 40, bonus: 3 },
-];
-
-/// Ligne « réservoir de carburant » (atelier, Progression) : 100 de base,
-/// 3 extensions → 250 max.
-pub const FUEL_UPGRADE_TRACK: UpgradeTrack = UpgradeTrack {
-    label: "FUEL TANK",
-    base: 100,
-    tiers: FUEL_UPGRADES,
-};
-
-/// Ligne « chargeur de munitions » (atelier, Progression) : 30 de base,
-/// 3 extensions → 70 max.
-pub const AMMO_UPGRADE_TRACK: UpgradeTrack = UpgradeTrack {
-    label: "MAGAZINE",
-    base: 30,
-    tiers: AMMO_UPGRADES,
-};
-
-/// Ligne « soute » (atelier, Progression) : `CARGO_SIZE` de base,
-/// 2 extensions → 10 max.
-pub const CARGO_UPGRADE_TRACK: UpgradeTrack = UpgradeTrack {
-    label: "CARGO BAY",
-    base: CARGO_SIZE,
-    tiers: CARGO_UPGRADES,
-};
 
 /// Ligne d'amélioration vide (jeu libre, Survival : pas d'atelier).
 const EMPTY_UPGRADE_TRACK: UpgradeTrack = UpgradeTrack {
@@ -220,6 +142,13 @@ pub struct Scenario {
     pub reputation_per_asteroid: f64,
     /// Bonus de précision : gain × (1 + poids × précision), précision en 0..1.
     pub reputation_precision_weight: f64,
+    /// Réputation gagnée par minerai déchargé à la station (commerce — les
+    /// astéroïdes détruits récompensent le tir, la cargaison le commerce).
+    pub reputation_per_mineral: f64,
+    /// Poids de la précision de tir sur la remise de réputation : la remise
+    /// du rang est multipliée par `1 + poids × précision` (voir
+    /// `DISCOUNT_PRECISION_WEIGHT` de `src/marketplace.rs`).
+    pub discount_precision_weight: f64,
     /// Prix (minerais) d'un plein par pas de `fuel_step` unités.
     pub fuel_price: i32,
     /// Pas de ravitaillement en carburant (unités par plein facturé).
@@ -275,6 +204,8 @@ pub const FREE_PLAY_SCENARIO: Scenario = Scenario {
     ammo_per_shot: 0,
     mode_costs: [0; MOVING_MODE_COUNT as usize],
     reputation_per_asteroid: 0.0,    reputation_precision_weight: 0.0,
+    reputation_per_mineral: 0.0,
+    discount_precision_weight: 0.0,
     fuel_price: 0,
     fuel_step: 10.0,
     ammo_price: 0,
@@ -299,13 +230,15 @@ pub const PROGRESSION_SCENARIO: Scenario = Scenario {
     fuel_per_second: 2.0, // ~50 s de poussée continue au départ
     start_ammo: 30,
     ammo_per_shot: 1,
-    mode_costs: [0, 20, 50], // INERTIAL gratuit, 4 WAYS 20, DIRECTIONAL 50
+    mode_costs: MODE_COSTS, // INERTIAL gratuit, 4 WAYS 20, DIRECTIONAL 50 — src/marketplace.rs
     reputation_per_asteroid: 1.0,
     reputation_precision_weight: 2.0, // 100 % de précision → ×3 par astéroïde
-    fuel_price: 1,                    // 1 minerai pour 10 unités (plein = 10)
-    fuel_step: 10.0,
-    ammo_price: 1, // 1 minerai pour 5 unités (plein = 6)
-    ammo_step: 5,
+    reputation_per_mineral: 0.1, // 10 minerais déchargés → +1 de réputation
+    discount_precision_weight: DISCOUNT_PRECISION_WEIGHT, // précision sur la remise — src/marketplace.rs
+    fuel_price: FUEL_PRICE, // 1 minerai pour 10 unités — src/marketplace.rs
+    fuel_step: FUEL_STEP,
+    ammo_price: AMMO_PRICE, // 1 minerai pour 5 munitions — src/marketplace.rs
+    ammo_step: AMMO_STEP,
     lives: 0,
     shield_capacity: 0.0,
     damage_multiplier: 1.0,
@@ -330,6 +263,8 @@ pub const SURVIVAL_SCENARIO: Scenario = Scenario {
     mode_costs: [0; MOVING_MODE_COUNT as usize],
     reputation_per_asteroid: 0.0,
     reputation_precision_weight: 0.0,
+    reputation_per_mineral: 0.0,
+    discount_precision_weight: 0.0,
     fuel_price: 0,
     fuel_step: 10.0,
     ammo_price: 0,
@@ -667,6 +602,18 @@ pub fn try_fire(state: &mut GameState) -> bool {
 
 // ─── Réputation et rangs ────────────────────────────────────────────────────
 
+/// Précision de tir du joueur (0..1) : part de tirs **non perdus** — 1 = aucun
+/// tir perdu (tous les tirs ont touché un astéroïde). Sans tir : 0. Sert au
+/// gain de réputation (`on_meteor_destroyed`) et à la remise sur les coûts
+/// (`current_discount`).
+pub fn shooting_precision(state: &GameState) -> f64 {
+    if state.bullets_fired > 0 {
+        (1.0 - state.bullets_lost as f64 / state.bullets_fired as f64).max(0.0)
+    } else {
+        0.0
+    }
+}
+
 /// Réputation gagnée par un astéroïde détruit : le gain de base
 /// (`reputation_per_asteroid`) est multiplié par `1 + poids × précision` — la
 /// précision de tir (part de tirs non perdus) récompense donc les tirs
@@ -676,11 +623,7 @@ pub fn on_meteor_destroyed(state: &mut GameState) {
     if !s.has_economy {
         return;
     }
-    let precision = if state.bullets_fired > 0 {
-        (1.0 - state.bullets_lost as f64 / state.bullets_fired as f64).max(0.0)
-    } else {
-        0.0
-    };
+    let precision = shooting_precision(state);
     let before = rank_at(s.ranks, state.resources.reputation);
     state.resources.reputation +=
         s.reputation_per_asteroid * (1.0 + s.reputation_precision_weight * precision);
@@ -705,6 +648,33 @@ pub fn rank_at<'a>(ranks: &'a [ReputationRank], reputation: f64) -> Option<&'a R
 /// HUD à côté du compteur de réputation.
 pub fn current_rank(state: &GameState) -> Option<&'static str> {
     rank_at(scenario(state.scenario).ranks, state.resources.reputation).map(|r| r.name)
+}
+
+/// Remise (pourcentage 0..100) accordée sur les coûts de la station par la
+/// réputation : celle du plus haut rang atteint (0 sans rang ou table vide).
+/// Pure (tests).
+pub fn reputation_discount(ranks: &[ReputationRank], reputation: f64) -> i32 {
+    rank_at(ranks, reputation).map_or(0, |r| r.discount_percent.clamp(0, 100))
+}
+
+/// Coût après remise de réputation : `cost × (100 − remise) / 100`, arrondi à
+/// l'entier inférieur (jamais négatif). Pure (tests).
+pub fn discounted_cost(cost: i32, discount_percent: i32) -> i32 {
+    (cost * (100 - discount_percent.clamp(0, 100))) / 100
+}
+
+/// Remise du scénario courant : la remise du rang atteint (`reputation_discount`),
+/// **amplifiée par la précision de tir** — la remise est multipliée par
+/// `1 + poids × précision` (voir `discount_precision_weight` de `Scenario`) et
+/// bornée à 100 %. Sans rang ou poids nul, la précision ne change rien.
+pub fn current_discount(state: &GameState) -> i32 {
+    let s = scenario(state.scenario);
+    let base = reputation_discount(s.ranks, state.resources.reputation);
+    if base == 0 || s.discount_precision_weight <= 0.0 {
+        return base;
+    }
+    let boosted = base as f64 * (1.0 + s.discount_precision_weight * shooting_precision(state));
+    boosted.round().clamp(0.0, 100.0) as i32
 }
 
 // ─── Survie : vies, bouclier, dégâts ────────────────────────────────────────
@@ -777,13 +747,16 @@ pub fn player_hit(state: &mut GameState, damage: f64) -> PlayerHit {
 // ─── Minerais et ravitaillement ─────────────────────────────────────────────
 
 /// Décharge la soute à la station : chaque gemme est convertie en minerais
-/// selon la valeur de son élément (`ELEMENT_VALUES`). Appelé par `docking`
+/// selon la valeur de son élément (`ELEMENT_VALUES`) et rapporte de la
+/// **réputation** (`reputation_per_mineral` — le commerce est récompensé,
+/// comme le tir l'est par les astéroïdes détruits). Appelé par `docking`
 /// (déchargement automatique de l'original, au plus tard à la frame suivant
 /// la fermeture de la boîte) et par le bouton UNLOAD de la boîte DOCK STATION
 /// (déchargement immédiat — les minerais financent le REFUEL/REARM du même
 /// accostage).
 pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
-    if !has_economy(state) {
+    let s = scenario(state.scenario);
+    if !s.has_economy {
         return;
     }
     let mut gained = 0;
@@ -795,6 +768,14 @@ pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
     state.resources.minerals += gained;
     if gained > 0 {
         state.send_message(&format!("CARGO UNLOADED: +{} MINERALS", gained));
+        // réputation gagnée par minerai déchargé — un palier franchi est
+        // annoncé comme pour les astéroïdes détruits
+        let before = rank_at(s.ranks, state.resources.reputation);
+        state.resources.reputation += gained as f64 * s.reputation_per_mineral;
+        let after = rank_at(s.ranks, state.resources.reputation);
+        if after.is_some() && after != before {
+            state.send_message(&format!("RANK UP: {}", after.unwrap().name));
+        }
     }
 }
 
@@ -825,7 +806,8 @@ pub fn purchase_supplies(state: &mut GameState) -> SupplyOutcome {
     let missing_ammo = (max_ammo - state.resources.ammo).max(0);
     let fuel_cost = (missing_fuel / s.fuel_step).ceil() as i32 * s.fuel_price;
     let ammo_cost = ((missing_ammo + s.ammo_step - 1) / s.ammo_step) * s.ammo_price;
-    let cost = fuel_cost + ammo_cost;
+    // remise de réputation appliquée au total du ravitaillement
+    let cost = discounted_cost(fuel_cost + ammo_cost, current_discount(state));
     if cost == 0 {
         return SupplyOutcome::Full;
     }
@@ -859,7 +841,8 @@ pub fn locked_cost(state: &GameState, mode: i32) -> Option<i32> {
         return None;
     }
     let cost = scenario(state.scenario).mode_costs[m];
-    (cost > 0).then_some(cost)
+    // remise de réputation appliquée au déblocage des modes payants
+    (cost > 0).then_some(discounted_cost(cost, current_discount(state)))
 }
 
 /// Sélectionne un mode de déplacement dans l'écran de paramétrage : débloqué
@@ -949,10 +932,15 @@ pub fn upgrade_line(state: &GameState, track: UpgradeTrackId) -> UpgradeLine {
         UpgradeTrackId::Ammo => (s.ammo_upgrades, state.resources.ammo_level, ammo_capacity(state)),
         UpgradeTrackId::Cargo => (s.cargo_upgrades, state.resources.cargo_level, cargo_capacity(state)),
     };
+    let mut next = next_upgrade(&upgrades, level).copied();
+    // le coût affiché à l'atelier est le coût réellement payé (remisé)
+    if let Some(u) = &mut next {
+        u.cost = discounted_cost(u.cost, current_discount(state));
+    }
     UpgradeLine {
         label: upgrades.label,
         capacity,
-        next: next_upgrade(&upgrades, level).copied(),
+        next,
     }
 }
 
@@ -987,14 +975,17 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
         Some(u) => u,
         None => return UpgradeOutcome::Maxed,
     };
-    if state.resources.minerals < next.cost {
+    // la réputation remise les coûts de la station (atelier, ravitaillement,
+    // modes) : le prix affiché et payé est le coût remisé
+    let cost = discounted_cost(next.cost, current_discount(state));
+    if state.resources.minerals < cost {
         state.send_message(&format!(
             "NOT ENOUGH MINERALS FOR {} ({} NEEDED)",
-            next.name, next.cost
+            next.name, cost
         ));
-        return UpgradeOutcome::Insufficient(next.cost);
+        return UpgradeOutcome::Insufficient(cost);
     }
-    state.resources.minerals -= next.cost;
+    state.resources.minerals -= cost;
     match track {
         UpgradeTrackId::Fuel => {
             state.resources.fuel_level += 1;
@@ -1009,8 +1000,8 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
             state.player.cargo_size = cargo_capacity(state);
         }
     }
-    state.send_message(&format!("{} PURCHASED: -{} MINERALS", next.name, next.cost));
-    UpgradeOutcome::Purchased(next.cost)
+    state.send_message(&format!("{} PURCHASED: -{} MINERALS", next.name, cost));
+    UpgradeOutcome::Purchased(cost)
 }
 
 // ─── Persistance de la progression ──────────────────────────────────────────
@@ -1673,6 +1664,29 @@ mod tests {
     }
 
     #[test]
+    fn cargo_unload_grants_reputation_and_rank_up() {
+        // le commerce est récompensé : chaque minerai déchargé rapporte de la
+        // réputation (0,1 en Progression) — 100 minerais → +10 → le seuil
+        // PILOT (10) est franchi, « RANK UP: PILOT » est annoncé
+        let mut s = progression_state();
+        let mut elements = default_elements();
+        elements[1].count = 20; // GOLD ×20 = 100 minerais
+        unload_cargo(&mut s, &elements);
+        assert_eq!(s.resources.minerals, 100);
+        assert!(
+            (s.resources.reputation - 10.0).abs() < 1e-9,
+            "réputation {}",
+            s.resources.reputation
+        );
+        assert!(s.message_queue.contains("RANK UP: PILOT"));
+
+        // en jeu libre, pas d'économie : ni minerais ni réputation
+        let mut f = GameState::new();
+        unload_cargo(&mut f, &elements);
+        assert_eq!(f.resources.reputation, 0.0);
+    }
+
+    #[test]
     fn supplies_are_purchased_and_charge_minerals() {
         // réservoir à moitié vide : plein payé au pas (10 carburant = 1
         // minerai, 5 munitions = 1) et déduit des minerais
@@ -1946,13 +1960,13 @@ mod tests {
         // bornée au nombre d'extensions ; la prochaine extension est celle du
         // niveau courant, `None` au max
         assert_eq!(track_capacity(&FUEL_UPGRADE_TRACK, 0), 100);
-        assert_eq!(track_capacity(&FUEL_UPGRADE_TRACK, 1), 150);
-        assert_eq!(track_capacity(&FUEL_UPGRADE_TRACK, 3), 250);
-        assert_eq!(track_capacity(&FUEL_UPGRADE_TRACK, 99), 250); // borné
+        assert_eq!(track_capacity(&FUEL_UPGRADE_TRACK, 1), 130);
+        assert_eq!(track_capacity(&FUEL_UPGRADE_TRACK, 3), 220);
+        assert_eq!(track_capacity(&FUEL_UPGRADE_TRACK, 99), 220); // borné
         assert_eq!(track_capacity(&AMMO_UPGRADE_TRACK, 2), 55);
         assert_eq!(track_capacity(&CARGO_UPGRADE_TRACK, 2), 10); // 5 + 2 + 3
         assert_eq!(track_capacity(&EMPTY_UPGRADE_TRACK, 3), 0);
-        assert_eq!(next_upgrade(&FUEL_UPGRADE_TRACK, 0).unwrap().cost, 15);
+        assert_eq!(next_upgrade(&FUEL_UPGRADE_TRACK, 0).unwrap().cost, 10);
         assert_eq!(next_upgrade(&FUEL_UPGRADE_TRACK, 3), None); // max
     }
 
@@ -1966,12 +1980,12 @@ mod tests {
         assert_eq!(fuel_capacity(&s), 100.0);
         assert_eq!(
             buy_upgrade(&mut s, UpgradeTrackId::Fuel),
-            UpgradeOutcome::Purchased(15)
+            UpgradeOutcome::Purchased(10)
         );
         assert_eq!(s.resources.fuel_level, 1);
-        assert_eq!(s.resources.minerals, 35);
-        assert_eq!(fuel_capacity(&s), 150.0);
-        assert_eq!(s.resources.fuel, 150.0); // plein à la nouvelle capacité
+        assert_eq!(s.resources.minerals, 40);
+        assert_eq!(fuel_capacity(&s), 130.0);
+        assert_eq!(s.resources.fuel, 130.0); // plein à la nouvelle capacité
         assert!(s.message_queue.contains("PURCHASED"));
 
         assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Cargo), UpgradeOutcome::Purchased(20));
@@ -1986,7 +2000,7 @@ mod tests {
         // niveau max : plus d'achat ; hors scénario à économie : pas d'atelier
         let mut s = progression_state();
         s.resources.minerals = 5;
-        assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Fuel), UpgradeOutcome::Insufficient(15));
+        assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Fuel), UpgradeOutcome::Insufficient(10));
         assert_eq!(s.resources.fuel_level, 0);
         assert!(s.message_queue.contains("NOT ENOUGH MINERALS"));
 
@@ -1998,6 +2012,97 @@ mod tests {
         let mut f = GameState::new(); // jeu libre : pas d'atelier
         assert_eq!(buy_upgrade(&mut f, UpgradeTrackId::Fuel), UpgradeOutcome::Maxed);
         assert_eq!(f.resources.fuel_level, 0);
+    }
+
+    #[test]
+    fn reputation_discount_comes_from_the_highest_rank_reached() {
+        // la remise est celle du plus haut rang dont le seuil est atteint ;
+        // sans rang (table vide) ou réputation nulle : 0
+        assert_eq!(reputation_discount(PROGRESSION_RANKS, 0.0), 0);
+        assert_eq!(reputation_discount(PROGRESSION_RANKS, 9.9), 0);
+        assert_eq!(reputation_discount(PROGRESSION_RANKS, 10.0), 5);
+        assert_eq!(reputation_discount(PROGRESSION_RANKS, 24.9), 5);
+        assert_eq!(reputation_discount(PROGRESSION_RANKS, 25.0), 10);
+        assert_eq!(reputation_discount(PROGRESSION_RANKS, 49.9), 10);
+        assert_eq!(reputation_discount(PROGRESSION_RANKS, 50.0), 15);
+        assert_eq!(reputation_discount(PROGRESSION_RANKS, 999.0), 15);
+        assert_eq!(reputation_discount(&[], 999.0), 0);
+    }
+
+    #[test]
+    fn precision_boosts_the_reputation_discount() {
+        // la remise du rang est multipliée par (1 + poids × précision) :
+        // ACE (−15 %) avec poids 1.0 → 0 % de précision : 15 %, 50 % : ~22 %,
+        // 100 % : 30 % — sans tir, la précision vaut 0
+        let mut s = progression_state();
+        s.resources.reputation = 50.0; // ACE
+        assert_eq!(current_discount(&s), 15);
+
+        s.bullets_fired = 10;
+        s.bullets_lost = 5; // précision 0,5 → 15 × 1,5 = 22,5 → 23 (arrondi)
+        assert_eq!(current_discount(&s), 23);
+
+        s.bullets_lost = 0; // précision 1,0 → 15 × 2 = 30
+        assert_eq!(current_discount(&s), 30);
+
+        // sans rang (CADET, remise 0) ou poids nul, la précision ne change
+        // rien ; jeu libre : pas de remise du tout
+        s.resources.reputation = 0.0;
+        s.bullets_lost = 0;
+        assert_eq!(current_discount(&s), 0);
+        s.resources.reputation = 50.0;
+        let mut f = GameState::new(); // jeu libre
+        f.bullets_fired = 10;
+        assert_eq!(current_discount(&f), 0);
+
+        // la remise amplifiée est appliquée aux coûts payés (atelier)
+        s.resources.reputation = 50.0;
+        s.bullets_fired = 10;
+        s.bullets_lost = 0; // 30 % de remise
+        s.resources.minerals = 1000;
+        let outcome = buy_upgrade(&mut s, UpgradeTrackId::Ammo);
+        assert_eq!(outcome, UpgradeOutcome::Purchased(7)); // 10 × 70 % = 7
+    }
+
+    #[test]
+    fn discounted_cost_is_rounded_down_and_never_negative() {
+        // coût × (100 − remise) / 100, arrondi à l'entier inférieur — la
+        // remise est bornée 0..100
+        assert_eq!(discounted_cost(10, 0), 10);
+        assert_eq!(discounted_cost(10, 5), 9); // 9,5 → 9
+        assert_eq!(discounted_cost(20, 15), 17); // 17,0
+        assert_eq!(discounted_cost(100, 100), 0);
+        assert_eq!(discounted_cost(50, -5), 50); // remise bornée à 0
+        assert_eq!(discounted_cost(50, 120), 0); // remise bornée à 100
+    }
+
+    #[test]
+    fn reputation_discounts_upgrade_supplies_and_mode_costs() {
+        // rang ACE (−15 %) : la remise s'applique à tous les coûts de la
+        // station — atelier, ravitaillement et déblocage des modes
+        let mut s = progression_state();
+        s.resources.minerals = 1000;
+        s.resources.reputation = 50.0;
+
+        // atelier : extension de réservoir 10 → 8 (10 × 85 % = 8,5 → 8), et
+        // l'atelier affiche le prix remisé
+        assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Fuel), UpgradeOutcome::Purchased(8));
+        assert_eq!(s.resources.minerals, 992);
+        let line = upgrade_line(&s, UpgradeTrackId::Ammo);
+        assert_eq!(line.next.map(|u| u.cost), Some(8), "prix affiché remisé (10 → 8)");
+
+        // ravitaillement : 13 pas de carburant (130/10) + 6 pas de munitions
+        // (30/5) = 19 → 16 remisés
+        s.resources.fuel = 0.0;
+        s.resources.ammo = 0;
+        assert_eq!(purchase_supplies(&mut s), SupplyOutcome::Purchased(16));
+        assert_eq!(s.resources.minerals, 976);
+
+        // modes payants : 4 WAYS 20 → 17
+        assert_eq!(locked_cost(&s, MOVING_MODE_4_WAYS), Some(17));
+        s.resources.minerals = 1000;
+        assert!(try_select_mode(&mut s, MOVING_MODE_4_WAYS));
+        assert_eq!(s.resources.minerals, 983);
     }
 
     #[test]
@@ -2037,7 +2142,7 @@ mod tests {
         assert_eq!(t.resources.fuel_level, 2);
         assert_eq!(t.resources.ammo_level, 1);
         assert_eq!(t.resources.cargo_level, 1);
-        assert_eq!(t.resources.fuel, 200.0); // 100 + 2×50
+        assert_eq!(t.resources.fuel, 170.0); // 100 + 30 + 40
         assert_eq!(t.resources.ammo, 40); // 30 + 10
         assert_eq!(t.player.cargo_size, 7); // 5 + 2
         assert_eq!(t.resources.minerals, 77);
@@ -2046,7 +2151,7 @@ mod tests {
         let mut u = progression_state();
         load_progression_from(&p, &mut u);
         assert_eq!(u.resources.fuel_level, 3); // borné au max d'extensions
-        assert_eq!(u.resources.fuel, 250.0);
+        assert_eq!(u.resources.fuel, 220.0);
         let _ = std::fs::remove_file(&p);
     }
 }

@@ -275,6 +275,11 @@ pub struct GameState {
     pub show_info: bool,
     /// Dernier keycode pressé (affiché par le mode I, ex `keycode = inp(96)`).
     pub last_keycode: i32,
+    /// État de la touche F à la frame précédente (front montant de
+    /// `is_key_down` — voir `game::f_pressed`) : détecte la pression même
+    /// quand macroquad l'a avalée comme « répétition » (relâchement perdu
+    /// pendant la bascule plein écran).
+    pub f_was_down: bool,
     // messages (ex sendMessage/drawMessage, voir mainLoop.bas)
     pub message_delay: f64,
     pub message: String,
@@ -339,6 +344,7 @@ impl GameState {
             show_data: false,
             show_info: false,
             last_keycode: 0,
+            f_was_down: false,
             message_delay: 0.0,
             message: String::new(),
             message_queue: String::new(),
