@@ -37,17 +37,6 @@ pub const DRAW_MAXY: f64 = WORLD_MAXY - EXTERNAL_BORDER + 100.0; // 640
 pub const STARS_COUNT: usize = 100_000;
 pub const STARS_LAYERS: i32 = 15;
 
-/// Plafond du nombre de météores.
-pub const SHAPES_COUNT: i32 = 150;
-
-/// Génération procédurale des météores.
-pub const TRIANGLES_IN_SHAPE_MIN: i32 = 6;
-pub const TRIANGLES_IN_SHAPE_MAX: i32 = 16;
-pub const TRIANGLE_BASE_MIN: i32 = 15;
-pub const TRIANGLE_BASE_MAX: i32 = 40;
-pub const TRIANGLE_HEIGHT_MIN: i32 = 11;
-pub const TRIANGLE_HEIGHT_MAX: i32 = 22;
-
 /// FPS visé par la boucle QB64 (le rendu plafonne bien plus bas).
 pub const ATTEMPT_FPS: i32 = 600;
 
@@ -171,10 +160,6 @@ pub const PLAYER_ROTATION_SPEED: f64 = TAU / 210.0;
 pub const PLAYER_FIRE_COOLDOWN: f64 = 1.0 / 3.0;
 /// Cargo du joueur.
 pub const CARGO_SIZE: i32 = 5;
-/// Nombre initial de météores max, +1 par météore détruit, plafonné à SHAPES_COUNT.
-pub const INITIAL_MAX_METEOR_SHAPES: i32 = 15;
-/// Vitesse maximale des météores (`2*rnd`).
-pub const METEOR_VELOCITY_MAX: f64 = 2.0;
 /// Rayon (unités monde) de la zone d'accostage de la station : le vaisseau
 /// accoste quand son **centre** entre dans ce cercle (vérification circulaire
 /// dans `docking`). Élargie par rapport à l'original (5 px) pour dépasser le
@@ -254,9 +239,6 @@ pub const STATION_UV_R_INNER: f64 = 90.0;
 pub const STATION_UV_R_OUTER: f64 = 163.0;
 pub const STATION_UV_INNER: f64 = 0.36;
 pub const STATION_UV_OUTER: f64 = 0.48;
-/// Débris générés par triangle détruit.
-pub const GARBAGE_PER_TRIANGLE: usize = 12;
-
 /// Zoom avant appliqué à la texture des météores (`meteor_surface_tile.jpg`,)
 /// par rapport à la formule d'origine (`ratio = tw / larger`, une tuile par
 /// météore). Sans zoom, la tuile 1254 px est compressée dans la taille du

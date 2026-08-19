@@ -204,6 +204,11 @@
   }
   .ship-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
   .ship-fields .field { margin: 0; }
+  /* le sélecteur d'asset principal (en-tête vaisseau/cosmonaute) vit dans la
+     colonne étroite à côté de l'aperçu (280 px fixes) : il se réduit à la
+     largeur disponible au lieu de déborder (scrolling horizontal) */
+  .ship-fields .asset-picker { width: 100%; min-width: 0; }
+  .ship-fields select.asset-select { width: 100%; min-width: 0; max-width: none; }
 
   h3.section {
     font-size: 12px;
@@ -248,6 +253,49 @@
   .preview td.max { color: var(--accent); font-weight: 600; }
   .eff { color: var(--orange); font-size: 12px; }
   .warn { color: var(--gold); }
+
+  .card-section { margin-top: 16px; }
+  .card-section table { margin-top: 8px; }
+  .card-section .plane-name { font-weight: 600; margin-right: 8px; }
+  .card-section .plane-meta { font-size: 11px; color: var(--muted); }
+  .card-section select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 13px;
+  }
+  /* sélecteur d'asset (mesh) : liste des fichiers JSON de assets/ — même
+     allure qu'un champ texte (fond, bordure, largeur), la flèche native du
+     select signale la liste déroulante */
+  select.asset-select {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 13px;
+    max-width: 260px;
+    min-width: 200px;
+    font-family: var(--mono);
+  }
+  .asset-picker input {
+    width: 100%;
+  }
+  .asset-picker { display: inline-block; min-width: 200px; }
+  .card-section td .grow input { width: 64px; }
+  .spawns-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .spawn-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+  .spawn-row .field { flex: 0 0 auto; }
+  .spawn-row .field input { width: 64px; }
+  .spawn-idx { color: var(--muted); font-size: 12px; width: 26px; }
+  /* ligne du catalogue d'armes : beaucoup de champs (8 par arme) — les champs
+     se partagent la largeur disponible et passent à la ligne au lieu de
+     déborder (scrolling horizontal) */
+  .spawn-row.weapon-row .field { flex: 1 1 auto; min-width: 150px; }
+  .spawn-row.weapon-row .field input, .spawn-row.weapon-row .field select { width: 100%; }
+  .spawn-row.weapon-row .field .asset-picker { width: 100%; min-width: 0; }
 
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 10px; }
   .summary .kv .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
@@ -294,6 +342,56 @@
     z-index: 10;
   }
   .toast.show { opacity: 1; }
+
+  /* Console cargo (mode serveur local) : lance cargo test / cargo run et
+     affiche la sortie en direct (flux chunké du serveur). */
+  .cargo-console {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 40;
+    background: #0a0e16;
+    border-top: 1px solid var(--border);
+    max-height: 42vh;
+    display: flex;
+    flex-direction: column;
+    font-size: 12px;
+  }
+  .cargo-console.collapsed { max-height: 40px; }
+  .cargo-console.collapsed .cargo-out { display: none; }
+  .cargo-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .cargo-bar .title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-right: auto;
+  }
+  .cargo-bar button { padding: 4px 10px; font-size: 12px; }
+  .cargo-status { font-size: 12px; color: var(--muted); }
+  .cargo-status.busy { color: var(--accent); }
+  .cargo-status.fail { color: var(--red); }
+  .cargo-out {
+    margin: 0;
+    padding: 8px 12px;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #cfe0d5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .cargo-out:empty::before {
+    content: "Aucune commande lancée — cargo test / cargo run (mode serveur local requis).";
+    color: var(--muted);
+  }
+  body.has-console { padding-bottom: 320px; }
 </style>
 </head>
 <body>
@@ -348,9 +446,22 @@
     <code>MODE_COSTS</code>, <code>FUEL_PRICE</code>/<code>FUEL_STEP</code>,
     <code>AMMO_PRICE</code>/<code>AMMO_STEP</code>), les rangs de réputation
     (<code>PROGRESSION_RANKS</code> : seuils, noms et remises — lus par <code>src/scenario.rs</code>),
+    les météores (force de réaction à la base <code>METEOR_STATION_RESTITUTION</code>,
+    débris par explosion <code>GARBAGE_PER_TRIANGLE</code>, vitesse et génération
+    <code>METEOR_VELOCITY_MAX</code>/<code>TRIANGLES_IN_SHAPE_*</code>/<code>TRIANGLE_*</code>,
+    population <code>INITIAL_MAX_METEOR_SHAPES</code>/<code>SHAPES_COUNT</code> — lus par
+    <code>src/game.rs</code>, <code>src/garbage.rs</code>, <code>src/generate.rs</code>,
+    <code>src/state.rs</code>),
     le vaisseau joueur
     (<code>VAISSEAU_JSON</code>, <code>VAISSEAU_SCALE</code>, <code>VAISSEAU_ORIENTATION_DEGREES</code>,
-    <code>VAISSEAU_CENTER_X/Y_PERCENT</code> — lus par <code>src/vaisseau.rs</code>) et le cosmonaute EVA
+    <code>VAISSEAU_CENTER_X/Y_PERCENT</code>, <code>VAISSEAU_BULLET_SPAWNS</code> — emplacements de
+    départ des projectiles, en % de la boîte englobante : une balle part de chaque emplacement au
+    tir, tournée avec le vaisseau ; vide = un seul emplacement au centre de rotation — et le
+    <b>catalogue d'armes</b> <code>VAISSEAU_WEAPONS</code> : chaque arme est un mesh posé sur le
+    vaisseau à un emplacement de tir (<code>spawn_index</code> dans
+    <code>VAISSEAU_BULLET_SPAWNS</code> — liste contrainte) et tire sa propre munition (mesh) ;
+    toutes les armes tirent ensemble, catalogue vide = tir classique — lus par
+    <code>src/vaisseau.rs</code> et <code>src/generate.rs</code>) et le cosmonaute EVA
     (<code>COSMONAUTE_JSON</code>, <code>COSMONAUTE_EVA_SCALE</code>,
     <code>COSMONAUTE_ORIENTATION_DEGREES</code>, <code>COSMONAUTE_CENTER_X/Y_PERCENT</code> — lus par
     <code>src/cosmonaut.rs</code>) de
@@ -371,16 +482,33 @@
     (sans sélecteur de fichiers ni API particulière).
   </p>
   <p>
+    <b>Console cargo (serveur local uniquement)</b> : la barre en bas de page lance
+    <code>cargo test</code> (vérifie les constantes exportées) ou <code>cargo run</code>
+    (compile puis ouvre le jeu — la console reste ouverte tant que le jeu tourne) et affiche
+    la sortie en direct, avec un bouton <b>■ Arrêter</b> pour couper la commande. Enregistrez
+    d'abord (💾) pour tester les valeurs affichées. En ouvrant la page en fichier local
+    (<code>file://</code>), la console est masquée.
+  </p>
+  <p>
     <b>Constante liée (non éditée ici)</b> : <code>CARGO_SIZE = 5</code> dans
     <code>src/config.rs</code> (capacité de base de la soute, référencée par
     <code>CARGO_UPGRADE_TRACK</code>).
   </p>
 </footer>
 
-<datalist id="ship-assets"></datalist>
-<datalist id="cosmonaut-assets"></datalist>
-
 <div class="toast" id="toast"></div>
+
+<div class="cargo-console" id="cargo-console" hidden>
+  <div class="cargo-bar">
+    <span class="title">Console cargo</span>
+    <button id="btn-cargo-test" title="Lance cargo test dans le projet (sortie en direct)">▶ cargo test</button>
+    <button id="btn-cargo-run" title="Compile puis lance le jeu (cargo run)">▶ cargo run</button>
+    <button id="btn-cargo-stop" title="Arrête la commande cargo en cours" disabled>■ Arrêter</button>
+    <span class="cargo-status" id="cargo-status"></span>
+    <button id="btn-cargo-collapse" title="Réduire / agrandir la console">▾</button>
+  </div>
+  <pre class="cargo-out" id="cargo-out"></pre>
+</div>
 
 <script>
 "use strict";
@@ -438,6 +566,22 @@ const DEFAULT_DATA = {
     ammoPrice: 1,
     ammoStep: 5,
   },
+  gameplay: {
+    // collisions météore / station
+    restitution: 1.0, // METEOR_STATION_RESTITUTION — force de réaction (rebond)
+    debrisPerTriangle: 12, // GARBAGE_PER_TRIANGLE — débris par triangle explosé
+    // génération procédurale des météores
+    meteorVelocityMax: 2.0, // METEOR_VELOCITY_MAX
+    trianglesMin: 6, // TRIANGLES_IN_SHAPE_MIN
+    trianglesMax: 16, // TRIANGLES_IN_SHAPE_MAX
+    baseMin: 15, // TRIANGLE_BASE_MIN
+    baseMax: 40, // TRIANGLE_BASE_MAX
+    heightMin: 11, // TRIANGLE_HEIGHT_MIN
+    heightMax: 22, // TRIANGLE_HEIGHT_MAX
+    // population de météores
+    initialMax: 15, // INITIAL_MAX_METEOR_SHAPES
+    shapesCount: 150, // SHAPES_COUNT — plafond dur
+  },
   reputation: {
     // rangs : seuil de réputation, nom affiché et remise (%) sur les coûts
     // de la station (atelier, ravitaillement, modes) dès ce rang atteint
@@ -457,6 +601,34 @@ const DEFAULT_DATA = {
     orientationDeg: 0, // angle du nez du mesh dans l'éditeur (0 = droite, +90 = haut)
     centerXPercent: 50, // centre de rotation, % de la largeur du mesh (50 = centre)
     centerYPercent: 50, // centre de rotation, % de la hauteur du mesh
+    // emplacements de départ des projectiles (tir Shift) : positions en % de
+    // la boîte englobante de la composition (50/50 = centre), une balle part
+    // de chaque emplacement. Vide = un seul emplacement au centre de rotation.
+    bulletSpawns: [], // [{ x, y }, …]
+    // catalogue d'armes : chaque arme est un mesh posé sur le vaisseau à un
+    // emplacement de tir (`spawnIndex` dans bulletSpawns — liste contrainte,
+    // la position de l'arme sur le vaisseau) et tire sa propre munition
+    // (mesh de la munition). Toutes les armes tirent ensemble au Shift.
+    // Vide = tir classique (une balle rouge par emplacement, repli).
+    weapons: [
+      // {
+      //   name: "CANON LASER",
+      //   asset: "assets/canon.json", // mesh de l'arme
+      //   scalePercent: 100,
+      //   orientationDeg: 0,
+      //   spawnIndex: 0, // index dans bulletSpawns
+      //   ammoAsset: "assets/laser.json", // mesh de la munition
+      //   ammoScalePercent: 100,
+      //   ammoOrientationDeg: 0,
+      // },
+    ],
+    // composition des plans du mesh (indices de file.planes) : règle par plan
+    // — « always » (toujours visible), « excluded » (jamais construit) ou
+    // « upgrade » (lié à une ligne d'atelier, visible à partir de son niveau
+    // minLevel). `null` = composition non définie (tous les plans visibles) ;
+    // matérialisé au premier réglage, rattaché au mesh via `planesForAsset`.
+    planes: null,
+    planesForAsset: null,
   },
   cosmonaut: {
     asset: "assets/cosmonaute.json", // mesh « meshes-designer » du cosmonaute EVA
@@ -464,6 +636,8 @@ const DEFAULT_DATA = {
     orientationDeg: 0, // angle de l'avant du mesh dans l'éditeur (0 = droite, +90 = haut)
     centerXPercent: 50, // centre de rotation, % de la largeur du mesh (50 = centre)
     centerYPercent: 50, // centre de rotation, % de la hauteur du mesh
+    planes: null, // composition des plans (indices) : « always » / « excluded »
+    planesForAsset: null,
   },
 };
 
@@ -589,6 +763,7 @@ const VIEWS = [
   { id: "cargo", label: "Soute", build: () => trackCard(trackById("cargo")) },
   { id: "economy", label: "Économie de la station", build: economyCard },
   { id: "reputation", label: "Réputation", build: reputationCard },
+  { id: "gameplay", label: "Météores & collisions", build: gameplayCard },
   { id: "summary", label: "Vue de mise au point — synthèse", build: summaryCard },
 ];
 
@@ -802,31 +977,71 @@ function trackCard(track) {
 // à chaque frappe. `null` = à recharger (asset changé).
 let meshCache = null;
 
+// Pool des meshes du catalogue d'armes (asset → mesh) : le mesh du vaisseau
+// (carte affichée) vit dans `meshCache` — chaque arme et chaque munition ont
+// leur propre asset, chargé à la demande pour l'aperçu (dessin des armes sur
+// le vaisseau à leur emplacement) et la composition éventuelle.
+const weaponMeshPool = {}; // « assets/xxx.json » → mesh
+
+// Charge un mesh d'arme / munition dans le pool (mode serveur : fetch de
+// assets/ ; mode fichier : aucun asset supplémentaire n'est lisible — l'arme
+// n'est alors pas dessinée, seule sa position est marquée).
+async function ensureWeaponMesh(asset) {
+  const key = String(asset);
+  if (weaponMeshPool[key]) return weaponMeshPool[key];
+  if (!SERVER_MODE) {
+    weaponMeshPool[key] = null;
+    return null;
+  }
+  try {
+    const res = await fetch("/assets/" + encodeURIComponent(key.split("/").pop()));
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const mesh = parseMeshJson(await res.text());
+    weaponMeshPool[key] = mesh;
+    return mesh;
+  } catch (_) {
+    weaponMeshPool[key] = null;
+    return null;
+  }
+}
+
+// La carte de composition a-t-elle déjà été rendue avec le mesh courant ?
+// (`refreshMeshPreview` re-rend la carte une fois le mesh chargé en
+// asynchrone — le drapeau évite la boucle de re-rendu, le mesh revenant
+// ensuite immédiatement du cache.) Réinitialisé quand le mesh change.
+let compositionRenderedFor = null; // « ship » | « cosmonaut »
+
 function parseMeshJson(text) {
   const file = JSON.parse(text);
   if (!Array.isArray(file.planes) || file.planes.length === 0) {
     throw new Error("fichier « meshes-designer » attendu (champ planes)");
   }
+  const planes = [];
   const tris = [];
   for (const pl of file.planes) {
     const verts = pl.verts || [];
+    const ptris = [];
     for (const f of pl.faces || []) {
       const [i, j, k] = f.v;
       if (verts[i] && verts[j] && verts[k]) {
         // couleur RGBA (flottants 0..1) — canal alpha conservé (l'aperçu
         // l'applique, comme `rgba_to_argb` du jeu) ; faces non peintes :
         // gris opaque, comme `DEFAULT_FACE_COLOR` de src/vaisseau.rs
-        tris.push({ a: verts[i], b: verts[j], c: verts[k], color: f.color || [0.8, 0.8, 0.8, 1.0] });
+        const t = { a: verts[i], b: verts[j], c: verts[k], color: f.color || [0.8, 0.8, 0.8, 1.0] };
+        tris.push(t);
+        ptris.push(t);
       }
     }
+    planes.push({ name: typeof pl.name === "string" ? pl.name : "", verts: verts.length, faces: ptris.length, tris: ptris });
   }
-  return { tris };
+  return { tris, planes };
 }
 
 // Charge le mesh de l'asset choisi (mode serveur : assets/ du projet ; en
 // mode fichier, seul un mesh importé manuellement est disponible).
 async function ensureMesh(asset) {
   if (meshCache && meshCache.asset === asset) return meshCache.mesh;
+  compositionRenderedFor = null; // nouveau mesh : la carte sera re-rendue
   if (!SERVER_MODE) {
     meshCache = { asset, mesh: null };
     return null;
@@ -843,12 +1058,72 @@ async function ensureMesh(asset) {
   }
 }
 
+// Composition des plans : règle par plan du mesh. `null` = non définie
+// (tous les plans visibles). La composition est rattachée au mesh (`asset`)
+// qui l'a vue naître : changer d'asset la rend inopérante sans l'effacer —
+// revenir au mesh d'origine la réactive.
+function planeRules(cfg) {
+  if (Array.isArray(cfg.planes) && cfg.planesForAsset === cfg.asset) return cfg.planes;
+  return null;
+}
+
+// Règles **effectives** alignées sur le mesh réel : la composition stockée,
+// étendue aux plans que le mesh a gagnés depuis (un mesh ré-exporté avec
+// plus de plans — les nouveaux sont « always », comme `ensurePlanes` les
+// matérialise au premier réglage) et tronquée aux plans disparus. `null` =
+// composition non définie (tous les plans visibles). Sert à l'aperçu et à
+// l'export : le mesh chargé fait foi, pas la longueur de la liste stockée.
+function effectiveRules(cfg, mesh) {
+  const rules = planeRules(cfg);
+  if (!rules) return null;
+  const count = mesh && mesh.planes ? mesh.planes.length : rules.length;
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    out.push(rules[i] || { rule: "always", track: "cargo", minLevel: 1 });
+  }
+  return out;
+}
+
+// Matérialise la composition (tous les plans « always ») au premier réglage,
+// la rattache au mesh courant et aligne sa longueur sur le mesh réel (un
+// mesh ré-exporté avec plus ou moins de plans : les nouveaux sont « always »,
+// les indices hors mesh sont tronqués).
+function ensurePlanes(cfg, mesh) {
+  if (!Array.isArray(cfg.planes) || cfg.planesForAsset !== cfg.asset) {
+    cfg.planes = [];
+    cfg.planesForAsset = cfg.asset;
+  }
+  while (cfg.planes.length < mesh.planes.length) {
+    cfg.planes.push({ rule: "always", track: "cargo", minLevel: 1 });
+  }
+  if (cfg.planes.length > mesh.planes.length) cfg.planes.length = mesh.planes.length;
+  return cfg.planes;
+}
+
+// Tris visibles dans l'aperçu : les plans « always » + les plans liés aux
+// upgrades (l'aperçu montre la composition complète — dans le jeu, un plan
+// lié n'apparaît qu'à partir de son niveau). Composition non définie : tout.
+// Les règles **effectives** sont alignées sur les plans réels du mesh : un
+// plan ajouté au mesh depuis la dernière composition (ex. « Cargo Bay 1 »)
+// est visible par défaut — l'aperçu suit le fichier, pas la liste stockée.
+function compositionTris(cfg, mesh) {
+  if (!mesh) return null;
+  const rules = effectiveRules(cfg, mesh);
+  if (!rules) return mesh.tris;
+  const out = [];
+  mesh.planes.forEach((pl, i) => {
+    const rule = rules[i];
+    if (pl && rule && rule.rule !== "excluded") out.push(...pl.tris);
+  });
+  return out;
+}
+
 // L'aperçu reproduit la construction du jeu (src/vaisseau.rs / src/cosmonaut.rs) :
 // rotation du mesh de −orientation autour du pivot (repère éditeur y↑), échelle,
 // axe y retourné — le mesh tel qu'il apparaîtra en jeu (avant aligné sur +x).
-function meshTransform(cfg, mesh) {
+function meshTransform(cfg, tris) {
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-  for (const t of mesh.tris) {
+  for (const t of tris) {
     for (const v of [t.a, t.b, t.c]) {
       minx = Math.min(minx, v[0]); miny = Math.min(miny, v[1]);
       maxx = Math.max(maxx, v[0]); maxy = Math.max(maxy, v[1]);
@@ -875,12 +1150,15 @@ function meshTransform(cfg, mesh) {
 
 // Transforme un point de l'aperçu (pixels) en coordonnées mesh en % de la
 // boîte englobante — sert au clic « centre de rotation au point visé ».
-// Même échelle de dessin que drawMeshPreview (marge 12 px).
+// Même échelle de dessin que drawMeshPreview (marge 12 px). La boîte
+// englobante est celle de la **composition** affichée (comme dans le jeu).
 function pixelToMeshPercent(canvas, mesh, cfg, px, py) {
+  const tris = compositionTris(cfg, mesh);
+  if (!tris || tris.length === 0) return null;
   const W = canvas.width, H = canvas.height;
-  const view = meshTransform(cfg, mesh);
+  const view = meshTransform(cfg, tris);
   let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
-  for (const t of mesh.tris) {
+  for (const t of tris) {
     for (const v of [t.a, t.b, t.c]) {
       const p = view.tf(v);
       bx1 = Math.min(bx1, p[0]); by1 = Math.min(by1, p[1]);
@@ -934,7 +1212,15 @@ function attachMeshInteractions(canvas, cfg) {
     afterEdit();
   }, { passive: false });
 
+  // clic = centre de rotation au point visé, sauf quand le clic vient de
+  // terminer un glisser-déposer d'emplacement de tir (le drag consomme le
+  // clic qui le suit — `suppressCenterClick` est propre à ce canvas)
+  let suppressCenterClick = false;
   canvas.addEventListener("click", (e) => {
+    if (suppressCenterClick) {
+      suppressCenterClick = false;
+      return;
+    }
     const mesh = meshCache && meshCache.mesh;
     if (!mesh) return;
     const rect = canvas.getBoundingClientRect();
@@ -947,7 +1233,73 @@ function attachMeshInteractions(canvas, cfg) {
     cfg.centerYPercent = Math.round(pt[1]);
     afterEdit();
   });
+
+  // glisser-déposer des emplacements de tir (vaisseau uniquement — le
+  // cosmonaute n'a pas de `bulletSpawns`) : mousedown sur un losange doré =
+  // début de drag (le losange suit la souris, X/Y % mis à jour en direct) ;
+  // liste vide = le losange de repli au pivot, glissé, crée le premier
+  // emplacement. Le clic simple sur un losange ne déplace pas le centre de
+  // rotation (un clic en dehors des losanges conserve ce comportement).
+  canvas.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    const mesh = meshCache && meshCache.mesh;
+    if (!mesh || !Array.isArray(cfg.bulletSpawns)) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const px = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const py = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const pts = spawnScreenPoints(canvas, mesh, cfg);
+    let hit = -1, best = 10; // rayon de saisie : 10 px autour du losange
+    for (let i = 0; i < pts.length; i++) {
+      const d = Math.hypot(pts[i].sx - px, pts[i].sy - py);
+      if (d < best) { best = d; hit = i; }
+    }
+    if (hit < 0) return; // pas sur un emplacement : le clic reste « centre »
+    e.preventDefault();
+    suppressCenterClick = true;
+    const p = pts[hit];
+    if (p.fallback) {
+      // liste vide : le glisser du losange de repli crée le premier emplacement
+      if (!Array.isArray(cfg.bulletSpawns)) cfg.bulletSpawns = [];
+      cfg.bulletSpawns.push({ x: cfg.centerXPercent, y: cfg.centerYPercent });
+      activeSpawnDrag = { canvas, cfg, index: cfg.bulletSpawns.length - 1, moved: false, created: true };
+    } else {
+      activeSpawnDrag = { canvas, cfg, index: p.index, moved: false, created: false };
+    }
+  });
 }
+
+// Glisser-déposer des emplacements de tir : état global partagé entre le
+// mousedown du canvas (attachMeshInteractions) et les écouteurs fenêtre
+// ci-dessous (attachés une seule fois — chaque rendu recrée le canvas, pas
+// la fenêtre). Le déplacement met à jour X/Y % en direct (aperçu redessiné
+// sans re-render) ; au lâcher, afterEdit() synchronise les champs.
+let activeSpawnDrag = null;
+
+window.addEventListener("mousemove", (e) => {
+  const d = activeSpawnDrag;
+  if (!d) return;
+  const mesh = meshCache && meshCache.mesh;
+  if (!mesh || !d.cfg.bulletSpawns[d.index]) return;
+  const rect = d.canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const px = (e.clientX - rect.left) * (d.canvas.width / rect.width);
+  const py = (e.clientY - rect.top) * (d.canvas.height / rect.height);
+  const pt = pixelToMeshPercent(d.canvas, mesh, d.cfg, px, py);
+  if (!pt) return;
+  const sp = d.cfg.bulletSpawns[d.index];
+  sp.x = Math.max(0, Math.min(100, Math.round(pt[0])));
+  sp.y = Math.max(0, Math.min(100, Math.round(pt[1])));
+  d.moved = true;
+  drawMeshPreview(d.canvas, mesh, d.cfg); // redessin direct (léger)
+});
+
+window.addEventListener("mouseup", () => {
+  const d = activeSpawnDrag;
+  if (!d) return;
+  activeSpawnDrag = null;
+  if (d.moved || d.created) afterEdit(); // synchronise champs + sauvegarde
+});
 
 function drawMeshPreview(canvas, mesh, cfg) {
   const ctx = canvas.getContext("2d");
@@ -963,10 +1315,13 @@ function drawMeshPreview(canvas, mesh, cfg) {
       W / 2, H / 2 + 10);
     return;
   }
-  const { tf, pivot } = meshTransform(cfg, mesh);
+  // la composition affichée : plans « always » + plans liés (l'aperçu montre
+  // la composition complète — le pivot et le clic-centre s'y réfèrent)
+  const tris = compositionTris(cfg, mesh);
+  const { tf, pivot, bounds } = meshTransform(cfg, tris);
   // boîte englobante transformée → échelle de dessin (avec marge)
   let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
-  for (const t of mesh.tris) {
+  for (const t of tris) {
     for (const v of [t.a, t.b, t.c]) {
       const p = tf(v);
       bx1 = Math.min(bx1, p[0]); by1 = Math.min(by1, p[1]);
@@ -980,7 +1335,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
   const oy = H / 2 - ((by1 + by2) / 2) * s;
   const px = p => [ox + p[0] * s, oy + p[1] * s];
   // faces (couleurs du fichier)
-  for (const t of mesh.tris) {
+  for (const t of tris) {
     const [ax, ay] = px(tf(t.a));
     const [bxx, byy] = px(tf(t.b));
     const [cx, cy] = px(tf(t.c));
@@ -999,7 +1354,8 @@ function drawMeshPreview(canvas, mesh, cfg) {
     ctx.stroke();
   }
   // centre de rotation : croix + anneau (le pivot autour duquel le vaisseau
-  // pivote dans le jeu)
+  // pivote dans le jeu — calculé sur la composition complète, il ne bouge
+  // pas quand des plans liés apparaissent)
   const [qx, qy] = px(pivot);
   ctx.strokeStyle = "#39ff88";
   ctx.lineWidth = 1.4;
@@ -1010,37 +1366,193 @@ function drawMeshPreview(canvas, mesh, cfg) {
   ctx.beginPath();
   ctx.arc(qx, qy, 9, 0, Math.PI * 2);
   ctx.stroke();
+
+  // emplacements de tir (vaisseau) : petits losanges dorés sur la position
+  // du départ des balles — même transformation que les sommets (rotation
+  // autour du pivot, échelle, axe y retourné). Liste vide = emplacement de
+  // repli au pivot (le centre de rotation, croix verte) : un losange doré
+  // creux le marque quand même pour que le point de tir soit toujours visible.
+  // Positions calculées par `spawnScreenPoints` (même géométrie que le
+  // glisser-déposer de `attachMeshInteractions`).
+  if (Array.isArray(cfg.bulletSpawns) && mesh.planes) {
+    const diamond = (sx, sy, filled) => {
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 4); ctx.lineTo(sx + 4, sy); ctx.lineTo(sx, sy + 4); ctx.lineTo(sx - 4, sy);
+      ctx.closePath();
+      if (filled) ctx.fill();
+      ctx.stroke();
+    };
+    for (const p of spawnScreenPoints(canvas, mesh, cfg)) {
+      if (p.fallback) {
+        // repli : un seul emplacement au pivot — losange creux (la croix verte
+        // du centre de rotation marque déjà le point)
+        ctx.strokeStyle = "rgba(255,215,0,0.85)";
+        ctx.lineWidth = 1.2;
+        diamond(p.sx, p.sy, false);
+      } else {
+        ctx.fillStyle = "#ffd700";
+        ctx.strokeStyle = "rgba(0,0,0,0.55)";
+        ctx.lineWidth = 1;
+        diamond(p.sx, p.sy, true);
+      }
+    }
+  }
+
+  // catalogue d'armes (vaisseau) : chaque arme est dessinée **sur le
+  // vaisseau** à son emplacement (spawn) — son mesh est transformé avec ses
+  // propres réglages (échelle, orientation) puis translaté pour que son
+  // pivot (centre de sa boîte englobante) soit posé sur l'emplacement. Un
+  // losange rose marque l'emplacement quand le mesh n'est pas disponible.
+  if (Array.isArray(cfg.weapons) && cfg.weapons.length > 0 && mesh && mesh.planes) {
+    const spawns = spawnScreenPoints(canvas, mesh, cfg);
+    // point local (repère du vaisseau transformé) de l'emplacement : l'inverse
+    // de `px` (le repère d'écran de `spawnScreenPoints` est le même que celui
+    // de `drawMeshPreview` : échelle `s`, origine `ox`/`oy`)
+    const localOf = sp => [(sp.sx - ox) / s, (sp.sy - oy) / s];
+    cfg.weapons.forEach((w) => {
+      const sp = spawns[Math.min(Number.isInteger(w.spawnIndex) ? w.spawnIndex : 0, Math.max(spawns.length - 1, 0))];
+      if (!sp) return;
+      const wm = weaponMeshPool[String(w.asset)];
+      if (wm && wm.tris && wm.tris.length > 0) {
+        const view = meshTransform(
+          { scalePercent: w.scalePercent, orientationDeg: w.orientationDeg,
+            centerXPercent: 50, centerYPercent: 50 },
+          wm.tris
+        );
+        // sommet local de l'arme → pixel : pivot de l'arme posé sur l'emplacement
+        const [lx, ly] = localOf(sp);
+        for (const t of wm.tris) {
+          const pts = [t.a, t.b, t.c].map(vtx => {
+            const lp = view.tf(vtx);
+            return px([lp[0] - view.pivot[0] + lx, lp[1] - view.pivot[1] + ly]);
+          });
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          ctx.lineTo(pts[1][0], pts[1][1]);
+          ctx.lineTo(pts[2][0], pts[2][1]);
+          ctx.closePath();
+          const c = t.color;
+          const a = Math.max(0, Math.min(1, c.length > 3 ? c[3] : 1));
+          ctx.fillStyle = "rgba(" + Math.round(c[0] * 255) + "," + Math.round(c[1] * 255) + "," +
+            Math.round(c[2] * 255) + "," + a + ")";
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.2)";
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      } else {
+        // mesh non chargé (mode fichier, asset manquant) : losange rose à la
+        // position de l'arme pour la repérer
+        ctx.fillStyle = "#ff6b9d";
+        ctx.strokeStyle = "rgba(0,0,0,0.55)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sp.sx, sp.sy - 5); ctx.lineTo(sp.sx + 5, sp.sy);
+        ctx.lineTo(sp.sx, sp.sy + 5); ctx.lineTo(sp.sx - 5, sp.sy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    });
+  }
+}
+
+// Positions d'écran (pixels du canvas) des emplacements de tir du vaisseau —
+// la même géométrie que drawMeshPreview (boîte de la composition, échelle,
+// rotation, axe y retourné). Renvoie [{ x, y, sx, sy }] avec sx/sy les
+// coordonnées pixel du losange, et si la liste est vide un unique point
+// { fallback: true } au pivot (le losange creux doré). Sert au dessin et au
+// glisser-déposer (attachMeshInteractions).
+function spawnScreenPoints(canvas, mesh, cfg) {
+  const out = [];
+  if (!mesh || !Array.isArray(cfg.bulletSpawns)) return out;
+  const tris = compositionTris(cfg, mesh);
+  if (!tris || tris.length === 0) return out;
+  const view = meshTransform(cfg, tris);
+  const W = canvas.width, H = canvas.height;
+  let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
+  for (const t of tris) {
+    for (const v of [t.a, t.b, t.c]) {
+      const p = view.tf(v);
+      bx1 = Math.min(bx1, p[0]); by1 = Math.min(by1, p[1]);
+      bx2 = Math.max(bx2, p[0]); by2 = Math.max(by2, p[1]);
+    }
+  }
+  const pad = 12;
+  const w = bx2 - bx1 || 1, h = by2 - by1 || 1;
+  const s = Math.min((W - 2 * pad) / w, (H - 2 * pad) / h);
+  const ox = W / 2 - ((bx1 + bx2) / 2) * s;
+  const oy = H / 2 - ((by1 + by2) / 2) * s;
+  const toPx = p => [ox + p[0] * s, oy + p[1] * s];
+  const b = view.bounds;
+  const bw = (b.maxx - b.minx) || 1, bh = (b.maxy - b.miny) || 1;
+  const point = (x, y) => {
+    const ex = b.minx + (x / 100) * bw;
+    const ey = b.miny + (y / 100) * bh;
+    const [sx, sy] = toPx(view.tf([ex, ey]));
+    return { x, y, sx, sy };
+  };
+  if (cfg.bulletSpawns.length === 0) {
+    const [sx, sy] = toPx(view.pivot);
+    out.push({ x: cfg.centerXPercent, y: cfg.centerYPercent, sx, sy, fallback: true });
+  } else {
+    cfg.bulletSpawns.forEach((sp, i) => {
+      const p = point(sp.x, sp.y);
+      p.index = i;
+      out.push(p);
+    });
+  }
+  return out;
+}
+
+// Mesh de l'aperçu affiché pour cette carte (cache de `ensureMesh`) — la
+// composition des plans s'applique à ce mesh (un mesh chargé en local, ex
+// « Charger un mesh », compte aussi).
+function currentMeshFor(cfg) {
+  return meshCache && (meshCache.asset === cfg.asset || String(meshCache.asset).startsWith("local:"))
+    ? meshCache.mesh
+    : null;
 }
 
 async function refreshMeshPreview(cfg, canvasId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
-  drawMeshPreview(canvas, await ensureMesh(cfg.asset), cfg);
+  const mesh = await ensureMesh(cfg.asset);
+  // vaisseau : les meshes du catalogue d'armes sont chargés en parallèle
+  // (chaque arme est dessinée sur l'aperçu à son emplacement)
+  if (canvasId === "ship-preview") {
+    const weapons = Array.isArray(cfg.weapons) ? cfg.weapons : [];
+    const assets = [];
+    for (const w of weapons) {
+      if (String(w.asset)) assets.push(ensureWeaponMesh(w.asset));
+      if (String(w.ammoAsset)) assets.push(ensureWeaponMesh(w.ammoAsset));
+    }
+    await Promise.all(assets);
+  }
+  drawMeshPreview(canvas, mesh, cfg);
+  // la composition des plans dépend du mesh chargé (fetch asynchrone en
+  // mode serveur) : dès qu'il est disponible, la carte est re-rendue une
+  // fois pour afficher la liste des plans
+  if (mesh) {
+    const key = canvasId === "ship-preview" ? "ship" : "cosmonaut";
+    if (compositionRenderedFor !== key) {
+      compositionRenderedFor = key;
+      if (currentView === VIEWS.findIndex(v => v.id === key)) afterEdit();
+    }
+  }
 }
 
-// Remplit une datalist de choix d'asset : en mode serveur, les meshes réels
-// de assets/ du projet ; sinon suggestions par défaut + valeur courante.
-async function populateAssets(datalistId, currentAsset) {
-  const dl = document.getElementById(datalistId);
-  if (!dl) return;
-  const names = new Set();
-  if (SERVER_MODE) {
-    try {
-      const res = await fetch("/list-assets");
-      if (res.ok) {
-        const j = await res.json();
-        for (const n of j.assets || []) names.add("assets/" + n);
-      }
-    } catch (_) { /* silencieux : suggestions par défaut */ }
-  }
-  names.add("assets/vaisseau.json");
-  names.add("assets/cosmonaute.json");
-  names.add(currentAsset);
-  dl.innerHTML = "";
-  for (const n of names) {
-    const o = document.createElement("option");
-    o.value = n;
-    dl.appendChild(o);
+// Charge la liste des meshes de assets/ (mode serveur) puis re-rend la carte
+// courante : les sélecteurs d'asset (`meshAssetInput`) listent alors les
+// fichiers JSON réels de l'emplacement assets/ du projet. En mode fichier,
+// la liste reste vide (suggestions par défaut dans le sélecteur).
+async function refreshAssetPickers() {
+  await ensureAssetList();
+  if (assetList === null) return;
+  // re-rend la carte ouverte pour re-peupler les <select> d'asset
+  if (currentView === VIEWS.findIndex(v => v.id === "ship")
+      || currentView === VIEWS.findIndex(v => v.id === "cosmonaut")) {
+    render();
   }
 }
 
@@ -1060,20 +1572,86 @@ function meshNumberInput(cfg, prefix, key, min, max) {
   return input;
 }
 
-function meshAssetInput(cfg, prefix, datalistId) {
-  const input = document.createElement("input");
-  input.type = "text";
-  input.id = prefix + "-asset";
-  input.setAttribute("list", datalistId); // input.list est en lecture seule
-  input.value = cfg.asset;
-  input.spellcheck = false;
-  input.placeholder = "assets/mon-mesh.json";
-  input.addEventListener("input", () => {
-    cfg.asset = input.value.trim();
-    meshCache = null; // recharger l'aperçu du nouveau mesh
+// Cache de la liste des meshes assets/*.json (mode serveur) — `null` tant que
+// non chargée. Les sélecteurs d'asset (`meshAssetInput`) l'affichent en liste
+// déroulante : les fichiers JSON réels de l'emplacement assets/ du projet.
+let assetList = null;
+
+// Charge (une fois) la liste des JSON de assets/ via `/list-assets`.
+async function ensureAssetList() {
+  if (assetList !== null || !SERVER_MODE) return assetList;
+  try {
+    const res = await fetch("/list-assets");
+    if (res.ok) {
+      const j = await res.json();
+      assetList = (j.assets || []).filter(n => String(n).endsWith(".json")).sort();
+    }
+  } catch (_) { /* silencieux : suggestions par défaut */ }
+  return assetList;
+}
+
+// Champ de sélection du mesh : un <select> qui **ouvre la liste des fichiers
+// JSON de l'emplacement assets/** (mode serveur : les vrais meshes du projet,
+// via `/list-assets` ; mode fichier : suggestions par défaut + valeur
+// courante). L'option « ✏️ autre chemin… » bascule en saisie libre (un chemin
+// saisi n'a pas besoin d'exister dans assets/ pour l'export — il doit exister
+// au compile pour l'include_str!).
+function meshAssetInput(cfg, prefix, datalistId, key) {
+  const k = key || "asset";
+  const wrap = el("span", "asset-picker");
+  const select = document.createElement("select");
+  select.id = prefix + "-" + k;
+  select.classList.add("asset-select");
+  const current = typeof cfg[k] === "string" ? cfg[k] : "";
+  // liste des meshes : réels (mode serveur) ou suggestions par défaut
+  const names = new Set();
+  for (const n of (assetList || ["vaisseau.json", "cosmonaute.json"])) {
+    names.add(String(n).startsWith("assets/") ? n : "assets/" + n);
+  }
+  if (current) names.add(current);
+  const sorted = [...names].sort();
+  // option « autre chemin » (valeur vide) : affiche l'input texte en repli
+  const customOpt = el("option", "", "✏️ autre chemin…");
+  customOpt.value = "";
+  select.appendChild(customOpt);
+  let currentInList = false;
+  for (const n of sorted) {
+    const o = el("option", "", n);
+    o.value = n;
+    if (n === current) { o.selected = true; currentInList = true; }
+    select.appendChild(o);
+  }
+  // valeur courante hors liste (chemin saisi, fichier non listé) : option dédiée
+  if (current && !currentInList) {
+    const o = el("option", "", current + " (chemin actuel)");
+    o.value = current;
+    o.selected = true;
+    select.appendChild(o);
+  }
+  select.addEventListener("change", () => {
+    if (select.value === "") {
+      // « autre chemin » : remplace le select par l'input texte de saisie libre
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = select.id;
+      input.value = current || "";
+      input.spellcheck = false;
+      input.placeholder = "assets/mon-mesh.json";
+      input.addEventListener("input", () => {
+        cfg[k] = input.value.trim();
+        if (k === "asset") meshCache = null; // recharger l'aperçu du nouveau mesh
+        afterEdit();
+      });
+      wrap.replaceChildren(input);
+      input.focus();
+      return;
+    }
+    cfg[k] = select.value;
+    if (k === "asset") meshCache = null; // recharger l'aperçu du nouveau mesh
     afterEdit();
   });
-  return input;
+  wrap.appendChild(select);
+  return wrap;
 }
 
 // Mode fichier : charge un mesh JSON pour l'aperçu uniquement (l'export Rust
@@ -1101,8 +1679,150 @@ function loadPreviewFile(cfg, canvasId) {
   input.click();
 }
 
+// Section « Composition des plans » d'une carte mesh : règle par plan du
+// fichier — toujours visible, exclu, ou lié à une ligne d'atelier (vaisseau
+// uniquement, `opts.links`). L'aperçu (et le clic-centre) ne montre que les
+// plans retenus, comme dans le jeu ; un plan lié y figure — l'aperçu montre
+// la composition complète, en jeu il n'apparaît qu'à partir de son niveau.
+function compositionSection(cfg, mesh, opts) {
+  const sec = el("div", "card-section");
+  const h = el("h3", "section", "Composition des plans");
+  sec.appendChild(h);
+  sec.appendChild(el("p", "hint", opts.compositionHint));
+  if (!mesh) {
+    sec.appendChild(el("p", "hint", SERVER_MODE
+      ? "Chargement du mesh… (la liste des plans s'affiche dès qu'il est disponible)"
+      : "Composition indisponible : lancez le serveur local (node tools/marketplace-editor/server.mjs) " +
+        "ou « Charger un mesh » pour l'aperçu."));
+    return sec;
+  }
+  // règle virtuelle : composition non matérialisée = tous les plans « always »
+  // (elle n'est écrite dans les données qu'au premier réglage, pour ne pas
+  // marquer le fichier modifié sans raison)
+  const rules = planeRules(cfg);
+  const ruleAt = i => (rules && rules[i]) || { rule: "always", track: opts.defaultTrack, minLevel: 1 };
+  const setRule = (i, patch) => {
+    const arr = ensurePlanes(cfg, mesh);
+    Object.assign(arr[i], patch);
+    afterEdit();
+  };
+
+  const table = el("table", "composition");
+  const thead = el("thead");
+  const hr = el("tr");
+  for (const thText of ["Plan", "Règle", opts.links ? "Ligne / niveau" : ""]) {
+    if (thText === "") continue;
+    hr.appendChild(el("th", "", thText));
+  }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  mesh.planes.forEach((pl, i) => {
+    const tr = el("tr");
+    const tdPlan = el("td");
+    // nom du plan quand le mesh en porte un (ex. « Cargo Bay 1 » — les plans
+    // sans nom restent « Plan N », l'indice sert de repli et de référence)
+    const label = pl.name ? pl.name : "Plan " + i;
+    tdPlan.appendChild(el("span", "plane-name", label));
+    const meta = pl.faces + " face" + (pl.faces > 1 ? "s" : "")
+      + (pl.name ? " · plan " + i : "");
+    tdPlan.appendChild(el("span", "plane-meta", meta));
+    tr.appendChild(tdPlan);
+
+    const tdRule = el("td");
+    const sel = document.createElement("select");
+    sel.id = opts.prefix + "-plane-" + i + "-rule";
+    const rule = ruleAt(i).rule;
+    const choices = [
+      ["always", "Toujours visible"],
+      ["excluded", "Exclu"],
+    ];
+    if (opts.links) choices.splice(1, 0, ["upgrade", "Lié à une ligne…"]);
+    for (const [val, label] of choices) {
+      const o = document.createElement("option");
+      o.value = val;
+      o.textContent = label;
+      if (val === rule) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener("change", () => {
+      if (sel.value === "upgrade" && !opts.links) return;
+      setRule(i, { rule: sel.value });
+    });
+    tdRule.appendChild(sel);
+    tr.appendChild(tdRule);
+
+    const tdLink = el("td");
+    if (opts.links && rule === "upgrade") {
+      const r = ruleAt(i);
+      const trackSel = document.createElement("select");
+      trackSel.id = opts.prefix + "-plane-" + i + "-track";
+      const maxTier = {};
+      for (const t of data.tracks) {
+        const o = document.createElement("option");
+        o.value = t.id;
+        o.textContent = t.label + (t.tiers.length > 0 ? " (niv. 1–" + t.tiers.length + ")" : " (aucune extension)");
+        if (t.id === r.track) o.selected = true;
+        maxTier[t.id] = t.tiers.length;
+        trackSel.appendChild(o);
+      }
+      trackSel.addEventListener("change", () => {
+        const lvl = Math.max(1, Math.min(maxTier[trackSel.value] || 1, r.minLevel));
+        setRule(i, { track: trackSel.value, minLevel: lvl });
+      });
+      const levelInput = document.createElement("input");
+      levelInput.type = "number";
+      levelInput.id = opts.prefix + "-plane-" + i + "-minLevel";
+      levelInput.min = "1";
+      levelInput.max = String(Math.max(1, maxTier[r.track] || 1));
+      levelInput.step = "1";
+      levelInput.value = String(r.minLevel);
+      levelInput.title = "Niveau minimal de la ligne pour que le plan apparaisse en jeu";
+      levelInput.addEventListener("input", () => {
+        const v = parseInt(levelInput.value, 10);
+        if (!Number.isFinite(v)) return;
+        setRule(i, { minLevel: Math.max(1, Math.min(maxTier[r.track] || 1, v)) });
+      });
+      const grow = el("div", "grow");
+      grow.appendChild(trackSel);
+      grow.appendChild(levelInput);
+      tdLink.appendChild(grow);
+    }
+    tr.appendChild(tdLink);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  sec.appendChild(table);
+
+  // actions en masse (ne matérialisent la composition qu'au clic)
+  const acts = el("div", "grow");
+  const bulk = (label, fn) => {
+    const b = el("button", "mini", label);
+    b.addEventListener("click", () => {
+      const arr = ensurePlanes(cfg, mesh);
+      arr.forEach((p, i) => fn(p, i));
+      afterEdit();
+    });
+    acts.appendChild(b);
+  };
+  bulk("Tout visible", p => { p.rule = "always"; });
+  bulk("Tout exclure", p => { p.rule = "excluded"; });
+  bulk("Inverser", p => { p.rule = p.rule === "always" ? "excluded" : "always"; });
+  sec.appendChild(acts);
+
+  // garde-fous : composition vide (tous exclus) → repli « tous les plans »
+  const anyVisible = mesh.planes.some((pl, i) => {
+    const r = ruleAt(i);
+    return r.rule !== "excluded";
+  });
+  if (!anyVisible) {
+    sec.appendChild(el("p", "hint warn", "⚠ Aucun plan visible : à l'export, le jeu repliera sur tous les plans (listes vides)."));
+  }
+  return sec;
+}
+
 // Carte commune vaisseau / cosmonaute : aperçu du mesh + champs (asset,
-// échelle, orientation, centre de rotation).
+// échelle, orientation, centre de rotation) + composition des plans.
 function meshCard(opts) {
   const cfg = opts.cfg;
   const card = el("div", "card");
@@ -1123,7 +1843,7 @@ function meshCard(opts) {
   attachMeshInteractions(canvas, cfg);
   wrap.appendChild(canvas);
   const fields = el("div", "ship-fields");
-  fields.appendChild(field("Asset (mesh JSON, chemin projet)", opts.prefix + "-asset", meshAssetInput(cfg, opts.prefix, opts.datalistId)));
+  fields.appendChild(field("Asset (mesh JSON, chemin projet)", opts.prefix + "-asset", meshAssetInput(cfg, opts.prefix)));
   const loadBtn = el("button", "mini", "📂 Charger un mesh (aperçu)");
   loadBtn.title = "Lit un fichier mesh JSON pour l'aperçu uniquement — l'export Rust référence le chemin du champ Asset";
   loadBtn.addEventListener("click", () => loadPreviewFile(cfg, opts.canvasId));
@@ -1138,10 +1858,167 @@ function meshCard(opts) {
   grid.appendChild(field("Centre de rotation Y (%)", opts.prefix + "-centerYPercent", meshNumberInput(cfg, opts.prefix, "centerYPercent", 0, 100)));
   card.appendChild(grid);
 
+  // emplacements de départ des projectiles (vaisseau uniquement) : une balle
+  // part de chaque emplacement au tir Shift, tournée avec le vaisseau
+  if (opts.spawns) card.appendChild(spawnsSection(cfg, opts));
+
+  // catalogue d'armes (vaisseau uniquement) : chaque arme est un mesh posé
+  // sur le vaisseau à un emplacement de tir et tire sa propre munition
+  if (opts.weapons) card.appendChild(weaponsSection(cfg, opts));
+
+  // composition des plans (vaisseau : liens vers les lignes d'atelier)
+  card.appendChild(compositionSection(cfg, currentMeshFor(cfg), opts));
+
   const hintP = el("p", "hint");
   hintP.innerHTML = opts.hint; // <b>…</b> des contrôles souris
   card.appendChild(hintP);
   return card;
+}
+
+// Section « Emplacements de tir » du vaisseau : liste de points (X %, Y %) de
+// la boîte englobante de la composition — une balle part de chaque emplacement
+// au tir (Shift), tournée avec le vaisseau. Vide = un seul emplacement au
+// centre de rotation (comportement d'origine). Réglage souris : sur l'aperçu,
+// glisser un losange doré le déplace (liste vide : le losange de repli au
+// pivot crée le premier emplacement) ; le clic hors losange place le centre
+// de rotation.
+function spawnsSection(cfg, opts) {
+  const sec = el("section", "card-section");
+  const h = el("h3");
+  h.appendChild(el("span", "dot", "", { style: "background:#ffd700" }));
+  h.appendChild(document.createTextNode("Départ des projectiles"));
+  h.appendChild(el("span", "const", "VAISSEAU_BULLET_SPAWNS"));
+  sec.appendChild(h);
+  sec.appendChild(el("p", "desc",
+    "Une balle part de chaque emplacement au tir (Shift), tournée avec le vaisseau. " +
+    "Positions en % de la boîte englobante de la composition (50/50 = centre) — vide = un seul " +
+    "emplacement au centre de rotation. <b>Sur l'aperçu : glisser un losange doré le déplace</b> " +
+    "(liste vide : le losange de repli au pivot crée le premier emplacement)."));
+
+  const list = el("div", "spawns-list");
+  const render = () => {
+    list.textContent = "";
+    (Array.isArray(cfg.bulletSpawns) ? cfg.bulletSpawns : []).forEach((p, i) => {
+      const row = el("div", "spawn-row");
+      row.appendChild(el("span", "spawn-idx", "#" + (i + 1)));
+      const x = meshNumberInput(p, opts.prefix, "x", 0, 100);
+      x.id = opts.prefix + "-spawn-" + i + "-x";
+      row.appendChild(field("X (%)", x.id, x));
+      const y = meshNumberInput(p, opts.prefix, "y", 0, 100);
+      y.id = opts.prefix + "-spawn-" + i + "-y";
+      row.appendChild(field("Y (%)", y.id, y));
+      const del = el("button", "mini danger", "✕");
+      del.title = "Retirer cet emplacement";
+      del.addEventListener("click", () => {
+        cfg.bulletSpawns.splice(i, 1);
+        afterEdit();
+      });
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+    const add = el("button", "mini", "+ Ajouter un emplacement");
+    add.addEventListener("click", () => {
+      if (!Array.isArray(cfg.bulletSpawns)) cfg.bulletSpawns = [];
+      cfg.bulletSpawns.push({ x: 50, y: 50 });
+      afterEdit();
+    });
+    list.appendChild(add);
+  };
+  render();
+  sec.appendChild(list);
+  return sec;
+}
+
+// Section « Catalogue d'armes » du vaisseau : chaque arme est un mesh posé
+// **sur le vaisseau** à un emplacement de tir (`spawnIndex` — liste
+// contrainte aux emplacements de la section « Départ des projectiles ») et
+// tire sa propre munition (mesh de la munition). Toutes les armes tirent
+// ensemble au Shift. Vide = tir classique (repli du jeu).
+function weaponsSection(cfg, opts) {
+  const sec = el("section", "card-section");
+  const h = el("h3");
+  h.appendChild(el("span", "dot", "", { style: "background:#ff6b9d" }));
+  h.appendChild(document.createTextNode("Catalogue d'armes"));
+  h.appendChild(el("span", "const", "VAISSEAU_WEAPONS"));
+  sec.appendChild(h);
+  sec.appendChild(el("p", "desc",
+    "Chaque arme est un mesh posé <b>sur le vaisseau</b> à un emplacement de tir " +
+    "(liste contrainte : un des emplacements de la section « Départ des projectiles ») et tire " +
+    "sa propre munition (mesh). Toutes les armes du catalogue tirent ensemble au Shift. " +
+    "Catalogue vide = tir classique (une balle rouge par emplacement). " +
+    "Sur l'aperçu, chaque arme est dessinée à son emplacement (losange de la même couleur)."));
+
+  const list = el("div", "spawns-list");
+  const render = () => {
+    list.textContent = "";
+    (Array.isArray(cfg.weapons) ? cfg.weapons : []).forEach((w, i) => {
+      const row = el("div", "spawn-row weapon-row");
+      row.appendChild(el("span", "spawn-idx", "W" + (i + 1)));
+      // nom de l'arme
+      const name = el("input", "weapon-name");
+      name.value = w.name || "";
+      name.placeholder = "Nom de l'arme";
+      name.addEventListener("input", () => { w.name = name.value; afterEdit(); });
+      row.appendChild(field("Nom", opts.prefix + "-weapon-" + i + "-name", name));
+      // mesh de l'arme
+      const mesh = meshAssetInput(w, opts.prefix + "-w" + i);
+      row.appendChild(field("Mesh de l'arme (JSON)", opts.prefix + "-weapon-" + i + "-asset", mesh));
+      // emplacement (contraint aux emplacements de tir)
+      const spawns = Array.isArray(cfg.bulletSpawns) ? cfg.bulletSpawns : [];
+      const sel = el("select", "weapon-spawn");
+      const options = spawns.length === 0
+        ? [{ label: "Centre de rotation (repli)", value: 0 }]
+        : spawns.map((p, k) => ({ label: "Emplacement " + (k + 1) + " (" + Math.round(p.x) + "%, " + Math.round(p.y) + "%)", value: k }));
+      const cur = Number.isInteger(w.spawnIndex) ? w.spawnIndex : 0;
+      options.forEach(o => {
+        const opt = el("option", "", o.label);
+        opt.value = String(o.value);
+        if (o.value === Math.min(cur, options.length - 1)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", () => { w.spawnIndex = parseInt(sel.value, 10); afterEdit(); });
+      row.appendChild(field("Emplacement (vaisseau)", opts.prefix + "-weapon-" + i + "-spawn", sel));
+      // échelle et orientation de l'arme
+      row.appendChild(field("Échelle (%)", opts.prefix + "-weapon-" + i + "-scale",
+        meshNumberInput(w, opts.prefix + "-w" + i, "scalePercent", 1, 1000)));
+      row.appendChild(field("Orientation (°)", opts.prefix + "-weapon-" + i + "-orient",
+        meshNumberInput(w, opts.prefix + "-w" + i, "orientationDeg", -360, 360)));
+      // munition
+      const ammo = meshAssetInput(w, opts.prefix + "-w" + i + "-ammo", undefined, "ammoAsset");
+      row.appendChild(field("Mesh de la munition (JSON)", opts.prefix + "-weapon-" + i + "-ammo", ammo));
+      row.appendChild(field("Munition Échelle (%)", opts.prefix + "-weapon-" + i + "-ammoscale",
+        meshNumberInput(w, opts.prefix + "-w" + i + "-ammo", "ammoScalePercent", 1, 1000)));
+      row.appendChild(field("Munition Orientation (°)", opts.prefix + "-weapon-" + i + "-ammoorient",
+        meshNumberInput(w, opts.prefix + "-w" + i + "-ammo", "ammoOrientationDeg", -360, 360)));
+      const del = el("button", "mini danger", "✕");
+      del.title = "Retirer cette arme";
+      del.addEventListener("click", () => {
+        cfg.weapons.splice(i, 1);
+        afterEdit();
+      });
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+    const add = el("button", "mini", "+ Ajouter une arme");
+    add.addEventListener("click", () => {
+      if (!Array.isArray(cfg.weapons)) cfg.weapons = [];
+      cfg.weapons.push({
+        name: "ARME " + (cfg.weapons.length + 1),
+        asset: "assets/vaisseau.json",
+        scalePercent: 100,
+        orientationDeg: 0,
+        spawnIndex: 0,
+        ammoAsset: "assets/vaisseau.json",
+        ammoScalePercent: 100,
+        ammoOrientationDeg: 0,
+      });
+      afterEdit();
+    });
+    list.appendChild(add);
+  };
+  render();
+  sec.appendChild(list);
+  return sec;
 }
 
 function shipCard() {
@@ -1149,20 +2026,30 @@ function shipCard() {
     cfg: data.ship,
     prefix: "ship",
     canvasId: "ship-preview",
-    datalistId: "ship-assets",
     dot: "#6ab7ff",
     title: "Vaisseau joueur",
     badge: "VAISSEAU_*",
-    desc: "Mesh du vaisseau (format « meshes-designer », assets/*.json), échelle, orientation du nez et " +
-      "centre de rotation — constantes VAISSEAU_JSON / VAISSEAU_SCALE / " +
-      "VAISSEAU_ORIENTATION_DEGREES / VAISSEAU_CENTER_X/Y_PERCENT de " +
-      "src/marketplace.rs (lues par src/vaisseau.rs).",
+    links: true, // les plans peuvent être liés aux lignes d'atelier (Progression)
+    spawns: true, // emplacements de départ des projectiles (VAISSEAU_BULLET_SPAWNS)
+    weapons: true, // catalogue d'armes (VAISSEAU_WEAPONS)
+    defaultTrack: "cargo",
+    desc: "Mesh du vaisseau (format « meshes-designer », assets/*.json), échelle, orientation du nez, " +
+      "centre de rotation, **emplacements de tir** et **composition des plans** — constantes " +
+      "VAISSEAU_JSON / VAISSEAU_SCALE / VAISSEAU_ORIENTATION_DEGREES / VAISSEAU_CENTER_X/Y_PERCENT / " +
+      "VAISSEAU_BULLET_SPAWNS / VAISSEAU_PLANES_ALWAYS / VAISSEAU_PLANE_LINKS de src/marketplace.rs " +
+      "(lues par src/vaisseau.rs et src/generate.rs).",
+    compositionHint: "Chaque plan du mesh est <b>toujours visible</b>, <b>exclu</b> (jamais construit) ou " +
+      "<b>lié à une ligne d'atelier</b> (FUEL TANK / MAGAZINE / CARGO BAY) : un plan lié n'apparaît en " +
+      "jeu qu'à partir du niveau indiqué — l'achat d'une extension reconstruit le vaisseau. L'aperçu " +
+      "montre la composition complète ; le centre de rotation est calculé dessus, il reste donc stable " +
+      "à tous les niveaux. Liste vides à l'export = tous les plans (repli).",
     hint: "L'aperçu montre le vaisseau tel qu'il volera (nez aligné sur l'avant, axe y du jeu). " +
       "Orientation = angle du nez du mesh dans l'éditeur : 0 = nez vers la droite, +90 = vers le haut — " +
       "le jeu tourne le mesh pour le ramener nez à droite. Le centre de rotation est le pivot autour " +
-      "duquel le vaisseau pivote (50/50 = centre de la boîte englobante). Sur l'aperçu : <b>molette = " +
-      "rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), <b>clic = centre de " +
-      "rotation au point visé</b>.",
+      "duquel le vaisseau pivote (50/50 = centre de la boîte englobante de la composition). Sur " +
+      "l'aperçu : <b>glisser un losange doré = déplacer un emplacement de tir</b> (liste vide : " +
+      "le losange de repli au pivot crée le premier), <b>molette = rotation</b> (orientation), " +
+      "<b>Ctrl/Cmd + molette = zoom</b> (échelle), <b>clic = centre de rotation au point visé</b>.",
   });
 }
 
@@ -1171,20 +2058,25 @@ function cosmonautCard() {
     cfg: data.cosmonaut,
     prefix: "cosmonaut",
     canvasId: "cosmonaut-preview",
-    datalistId: "cosmonaut-assets",
     dot: "#ff8c5a",
     title: "Cosmonaute EVA",
     badge: "COSMONAUTE_*",
+    links: false, // pas de lignes d'atelier : plans visibles ou exclus uniquement
+    defaultTrack: "cargo",
     desc: "Mesh du cosmonaute EVA (pilote éjecté, vaisseau détruit — format « meshes-designer », " +
-      "assets/*.json), échelle, orientation de l'avant et centre de rotation — constantes " +
-      "COSMONAUTE_JSON / COSMONAUTE_EVA_SCALE / COSMONAUTE_ORIENTATION_DEGREES / " +
-      "COSMONAUTE_CENTER_X/Y_PERCENT de src/marketplace.rs (lues par src/cosmonaut.rs).",
+      "assets/*.json), échelle, orientation de l'avant, centre de rotation et **composition des " +
+      "plans** — constantes COSMONAUTE_JSON / COSMONAUTE_EVA_SCALE / COSMONAUTE_ORIENTATION_DEGREES / " +
+      "COSMONAUTE_CENTER_X/Y_PERCENT / COSMONAUTE_PLANES de src/marketplace.rs (lues par " +
+      "src/cosmonaut.rs).",
+    compositionHint: "Chaque plan du mesh est <b>visible</b> ou <b>exclu</b> (jamais construit ni animé — " +
+      "un bras exclu ne s'agite plus). L'aperçu et le centre de rotation ne portent que sur les plans " +
+      "retenus. Liste vide à l'export = tous les plans (repli).",
     hint: "L'aperçu montre le cosmonaute tel qu'il apparaîtra en jeu (debout, axe y du jeu). " +
       "Orientation = angle de l'avant du mesh dans l'éditeur : 0 = face à droite, +90 = vers le haut — " +
       "le jeu tourne le mesh pour ramener l'avant à droite. Le centre de rotation est le pivot autour " +
-      "duquel le cosmonaute pivote (50/50 = centre de la boîte englobante). Sur l'aperçu : <b>molette = " +
-      "rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), <b>clic = centre de " +
-      "rotation au point visé</b>.",
+      "duquel le cosmonaute pivote (50/50 = centre de la boîte englobante de la composition). Sur " +
+      "l'aperçu : <b>molette = rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), " +
+      "<b>clic = centre de rotation au point visé</b>.",
   });
 }
 
@@ -1321,6 +2213,14 @@ function summaryCard() {
           : ""),
     });
   }
+  // météores & collisions : force de réaction à la base, explosion et
+  // population (carte « Météores & collisions »)
+  const gp = data.gameplay;
+  items.push(
+    { k: "Force de réaction (base)", v: fmtFloat(gp.restitution), cls: "", sub: "restitution — le triangle qui collisionne explose et repousse le météore (1.0 = rebond parfait, 0 = sans réaction)" },
+    { k: "Débris par explosion", v: String(int(gp.debrisPerTriangle)), cls: "", sub: "éclats générés par triangle détruit" },
+    { k: "Météores en jeu", v: gp.initialMax + " → " + gp.shapesCount, cls: "", sub: "limite au départ → plafond dur · vitesse max " + fmtFloat(gp.meteorVelocityMax) + " · triangles " + gp.trianglesMin + "–" + gp.trianglesMax },
+  );
   for (const it of items) {
     const box = el("div", "kv");
     box.appendChild(el("div", "k", it.k));
@@ -1406,6 +2306,84 @@ function economyCard() {
   if (badge) {
     badge.innerHTML = "Monnaie : <b>minerais</b> (or " + eco.gems.gold + ", fer " + eco.gems.iron + ", eau " + eco.gems.water + ")";
   }
+  card.appendChild(host);
+  return card;
+}
+
+/* ─── Météores & collisions (physique et génération) ──────────────────────── */
+
+function gameplayCard() {
+  const card = el("div", "card");
+  const h = el("h3", "section");
+  h.appendChild(document.createTextNode("Météores & collisions "));
+  h.appendChild(el("span", "hint", "— physique et génération des météores (src/marketplace.rs)"));
+  card.appendChild(h);
+  const host = el("div", "eco-grid");
+  const g = data.gameplay;
+  const intSetter = key => v => { g[key] = int(v); };
+  const floatSetter = key => v => {
+    const n = parseFloat(v);
+    g[key] = Number.isFinite(n) ? Math.max(0, n) : 0;
+  };
+
+  // collisions avec la station : force de réaction + explosion du triangle
+  const collisions = el("div", "eco-group");
+  collisions.appendChild(el("h4", "", "Collision avec la station (base indestructible)"));
+  const cGrid = el("div", "field-grid");
+  cGrid.appendChild(field("Force de réaction (restitution)", "gp-restitution",
+    economyNumber("gp-restitution", floatSetter("restitution"), g.restitution, 0, "0.1",
+      "Le triangle qui collisionne explose et le météore est repoussé : sa composante de vitesse vers la base est réfléchie avec cette restitution. 1.0 = rebond parfait, 0 = pas de réaction (METEOR_STATION_RESTITUTION).")));
+  cGrid.appendChild(field("Débris par triangle explosé", "gp-debris",
+    economyNumber("gp-debris", intSetter("debrisPerTriangle"), g.debrisPerTriangle, 0, "1",
+      "Taille de l'explosion d'un triangle détruit (GARBAGE_PER_TRIANGLE).")));
+  collisions.appendChild(cGrid);
+  collisions.appendChild(el("p", "hint",
+    "La force de réaction est liée à l'explosion du triangle qui collisionne : le météore " +
+    "rebondit sur l'anneau au lieu de le labourer — constante METEOR_STATION_RESTITUTION, lue par " +
+    "src/game.rs. Les débris de l'explosion (GARBAGE_PER_TRIANGLE) sont lus par src/garbage.rs."));
+  host.appendChild(collisions);
+
+  // génération procédurale des météores
+  const gen = el("div", "eco-group");
+  gen.appendChild(el("h4", "", "Génération des météores"));
+  const genGrid = el("div", "field-grid");
+  genGrid.appendChild(field("Vitesse maximale", "gp-velocity",
+    economyNumber("gp-velocity", floatSetter("meteorVelocityMax"), g.meteorVelocityMax, 0, "0.1",
+      "Vitesse maximale des météores (METEOR_VELOCITY_MAX) — la vitesse de chaque météore est tirée aléatoirement en dessous.")));
+  genGrid.appendChild(field("Triangles par météore (min)", "gp-tri-min",
+    economyNumber("gp-tri-min", intSetter("trianglesMin"), g.trianglesMin, 1, "1", "TRIANGLES_IN_SHAPE_MIN")));
+  genGrid.appendChild(field("Triangles par météore (max)", "gp-tri-max",
+    economyNumber("gp-tri-max", intSetter("trianglesMax"), g.trianglesMax, 1, "1", "TRIANGLES_IN_SHAPE_MAX")));
+  genGrid.appendChild(field("Taille des triangles — base min", "gp-base-min",
+    economyNumber("gp-base-min", intSetter("baseMin"), g.baseMin, 1, "1", "TRIANGLE_BASE_MIN")));
+  genGrid.appendChild(field("Taille des triangles — base max", "gp-base-max",
+    economyNumber("gp-base-max", intSetter("baseMax"), g.baseMax, 1, "1", "TRIANGLE_BASE_MAX")));
+  genGrid.appendChild(field("Taille des triangles — hauteur min", "gp-height-min",
+    economyNumber("gp-height-min", intSetter("heightMin"), g.heightMin, 1, "1", "TRIANGLE_HEIGHT_MIN")));
+  genGrid.appendChild(field("Taille des triangles — hauteur max", "gp-height-max",
+    economyNumber("gp-height-max", intSetter("heightMax"), g.heightMax, 1, "1", "TRIANGLE_HEIGHT_MAX")));
+  gen.appendChild(genGrid);
+  gen.appendChild(el("p", "hint",
+    "Métriques du météore moyen : " + Math.round((g.trianglesMin + g.trianglesMax) / 2) +
+    " triangles, base " + Math.round((g.baseMin + g.baseMax) / 2) + " × hauteur " +
+    Math.round((g.heightMin + g.heightMax) / 2) + " — constantes TRIANGLES_IN_SHAPE_*, " +
+    "TRIANGLE_BASE_*, TRIANGLE_HEIGHT_*, lues par src/generate.rs."));
+  host.appendChild(gen);
+
+  // population de météores
+  const pop = el("div", "eco-group");
+  pop.appendChild(el("h4", "", "Population de météores"));
+  const pGrid = el("div", "field-grid");
+  pGrid.appendChild(field("Météores max au départ", "gp-initial",
+    economyNumber("gp-initial", intSetter("initialMax"), g.initialMax, 1, "1",
+      "Limite de météores au lancement (INITIAL_MAX_METEOR_SHAPES), +1 par météore détruit.")));
+  pGrid.appendChild(field("Plafond dur", "gp-count",
+    economyNumber("gp-count", intSetter("shapesCount"), g.shapesCount, 1, "1",
+      "Plafond du nombre de météores (SHAPES_COUNT) — la limite ne dépasse jamais cette valeur.")));
+  pop.appendChild(pGrid);
+  pop.appendChild(el("p", "hint", "Lues par src/state.rs (départ) et src/game.rs (plafond)."));
+  host.appendChild(pop);
+
   card.appendChild(host);
   return card;
 }
@@ -1636,6 +2614,67 @@ pub struct ReputationRank {
     /// déplacement) accordée dès ce rang atteint.
     pub discount_percent: i32,
 }
+
+/// Ligne d'atelier liée à un plan du vaisseau (composition des plans,
+/// scénario Progression) — la ligne dont le niveau révèle le plan.
+/// Les variantes ne sont construites que quand l'outil exporte un lien
+/// (\`VAISSEAU_PLANE_LINKS\` non vide) — \`dead_code\` quand la liste est vide.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlaneUpgradeTrack {
+    /// Réservoir de carburant (FUEL TANK).
+    Fuel,
+    /// Chargeur de munitions (MAGAZINE).
+    Ammo,
+    /// Soute (CARGO BAY).
+    Cargo,
+}
+
+/// Plan du vaisseau lié à une ligne d'atelier : le plan \`plane_index\` du
+/// fichier mesh n'est construit qu'à partir du niveau \`min_level\` de la
+/// ligne \`track\` (niveau = nombre d'extensions achetées). Généré par l'outil
+/// de gestion.
+#[derive(Clone, Copy, Debug)]
+pub struct PlaneUpgradeLink {
+    /// Indice du plan dans le fichier mesh (\`VAISSEAU_JSON\`).
+    pub plane_index: usize,
+    /// Ligne d'atelier qui révèle le plan.
+    pub track: PlaneUpgradeTrack,
+    /// Niveau minimal de la ligne pour que le plan soit construit.
+    pub min_level: i32,
+}
+
+/// Une arme du catalogue du vaisseau joueur : mesh de l'arme posé **sur le
+/// vaisseau** à un emplacement de tir (\`spawn_index\` dans
+/// \`VAISSEAU_BULLET_SPAWNS\` — la liste des emplacements possibles est
+/// contrainte) et munition tirée par l'arme (mesh de la munition, avec sa
+/// propre échelle et orientation). Toutes les armes du catalogue tirent
+/// ensemble au Shift. Générée par l'outil de gestion. Les champs ne sont lus
+/// que quand le catalogue est rempli (\`VAISSEAU_WEAPONS\` non vide) —
+/// \`dead_code\` quand la liste est vide.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub struct VaisseauWeapon {
+    /// Nom de l'arme (tool, export).
+    pub name: &'static str,
+    /// Mesh de l'arme — fichier « meshes-designer » embarqué au compile.
+    pub mesh: &'static str,
+    /// Échelle de l'arme (multiplicateur des sommets du mesh) : 1.0 = 100 %.
+    pub scale: f64,
+    /// Orientation de l'arme (degrés) : angle de l'avant du mesh dans
+    /// l'éditeur (0 = avant vers la droite, +90 = vers le haut).
+    pub orientation_degrees: f64,
+    /// Emplacement de l'arme sur le vaisseau : index dans
+    /// \`VAISSEAU_BULLET_SPAWNS\` (liste contrainte).
+    pub spawn_index: usize,
+    /// Mesh de la munition tirée par l'arme — embarqué au compile.
+    pub ammo_mesh: &'static str,
+    /// Échelle de la munition (multiplicateur des sommets du mesh).
+    pub ammo_scale: f64,
+    /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
+    /// l'éditeur — la munition part nez en avant.
+    pub ammo_orientation_degrees: f64,
+}
 `;
 
 // Constantes économiques du scénario Progression (valeur des gemmes, coûts
@@ -1645,10 +2684,115 @@ function fmtFloat(n) {
   return Number.isInteger(n) ? n + ".0" : String(n);
 }
 
-// Constantes du vaisseau joueur : mesh, échelle, orientation et centre de
-// rotation — lues par src/vaisseau.rs à la construction du vaisseau. Le
-// chemin du mesh est relatif à la racine du projet ; l'include_str! est
-// résolu depuis src/ (d'où le « ../ »).
+// Export Rust du catalogue d'armes (`VAISSEAU_WEAPONS`) : les meshes des
+// armes et des munitions sont embarqués au compile (`include_str!`, un par
+// arme : `VAISSEAU_WEAPON_MESH_i` / `VAISSEAU_WEAPON_AMMO_MESH_i`) et la
+// liste référence ces constantes. Vide → liste vide (repli du jeu : tir
+// classique). Renvoie un tableau de lignes Rust.
+function weaponsConsts(cfg) {
+  const weapons = Array.isArray(cfg.weapons) ? cfg.weapons : [];
+  if (weapons.length === 0) {
+    return [
+      "/// Catalogue d'armes du vaisseau joueur : chaque arme est un mesh posé",
+      "/// **sur le vaisseau** à un emplacement de tir (`spawn_index` dans",
+      "/// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est",
+      "/// contrainte) et tire sa propre munition (mesh de la munition). Toutes",
+      "/// les armes du catalogue tirent ensemble au Shift. **Liste vide = tir",
+      "/// classique** (une balle rouge par emplacement, repli : comportement",
+      "/// d'origine). Générée par l'outil de gestion.",
+      "pub const VAISSEAU_WEAPONS: &[VaisseauWeapon] = &[];",
+    ];
+  }
+  const lines = [];
+  const norm = a => String(a).replace(/^(\.\.?\/)+/, "");
+  weapons.forEach((w, i) => {
+    const meshPath = norm(w.asset || "assets/vaisseau.json");
+    const ammoPath = norm(w.ammoAsset || "assets/vaisseau.json");
+    lines.push(
+      "/// Mesh de l'arme « " + rustEscape(String(w.name || ("ARME " + (i + 1)))) + " » (VAISSEAU_WEAPONS[" + i + "]) — embarqué au compile.",
+      "pub const VAISSEAU_WEAPON_MESH_" + i + ": &str = include_str!(\"../" + meshPath + "\");",
+      "/// Mesh de la munition de l'arme « " + rustEscape(String(w.name || ("ARME " + (i + 1)))) + " » (VAISSEAU_WEAPONS[" + i + "]).",
+      "pub const VAISSEAU_WEAPON_AMMO_MESH_" + i + ": &str = include_str!(\"../" + ammoPath + "\");",
+      "",
+    );
+  });
+  lines.push(
+    "/// Catalogue d'armes du vaisseau joueur : chaque arme est un mesh posé",
+    "/// **sur le vaisseau** à un emplacement de tir (`spawn_index` dans",
+    "/// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est",
+    "/// contrainte) et tire sa propre munition (mesh de la munition). Toutes",
+    "/// les armes du catalogue tirent ensemble au Shift. **Liste vide = tir",
+    "/// classique** (une balle rouge par emplacement, repli : comportement",
+    "/// d'origine). Générée par l'outil de gestion.",
+    "pub const VAISSEAU_WEAPONS: &[VaisseauWeapon] = &[",
+  );
+  weapons.forEach((w, i) => {
+    lines.push(
+      "    VaisseauWeapon {",
+      "        name: \"" + rustEscape(String(w.name || ("ARME " + (i + 1)))) + "\",",
+      "        mesh: VAISSEAU_WEAPON_MESH_" + i + ",",
+      "        scale: " + fmtFloat(Math.max(1, Number(w.scalePercent) || 100) / 100) + ",",
+      "        orientation_degrees: " + fmtFloat((Number(w.orientationDeg) || 0)) + ",",
+      "        spawn_index: " + Math.max(0, Math.min(Number(w.spawnIndex) || 0, Math.max((Array.isArray(cfg.bulletSpawns) ? cfg.bulletSpawns.length : 0) - 1, 0))) + ",",
+      "        ammo_mesh: VAISSEAU_WEAPON_AMMO_MESH_" + i + ",",
+      "        ammo_scale: " + fmtFloat(Math.max(1, Number(w.ammoScalePercent) || 100) / 100) + ",",
+      "        ammo_orientation_degrees: " + fmtFloat((Number(w.ammoOrientationDeg) || 0)) + ",",
+      "    },",
+    );
+  });
+  lines.push("];");
+  return lines;
+}
+
+// Export Rust des emplacements de tir (`VAISSEAU_BULLET_SPAWNS`) : couples
+// (x, y) en % de la boîte englobante — vide → « &[] » (repli du jeu : un
+// seul emplacement au centre de rotation).
+function spawnsExport(cfg) {
+  const list = Array.isArray(cfg.bulletSpawns) ? cfg.bulletSpawns : [];
+  if (list.length === 0) return "&[]";
+  return "&[" + list
+    .map(p => "(" + fmtFloat(Math.max(0, Math.min(100, Number(p.x) || 0))) + ", "
+      + fmtFloat(Math.max(0, Math.min(100, Number(p.y) || 0))) + ")")
+    .join(", ") + "]";
+}
+
+// Export Rust d'une liste d'indices de plans (composition) : les plans
+// « always » uniquement (les plans « upgrade » partent dans
+// `VAISSEAU_PLANE_LINKS`, les exclus dans aucune liste — le jeu ne les
+// construit jamais). Vide → « &[] » (repli du jeu : tous les plans). Une
+// composition non définie (jamais réglée, ou définie pour un autre asset)
+// exporte aussi la liste vide : le jeu montre alors tous les plans.
+function planesListExport(cfg) {
+  if (!Array.isArray(cfg.planes) || cfg.planesForAsset !== cfg.asset) return "&[]";
+  // le mesh chargé (aperçu) fait foi : un plan ajouté depuis la dernière
+  // composition est « always » par défaut — sinon il serait exclu de
+  // l'export (et jamais construit en jeu) sans que l'utilisateur l'ait vu
+  const rules = effectiveRules(cfg, currentMeshFor(cfg));
+  const idx = [];
+  rules.forEach((p, i) => { if (p && p.rule === "always") idx.push(i); });
+  return idx.length === 0 ? "&[]" : "&[" + idx.join(", ") + "]";
+}
+
+// Export des liens plans → lignes d'atelier (`VAISSEAU_PLANE_LINKS`).
+function shipLinksExport() {
+  const s = data.ship;
+  if (!Array.isArray(s.planes) || s.planesForAsset !== s.asset) return "&[]";
+  const links = [];
+  s.planes.forEach((p, i) => {
+    if (p && p.rule === "upgrade") {
+      const track = p.track === "fuel" ? "Fuel" : p.track === "ammo" ? "Ammo" : "Cargo";
+      links.push("PlaneUpgradeLink { plane_index: " + i + ", track: PlaneUpgradeTrack::" +
+        track + ", min_level: " + Math.max(1, int(p.minLevel)) + " }");
+    }
+  });
+  if (links.length === 0) return "&[]";
+  return "&[\n" + links.map(l => "    " + l + ",").join("\n") + "\n]";
+}
+
+// Constantes du vaisseau joueur : mesh, échelle, orientation, centre de
+// rotation et composition des plans — lues par src/vaisseau.rs à la
+// construction du vaisseau. Le chemin du mesh est relatif à la racine du
+// projet ; l'include_str! est résolu depuis src/ (d'où le « ../ »).
 function shipConsts() {
   const s = data.ship;
   const scale = s.scalePercent / 100;
@@ -1677,6 +2821,29 @@ function shipConsts() {
     "",
     "/// Centre de rotation du vaisseau (voir `VAISSEAU_CENTER_X_PERCENT`), axe y.",
     "pub const VAISSEAU_CENTER_Y_PERCENT: f64 = " + fmtFloat(s.centerYPercent) + ";",
+    "",
+    "/// Emplacements de départ des projectiles (tir Shift) : positions en",
+    "/// **pourcentage de la boîte englobante de la composition** (50/50 =",
+    "/// centre), dans le repère du mesh de l'éditeur (y vers le haut). Une",
+    "/// balle part de chaque emplacement, tourné avec le vaisseau. **Liste",
+    "/// vide = un seul emplacement au centre de rotation** (repli :",
+    "/// comportement d'origine). Générée par l'outil de gestion.",
+    "pub const VAISSEAU_BULLET_SPAWNS: &[(f64, f64)] = " + spawnsExport(s) + ";",
+    "",
+    ...weaponsConsts(s),
+    "",
+    "/// Plans du vaisseau **toujours visibles** (composition de base — indices",
+    "/// des plans du fichier mesh `VAISSEAU_JSON`). Un plan lié à une ligne",
+    "/// d'atelier (`VAISSEAU_PLANE_LINKS`) n'est construit qu'à partir de son",
+    "/// niveau ; un plan absent des deux listes n'est jamais construit.",
+    "/// **Listes vides = tous les plans** (repli : composition non définie).",
+    "/// Générées par l'outil de gestion.",
+    "pub const VAISSEAU_PLANES_ALWAYS: &[usize] = " + planesListExport(s) + ";",
+    "",
+    "/// Plans du vaisseau liés aux lignes d'atelier (Progression) : un plan",
+    "/// apparaît quand la ligne `track` atteint le niveau `min_level`. Générés",
+    "/// par l'outil de gestion.",
+    "pub const VAISSEAU_PLANE_LINKS: &[PlaneUpgradeLink] = " + shipLinksExport() + ";",
   ].join("\n");
 }
 
@@ -1714,6 +2881,12 @@ function cosmonautConsts() {
     "/// Centre de rotation du cosmonaute EVA (voir `COSMONAUTE_CENTER_X_PERCENT`),",
     "/// axe y.",
     "pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = " + fmtFloat(c.centerYPercent) + ";",
+    "",
+    "/// Plans du cosmonaute EVA construits (composition — indices des plans du",
+    "/// fichier mesh `COSMONAUTE_JSON`) : un plan absent n'est jamais construit",
+    "/// (ni animé). **Liste vide = tous les plans** (repli : composition non",
+    "/// définie). Générée par l'outil de gestion.",
+    "pub const COSMONAUTE_PLANES: &[usize] = " + planesListExport(c) + ";",
   ].join("\n");
 }
 
@@ -1743,6 +2916,51 @@ function economyConsts() {
     "",
     "/// Pas de ravitaillement en munitions.",
     "pub const AMMO_STEP: i32 = " + e.ammoStep + ";",
+  ].join("\n");
+}
+
+// Constantes de gameplay « météores & collisions » : force de réaction à la
+// base, débris par explosion, vitesse et génération des météores, population
+// — lues par src/game.rs (réaction), src/garbage.rs (débris),
+// src/generate.rs (génération) et src/state.rs (population).
+function gameplayConsts() {
+  const g = data.gameplay;
+  const flt = n => fmtFloat(Math.max(0, Number(n) || 0));
+  const i32 = n => String(int(n));
+  return [
+    "/// Météores — collisions avec la station et génération (mise au point).",
+    "/// Données générées par l'outil de gestion : lues par `src/game.rs`",
+    "/// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et",
+    "/// `src/state.rs` (génération et population).",
+    "",
+    "/// Force de réaction d'un météore qui percute la **station** : le triangle",
+    "/// qui collisionne explose et le météore est repoussé — sa composante de",
+    "/// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,",
+    "/// la composante tangentielle (glissement le long de l'anneau) est",
+    "/// conservée. 1.0 = rebond parfait (l'explosion rend au météore la vitesse",
+    "/// de l'impact) ; 0 = pas de réaction.",
+    "pub const METEOR_STATION_RESTITUTION: f64 = " + flt(g.restitution) + ";",
+    "",
+    "/// Débris générés par triangle détruit (l'explosion d'un triangle de",
+    "/// météore sur la base ou un autre météore).",
+    "pub const GARBAGE_PER_TRIANGLE: usize = " + i32(g.debrisPerTriangle) + ";",
+    "",
+    "/// Vitesse maximale des météores (`2*rnd` à l'origine).",
+    "pub const METEOR_VELOCITY_MAX: f64 = " + flt(g.meteorVelocityMax) + ";",
+    "",
+    "/// Génération procédurale des météores : bornes du nombre de triangles",
+    "/// par météore et de la taille (base, hauteur) des triangles.",
+    "pub const TRIANGLES_IN_SHAPE_MIN: i32 = " + i32(g.trianglesMin) + ";",
+    "pub const TRIANGLES_IN_SHAPE_MAX: i32 = " + i32(g.trianglesMax) + ";",
+    "pub const TRIANGLE_BASE_MIN: i32 = " + i32(g.baseMin) + ";",
+    "pub const TRIANGLE_BASE_MAX: i32 = " + i32(g.baseMax) + ";",
+    "pub const TRIANGLE_HEIGHT_MIN: i32 = " + i32(g.heightMin) + ";",
+    "pub const TRIANGLE_HEIGHT_MAX: i32 = " + i32(g.heightMax) + ";",
+    "",
+    "/// Population de météores : nombre initial maximal, plafonné à",
+    "/// `SHAPES_COUNT` (+1 par météore détruit).",
+    "pub const INITIAL_MAX_METEOR_SHAPES: i32 = " + i32(g.initialMax) + ";",
+    "pub const SHAPES_COUNT: i32 = " + i32(g.shapesCount) + ";",
   ].join("\n");
 }
 
@@ -1781,6 +2999,8 @@ function exportRust() {
     RUST_HEADER.replace(/\s+$/, ""),
     "",
     economyConsts(),
+    "",
+    gameplayConsts(),
     "",
     reputationConsts(),
     "",
@@ -2093,7 +3313,7 @@ function fillTrackFields(track, block) {
 // renvoie un état partiel { tracks, economy } — les valeurs manquantes
 // retombent sur les valeurs du jeu via normalize().
 function parseRust(text) {
-  const out = { tracks: [], economy: {}, reputation: {}, ship: {}, cosmonaut: {} };
+  const out = { tracks: [], economy: {}, gameplay: {}, reputation: {}, ship: {}, cosmonaut: {} };
   const grab = re => {
     const m = text.match(re);
     return m ? m[1] : null;
@@ -2113,7 +3333,7 @@ function parseRust(text) {
     if (v.length === 3 && v.every(Number.isFinite)) out.economy.modes = v;
   }
   const price = name => {
-    const m = text.match(new RegExp(name + "\\s*:\\s*(?:i32|f64)\\s*=\\s*([0-9.]+)"));
+    const m = text.match(new RegExp(name + "\\s*:\\s*(?:i32|f64|usize)\\s*=\\s*([0-9.]+)"));
     if (!m) return null;
     return m[1].includes(".") ? parseFloat(m[1]) : parseInt(m[1], 10);
   };
@@ -2125,6 +3345,30 @@ function parseRust(text) {
   if (fuelStep !== null) out.economy.fuelStep = fuelStep;
   if (ammoPrice !== null) out.economy.ammoPrice = ammoPrice;
   if (ammoStep !== null) out.economy.ammoStep = ammoStep;
+
+  // ── gameplay (collisions avec la station, génération des météores) ──
+  const restitution = price("METEOR_STATION_RESTITUTION");
+  if (restitution !== null) out.gameplay.restitution = restitution;
+  const debris = price("GARBAGE_PER_TRIANGLE");
+  if (debris !== null) out.gameplay.debrisPerTriangle = debris;
+  const vel = price("METEOR_VELOCITY_MAX");
+  if (vel !== null) out.gameplay.meteorVelocityMax = vel;
+  const tMin = price("TRIANGLES_IN_SHAPE_MIN");
+  const tMax = price("TRIANGLES_IN_SHAPE_MAX");
+  if (tMin !== null) out.gameplay.trianglesMin = tMin;
+  if (tMax !== null) out.gameplay.trianglesMax = tMax;
+  const bMin = price("TRIANGLE_BASE_MIN");
+  const bMax = price("TRIANGLE_BASE_MAX");
+  const hMin = price("TRIANGLE_HEIGHT_MIN");
+  const hMax = price("TRIANGLE_HEIGHT_MAX");
+  if (bMin !== null) out.gameplay.baseMin = bMin;
+  if (bMax !== null) out.gameplay.baseMax = bMax;
+  if (hMin !== null) out.gameplay.heightMin = hMin;
+  if (hMax !== null) out.gameplay.heightMax = hMax;
+  const initial = price("INITIAL_MAX_METEOR_SHAPES");
+  const count = price("SHAPES_COUNT");
+  if (initial !== null) out.gameplay.initialMax = initial;
+  if (count !== null) out.gameplay.shapesCount = count;
 
   // ── réputation (poids de précision + rangs : seuil, nom, remise) ──
   const precWeight = grab(/pub const DISCOUNT_PRECISION_WEIGHT: f64 = ([0-9.]+);/);
@@ -2155,6 +3399,46 @@ function parseRust(text) {
   if (cx) out.ship.centerXPercent = parseFloat(cx);
   const cy = grab(/pub const VAISSEAU_CENTER_Y_PERCENT: f64 = (-?[0-9.]+);/);
   if (cy) out.ship.centerYPercent = parseFloat(cy);
+  // emplacements de tir : couples (x, y) en % de la boîte englobante
+  const spawnsBlock = grab(/pub const VAISSEAU_BULLET_SPAWNS: &\[\(f64, f64\)\] = &\[([^\]]*)\]/);
+  if (spawnsBlock) {
+    const re = /\(\s*(-?[0-9.]+)\s*,\s*(-?[0-9.]+)\s*\)/g;
+    const spawns = [];
+    let m;
+    while ((m = re.exec(spawnsBlock)) !== null) {
+      spawns.push({ x: parseFloat(m[1]), y: parseFloat(m[2]) });
+    }
+    out.ship.bulletSpawns = spawns; // vide = &[] → un seul emplacement au centre
+  }
+  // catalogue d'armes : meshes (arme + munition, include_str!) et liste
+  // `VAISSEAU_WEAPONS` — chaque arme référence ses constantes par index
+  const weaponMeshes = {};
+  const wmRe = /pub const VAISSEAU_WEAPON_MESH_(\d+): &str = include_str!\("([^"]+)"\)/g;
+  let wm;
+  while ((wm = wmRe.exec(text)) !== null) weaponMeshes[wm[1]] = wm[2].replace(/^\.\.\//, "");
+  const ammoMeshes = {};
+  const amRe = /pub const VAISSEAU_WEAPON_AMMO_MESH_(\d+): &str = include_str!\("([^"]+)"\)/g;
+  let am;
+  while ((am = amRe.exec(text)) !== null) ammoMeshes[am[1]] = am[2].replace(/^\.\.\//, "");
+  const weaponsBlock = grab(/pub const VAISSEAU_WEAPONS: &\[VaisseauWeapon\] = &\[([\s\S]*?)\n\];/);
+  if (weaponsBlock) {
+    const re = /VaisseauWeapon\s*\{\s*name:\s*"((?:[^"\\]|\\.)*)"\s*,\s*mesh:\s*VAISSEAU_WEAPON_MESH_(\d+)\s*,\s*scale:\s*([0-9.]+)\s*,\s*orientation_degrees:\s*(-?[0-9.]+)\s*,\s*spawn_index:\s*(\d+)\s*,\s*ammo_mesh:\s*VAISSEAU_WEAPON_AMMO_MESH_(\d+)\s*,\s*ammo_scale:\s*([0-9.]+)\s*,\s*ammo_orientation_degrees:\s*(-?[0-9.]+)\s*,?\s*\}/g;
+    const weapons = [];
+    let m;
+    while ((m = re.exec(weaponsBlock)) !== null) {
+      weapons.push({
+        name: rustUnescape(m[1]),
+        asset: weaponMeshes[m[2]] || "assets/vaisseau.json",
+        scalePercent: Math.round(parseFloat(m[3]) * 100),
+        orientationDeg: parseFloat(m[4]),
+        spawnIndex: parseInt(m[5], 10),
+        ammoAsset: ammoMeshes[m[6]] || "assets/vaisseau.json",
+        ammoScalePercent: Math.round(parseFloat(m[7]) * 100),
+        ammoOrientationDeg: parseFloat(m[8]),
+      });
+    }
+    out.ship.weapons = weapons;
+  }
 
   // ── cosmonaute EVA (mesh, échelle, orientation, centre de rotation) ──
   const casset = grab(/pub const COSMONAUTE_JSON: &str = include_str!\("([^"]+)"\)/);
@@ -2167,6 +3451,34 @@ function parseRust(text) {
   if (ccx) out.cosmonaut.centerXPercent = parseFloat(ccx);
   const ccy = grab(/pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = (-?[0-9.]+);/);
   if (ccy) out.cosmonaut.centerYPercent = parseFloat(ccy);
+
+  // ── composition des plans (vaisseau : toujours + liens ; cosmonaute) ──
+  // Listes vides = composition non définie → `null` (tous les plans, repli).
+  const always = grab(/pub const VAISSEAU_PLANES_ALWAYS: &\[usize\] = &\[([^\]]*)\]/);
+  // les liens ne contiennent aucun « ] » : la capture va jusqu'au « ] »
+  // fermant (vide = &[] — repli « tous les plans »)
+  const linksBlock = grab(/pub const VAISSEAU_PLANE_LINKS: &\[PlaneUpgradeLink\] = &\[([^\]]*)\]/);
+  const alwaysIdx = always
+    ? always.split(",").map(s => parseInt(s, 10)).filter(Number.isFinite)
+    : [];
+  const links = [];
+  if (linksBlock) {
+    const re = /PlaneUpgradeLink\s*\{\s*plane_index:\s*(\d+)\s*,\s*track:\s*PlaneUpgradeTrack::(\w+)\s*,\s*min_level:\s*(\d+)\s*\}/g;
+    let m;
+    while ((m = re.exec(linksBlock)) !== null) {
+      links.push({ plane_index: parseInt(m[1], 10), track: m[2], min_level: parseInt(m[3], 10) });
+    }
+  }
+  if (alwaysIdx.length > 0 || links.length > 0) {
+    out.ship.planes = parseComposition(alwaysIdx, links);
+  } else {
+    out.ship.planes = null;
+  }
+  const calways = grab(/pub const COSMONAUTE_PLANES: &\[usize\] = &\[([^\]]*)\]/);
+  const cidx = calways
+    ? calways.split(",").map(s => parseInt(s, 10)).filter(Number.isFinite)
+    : [];
+  out.cosmonaut.planes = cidx.length > 0 ? parseComposition(cidx, []) : null;
 
   // ── lignes d'atelier (par identifiant de constante) ──
   for (const [id, meta] of Object.entries(TRACK_META)) {
@@ -2208,6 +3520,26 @@ function parseRust(text) {
   return out;
 }
 
+// Composition d'un mesh lue depuis les constantes Rust : plans « always » +
+// liens vers les lignes d'atelier (indices → règle par plan). La longueur
+// est le max des indices + 1 ; les plans entre-deux sont « excluded »
+// (alignés sur le mesh réel à l'affichage, voir compositionSection).
+function parseComposition(always, links) {
+  const rules = [];
+  const set = (i, rule) => {
+    while (rules.length <= i) {
+      rules.push({ rule: "excluded", track: "cargo", minLevel: 1 });
+    }
+    Object.assign(rules[i], rule);
+  };
+  for (const idx of always) set(idx, { rule: "always" });
+  for (const l of links) {
+    const track = l.track === "Fuel" ? "fuel" : l.track === "Ammo" ? "ammo" : "cargo";
+    set(l.plane_index, { rule: "upgrade", track, minLevel: Math.max(1, l.min_level) });
+  }
+  return rules;
+}
+
 function normalize(parsed) {
   // reconstruit un état complet et propre à partir d'un JSON importé
   const out = deepClone(DEFAULT_DATA);
@@ -2239,6 +3571,24 @@ function normalize(parsed) {
   if (Number.isFinite(eco.fuelStep) && eco.fuelStep > 0) out.economy.fuelStep = eco.fuelStep;
   if (Number.isFinite(eco.ammoPrice)) out.economy.ammoPrice = int(eco.ammoPrice);
   if (Number.isFinite(eco.ammoStep) && eco.ammoStep > 0) out.economy.ammoStep = Math.round(eco.ammoStep);
+  // gameplay — météores & collisions (valeurs manquantes → valeurs du jeu) :
+  // force de réaction à la base, débris par explosion, vitesse, bornes de
+  // génération et population
+  const gameplay = parsed.gameplay || {};
+  const gpInt = (key, min) => {
+    if (Number.isFinite(gameplay[key]) && gameplay[key] >= min) out.gameplay[key] = int(gameplay[key]);
+  };
+  if (Number.isFinite(gameplay.restitution) && gameplay.restitution >= 0) out.gameplay.restitution = gameplay.restitution;
+  gpInt("debrisPerTriangle", 0);
+  if (Number.isFinite(gameplay.meteorVelocityMax) && gameplay.meteorVelocityMax >= 0) out.gameplay.meteorVelocityMax = gameplay.meteorVelocityMax;
+  gpInt("trianglesMin", 1);
+  gpInt("trianglesMax", 1);
+  gpInt("baseMin", 1);
+  gpInt("baseMax", 1);
+  gpInt("heightMin", 1);
+  gpInt("heightMax", 1);
+  gpInt("initialMax", 1);
+  gpInt("shapesCount", 1);
   // réputation (valeurs manquantes → valeurs du jeu) : poids de précision,
   // puis rangs aux seuils triés croissants (le jeu prend le plus haut palier
   // dont le seuil est atteint)
@@ -2270,6 +3620,39 @@ function normalize(parsed) {
   if (Number.isFinite(ship.centerYPercent)) {
     out.ship.centerYPercent = Math.max(0, Math.min(100, ship.centerYPercent));
   }
+  if (Array.isArray(ship.bulletSpawns)) {
+    out.ship.bulletSpawns = ship.bulletSpawns
+      .map(p => ({
+        x: Number.isFinite(p && p.x) ? Math.max(0, Math.min(100, p.x)) : 0,
+        y: Number.isFinite(p && p.y) ? Math.max(0, Math.min(100, p.y)) : 0,
+      }))
+      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+  }
+  // catalogue d'armes : mesh de l'arme + munition (assets, échelles,
+  // orientations) et emplacement contraint aux emplacements de tir
+  if (Array.isArray(ship.weapons)) {
+    const spawnCount = out.ship.bulletSpawns.length;
+    out.ship.weapons = ship.weapons
+      .map(w => ({
+        name: typeof w && typeof w.name === "string" && w.name ? w.name : "ARME",
+        asset: typeof w && typeof w.asset === "string" && w.asset ? w.asset : "assets/vaisseau.json",
+        scalePercent: Number.isFinite(w && w.scalePercent)
+          ? Math.max(1, Math.min(1000, Math.round(w.scalePercent)))
+          : 100,
+        orientationDeg: Number.isFinite(w && w.orientationDeg) ? w.orientationDeg : 0,
+        spawnIndex: Number.isFinite(w && w.spawnIndex)
+          ? Math.max(0, Math.min(spawnCount - 1, Math.round(w.spawnIndex)))
+          : 0,
+        ammoAsset: typeof w && typeof w.ammoAsset === "string" && w.ammoAsset
+          ? w.ammoAsset
+          : "assets/vaisseau.json",
+        ammoScalePercent: Number.isFinite(w && w.ammoScalePercent)
+          ? Math.max(1, Math.min(1000, Math.round(w.ammoScalePercent)))
+          : 100,
+        ammoOrientationDeg: Number.isFinite(w && w.ammoOrientationDeg) ? w.ammoOrientationDeg : 0,
+      }))
+      .filter(w => typeof w === "object");
+  }
   // cosmonaute EVA (valeurs manquantes → valeurs du jeu)
   const cosmonaut = parsed.cosmonaut || {};
   if (typeof cosmonaut.asset === "string" && cosmonaut.asset) out.cosmonaut.asset = cosmonaut.asset;
@@ -2283,7 +3666,111 @@ function normalize(parsed) {
   if (Number.isFinite(cosmonaut.centerYPercent)) {
     out.cosmonaut.centerYPercent = Math.max(0, Math.min(100, cosmonaut.centerYPercent));
   }
+  // composition des plans (vaisseau : « always » / « upgrade » / « excluded »
+  // + ligne et niveau ; cosmonaute : « always » / « excluded ») — rattachée
+  // au mesh courant si l'import ne précise pas son asset d'origine
+  if (Array.isArray(ship.planes)) {
+    out.ship.planes = ship.planes.map(p => {
+      const trackId = p.track === "fuel" || p.track === "ammo" ? p.track : "cargo";
+      const track = out.tracks.find(t => t.id === trackId);
+      const maxLevel = Math.max(1, track ? track.tiers.length : 1);
+      return {
+        rule: p.rule === "upgrade" || p.rule === "excluded" ? p.rule : "always",
+        track: trackId,
+        minLevel: Math.max(1, Math.min(maxLevel, int(p.minLevel) || 1)),
+      };
+    });
+    out.ship.planesForAsset = typeof ship.planesForAsset === "string" && ship.planesForAsset
+      ? ship.planesForAsset
+      : out.ship.asset;
+  }
+  if (Array.isArray(cosmonaut.planes)) {
+    out.cosmonaut.planes = cosmonaut.planes.map(p => ({
+      rule: p.rule === "excluded" ? "excluded" : "always",
+      track: "cargo",
+      minLevel: 1,
+    }));
+    out.cosmonaut.planesForAsset = typeof cosmonaut.planesForAsset === "string" && cosmonaut.planesForAsset
+      ? cosmonaut.planesForAsset
+      : out.cosmonaut.asset;
+  }
   return out;
+}
+
+/* ─── Console cargo (mode serveur local) ──────────────────────────────────── */
+
+// Lance « cargo test » ou « cargo run » via le serveur local (server.mjs),
+// affiche la sortie en direct dans la console et lit le code de sortie final.
+// Une seule commande à la fois ; « ■ Arrêter » coupe le process en cours.
+let cargoBusy = false;
+
+function cargoAppend(text) {
+  const out = document.getElementById("cargo-out");
+  out.textContent += text;
+  out.scrollTop = out.scrollHeight;
+}
+
+function cargoStatus(text, cls) {
+  const el = document.getElementById("cargo-status");
+  el.textContent = text;
+  el.className = "cargo-status" + (cls ? " " + cls : "");
+}
+
+async function runCargo(command) {
+  const testBtn = document.getElementById("btn-cargo-test");
+  const runBtn = document.getElementById("btn-cargo-run");
+  const stopBtn = document.getElementById("btn-cargo-stop");
+  if (cargoBusy) { toast("Une commande cargo est déjà en cours"); return; }
+  cargoBusy = true;
+  testBtn.disabled = runBtn.disabled = stopBtn.disabled = false;
+  document.getElementById("cargo-out").textContent = "";
+  cargoStatus(command === "test" ? "cargo test en cours…" : "cargo run en cours…", "busy");
+  try {
+    const res = await fetch("api/cargo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      cargoAppend(dec.decode(value, { stream: true }));
+    }
+    cargoAppend(dec.decode());
+    // dernière ligne du serveur : « [code de sortie: N] » — la retire de la
+    // sortie affichée pour ne la montrer que dans le statut
+    const out = document.getElementById("cargo-out");
+    const m = out.textContent.match(/\[code de sortie: (-?\d+)\]\s*$/);
+    if (m) out.textContent = out.textContent.replace(/\[code de sortie: -?\d+\]\s*$/, "");
+    const code = m ? parseInt(m[1], 10) : null;
+    cargoStatus(
+      code === 0 ? (command === "test" ? "cargo test : OK ✓" : "Jeu terminé ✓") :
+      code !== null ? "Échec (code " + code + ")" : "Terminé (interrompu ?)",
+      code === 0 ? "busy" : "fail"
+    );
+    if (code === 0) toast(command === "test" ? "cargo test : tout passe ✓" : "cargo run terminé ✓");
+  } catch (err) {
+    cargoStatus("Erreur : " + err.message, "fail");
+    cargoAppend("\nErreur : " + err.message + "\n");
+  } finally {
+    cargoBusy = false;
+    document.getElementById("btn-cargo-test").disabled = false;
+    document.getElementById("btn-cargo-run").disabled = false;
+    document.getElementById("btn-cargo-stop").disabled = true;
+  }
+}
+
+async function stopCargo() {
+  try {
+    const res = await fetch("api/cargo-stop", { method: "POST" });
+    if (!res.ok) throw new Error(await res.text());
+    cargoStatus("Arrêt demandé…", "busy");
+  } catch (err) {
+    toast("Arrêt impossible : " + err.message);
+  }
 }
 
 /* ─── Câblage des boutons ─────────────────────────────────────────────────── */
@@ -2294,6 +3781,14 @@ document.getElementById("btn-import-rs").addEventListener("click", importRust);
 document.getElementById("btn-save-rs").addEventListener("click", saveRustFile);
 document.getElementById("btn-prev").addEventListener("click", () => nextCard(-1));
 document.getElementById("btn-next").addEventListener("click", () => nextCard(+1));
+document.getElementById("btn-cargo-test").addEventListener("click", () => runCargo("test"));
+document.getElementById("btn-cargo-run").addEventListener("click", () => runCargo("run"));
+document.getElementById("btn-cargo-stop").addEventListener("click", stopCargo);
+document.getElementById("btn-cargo-collapse").addEventListener("click", () => {
+  const c = document.getElementById("cargo-console");
+  c.classList.toggle("collapsed");
+  document.getElementById("btn-cargo-collapse").textContent = c.classList.contains("collapsed") ? "▸" : "▾";
+});
 
 // Navigation clavier : flèches ← / → = carte précédente / suivante. Ignorée
 // quand on saisit dans un champ (input, textarea, select, contenu éditable)
@@ -2310,14 +3805,19 @@ document.addEventListener("keydown", (e) => {
 
 render();
 setSnapshot(); // état de départ : rien de modifié → bouton grisé
-// suggestions d'asset (mode serveur : meshes réels de assets/) — vaisseau et cosmonaute
-populateAssets("ship-assets", data.ship.asset);
-populateAssets("cosmonaut-assets", data.cosmonaut.asset);
+// sélecteurs d'asset : liste des fichiers JSON de assets/ (mode serveur) —
+// re-rend une fois la liste chargée pour la mettre dans les <select>
+refreshAssetPickers();
 
 // mode serveur local : le fichier du projet (src/marketplace.rs) est chargé
-// automatiquement dès l'ouverture — aucune action nécessaire
+// automatiquement dès l'ouverture — aucune action nécessaire ; la console
+// cargo (compiler/tester depuis l'outil) n'a de sens que servie par le
+// serveur local (les fetch api/cargo échoueraient en fichier local)
 if (SERVER_MODE) {
   loadProjectFile();
+  const console = document.getElementById("cargo-console");
+  console.hidden = false;
+  document.body.classList.add("has-console");
 }
 </script>
 </body>

@@ -9,6 +9,12 @@ use std::f64::consts::TAU;
 
 use crate::config::*;
 use crate::geom::{generate_vertex_outside, Point, Triangle};
+// génération des météores (taille, triangles, vitesse) et population :
+// constantes de la carte « Météores & collisions » de l'outil de gestion
+use crate::marketplace::{
+    METEOR_VELOCITY_MAX, TRIANGLE_BASE_MAX, TRIANGLE_BASE_MIN, TRIANGLE_HEIGHT_MAX,
+    TRIANGLE_HEIGHT_MIN, TRIANGLES_IN_SHAPE_MAX, TRIANGLES_IN_SHAPE_MIN,
+};
 use crate::shape::*;
 use crate::state::{default_elements, Element, GameState};
 
@@ -404,31 +410,110 @@ pub fn eject_cargo_gems(
     state.player.cargo_qty = 0;
 }
 
-/// Tire une balle depuis le vaisseau (ex `fireBullet`).
+/// Tire une balle par emplacement de tir (`VAISSEAU_BULLET_SPAWNS` — les
+/// positions en % de la boîte englobante sont converties en points locaux du
+/// vaisseau par `vaisseau::vaisseau_bullet_spawns`, puis tournées avec le
+/// vaisseau autour de son centre). Liste vide = un seul emplacement au centre
+/// de rotation (comportement d'origine : ex `fireBullet`).
+///
+/// **Catalogue d'armes** (`VAISSEAU_WEAPONS`) : quand il est rempli, chaque
+/// arme tire sa propre munition (mesh embarqué, échelle et orientation) depuis
+/// son emplacement sur le vaisseau (`spawn_index` dans `VAISSEAU_BULLET_SPAWNS`
+/// — liste contrainte) ; toutes les armes tirent ensemble. Catalogue vide =
+/// tir classique (une balle rouge par emplacement, repli).
 pub fn fire_bullet(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
-    let mut shape = Shape::default();
-    let _idx = create_specific_shape(&mut shape, shapes, triangles, BULLET_POINTS);
-    shape.who_i_am = WHOIAM_BULLET;
-    shape.is_collider = true;
-    shape.shape_color = 0xFFFF0000;
-    shape.position = Point::new(
-        shapes[PLAYER_INDEX].position.x + shapes[PLAYER_INDEX].target_center.x,
-        shapes[PLAYER_INDEX].position.y + shapes[PLAYER_INDEX].target_center.y,
-    );
-    shape.direction = -shapes[PLAYER_INDEX].orientation;
-    shape.velocity = shapes[PLAYER_INDEX].velocity + 2.0;
-    shape.orientation = shapes[PLAYER_INDEX].orientation;
-    shape.rotation = 0.0;
-    shape.center = Point::new(0.0, 0.0);
-    shape.radius = 10.0;
-    let id = shape.id as usize;
-    shapes[id] = shape;
+    // cinématiques du vaisseau figées avant la boucle : `create_specific_shape`
+    // / `create_ammo_shape` peuvent allouer dans `shapes` (le joueur reste à
+    // l'index 0, mais un emprunt concurrent serait invalide)
+    let px = shapes[PLAYER_INDEX].position.x;
+    let py = shapes[PLAYER_INDEX].position.y;
+    let cx = shapes[PLAYER_INDEX].center.x;
+    let cy = shapes[PLAYER_INDEX].center.y;
+    let orientation = shapes[PLAYER_INDEX].orientation;
+    let velocity = shapes[PLAYER_INDEX].velocity;
+    // catalogue d'armes : une munition par arme, depuis son emplacement
+    let weapons = crate::vaisseau::vaisseau_weapons();
+    if !weapons.is_empty() {
+        fire_bullet_with(
+            shapes,
+            triangles,
+            &weapons,
+            px,
+            py,
+            cx,
+            cy,
+            orientation,
+            velocity,
+        );
+        return;
+    }
+    for spawn in crate::vaisseau::vaisseau_bullet_spawns() {
+        // point local du vaisseau → position monde : tourné autour du centre
+        // (comme les sommets du mesh, `compute_real_positions`) puis translaté
+        let mut local = spawn;
+        local.rotate_around(Point::new(cx, cy), orientation);
+        let mut shape = Shape::default();
+        let _idx = create_specific_shape(&mut shape, shapes, triangles, BULLET_POINTS);
+        shape.who_i_am = WHOIAM_BULLET;
+        shape.is_collider = true;
+        shape.shape_color = 0xFFFF0000;
+        shape.position = Point::new(px + local.x, py + local.y);
+        shape.direction = -orientation;
+        shape.velocity = velocity + 2.0;
+        shape.orientation = orientation;
+        shape.rotation = 0.0;
+        shape.center = Point::new(0.0, 0.0);
+        shape.radius = 10.0;
+        let id = shape.id as usize;
+        shapes[id] = shape;
+    }
+}
+
+/// Variante de `fire_bullet` pour le catalogue d'armes : une munition par
+/// arme, depuis le point local de son emplacement (le point est tourné ici
+/// autour de `(cx, cy)` de `orientation` — comme les sommets du mesh,
+/// `compute_real_positions`). Appelée par `fire_bullet` quand le catalogue
+/// est rempli (les tests l'utilisent aussi avec des armes factices).
+fn fire_bullet_with(
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    weapons: &[(crate::marketplace::VaisseauWeapon, Point)],
+    px: f64,
+    py: f64,
+    cx: f64,
+    cy: f64,
+    orientation: f64,
+    velocity: f64,
+) {
+    for (weapon, local) in weapons {
+        // point local du vaisseau → position monde : tourné autour du centre
+        // (comme les sommets du mesh, `compute_real_positions`)
+        let mut local = *local;
+        local.rotate_around(Point::new(cx, cy), orientation);
+        let idx = crate::vaisseau::create_ammo_shape(
+            shapes,
+            triangles,
+            weapon.ammo_mesh,
+            weapon.ammo_scale,
+            weapon.ammo_orientation_degrees,
+        );
+        let shape = &mut shapes[idx];
+        shape.who_i_am = WHOIAM_BULLET;
+        shape.is_collider = true;
+        shape.position = Point::new(px + local.x, py + local.y);
+        shape.direction = -orientation;
+        shape.velocity = velocity + 2.0;
+        shape.orientation = orientation;
+        shape.rotation = 0.0;
+        shape.center = Point::new(0.0, 0.0);
+        shape.radius = shape.radius.max(6.0);
+    }
 }
 
 /// Initialise le monde : éléments, vaisseau joueur, étoiles, station
 /// (ex `prepare`).
 pub fn prepare(
-    _state: &mut GameState,
+    state: &mut GameState,
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
     stars: &mut Vec<Point>,
@@ -440,8 +525,10 @@ pub fn prepare(
 
     // vaisseau joueur (shapes[0]) : mesh coloré de `assets/vaisseau.json`
     // (remplace l'ancien triangle texturé `vaisseau.png` — 35 faces, couleur
-    // par face, nez vers la droite = orientation 0 du départ à quai)
-    crate::vaisseau::create_player_vaisseau(shapes, triangles);
+    // par face, nez vers la droite = orientation 0 du départ à quai). La
+    // progression chargée avant `prepare` (niveaux d'atelier) détermine la
+    // composition des plans visibles (`create_player_vaisseau` lit l'état).
+    crate::vaisseau::create_player_vaisseau(state, shapes, triangles);
 
     // étoiles : 100 000, positions étirées par leur plan de parallaxe
     // (plan = (i mod 15) + 1, avec i 1-based comme l'original)
@@ -732,13 +819,15 @@ mod tests {
 
         assert_eq!(shapes.len(), 2);
         assert_eq!(shapes[PLAYER_INDEX].who_i_am, WHOIAM_PLAYER);
-        // vaisseau mesh : une Triangle par face du fichier (compte dérivé du
-        // fichier embarqué — l'éditeur peut le ré-exporter)
-        let player_faces = crate::vaisseau::vaisseau_face_count();
+        // vaisseau mesh : une Triangle vivante par face **visible** aux
+        // niveaux courants (les plans liés aux upgrades n'apparaissent qu'à
+        // partir de leur niveau) ; la plage allouée, elle, couvre la
+        // composition maximale (`vaisseau_face_count`)
+        let player_faces = crate::vaisseau::vaisseau_visible_face_count(&state);
         assert_eq!(shapes[PLAYER_INDEX].life as usize, player_faces);
         assert_eq!(shapes[STATION_INDEX].who_i_am, WHOIAM_STATION);
-        // joueur (faces) + station (66 emplacements)
-        assert_eq!(triangles.len(), player_faces + 66);
+        // joueur (plage maximale) + station (66 emplacements)
+        assert_eq!(triangles.len(), crate::vaisseau::vaisseau_face_count() + 66);
         // le rayon de la station couvre l'anneau visible (r ≈ 110-162) : la
         // collision est décidée par la détection de triangles (SAT), pas par
         // un petit rayon forcé (dérive volontaire — voir `create_station`).
@@ -752,5 +841,102 @@ mod tests {
         // positions initiales
         assert_eq!(shapes[PLAYER_INDEX].position, Point::new(0.0, 0.0));
         assert_eq!(shapes[STATION_INDEX].position, Point::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn fire_bullet_fires_one_bullet_per_spawn_rotated_with_ship() {
+        // une balle par emplacement de tir (`VAISSEAU_BULLET_SPAWNS` — la
+        // liste générée fait foi, 1 seule balle quand elle est vide), tournée
+        // avec l'orientation du vaisseau (catalogue d'armes vide : tir classique)
+        let mut state = GameState::new();
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
+        let pivot = shapes[PLAYER_INDEX].target_center;
+        let spawns = crate::vaisseau::vaisseau_bullet_spawns();
+        let bullets_before = shapes.len();
+        fire_bullet(&mut shapes, &mut triangles);
+        assert_eq!(shapes.len(), bullets_before + spawns.len());
+        // toutes les balles sont des projectiles (WHOIAM_BULLET) et la
+        // première part du centre de rotation quand la liste est vide
+        for b in &shapes[bullets_before..] {
+            assert_eq!(b.who_i_am, WHOIAM_BULLET);
+        }
+        if spawns.is_empty() {
+            // repli : la balle part du pivot (le vaisseau est à l'origine)
+            let bullet = &shapes[bullets_before];
+            assert!(
+                (bullet.position.x - pivot.x).abs() < 1e-9
+                    && (bullet.position.y - pivot.y).abs() < 1e-9,
+                "liste vide → tir au centre de rotation, position {:?} (pivot {:?})",
+                bullet.position,
+                pivot
+            );
+        }
+    }
+
+    #[test]
+    fn fire_bullet_with_weapons_fires_one_ammo_per_weapon_at_its_spawn() {
+        // catalogue d'armes : une munition par arme, depuis l'emplacement de
+        // l'arme (point local tourné avec le vaisseau) — mesh de la munition
+        // à la place de la balle rouge
+        let mut state = GameState::new();
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
+        // deux armes : une au nez (90 %, 50 % → +x) et une à l'arrière
+        // (10 %, 50 % → −x) — meshes de munition à 2 faces colorées
+        let ammo = crate::vaisseau::vaisseau_test_ammo_mesh();
+        let mut weapons = crate::vaisseau::vaisseau_test_weapons();
+        for w in weapons.iter_mut() {
+            w.ammo_mesh = ammo;
+        }
+        let mut locals = crate::vaisseau::vaisseau_test_weapon_locals();
+        let cx = shapes[PLAYER_INDEX].center.x;
+        let cy = shapes[PLAYER_INDEX].center.y;
+        let orientation = shapes[PLAYER_INDEX].orientation;
+        for local in locals.iter_mut() {
+            local.rotate_around(Point::new(cx, cy), orientation);
+        }
+        let expected_locals = locals.clone();
+        let weapons: Vec<(crate::marketplace::VaisseauWeapon, Point)> =
+            weapons.into_iter().zip(locals).collect();
+        let before = shapes.len();
+        let px = shapes[PLAYER_INDEX].position.x;
+        let py = shapes[PLAYER_INDEX].position.y;
+        fire_bullet_with(
+            &mut shapes,
+            &mut triangles,
+            &weapons,
+            px,
+            py,
+            cx,
+            cy,
+            orientation,
+            0.0,
+        );
+        // une munition par arme (2 armes → 2 formes), chacune à son
+        // emplacement tourné — et chaque munition porte ses faces colorées
+        let spawned: Vec<&Shape> = shapes[before..].iter().collect();
+        assert_eq!(spawned.len(), 2);
+        for (i, s) in spawned.iter().enumerate() {
+            assert_eq!(s.who_i_am, WHOIAM_BULLET);
+            assert_eq!(s.life, 2, "munition à 2 faces");
+            let expected = expected_locals[i];
+            assert!(
+                (s.position.x - (px + expected.x)).abs() < 1e-6
+                    && (s.position.y - (py + expected.y)).abs() < 1e-6,
+                "munition {} : position {:?} ≠ attendue {:?}",
+                i,
+                s.position,
+                Point::new(px + expected.x, py + expected.y)
+            );
+            // couleurs par face (la munition n'est pas une balle rouge unie)
+            let colors: std::collections::HashSet<u32> = (s.first_triangle..=s.last_triangle)
+                .filter(|&i| triangles[i].life > 0)
+                .map(|i| triangles[i].color)
+                .collect();
+            assert_eq!(colors.len(), 2, "2 couleurs de faces distinctes");
+        }
     }
 }

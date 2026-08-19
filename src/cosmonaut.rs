@@ -26,7 +26,7 @@ use crate::config::{argb32, TEXTURE_NONE, WHOIAM_COSMONAUT};
 use crate::geom::{Point, Triangle};
 use crate::marketplace::{
     COSMONAUTE_CENTER_X_PERCENT, COSMONAUTE_CENTER_Y_PERCENT, COSMONAUTE_EVA_SCALE,
-    COSMONAUTE_JSON, COSMONAUTE_ORIENTATION_DEGREES,
+    COSMONAUTE_JSON, COSMONAUTE_ORIENTATION_DEGREES, COSMONAUTE_PLANES,
 };
 use crate::shape::{compute_shape_center, free_shape, Shape};
 
@@ -90,6 +90,20 @@ fn rgba_to_argb(rgba: [f32; 4]) -> u32 {
     argb32(byte(rgba[3]), byte(rgba[0]), byte(rgba[1]), byte(rgba[2]))
 }
 
+/// Masque des plans construits (composition) : les plans listés dans
+/// `COSMONAUTE_PLANES` (indices dans le fichier mesh). **Liste vide = tous
+/// les plans** (repli : composition non définie). Un plan exclu n'est ni
+/// construit ni animé (bras/jambes).
+fn cosmonaut_visible_mask(file: &CosmonautFile) -> Vec<bool> {
+    if COSMONAUTE_PLANES.is_empty() {
+        vec![true; file.planes.len()]
+    } else {
+        (0..file.planes.len())
+            .map(|i| COSMONAUTE_PLANES.contains(&i))
+            .collect()
+    }
+}
+
 /// Construit le cosmonaute EVA — le pilote contrôlé quand le vaisseau est
 /// détruit (`game.rs`) : petit, garé hors écran jusqu'à l'éjection. Garé, il
 /// est cullé (hors limites de dessin) ; une fois éjecté, la caméra le suit
@@ -125,7 +139,17 @@ fn build_cosmonaut(
 ) -> usize {
     let file: CosmonautFile =
         serde_json::from_str(COSMONAUTE_JSON).expect("assets/cosmonaute.json : JSON invalide");
-    let nbr = file.planes.iter().map(|p| p.faces.len()).sum();
+    // composition des plans (`COSMONAUTE_PLANES`) : un plan exclu n'est ni
+    // construit ni animé — la boîte englobante (centre de rotation) et
+    // l'allocation ne portent que sur les plans retenus
+    let visible = cosmonaut_visible_mask(&file);
+    let nbr: usize = file
+        .planes
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| visible[*i])
+        .map(|(_, p)| p.faces.len())
+        .sum();
 
     // boîte englobante du mesh dans le repère de l'éditeur (y vers le haut) —
     // sert à situer le centre de rotation en pourcentage (même schéma que
@@ -134,7 +158,10 @@ fn build_cosmonaut(
     let mut miny = f64::MAX;
     let mut maxx = f64::MIN;
     let mut maxy = f64::MIN;
-    for plane in &file.planes {
+    for (i, plane) in file.planes.iter().enumerate() {
+        if !visible[i] {
+            continue;
+        }
         for v in &plane.verts {
             minx = minx.min(v[0]);
             miny = miny.min(v[1]);
@@ -202,7 +229,10 @@ fn build_cosmonaut(
     // (`animate_eva_cosmonaut` : bras et jambes qui s'agitent).
     let mut total = (0.0, 0.0);
     let mut verts_count = 0usize;
-    for plane in &file.planes {
+    for (i, plane) in file.planes.iter().enumerate() {
+        if !visible[i] {
+            continue;
+        }
         for v in &plane.verts {
             total.0 += v[0];
             total.1 += v[1];
@@ -213,7 +243,9 @@ fn build_cosmonaut(
     let limbs: Vec<(i32, Point)> = file
         .planes
         .iter()
-        .map(|plane| {
+        .enumerate()
+        .filter(|(i, _)| visible[*i])
+        .map(|(_, plane)| {
             let mut cx = 0.0;
             let mut cy = 0.0;
             for v in &plane.verts {
@@ -248,7 +280,14 @@ fn build_cosmonaut(
 
     let first = shape.first_triangle;
     let mut k = 0usize;
-    for (plane, &(limb, pivot)) in file.planes.iter().zip(limbs.iter()) {
+    for (plane, &(limb, pivot)) in file
+        .planes
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| visible[*i])
+        .map(|(_, p)| p)
+        .zip(limbs.iter())
+    {
         for face in &plane.faces {
             let [i, j, l] = face.v;
             // rotation autour du pivot + axe y retourné (éditeur y↑ → jeu y↓)

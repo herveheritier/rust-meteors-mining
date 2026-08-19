@@ -29,6 +29,40 @@ pub const AMMO_PRICE: i32 = 1;
 /// Pas de ravitaillement en munitions.
 pub const AMMO_STEP: i32 = 5;
 
+/// Météores — collisions avec la station et génération (mise au point).
+/// Données générées par l'outil de gestion : lues par `src/game.rs`
+/// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et
+/// `src/state.rs` (génération et population).
+
+/// Force de réaction d'un météore qui percute la **station** : le triangle
+/// qui collisionne explose et le météore est repoussé — sa composante de
+/// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,
+/// la composante tangentielle (glissement le long de l'anneau) est
+/// conservée. 1.0 = rebond parfait (l'explosion rend au météore la vitesse
+/// de l'impact) ; 0 = pas de réaction.
+pub const METEOR_STATION_RESTITUTION: f64 = 0.6;
+
+/// Débris générés par triangle détruit (l'explosion d'un triangle de
+/// météore sur la base ou un autre météore).
+pub const GARBAGE_PER_TRIANGLE: usize = 12;
+
+/// Vitesse maximale des météores (`2*rnd` à l'origine).
+pub const METEOR_VELOCITY_MAX: f64 = 2.0;
+
+/// Génération procédurale des météores : bornes du nombre de triangles
+/// par météore et de la taille (base, hauteur) des triangles.
+pub const TRIANGLES_IN_SHAPE_MIN: i32 = 6;
+pub const TRIANGLES_IN_SHAPE_MAX: i32 = 16;
+pub const TRIANGLE_BASE_MIN: i32 = 15;
+pub const TRIANGLE_BASE_MAX: i32 = 40;
+pub const TRIANGLE_HEIGHT_MIN: i32 = 11;
+pub const TRIANGLE_HEIGHT_MAX: i32 = 22;
+
+/// Population de météores : nombre initial maximal, plafonné à
+/// `SHAPES_COUNT` (+1 par météore détruit).
+pub const INITIAL_MAX_METEOR_SHAPES: i32 = 15;
+pub const SHAPES_COUNT: i32 = 150;
+
 /// Poids de la **précision de tir** sur la remise de réputation : la remise
 /// du rang est multipliée par `1 + poids × précision` (précision en 0..1 =
 /// part de tirs non perdus) — 1.0 = 100 % de précision → remise doublée.
@@ -54,7 +88,7 @@ pub const PROGRESSION_RANKS: &[ReputationRank] = &[
 pub const VAISSEAU_JSON: &str = include_str!("../assets/vaisseau.json");
 
 /// Échelle du vaisseau (multiplicateur des sommets du mesh) : 1.0 = 100 %.
-pub const VAISSEAU_SCALE: f64 = 1.6;
+pub const VAISSEAU_SCALE: f64 = 1.8;
 
 /// Orientation de départ du vaisseau (degrés) : angle du nez du mesh
 /// dans l'éditeur « meshes-designer » (0 = nez vers la droite, +90 =
@@ -63,10 +97,73 @@ pub const VAISSEAU_ORIENTATION_DEGREES: f64 = 0.0;
 
 /// Centre de rotation du vaisseau : position du pivot en pourcentage de
 /// la boîte englobante du mesh (50 = centre), axe x.
-pub const VAISSEAU_CENTER_X_PERCENT: f64 = 50.0;
+pub const VAISSEAU_CENTER_X_PERCENT: f64 = 51.0;
 
 /// Centre de rotation du vaisseau (voir `VAISSEAU_CENTER_X_PERCENT`), axe y.
 pub const VAISSEAU_CENTER_Y_PERCENT: f64 = 50.0;
+
+/// Emplacements de départ des projectiles (tir Shift) : positions en
+/// **pourcentage de la boîte englobante de la composition** (50/50 =
+/// centre), dans le repère du mesh de l'éditeur (y vers le haut). Une
+/// balle part de chaque emplacement, tourné avec le vaisseau. **Liste
+/// vide = un seul emplacement au centre de rotation** (repli :
+/// comportement d'origine). Générée par l'outil de gestion.
+pub const VAISSEAU_BULLET_SPAWNS: &[(f64, f64)] = &[(91.0, 50.0), (53.0, 74.0), (53.0, 26.0), (41.0, 96.0)];
+
+/// Mesh de l'arme « ARME 1 » (VAISSEAU_WEAPONS[0]) — embarqué au compile.
+pub const VAISSEAU_WEAPON_MESH_0: &str = include_str!("../assets/bulletWeapon.json");
+/// Mesh de la munition de l'arme « ARME 1 » (VAISSEAU_WEAPONS[0]).
+pub const VAISSEAU_WEAPON_AMMO_MESH_0: &str = include_str!("../assets/bullet.json");
+
+/// Mesh de l'arme « ARME 2 » (VAISSEAU_WEAPONS[1]) — embarqué au compile.
+pub const VAISSEAU_WEAPON_MESH_1: &str = include_str!("../assets/ballWeapon.json");
+/// Mesh de la munition de l'arme « ARME 2 » (VAISSEAU_WEAPONS[1]).
+pub const VAISSEAU_WEAPON_AMMO_MESH_1: &str = include_str!("../assets/bullet.json");
+
+/// Catalogue d'armes du vaisseau joueur : chaque arme est un mesh posé
+/// **sur le vaisseau** à un emplacement de tir (`spawn_index` dans
+/// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est
+/// contrainte) et tire sa propre munition (mesh de la munition). Toutes
+/// les armes du catalogue tirent ensemble au Shift. **Liste vide = tir
+/// classique** (une balle rouge par emplacement, repli : comportement
+/// d'origine). Générée par l'outil de gestion.
+pub const VAISSEAU_WEAPONS: &[VaisseauWeapon] = &[
+    VaisseauWeapon {
+        name: "ARME 1",
+        mesh: VAISSEAU_WEAPON_MESH_0,
+        scale: 1.0,
+        orientation_degrees: 0.0,
+        spawn_index: 0,
+        ammo_mesh: VAISSEAU_WEAPON_AMMO_MESH_0,
+        ammo_scale: 2.0,
+        ammo_orientation_degrees: 0.0,
+    },
+    VaisseauWeapon {
+        name: "ARME 2",
+        mesh: VAISSEAU_WEAPON_MESH_1,
+        scale: 0.65,
+        orientation_degrees: -16.0,
+        spawn_index: 3,
+        ammo_mesh: VAISSEAU_WEAPON_AMMO_MESH_1,
+        ammo_scale: 1.0,
+        ammo_orientation_degrees: -16.0,
+    },
+];
+
+/// Plans du vaisseau **toujours visibles** (composition de base — indices
+/// des plans du fichier mesh `VAISSEAU_JSON`). Un plan lié à une ligne
+/// d'atelier (`VAISSEAU_PLANE_LINKS`) n'est construit qu'à partir de son
+/// niveau ; un plan absent des deux listes n'est jamais construit.
+/// **Listes vides = tous les plans** (repli : composition non définie).
+/// Générées par l'outil de gestion.
+pub const VAISSEAU_PLANES_ALWAYS: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+
+/// Plans du vaisseau liés aux lignes d'atelier (Progression) : un plan
+/// apparaît quand la ligne `track` atteint le niveau `min_level`. Générés
+/// par l'outil de gestion.
+pub const VAISSEAU_PLANE_LINKS: &[PlaneUpgradeLink] = &[
+    PlaneUpgradeLink { plane_index: 14, track: PlaneUpgradeTrack::Cargo, min_level: 2 },
+];
 
 /// Cosmonaute EVA (pilote éjecté, vaisseau détruit) — mesh « meshes-designer »
 /// et réglages (échelle, orientation, centre de rotation). Données générées
@@ -92,6 +189,12 @@ pub const COSMONAUTE_CENTER_X_PERCENT: f64 = 51.0;
 /// Centre de rotation du cosmonaute EVA (voir `COSMONAUTE_CENTER_X_PERCENT`),
 /// axe y.
 pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = 59.0;
+
+/// Plans du cosmonaute EVA construits (composition — indices des plans du
+/// fichier mesh `COSMONAUTE_JSON`) : un plan absent n'est jamais construit
+/// (ni animé). **Liste vide = tous les plans** (repli : composition non
+/// définie). Générée par l'outil de gestion.
+pub const COSMONAUTE_PLANES: &[usize] = &[];
 
 /// Une extension de vaisseau achetable à l'atelier de la station (scénario
 /// Progression, bouton UPGRADES de la boîte DOCK STATION) : ajoute de la
@@ -131,6 +234,67 @@ pub struct ReputationRank {
     /// Remise sur les coûts de la station (atelier, ravitaillement, modes de
     /// déplacement) accordée dès ce rang atteint.
     pub discount_percent: i32,
+}
+
+/// Ligne d'atelier liée à un plan du vaisseau (composition des plans,
+/// scénario Progression) — la ligne dont le niveau révèle le plan.
+/// Les variantes ne sont construites que quand l'outil exporte un lien
+/// (`VAISSEAU_PLANE_LINKS` non vide) — `dead_code` quand la liste est vide.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlaneUpgradeTrack {
+    /// Réservoir de carburant (FUEL TANK).
+    Fuel,
+    /// Chargeur de munitions (MAGAZINE).
+    Ammo,
+    /// Soute (CARGO BAY).
+    Cargo,
+}
+
+/// Plan du vaisseau lié à une ligne d'atelier : le plan `plane_index` du
+/// fichier mesh n'est construit qu'à partir du niveau `min_level` de la
+/// ligne `track` (niveau = nombre d'extensions achetées). Généré par l'outil
+/// de gestion.
+#[derive(Clone, Copy, Debug)]
+pub struct PlaneUpgradeLink {
+    /// Indice du plan dans le fichier mesh (`VAISSEAU_JSON`).
+    pub plane_index: usize,
+    /// Ligne d'atelier qui révèle le plan.
+    pub track: PlaneUpgradeTrack,
+    /// Niveau minimal de la ligne pour que le plan soit construit.
+    pub min_level: i32,
+}
+
+/// Une arme du catalogue du vaisseau joueur : mesh de l'arme posé **sur le
+/// vaisseau** à un emplacement de tir (`spawn_index` dans
+/// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est
+/// contrainte) et munition tirée par l'arme (mesh de la munition, avec sa
+/// propre échelle et orientation). Toutes les armes du catalogue tirent
+/// ensemble au Shift. Générée par l'outil de gestion. Les champs ne sont lus
+/// que quand le catalogue est rempli (`VAISSEAU_WEAPONS` non vide) —
+/// `dead_code` quand la liste est vide.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub struct VaisseauWeapon {
+    /// Nom de l'arme (tool, export).
+    pub name: &'static str,
+    /// Mesh de l'arme — fichier « meshes-designer » embarqué au compile.
+    pub mesh: &'static str,
+    /// Échelle de l'arme (multiplicateur des sommets du mesh) : 1.0 = 100 %.
+    pub scale: f64,
+    /// Orientation de l'arme (degrés) : angle de l'avant du mesh dans
+    /// l'éditeur (0 = avant vers la droite, +90 = vers le haut).
+    pub orientation_degrees: f64,
+    /// Emplacement de l'arme sur le vaisseau : index dans
+    /// `VAISSEAU_BULLET_SPAWNS` (liste contrainte).
+    pub spawn_index: usize,
+    /// Mesh de la munition tirée par l'arme — embarqué au compile.
+    pub ammo_mesh: &'static str,
+    /// Échelle de la munition (multiplicateur des sommets du mesh).
+    pub ammo_scale: f64,
+    /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
+    /// l'éditeur — la munition part nez en avant.
+    pub ammo_orientation_degrees: f64,
 }
 
 /// Extensions de réservoir (Progression) : 100 → 130 → 170 → 220 unités.

@@ -13,6 +13,10 @@ use ::rand::Rng;
 use crate::audio::Sounds;
 use crate::config::*;
 use crate::cosmonaut::{animate_eva_cosmonaut, COSMONAUTE_EVA_PARK};
+// gameplay « météores & collisions » (force de réaction à la base, débris,
+// plafond et génération des météores) : constantes de la carte éponyme de
+// l'outil de gestion (src/marketplace.rs, généré)
+use crate::marketplace::*;
 use crate::garbage::{generate_garbages, moving_garbage, Garbage};
 use crate::generate::{
     create_alien, create_gem, create_shape, eject_cargo_gems, fire_bullet, release_meteor_minerals,
@@ -232,9 +236,15 @@ pub fn update(
     if state.workshop_box {
         match workshop_box_click() {
             WorkshopClick::None => {}
-            WorkshopClick::BuyFuel => buy_upgrade_and_save(state, scenario::UpgradeTrackId::Fuel),
-            WorkshopClick::BuyAmmo => buy_upgrade_and_save(state, scenario::UpgradeTrackId::Ammo),
-            WorkshopClick::BuyCargo => buy_upgrade_and_save(state, scenario::UpgradeTrackId::Cargo),
+            WorkshopClick::BuyFuel => {
+                buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Fuel)
+            }
+            WorkshopClick::BuyAmmo => {
+                buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Ammo)
+            }
+            WorkshopClick::BuyCargo => {
+                buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Cargo)
+            }
             WorkshopClick::Close => {
                 state.workshop_box = false;
                 state.dock_box = true;
@@ -616,6 +626,41 @@ fn collisions(
         } else {
             triangles[i].life = 0;
             shapes[shape_index].life -= 1;
+            // un météore qui percute la **station** (base indestructible)
+            // subit une force de réaction : le triangle explose (débris +
+            // son ci-dessous) et sa composante de vitesse vers la base est
+            // réfléchie — l'explosion repousse le météore, la composante
+            // tangentielle (glissement le long de l'anneau) est conservée.
+            // Une seule fois par météore par frame : le premier triangle en
+            // collision renverse la composante radiale, les suivants voient
+            // déjà `vn >= 0` et ne refont rien.
+            if who == WHOIAM_METEOR
+                && collid_by == WHOIAM_STATION
+                && shapes[shape_index].life > 0
+            {
+                // normale du choc : du centre de la base vers le point
+                // d'impact — le centre réel du triangle qui explose
+                let dx = triangles[i].real_center.x - shapes[STATION_INDEX].position.x;
+                let dy = triangles[i].real_center.y - shapes[STATION_INDEX].position.y;
+                let norm = dx.hypot(dy);
+                if norm > 0.0 {
+                    let (nx, ny) = (dx / norm, dy / norm);
+                    // vitesse monde du météore (y inversé : `moving_shape`
+                    // soustrait `sin(direction)·v`)
+                    let vx = shapes[shape_index].velocity * shapes[shape_index].direction.cos();
+                    let vy = -shapes[shape_index].velocity * shapes[shape_index].direction.sin();
+                    let vn = vx * nx + vy * ny; // radiale (négative = vers la base)
+                    if vn < 0.0 {
+                        let rx = vx - (1.0 + METEOR_STATION_RESTITUTION) * vn * nx;
+                        let ry = vy - (1.0 + METEOR_STATION_RESTITUTION) * vn * ny;
+                        shapes[shape_index].velocity = rx.hypot(ry);
+                        if shapes[shape_index].velocity > 0.0 {
+                            let d = (-ry).atan2(rx);
+                            shapes[shape_index].direction = if d < 0.0 { d + TAU } else { d };
+                        }
+                    }
+                }
+            }
             // collision vaisseau/gemme non résolue parce que soute pleine
             if collid_by == WHOIAM_PLAYER && who == WHOIAM_GEM {
                 state.send_message("YOU CANNOT TAKE ANY ADDITIONAL RESOURCES, UNLOAD AT THE STATION");
@@ -802,12 +847,11 @@ fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [
     p.velocity = 0.0;
     p.orientation = 0.0;
     p.rotation = 0.0;
-    // le vaisseau est un mesh multi-triangles (35 faces) : toutes les faces
-    // revivent (l'invariant du jeu : `life` = nombre de triangles vivants)
-    p.life = (p.last_triangle - p.first_triangle + 1) as i32;
-    for j in p.first_triangle..=p.last_triangle {
-        triangles[j].life = 1;
-    }
+    // le vaisseau est un mesh multi-triangles reconstruit avec la composition
+    // courante (les plans liés aux upgrades apparaissent selon les niveaux
+    // d'atelier — `vaisseau::rebuild_player_vaisseau`, qui recale aussi les
+    // positions réelles sur les cinématiques posées ci-dessus)
+    crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
     // flamme et cooldown de tir coupés (le moteur ne brûle plus au respawn)
     state.player.thrusted = 0;
     state.player.revert_thrusted = 0;
@@ -1305,9 +1349,18 @@ fn workshop_box_click() -> WorkshopClick {
 
 /// Achète une extension d'atelier (réservoir, chargeur ou soute) puis persiste
 /// la progression (minerais, niveaux d'extension) — les réservoirs montent à
-/// la nouvelle capacité et la soute s'agrandit dans `buy_upgrade`.
-fn buy_upgrade_and_save(state: &mut GameState, track: scenario::UpgradeTrackId) {
-    scenario::buy_upgrade(state, track);
+/// la nouvelle capacité et la soute s'agrandit dans `buy_upgrade`. Un plan du
+/// vaisseau lié à la ligne achetée peut apparaître : le mesh est reconstruit
+/// avec la nouvelle composition (`vaisseau::rebuild_player_vaisseau`).
+fn buy_upgrade_and_save(
+    state: &mut GameState,
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    track: scenario::UpgradeTrackId,
+) {
+    if matches!(scenario::buy_upgrade(state, track), scenario::UpgradeOutcome::Purchased(_)) {
+        crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+    }
     let _ = scenario::save_progression(state);
 }
 
@@ -2101,6 +2154,161 @@ mod tests {
     }
 
     #[test]
+    fn meteor_bounces_off_station_ring() {
+        // un météore qui percute la base subit une **force de réaction** : le
+        // triangle qui collisionne explose (débris) et la composante de sa
+        // vitesse vers la station est réfléchie avec la restitution réglée
+        // dans l'outil — le météore rebondit le long de la normale du point
+        // d'impact, la station reste intacte
+        let mut state = GameState::new();
+        // station (index 0) : triangle (0,0)-(10,0)-(0,10) à l'origine
+        let mut shapes = vec![
+            test_shape(WHOIAM_STATION, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 2, 2.0, 2.0),
+        ];
+        shapes[0].velocity = 0.0;
+        // météore : 2 triangles — le premier (à (2,2), 10×10) chevauche la
+        // station, le second (à (50,50)) est hors de portée
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 1, 2.0, 2.0),
+            test_triangle(2, 1, 50.0, 50.0),
+        ];
+        // le météore fonce vers le centre de la base (direction π = -x)
+        shapes[1].velocity = 1.0;
+        shapes[1].direction = TAU / 2.0;
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            0.0,
+        );
+
+        // le triangle qui chevauchait la station a explosé : le météore
+        // survit (life 2 → 1), la station est intacte
+        assert_eq!(shapes[1].life, 1);
+        assert_eq!(triangles[1].life, 0);
+        assert_eq!(shapes[0].life, 1);
+        assert_eq!(triangles[0].life, 1);
+        // l'explosion a généré ses débris
+        assert!(
+            garbages.iter().any(|g| g.life > 0),
+            "aucun débris vivant : {}",
+            garbages.len()
+        );
+        // force de réaction : la vitesse est réfléchie le long de la normale
+        // du point d'impact (diagonale (1,1)) avec la restitution réglée dans
+        // l'outil — on recalcule la réflexion attendue depuis la constante
+        // (`METEOR_STATION_RESTITUTION` est un paramètre de mise au point :
+        // le test ne doit pas dépendre de sa valeur exacte). Vitesse initiale
+        // 1.0 vers -x : vx = -1, vy = 0 ; normale du choc (1/√2, 1/√2).
+        let e = crate::marketplace::METEOR_STATION_RESTITUTION;
+        let inv_sqrt2 = std::f64::consts::FRAC_1_SQRT_2;
+        let (vx, vy) = (-1.0, 0.0);
+        let vn = vx * inv_sqrt2 + vy * inv_sqrt2; // radiale (négative = vers la base)
+        let rx = vx - (1.0 + e) * vn * inv_sqrt2;
+        let ry = vy - (1.0 + e) * vn * inv_sqrt2;
+        let expected_v = rx.hypot(ry);
+        let mut expected_dir = (-ry).atan2(rx);
+        if expected_dir < 0.0 {
+            expected_dir += TAU;
+        }
+        let m = &shapes[1];
+        assert!(
+            (m.velocity - expected_v).abs() < 1e-9,
+            "vitesse après réaction : {} (attendu {})",
+            m.velocity,
+            expected_v
+        );
+        assert!(
+            (m.direction - expected_dir).abs() < 1e-9,
+            "direction après réaction : {} (attendu {})",
+            m.direction,
+            expected_dir
+        );
+        // la composante radiale est bien inversée : le météore s'éloigne du
+        // centre de la base (vitesse radiale positive après la réaction)
+        assert!(
+            m.velocity * m.direction.cos() * inv_sqrt2 - m.velocity * m.direction.sin() * inv_sqrt2 > 0.0,
+            "le météore doit s'éloigner de la base"
+        );
+    }
+
+    #[test]
+    fn meteor_recoils_away_from_station_over_frames() {
+        // la force de réaction ne se limite pas à une frame : après le
+        // rebond, le météore survivant **s'éloigne** de la base frame après
+        // frame (au lieu de continuer à labourer l'anneau, triangle par
+        // triangle, jusqu'à sa destruction) — la station reste intacte
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_STATION, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 2, 2.0, 2.0),
+        ];
+        shapes[0].velocity = 0.0;
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 1, 2.0, 2.0),
+            test_triangle(2, 1, 50.0, 50.0),
+        ];
+        // le météore fonce vers le centre de la base (direction π = -x)
+        shapes[1].velocity = 1.0;
+        shapes[1].direction = TAU / 2.0;
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        // frame 1 : impact — le triangle qui chevauchait la base explose et
+        // le météore rebondit (composante radiale réfléchie), il survit
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            1.0 / 60.0,
+        );
+        assert_eq!(shapes[1].life, 1);
+        let pos = shapes[1].position;
+        let dist0 = pos.x.hypot(pos.y);
+
+        // frame 2 : plus aucun triangle en collision — le météore continue de
+        // s'éloigner (distance au centre croissante), ne perd plus de vie, la
+        // station est intacte
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            1.0 / 60.0,
+        );
+        assert_eq!(shapes[1].life, 1, "le météore ne doit plus s'effriter");
+        let pos2 = shapes[1].position;
+        let dist1 = pos2.x.hypot(pos2.y);
+        assert!(
+            dist1 > dist0,
+            "le météore doit s'éloigner : distance {} → {}",
+            dist0,
+            dist1
+        );
+        assert_eq!(shapes[0].life, 1);
+        assert_eq!(triangles[0].life, 1);
+    }
+
+    #[test]
     fn station_is_indestructible() {
         // la station est un collider mais ses triangles ne meurent jamais
         let mut state = GameState::new();
@@ -2305,11 +2513,12 @@ mod tests {
         state.scenario = crate::scenario::ScenarioId::Survival;
         crate::scenario::apply_start(&mut state);
         state.resources.shield = 0.0;
-        let mut shapes = vec![
-            test_shape(WHOIAM_PLAYER, 0, 0, 300.0, 200.0),
-            test_shape(WHOIAM_METEOR, 1, 1, 302.0, 202.0), // sur le vaisseau
-        ];
-        let mut triangles = vec![test_triangle(0, 0, 300.0, 200.0), test_triangle(1, 1, 302.0, 202.0)];
+        // vaisseau mesh réel (plage allouée — le respawn le reconstruit)
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
+        shapes[0].position = Point::new(300.0, 200.0);
+        push_test_shape(&mut shapes, &mut triangles, WHOIAM_METEOR, 302.0, 202.0); // sur le vaisseau
         let mut garbages = Vec::new();
         let mut elements = default_elements();
         let mut rng = seed();
@@ -2323,7 +2532,9 @@ mod tests {
         );
         assert_eq!(shapes[0].position, Point::new(0.0, 0.0)); // respawn station
         assert_eq!(shapes[0].velocity, 0.0);
-        assert_eq!(shapes[0].life, 1);
+        // faces visibles aux niveaux courants (les plans liés aux upgrades
+        // n'apparaissent qu'à partir de leur niveau)
+        assert_eq!(shapes[0].life, crate::vaisseau::vaisseau_visible_face_count(&state) as i32);
         assert_eq!(triangles[0].life, 1);
         assert_eq!(state.player_at_station, -1);
         assert_eq!(
@@ -2339,11 +2550,12 @@ mod tests {
         // vitesse, orientation, coque et flammes remises à zéro, état « à
         // quai » comme au lancement
         let mut state = GameState::new();
-        let mut shapes = vec![
-            test_shape(WHOIAM_PLAYER, 0, 0, 300.0, 200.0),
-            test_shape(WHOIAM_STATION, 1, 1, 0.0, 0.0),
-        ];
-        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0)];
+        // vaisseau mesh réel (plage allouée — le respawn le reconstruit)
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
+        shapes[0].position = Point::new(300.0, 200.0);
+        push_test_shape(&mut shapes, &mut triangles, WHOIAM_STATION, 0.0, 0.0);
         shapes[0].velocity = 4.0;
         shapes[0].direction = 1.5;
         state.player_at_station = 0;
@@ -2354,7 +2566,9 @@ mod tests {
         assert_eq!(shapes[0].position, Point::new(0.0, 0.0));
         assert_eq!(shapes[0].velocity, 0.0);
         assert_eq!(shapes[0].direction, 0.0);
-        assert_eq!(shapes[0].life, 1);
+        // faces visibles aux niveaux courants (les plans liés aux upgrades
+        // n'apparaissent qu'à partir de leur niveau)
+        assert_eq!(shapes[0].life, crate::vaisseau::vaisseau_visible_face_count(&state) as i32);
         assert_eq!(triangles[0].life, 1);
         assert_eq!(state.player.thrusted, 0);
         assert_eq!(state.player_at_station, -1);
@@ -2830,25 +3044,43 @@ mod tests {
         assert_eq!(window_size_dims(3), (1920.0, 1080.0));
     }
 
-    /// Vaisseau joueur (1 triangle) + cosmonaute EVA (non-collider) + météore
-    /// qui chevauche le vaisseau : le décor du test d'éjection.
+    /// Ajoute une forme de test (un triangle, positionné à `(x, y)`) à la
+    /// suite des formes existantes — pour les scènes construites autour du
+    /// vaisseau mesh réel (il occupe l'index 0 avec sa plage de triangles
+    /// allouée). Le triangle porte `t.position = (0,0)` : `moving_shape`
+    /// calcule les positions réelles depuis la position de la forme (le
+    /// double-application des `test_triangle` à coordonnées non nulles
+    /// décalerait le triangle hors de la scène).
+    fn push_test_shape(
+        shapes: &mut Vec<Shape>,
+        triangles: &mut Vec<Triangle>,
+        who: i32,
+        x: f64,
+        y: f64,
+    ) -> usize {
+        let idx = shapes.len();
+        let first = triangles.len();
+        shapes.push(test_shape(who, first, first, x, y));
+        triangles.push(test_triangle(first as i32, idx as i32, 0.0, 0.0));
+        idx
+    }
+
+    /// Vaisseau joueur (mesh réel, plage allouée à la composition maximale —
+    /// le respawn reconstruit le vaisseau) + cosmonaute EVA (non-collider) +
+    /// météore qui chevauche le vaisseau : le décor du test d'éjection.
     fn ejection_scene() -> (GameState, Vec<Shape>, Vec<Triangle>) {
         let mut state = GameState::new();
-        // joueur : 1 triangle à (0,0)
-        let player = test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0);
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        // joueur : le mesh réel du vaisseau (index 0)
+        crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
         // cosmonaute EVA : garé en bord de monde, non-collider (les météores
         // le traversent : son seul objectif est de rejoindre la base)
-        let mut eva = test_shape(WHOIAM_COSMONAUT, 1, 1, -1400.0, -1400.0);
-        eva.is_collider = false;
+        let eva = push_test_shape(&mut shapes, &mut triangles, WHOIAM_COSMONAUT, -1400.0, -1400.0);
+        shapes[eva].is_collider = false;
         // météore : 1 triangle, chevauche le vaisseau (distance 2 < rayons 20)
-        let meteor = test_shape(WHOIAM_METEOR, 2, 2, 2.0, 2.0);
-        let shapes = vec![player, eva, meteor];
-        let triangles = vec![
-            test_triangle(0, 0, 0.0, 0.0),
-            test_triangle(1, 1, -1400.0, -1400.0),
-            test_triangle(2, 2, 2.0, 2.0),
-        ];
-        state.eva_cosmonaut = 1;
+        push_test_shape(&mut shapes, &mut triangles, WHOIAM_METEOR, 2.0, 2.0);
+        state.eva_cosmonaut = eva as i32;
         (state, shapes, triangles)
     }
 
@@ -2906,9 +3138,11 @@ mod tests {
         let to = state.eva_recovery_to_pos;
         assert!(state.eva_recovery <= 0.0);
         assert!(state.eva_crossfade > 0.0);
-        // vaisseau reconstruit : toutes ses faces revivent (`life` = nombre
-        // de triangles — 1 ici, la scène de test est un vaisseau à 1 triangle)
-        assert_eq!(shapes[PLAYER_INDEX].life, 1);
+        // vaisseau reconstruit : toutes ses faces **visibles** revivent
+        // (`life` = nombre de triangles de la composition aux niveaux
+        // courants — les plans liés aux upgrades n'apparaissent qu'à partir
+        // de leur niveau)
+        assert_eq!(shapes[PLAYER_INDEX].life, crate::vaisseau::vaisseau_visible_face_count(&state) as i32);
         assert!(state.dock_links); // démarre à quai, comme au lancement
         assert_eq!(shapes[eva].position, to); // sur l'anneau (cosmonaute éjecté au centre : vers la droite)
 

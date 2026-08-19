@@ -6,7 +6,7 @@
 use rand::Rng;
 use std::f64::consts::TAU;
 
-use crate::config::GARBAGE_PER_TRIANGLE;
+use crate::marketplace::GARBAGE_PER_TRIANGLE;
 use crate::geom::{Point, Triangle};
 use crate::shape::Shape;
 

@@ -5,10 +5,13 @@
 //! `src/config.rs` — seul l'état mutable reste ici.
 
 use crate::config::{
-    ATTEMPT_FPS, CARGO_SIZE, INITIAL_MAX_METEOR_SHAPES, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL,
-    PLAYER_INDEX, WORLD_HEIGHT, WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
+    ATTEMPT_FPS, CARGO_SIZE, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, PLAYER_INDEX, WORLD_HEIGHT,
+    WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
 };
 use crate::geom::{Point, World};
+// population de météores : constante de la carte « Météores & collisions »
+// de l'outil de gestion (src/marketplace.rs, généré)
+use crate::marketplace::INITIAL_MAX_METEOR_SHAPES;
 use crate::scenario::{Resources, ScenarioId};
 
 /// Mode d'affichage (touche F — cycle) : fenêtré → plein écran zoomé → plein

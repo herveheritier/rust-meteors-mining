@@ -238,6 +238,16 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   (`ELEMENT_VALUES` : or/fer/eau), coûts des modes de déplacement
   (`MODE_COSTS` : 4 WAYS, DIRECTIONAL — INERTIAL reste gratuit au départ) et
   prix du ravitaillement (`FUEL_PRICE`/`FUEL_STEP`, `AMMO_PRICE`/`AMMO_STEP`) ;
+- **régler les météores & collisions** : force de réaction d'un météore qui
+  percute la base (`METEOR_STATION_RESTITUTION` — le triangle qui collisionne
+  explose et le météore est repoussé : sa composante de vitesse vers la base
+  est réfléchie, 1.0 = rebond parfait, 0 = pas de réaction), débris par
+  explosion (`GARBAGE_PER_TRIANGLE`), vitesse maximale
+  (`METEOR_VELOCITY_MAX`), génération procédurale (`TRIANGLES_IN_SHAPE_*`,
+  `TRIANGLE_BASE_*`, `TRIANGLE_HEIGHT_*`) et population
+  (`INITIAL_MAX_METEOR_SHAPES`, `SHAPES_COUNT`) — constantes de
+  `src/marketplace.rs`, lues par `src/game.rs`, `src/garbage.rs`,
+  `src/generate.rs` et `src/state.rs` ;
 - **régler la réputation** : rangs du scénario Progression (seuil de
   réputation, nom affiché au HUD et **remise en %** sur les coûts de la
   station — `PROGRESSION_RANKS` de `src/marketplace.rs`, lus par
@@ -255,14 +265,48 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
 - **régler le vaisseau joueur** : choix du mesh (`assets/*.json`, format
   « meshes-designer », avec **aperçu en direct** sur la page — le vaisseau
   tel qu'il volera, pivot marqué d'une croix), échelle en %, orientation en
-  degrés (angle du nez du mesh dans l'éditeur : 0 = à droite, 90 = en haut)
-  et centre de rotation en % de la boîte englobante du mesh (50/50 = centre)
-  — sur l'aperçu, la **molette** tourne le mesh (orientation),
-  **Ctrl/Cmd + molette** zoome (échelle) et le **clic** place le centre de
-  rotation au point visé ; constantes `VAISSEAU_JSON`, `VAISSEAU_SCALE`,
-  `VAISSEAU_ORIENTATION_DEGREES`, `VAISSEAU_CENTER_X/Y_PERCENT` de
-  `src/marketplace.rs`, lues par `src/vaisseau.rs` ; le mesh choisi est
-  embarqué au compile (`include_str!`), il doit exister dans le projet ;
+  degrés (angle du nez du mesh dans l'éditeur : 0 = à droite, 90 = en haut),
+  centre de rotation en % de la boîte englobante du mesh (50/50 = centre)
+  et **emplacements de départ des projectiles** : positions en % de la même
+  boîte englobante (marquées d'un losange doré sur l'aperçu), **une balle
+  part de chaque emplacement au tir** (Shift), tournée avec le vaisseau —
+  liste vide = un seul emplacement au centre de rotation ; sur l'aperçu, la
+  **molette** tourne le mesh (orientation), **Ctrl/Cmd + molette** zoome
+  (échelle) et le **clic** place le centre de rotation au point visé ;
+  constantes `VAISSEAU_JSON`, `VAISSEAU_SCALE`, `VAISSEAU_ORIENTATION_DEGREES`,
+  `VAISSEAU_CENTER_X/Y_PERCENT`, `VAISSEAU_BULLET_SPAWNS` de
+  `src/marketplace.rs`, lues par `src/vaisseau.rs` et `src/generate.rs` ; le
+  mesh choisi est embarqué au compile (`include_str!`), il doit exister dans
+  le projet ;
+- **gérer un catalogue d'armes** : chaque arme est un mesh posé **sur le
+  vaisseau** à un emplacement de tir (`spawnIndex` — liste **contrainte**
+  aux emplacements de la section « Départ des projectiles ») et tire sa
+  propre **munition** (mesh) ; l'arme est dessinée sur l'aperçu à son
+  emplacement ; chaque arme a son échelle, son orientation, et sa munition
+  sa propre échelle/orientation ; **toutes les armes tirent ensemble au
+  Shift**, depuis leur emplacement ; catalogue vide = tir classique (une
+  balle rouge par emplacement, repli) ; constantes `VAISSEAU_WEAPONS` (type
+  `VaisseauWeapon` — `name`, `mesh`, `scale`, `orientation_degrees`,
+  `spawn_index`, `ammo_mesh`, `ammo_scale`, `ammo_orientation_degrees`) et
+  meshes d'armes/munitions embarqués (`VAISSEAU_WEAPON_MESH_i` /
+  `VAISSEAU_WEAPON_AMMO_MESH_i`, `include_str!`), lues par `src/vaisseau.rs`
+  (l'arme est construite avec le vaisseau, elle tourne avec lui) et
+  `src/generate.rs` (`fire_bullet`) ; les fichiers mesh doivent exister dans
+  le projet ;
+- **composer le mesh** (vaisseau et cosmonaute) : chaque **plan** du fichier
+  (le mesh « meshes-designer » est une liste de plans) porte une règle —
+  *toujours visible*, *exclu* (jamais construit) ou, pour le vaisseau
+  uniquement, **lié à une ligne d'atelier** (FUEL TANK / MAGAZINE /
+  CARGO BAY + niveau minimal) ; l'aperçu (et le centre de rotation) ne
+  montre que les plans retenus, avec actions « Tout visible / Tout exclure /
+  Inverser » ; en jeu, un plan lié **n'apparaît qu'à partir du niveau
+  indiqué** : l'achat d'une extension reconstruit le vaisseau
+  (`vaisseau::rebuild_player_vaisseau`) — le centre de rotation, calculé sur
+  la composition complète, reste stable à tous les niveaux ; un plan exclu
+  du cosmonaute n'est pas animé (bras/jambes) ; constantes
+  `VAISSEAU_PLANES_ALWAYS` + `VAISSEAU_PLANE_LINKS` (types
+  `PlaneUpgradeTrack` + `PlaneUpgradeLink`) et `COSMONAUTE_PLANES` —
+  **listes vides = tous les plans** (repli sûr) ;
 - **régler le cosmonaute EVA** (le pilote éjecté quand le vaisseau est
   détruit) : même principe que le vaisseau — choix du mesh (`assets/*.json`,
   aperçu en direct, pivot marqué d'une croix), échelle en % (150 % par
@@ -277,10 +321,19 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   fichier » l'écrit dans le projet (fetch GET/PUT en mode serveur, API File
   System Access avec Chrome/Edge en fichier local, sinon sélecteur de
   fichiers et téléchargement en repli). Le fichier **complet** est régénéré
-  (documentation, constantes économiques, rangs de réputation
-  `PROGRESSION_RANKS`, constantes `VAISSEAU_*` du vaisseau et `COSMONAUTE_*`
-  du cosmonaute EVA, types `ShipUpgrade` + `UpgradeTrack` + `ReputationRank`
-  et lignes `FUEL_UPGRADE_TRACK` … `CARGO_UPGRADE_TRACK`)
+  (documentation, constantes économiques, constantes « météores &
+  collisions » (`METEOR_STATION_RESTITUTION`, `GARBAGE_PER_TRIANGLE`,
+  `METEOR_VELOCITY_MAX`, `TRIANGLES_IN_SHAPE_*` / `TRIANGLE_*`,
+  `INITIAL_MAX_METEOR_SHAPES`, `SHAPES_COUNT`), rangs de réputation
+  `PROGRESSION_RANKS`, constantes `VAISSEAU_*` du vaisseau (réglages +
+  emplacements de tir `VAISSEAU_BULLET_SPAWNS` + catalogue d'armes
+  `VAISSEAU_WEAPONS` + meshes d'armes `VAISSEAU_WEAPON_MESH_i` /
+  `VAISSEAU_WEAPON_AMMO_MESH_i` + composition `VAISSEAU_PLANES_ALWAYS` /
+  `VAISSEAU_PLANE_LINKS`) et `COSMONAUTE_*` du
+  cosmonaute EVA (dont `COSMONAUTE_PLANES`), types `ShipUpgrade` +
+  `UpgradeTrack` + `ReputationRank` + `PlaneUpgradeTrack` +
+  `PlaneUpgradeLink` + `VaisseauWeapon` et lignes `FUEL_UPGRADE_TRACK` …
+  `CARGO_UPGRADE_TRACK`)
   dans le style exact du code du jeu ; on recompile ensuite
   (`cargo build --release` — les tests `cargo test` valident les nouvelles
   valeurs) et `src/scenario.rs` n'a plus besoin d'être modifié : il importe
@@ -304,11 +357,17 @@ puis ouvrez `http://localhost:8123` — le fichier `src/marketplace.rs` est
 **chargé automatiquement** à l'ouverture (aucune action nécessaire) et
 « 💾 Enregistrer le fichier » l'écrit directement (fetch GET/PUT). Le serveur
 expose aussi la **liste des meshes** (`GET /list-assets`,
-`GET /assets/<fichier>`) pour le choix de l'asset du vaisseau et son aperçu.
+`GET /assets/<fichier>`) pour le choix de l'asset du vaisseau et son aperçu,
+ainsi qu'une **console cargo** (`POST /api/cargo` avec `{ "command": "test"
+| "run" }` — la sortie est renvoyée en flux, terminée par le code de sortie —
+et `POST /api/cargo-stop` pour arrêter) : la barre en bas de la page lance
+`cargo test` (vérifie les constantes exportées) ou `cargo run` (compile puis
+ouvre le jeu) et affiche la sortie en direct, avec « ■ Arrêter » pour couper.
 C'est la méthode recommandée avec le navigateur intégré de VSCode, qui
 n'expose pas l'API File System Access. En ouvrant la page en fichier local
 (`file://`), Chrome/Edge utilisent l'API File System Access, les autres
-navigateurs le sélecteur de fichiers classique.
+navigateurs le sélecteur de fichiers classique (la console cargo, qui dépend
+du serveur, y est masquée).
 
 ## Détails techniques
 

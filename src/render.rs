@@ -1393,6 +1393,12 @@ pub fn draw_cargo(state: &GameState, elements: &[Element]) {
     let e1 = elements[1].count;
     let e2 = e1 + elements[2].count;
     let e3 = e2 + elements[3].count;
+    // soute presque pleine : les baies occupées clignotent (elles alternent
+    // leur couleur ↔ rouge tant que le cargo reste à `HUD_FULL_CARGO_RATIO`
+    // de sa capacité — les emplacements vides gardent leur contour gris)
+    let almost_full = state.player.cargo_size > 0
+        && state.player.cargo_qty as f64 / state.player.cargo_size as f64 >= HUD_FULL_CARGO_RATIO;
+    let blink_on = almost_full && (get_time() * HUD_BLINK_HZ) as i64 % 2 == 0;
     for i in 1..=state.player.cargo_size {
         let color = if i <= e1 {
             elements[1].color
@@ -1405,7 +1411,8 @@ pub fn draw_cargo(state: &GameState, elements: &[Element]) {
         };
         let x = 11.0 * i as f32 + 5.0;
         if color != 0xFF808080 {
-            draw_circle(x, 50.0, 5.0, argb_to_color(color));
+            let fill = if blink_on { HUD_WARN_COLOR } else { color };
+            draw_circle(x, 50.0, 5.0, argb_to_color(fill));
         } else {
             draw_circle_lines(x, 50.0, 5.0, 1.0, argb_to_color(color));
         }
@@ -1817,6 +1824,22 @@ const HUD_RESOURCES_ECONOMY_COLS: i32 = 39;
 /// (LIVES/SHIELD) → le statut d'accostage démarre à la colonne 74.
 const HUD_RESOURCES_SURVIVAL_COLS: i32 = 16;
 
+/// Fréquence (Hz) du **clignotement d'alerte** des ressources du HUD :
+/// carburant/munitions presque vides et baies de chargement presque pleines
+/// alternent leur couleur (blanc ↔ rouge, ~3 cycles/s — même principe que
+/// le flash des règles du menu titre, `title.rs`).
+const HUD_BLINK_HZ: f64 = 3.0;
+/// Couleur d'alerte (ARGB) du clignotement : rouge vif (même teinte que
+/// « GAME OVER »).
+const HUD_WARN_COLOR: u32 = 0xFFFF4040;
+/// Seuil « réserve presque vide » : le carburant / les munitions clignotent
+/// au HUD tant que la réserve est **sous** cette fraction de sa capacité.
+const HUD_LOW_RESERVE_RATIO: f64 = 0.25;
+/// Seuil « soute presque pleine » : les baies de chargement occupées
+/// clignotent dès que le cargo atteint **au moins** cette fraction de la
+/// capacité (`draw_cargo`).
+const HUD_FULL_CARGO_RATIO: f64 = 0.8;
+
 /// Abscisse (px) d'une colonne de la grille 8 px (x = 8+(col-1)*8).
 fn hud_col_x(col: i32) -> f32 {
     8.0 + (col - 1) as f32 * 8.0
@@ -1867,20 +1890,27 @@ pub fn draw_hud(state: &GameState) -> f32 {
     // (économie — les capacités montrent les extensions d'atelier achetées)
     // ou vies + bouclier (Survival) — champs fixes : 3/3/2/2/5 chiffres
     let dock_col = if economy {
-        draw_text(
-            &format!(
-                "FUEL:{:>3.0}/{:>3} AMMO:{:>2}/{:>2} MINERALS:{:>5}",
-                state.resources.fuel,
-                scenario::fuel_capacity(state),
-                state.resources.ammo,
-                scenario::ammo_capacity(state),
-                state.resources.minerals
-            ),
-            hud_col_x(HUD_RESOURCES_COL),
-            14.0,
-            16.0,
-            WHITE,
-        );
+        // blocs dessinés séparément (mêmes champs fixes → même abscisse de
+        // départ pour chacun, aucune dérive) pour pouvoir **clignoter** une
+        // réserve presque vide sans décaler les blocs suivants : carburant
+        // et munitions alternent blanc ↔ rouge tant qu'ils restent sous
+        // `HUD_LOW_RESERVE_RATIO` de leur capacité
+        let fuel_cap = scenario::fuel_capacity(state);
+        let ammo_cap = scenario::ammo_capacity(state);
+        let fuel_txt = format!("FUEL:{:>3.0}/{:>3}", state.resources.fuel, fuel_cap);
+        let ammo_txt = format!(" AMMO:{:>2}/{:>2}", state.resources.ammo, ammo_cap);
+        let min_txt = format!(" MINERALS:{:>5}", state.resources.minerals);
+        let blink_on = (get_time() * HUD_BLINK_HZ) as i64 % 2 == 0;
+        let fuel_low = state.resources.fuel <= fuel_cap * HUD_LOW_RESERVE_RATIO;
+        let ammo_low = state.resources.ammo as f64 <= ammo_cap as f64 * HUD_LOW_RESERVE_RATIO;
+        let fuel_color = if fuel_low && blink_on { HUD_WARN_COLOR } else { 0xFFFFFFFF };
+        let ammo_color = if ammo_low && blink_on { HUD_WARN_COLOR } else { 0xFFFFFFFF };
+        let x = hud_col_x(HUD_RESOURCES_COL);
+        draw_text(&fuel_txt, x, 14.0, 16.0, argb_to_color(fuel_color));
+        let x_ammo = x + measure_text(&fuel_txt, None, 16, 1.0).width;
+        draw_text(&ammo_txt, x_ammo, 14.0, 16.0, argb_to_color(ammo_color));
+        let x_minerals = x_ammo + measure_text(&ammo_txt, None, 16, 1.0).width;
+        draw_text(&min_txt, x_minerals, 14.0, 16.0, WHITE);
         HUD_RESOURCES_COL + HUD_RESOURCES_ECONOMY_COLS + 1
     } else if scenario::has_survival(state) {
         draw_text(
