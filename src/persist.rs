@@ -5,7 +5,8 @@
 //! utilisateur (norme XDG : `$XDG_CONFIG_HOME`, ou `~/.config` à défaut).
 //!
 //! Clés actuelles :
-//! - `moving_mode`      — mode de déplacement (0..2, écran de paramétrage O)
+//! - `moving_mode`      — mode de déplacement (0..3, choisi au magasin de la
+//!                        station — bouton SHOP de la boîte DOCK STATION)
 //! - `music`            — musique en marche (0/1, touche M)
 //! - `volume`           — volume maître en pourcentage (0..100)
 //! - `render_style`     — style de rendu des triangles (0..2, écran O)

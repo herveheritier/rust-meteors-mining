@@ -1,6 +1,6 @@
-//! Place de marché de la station — extensions de vaisseau de l'atelier,
-//! réglages du vaisseau joueur et économie (scénario Progression, bouton
-//! UPGRADES de la boîte DOCK STATION).
+//! Place de marché de la station — extensions de vaisseau et modes de
+//! déplacement (bouton SHOP de la boîte DOCK STATION), réglages du vaisseau
+//! joueur et économie (scénario Progression).
 //!
 //! Fichier **généré** par `tools/marketplace-editor/index.html` — ne pas
 //! éditer à la main : régénérez-le depuis l'outil de gestion, puis
@@ -13,9 +13,23 @@ use crate::config::{CARGO_SIZE, MOVING_MODE_COUNT};
 /// WATER — voir `default_elements` ; 0 = sans valeur).
 pub const ELEMENT_VALUES: [i32; 4] = [0, 5, 3, 2];
 
+/// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre
+/// historique — l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :
+/// nom et description affichés (magasin de la station, messages du scénario)
+/// et coût de déblocage en minerais (0 = déjà débloqué au départ). Générés
+/// par l'outil de gestion.
+pub const MOVING_MODES: &[MovingMode] = &[
+    MovingMode { name: "INERTIAL", description: "THRUST / REVERSE, TURN L/R", cost: 15 },
+    MovingMode { name: "4 WAYS", description: "ARROWS PUSH IN CURRENT DIR", cost: 30 },
+    MovingMode { name: "DIRECTIONAL", description: "ACCELERATE / BRAKE, TURN L/R", cost: 45 },
+    MovingMode { name: "REALISTIC", description: "INERTIAL + ROTATION DRIFT", cost: 0 },
+];
+
 /// Coût en minerais pour débloquer chaque mode de déplacement (index
-/// `MOVING_MODE_*` ; 0 = déjà débloqué) : INERTIAL gratuit, 4 WAYS 20, DIRECTIONAL 50.
-pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [0, 20, 50];
+/// `MOVING_MODE_*` ; 0 = déjà débloqué) — dérivé de `MOVING_MODES`. Seuls
+/// les modes à coût nul sont débloqués au départ en Progression (REALISTIC
+/// par défaut) ; les autres s'achètent au magasin.
+pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [15, 30, 45, 0];
 
 /// Prix (minerais) d'un plein de carburant par pas de `fuel_step` unités.
 pub const FUEL_PRICE: i32 = 1;
@@ -136,7 +150,7 @@ pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[
         orientation_degrees: 0.0,
         position: (-15.0, 50.0),
         ejection_angle_degrees: 180.0,
-        color: 0xFFFFA000,
+        color: 0xFFf79e02,
     },
     VaisseauThruster {
         name: "AVANT",
@@ -253,8 +267,31 @@ pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = 59.0;
 /// définie). Générée par l'outil de gestion.
 pub const COSMONAUTE_PLANES: &[usize] = &[];
 
+/// Un mode de déplacement du vaisseau (index `MOVING_MODE_*` du jeu) : nom
+/// et description affichés (magasin de la station, messages du scénario) et
+/// coût de déblocage en minerais (0 = déjà débloqué au départ). Généré par
+/// l'outil de gestion.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MovingMode {
+    /// Nom du mode (magasin, messages HUD).
+    pub name: &'static str,
+    /// Courte description (magasin de la station).
+    pub description: &'static str,
+    /// Coût en minerais pour débloquer (0 = gratuit au départ).
+    pub cost: i32,
+}
+
+/// Nom d'affichage d'un mode de déplacement (magasin de la station, messages
+/// du scénario) — lu dans `MOVING_MODES` (généré par l'outil de gestion).
+pub fn mode_label(mode: i32) -> &'static str {
+    MOVING_MODES
+        .get(mode as usize)
+        .map(|m| m.name)
+        .unwrap_or("?")
+}
+
 /// Une extension de vaisseau achetable à l'atelier de la station (scénario
-/// Progression, bouton UPGRADES de la boîte DOCK STATION) : ajoute de la
+/// Progression, bouton SHOP de la boîte DOCK STATION) : ajoute de la
 /// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en minerais.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShipUpgrade {

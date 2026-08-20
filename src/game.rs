@@ -1,6 +1,6 @@
 //! Boucle de jeu — portage de `mainLoop.bas`.
 //!
-//! Jalon M2 : input (déplacement du vaisseau, 3 modes), physique, monde
+//! Jalon M2 : input (déplacement du vaisseau, 4 modes), physique, monde
 //! torique (via `moving_shape`), pause, plein écran.
 //! Jalon M3 : météores — génération en jeu (touche G + automatique), détection
 //! de collisions (SAT) avec choc élastique, résolution (destruction de
@@ -26,7 +26,7 @@ use crate::scenario;
 use crate::geom::{Point, Triangle};
 use crate::render::{
     camera_for, choice_box_layout, cycle_view_mode, enter_fullscreen, help_box_layout, mouse_to_game,
-    settings_box_layout, workshop_box_layout,
+    settings_box_layout, shop_box_layout,
 };
 use crate::shape::{
     compute_real_positions, compute_shape_center, detect_collision, moving_shape, resolve_elastic_collision,
@@ -101,10 +101,15 @@ pub fn update(
 
     // Écran de paramétrage ouvert (touche O) : le monde est gelé et seul
     // l'input de l'écran est traité (voir `handle_settings_input`). Un clic
-    // sur RESTART demande la relance du jeu.
+    // sur RESTART demande la relance du jeu ; un clic sur RESET PROGRESSION
+    // reconstruit le vaisseau (les plans liés aux extensions achetées
+    // disparaissent avec les niveaux remis à zéro).
     if state.settings_box {
-        let restart = handle_settings_input(state, sounds.as_deref_mut());
-        let action = if restart { Action::Restart } else { Action::Continue };
+        let result = handle_settings_input(state, sounds.as_deref_mut());
+        if result.progression_reset {
+            crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+        }
+        let action = if result.restart { Action::Restart } else { Action::Continue };
         return (action, camera);
     }
 
@@ -180,15 +185,15 @@ pub fn update(
     }
 
     // Boîte de choix DOCK STATION ouverte : le monde est gelé — seuls les
-    // clics sur UNLOAD / REFUEL/REARM / UPGRADES / CLOSE sont traités (ex
+    // clics sur UNLOAD / REFUEL/REARM / SHOP / CLOSE sont traités (ex
     // boucle bloquante de `windowUtils_choiceBox`). UNLOAD décharge la soute
     // (minerais disponibles pour REFUEL/REARM juste après), REFUEL/REARM
-    // achète carburant + munitions (`scenario::purchase_supplies`) et
-    // UPGRADES ouvre l'atelier d'amélioration du vaisseau (scénario à
-    // économie) ; la boîte ne se ferme qu'avec CLOSE, pour décharger puis se
-    // ravitailler dans le même accostage.
+    // achète carburant + munitions (`scenario::purchase_supplies`) et SHOP
+    // ouvre le magasin de la station (modes de déplacement, et extensions en
+    // scénario à économie) ; la boîte ne se ferme qu'avec CLOSE, pour
+    // décharger puis se ravitailler dans le même accostage.
     if state.dock_box {
-        match choice_box_click(state) {
+        match choice_box_click() {
             ChoiceClick::None => {}
             ChoiceClick::Unload => {
                 // déchargement immédiat — NB : l'original ignore le choix
@@ -213,11 +218,11 @@ pub fn update(
                 scenario::purchase_supplies(state);
                 let _ = scenario::save_progression(state);
             }
-            ChoiceClick::Upgrades => {
-                // ouvre l'atelier d'amélioration (la boîte réapparaît en
-                // fermant l'atelier — on reste accosté)
+            ChoiceClick::Shop => {
+                // ouvre le magasin de la station (la boîte réapparaît en
+                // fermant le magasin — on reste accosté)
                 state.dock_box = false;
-                state.workshop_box = true;
+                state.shop_box = true;
             }
             ChoiceClick::Close => {
                 // quitte l'accostage : les liens néon se rétractent
@@ -228,25 +233,27 @@ pub fn update(
         return (Action::Continue, camera);
     }
 
-    // Atelier d'amélioration du vaisseau ouvert (bouton UPGRADES de la boîte
-    // DOCK STATION, scénario à économie) : le monde est gelé — les clics sur
+    // Magasin de la station ouvert (bouton SHOP de la boîte DOCK STATION) :
+    // le monde est gelé — les clics sur les lignes de mode de déplacement
+    // (sélection gratuite ou déblocage contre minerais, `scenario::try_select_mode`),
     // les lignes d'extension (achat contre minerais, `scenario::buy_upgrade`)
     // et sur CLOSE (retour à la boîte DOCK STATION, toujours accosté) sont
     // traités.
-    if state.workshop_box {
-        match workshop_box_click() {
-            WorkshopClick::None => {}
-            WorkshopClick::BuyFuel => {
+    if state.shop_box {
+        match shop_box_click(state) {
+            ShopClick::None => {}
+            ShopClick::Mode(mode) => select_mode_and_save(state, mode),
+            ShopClick::BuyFuel => {
                 buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Fuel)
             }
-            WorkshopClick::BuyAmmo => {
+            ShopClick::BuyAmmo => {
                 buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Ammo)
             }
-            WorkshopClick::BuyCargo => {
+            ShopClick::BuyCargo => {
                 buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Cargo)
             }
-            WorkshopClick::Close => {
-                state.workshop_box = false;
+            ShopClick::Close => {
+                state.shop_box = false;
                 state.dock_box = true;
             }
         }
@@ -308,13 +315,9 @@ pub fn update(
         state.help_box = true;
     }
 
-    // O : écran de paramétrage (choix du mode de déplacement du vaisseau) —
-    // on mémorise le mode courant pour n'annoncer le changement au HUD qu'à
-    // la fermeture, s'il a été modifié ; le focus clavier part sur le mode
-    // courant.
+    // O : écran de paramétrage (options audio et graphiques — le mode de
+    // déplacement se choisit au magasin de la station, bouton SHOP)
     if is_key_pressed(KeyCode::O) {
-        state.settings_previous_mode = state.moving_mode;
-        state.settings_focus = state.moving_mode;
         state.settings_box = true;
     }
 
@@ -1292,29 +1295,30 @@ enum ChoiceClick {
     Unload,
     /// Achète carburant + munitions contre minerais.
     Refuel,
-    /// Ouvre l'atelier d'amélioration du vaisseau (scénario à économie).
-    Upgrades,
+    /// Ouvre le magasin de la station (modes de déplacement, et extensions
+    /// en scénario à économie).
+    Shop,
     /// Ferme la boîte.
     Close,
 }
 
 /// Détecte un clic sur la boîte de choix DOCK STATION (ex
 /// `windowUtils_choiceBox`) et renvoie le bouton cliqué (contrairement à
-/// l'original, le choix n'est plus ignoré : UNLOAD, REFUEL/REARM et UPGRADES
-/// agissent). Le bouton UPGRADES n'existe qu'en scénario à économie (la
-/// géométrie est vide sinon).
-fn choice_box_click(state: &GameState) -> ChoiceClick {
+/// l'original, le choix n'est plus ignoré : UNLOAD, REFUEL/REARM et SHOP
+/// agissent). SHOP ouvre le magasin de la station (modes de déplacement
+/// + extensions en scénario à économie).
+fn choice_box_click() -> ChoiceClick {
     if !is_mouse_button_pressed(MouseButton::Left) {
         return ChoiceClick::None;
     }
-    let l = choice_box_layout(scenario::has_economy(state));
+    let l = choice_box_layout();
     let m = mouse_to_game();
     if l.unload.contains(m) {
         ChoiceClick::Unload
     } else if l.refuel.contains(m) {
         ChoiceClick::Refuel
-    } else if l.upgrades.contains(m) {
-        ChoiceClick::Upgrades
+    } else if l.shop.contains(m) {
+        ChoiceClick::Shop
     } else if l.close.contains(m) {
         ChoiceClick::Close
     } else {
@@ -1322,11 +1326,13 @@ fn choice_box_click(state: &GameState) -> ChoiceClick {
     }
 }
 
-/// Bouton cliqué sur l'atelier d'amélioration du vaisseau (bouton UPGRADES
-/// de la boîte DOCK STATION, scénario à économie).
+/// Bouton cliqué sur le magasin de la station (bouton SHOP de la boîte DOCK
+/// STATION).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WorkshopClick {
+enum ShopClick {
     None,
+    /// Sélectionne / débloque un mode de déplacement (index `MOVING_MODE_*`).
+    Mode(i32),
     /// Achète l'extension de réservoir de carburant.
     BuyFuel,
     /// Achète l'extension de chargeur de munitions.
@@ -1337,28 +1343,34 @@ enum WorkshopClick {
     Close,
 }
 
-/// Détecte un clic sur l'atelier d'amélioration : une ligne d'extension
-/// (achat) ou le bouton CLOSE (retour à la boîte DOCK STATION).
-fn workshop_box_click() -> WorkshopClick {
+/// Détecte un clic sur le magasin de la station : une ligne de mode de
+/// déplacement (sélection/déblocage), une ligne d'extension (achat) ou le
+/// bouton CLOSE (retour à la boîte DOCK STATION).
+fn shop_box_click(state: &GameState) -> ShopClick {
     if !is_mouse_button_pressed(MouseButton::Left) {
-        return WorkshopClick::None;
+        return ShopClick::None;
     }
-    let l = workshop_box_layout();
+    let l = shop_box_layout(scenario::has_economy(state));
     let m = mouse_to_game();
+    for (i, rect) in l.modes.iter().enumerate() {
+        if rect.contains(m) {
+            return ShopClick::Mode(MOVING_MODE_ORDER[i]);
+        }
+    }
     if l.fuel.contains(m) {
-        WorkshopClick::BuyFuel
+        ShopClick::BuyFuel
     } else if l.ammo.contains(m) {
-        WorkshopClick::BuyAmmo
+        ShopClick::BuyAmmo
     } else if l.cargo.contains(m) {
-        WorkshopClick::BuyCargo
+        ShopClick::BuyCargo
     } else if l.close.contains(m) {
-        WorkshopClick::Close
+        ShopClick::Close
     } else {
-        WorkshopClick::None
+        ShopClick::None
     }
 }
 
-/// Achète une extension d'atelier (réservoir, chargeur ou soute) puis persiste
+/// Achète une extension du magasin (réservoir, chargeur ou soute) puis persiste
 /// la progression (minerais, niveaux d'extension) — les réservoirs montent à
 /// la nouvelle capacité et la soute s'agrandit dans `buy_upgrade`. Un plan du
 /// vaisseau lié à la ligne achetée peut apparaître : le mesh est reconstruit
@@ -1375,6 +1387,19 @@ fn buy_upgrade_and_save(
     let _ = scenario::save_progression(state);
 }
 
+/// Sélectionne un mode de déplacement dans le magasin (bouton SHOP de la
+/// boîte DOCK STATION) : la sélection passe par le scénario (un mode
+/// verrouillé est payé en minerais, refusé si insuffisant — messages HUD) ;
+/// le mode devenu courant est annoncé au HUD, et le mode + la progression
+/// (minerais, modes débloqués) sont persistés immédiatement.
+fn select_mode_and_save(state: &mut GameState, mode: i32) {
+    if scenario::try_select_mode(state, mode) {
+        state.send_message(&format!("MOVING MODE: {}", crate::marketplace::mode_label(mode)));
+        let _ = persist::save_moving_mode(state.moving_mode);
+        let _ = scenario::save_progression(state);
+    }
+}
+
 /// Détecte un clic sur le bouton CLOSE de la fenêtre d'aide (ex
 /// `windowUtils_help`).
 fn help_box_click() -> bool {
@@ -1386,15 +1411,12 @@ fn help_box_click() -> bool {
     close_rect.contains(m)
 }
 
-/// Clic sur l'écran de paramétrage (touche O) : un radio-bouton de mode
-/// sélectionne le mode (appliqué immédiatement, l'écran reste ouvert pour
-/// comparer), les cases MUSIC / AUTO GENERATE / ANTIALIAS basculent, un clic
-/// sur la barre du volume donne la fraction demandée (0..1), les lignes
-/// RENDER / WINDOW / SIZE font cycler leur valeur, RESET remet les réglages
-/// par défaut et CLOSE ferme l'écran.
+/// Clic sur l'écran de paramétrage (touche O) : les cases MUSIC / AUTO
+/// GENERATE / ANTIALIAS basculent, un clic sur la barre du volume donne la
+/// fraction demandée (0..1), les lignes RENDER / WINDOW / SIZE font cycler
+/// leur valeur, RESET remet les réglages par défaut et CLOSE ferme l'écran.
 enum SettingsClick {
     None,
-    Mode(i32),
     Music,
     AutoGenerate,
     Volume(f32),
@@ -1405,11 +1427,14 @@ enum SettingsClick {
     /// Relance le jeu (affiché quand un réglage modifié exige un redémarrage).
     Restart,
     Reset,
+    /// Remet à zéro la progression du scénario (minerais, modes payés,
+    /// réputation, extensions, vies/bouclier).
+    ResetProgress,
     Close,
 }
 
 /// Détecte un clic sur l'écran de paramétrage (touche O) : contrôle cliqué
-/// (mode, case, volume, ligne graphique, RESTART, RESET ou CLOSE). Le bouton
+/// (case, volume, ligne graphique, RESTART, RESET ou CLOSE). Le bouton
 /// RESTART n'est actif que si un réglage modifié (l'anticrénelage) diffère de
 /// la valeur appliquée par la fenêtre.
 fn settings_box_click(state: &GameState) -> SettingsClick {
@@ -1418,11 +1443,6 @@ fn settings_box_click(state: &GameState) -> SettingsClick {
     }
     let l = settings_box_layout();
     let m = mouse_to_game();
-    for (i, rect) in l.modes.iter().enumerate() {
-        if rect.contains(m) {
-            return SettingsClick::Mode(i as i32);
-        }
-    }
     if l.music.contains(m) {
         return SettingsClick::Music;
     }
@@ -1447,6 +1467,9 @@ fn settings_box_click(state: &GameState) -> SettingsClick {
     if state.antialias != state.antialias_applied && l.restart.contains(m) {
         return SettingsClick::Restart;
     }
+    if (scenario::has_economy(state) || scenario::has_survival(state)) && l.reset_progress.contains(m) {
+        return SettingsClick::ResetProgress;
+    }
     if l.reset.contains(m) {
         return SettingsClick::Reset;
     }
@@ -1456,39 +1479,26 @@ fn settings_box_click(state: &GameState) -> SettingsClick {
     SettingsClick::None
 }
 
-/// Traite l'input de l'écran de paramétrage (touche O) : clavier (flèches
-/// ↑/↓ = focus radio, Entrée = applique le mode, ESC = ferme) et clic souris
-/// (radio, cases MUSIC / AUTO GENERATE / ANTIALIAS, barre de volume, lignes
-/// RENDER / WINDOW / SIZE, RESTART, RESET, CLOSE). Les réglages modifiés sont
-/// persistés immédiatement (le mode l'est à la fermeture). Utilisé par la
+/// Résultat du traitement de l'input de l'écran de paramétrage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SettingsResult {
+    /// Le bouton RESTART a été cliqué (le jeu doit se relancer).
+    pub restart: bool,
+    /// Le bouton RESET PROGRESSION a été cliqué (la progression du scénario a
+    /// été remise à zéro — la boucle de jeu doit reconstruire le vaisseau
+    /// pour retirer les plans liés aux extensions désormais perdues).
+    pub progression_reset: bool,
+}
+
+/// Traite l'input de l'écran de paramétrage (touche O) : clavier (ESC =
+/// ferme) et clic souris (cases MUSIC / AUTO GENERATE / ANTIALIAS, barre de
+/// volume, lignes RENDER / WINDOW / SIZE, RESTART, RESET, RESET PROGRESSION,
+/// CLOSE). Les réglages modifiés sont persistés immédiatement. Utilisé par la
 /// boucle de jeu et par l'écran titre (`title.rs`). `sounds` est optionnel :
-/// absent, musique et volume ne sont pas modifiables. Renvoie `true` si le
-/// bouton RESTART a été cliqué (le jeu doit se relancer).
-pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Sounds>) -> bool {
-    let mut restart = false;
-    if is_key_pressed(KeyCode::Up) {
-        state.settings_focus = settings_focus_move(state.settings_focus, -1);
-    }
-    if is_key_pressed(KeyCode::Down) {
-        state.settings_focus = settings_focus_move(state.settings_focus, 1);
-    }
-    if is_key_pressed(KeyCode::Enter) {
-        // la sélection passe par le scénario : un mode verrouillé (scénario
-        // à économie) est payé en minerais, refusé si insuffisant ; un mode
-        // acheté est persisté (minerais déduits + mode débloqué)
-        if scenario::try_select_mode(state, state.settings_focus) {
-            let _ = scenario::save_progression(state);
-        }
-    }
+/// absent, musique et volume ne sont pas modifiables.
+pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Sounds>) -> SettingsResult {
+    let mut result = SettingsResult::default();
     match settings_box_click(state) {
-        SettingsClick::Mode(m) => {
-            // un clic recentre le focus clavier sur le mode choisi ; la
-            // sélection passe par le scénario (voir Entrée ci-dessus)
-            state.settings_focus = m;
-            if scenario::try_select_mode(state, m) {
-                let _ = scenario::save_progression(state);
-            }
-        }
         SettingsClick::Music => {
             if let Some(snd) = sounds.as_deref_mut() {
                 snd.toggle_music();
@@ -1530,8 +1540,13 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
                 "ANTIALIAS OFF"
             });
         }
-        SettingsClick::Restart => restart = true,
+        SettingsClick::Restart => result.restart = true,
         SettingsClick::Reset => reset_settings(state, sounds.as_deref_mut()),
+        SettingsClick::ResetProgress => {
+            scenario::reset_progression(state);
+            result.progression_reset = true;
+            state.send_message("PROGRESSION RESET");
+        }
         SettingsClick::Close => close_and_persist(state),
         SettingsClick::None => {}
     }
@@ -1550,48 +1565,28 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
     if is_key_pressed(KeyCode::Escape) {
         close_and_persist(state);
     }
-    restart
+    result
 }
 
-/// Ferme l'écran de paramétrage ; renvoie `true` si le mode de déplacement a
-/// été modifié pendant l'écran (un message HUD annonce alors le mode activé).
-fn close_settings(state: &mut GameState) -> bool {
+/// Ferme l'écran de paramétrage. (Le mode de déplacement se choisit au
+/// magasin de la station et y est persisté à la sélection — rien à
+/// réenregistrer ici.)
+fn close_settings(state: &mut GameState) {
     state.settings_box = false;
-    let changed = state.moving_mode != state.settings_previous_mode;
-    if changed {
-        state.send_message(&format!("MOVING MODE: {}", moving_mode_label(state.moving_mode)));
-    }
-    changed
 }
 
-/// Ferme l'écran de paramétrage et persiste le mode de déplacement dans le
-/// fichier de config s'il a changé (le message HUD est envoyé par
-/// `close_settings`).
+/// Ferme l'écran de paramétrage (voir `close_settings`).
 fn close_and_persist(state: &mut GameState) {
-    if close_settings(state) {
-        let _ = persist::save_moving_mode(state.moving_mode);
-    }
+    close_settings(state);
 }
 
-/// Déplace le focus des radio-boutons de l'écran de paramétrage (flèches
-/// haut/bas), borné à `[0, MOVING_MODE_COUNT-1]`.
-fn settings_focus_move(focus: i32, delta: i32) -> i32 {
-    (focus + delta).clamp(0, MOVING_MODE_COUNT - 1)
-}
-
-/// Remet les réglages par défaut (bouton RESET) : mode DIRECTIONAL, musique
-/// en marche, génération automatique active, volume 100 %, rendu texturé,
-/// fenêtré à 960×540, anticrénelage éteint — les valeurs par défaut ne sont
+/// Remet les réglages par défaut (bouton RESET) : musique en marche,
+/// génération automatique active, volume 100 %, rendu texturé, fenêtré à
+/// 960×540, anticrénelage éteint — les valeurs par défaut ne sont
 /// réenregistrées à la fermeture que si elles ont été modifiées pendant
-/// l'écran. Partie « réglages » pure du RESET (testable sans contexte
-/// macroquad) : remet les valeurs par défaut (mode DIRECTIONAL, génération
-/// automatique, rendu texturé, fenêtre 960×540, anticrénelage éteint, focus
-/// recentré).
+/// l'écran. NB : le mode de déplacement n'est plus un réglage (il se choisit
+/// au magasin de la station) — le RESET ne le touche pas.
 fn reset_settings_fields(state: &mut GameState) {
-    // mode de déplacement : défaut du scénario (DIRECTIONAL en jeu libre,
-    // INERTIAL en Progression — le RESET ne débloque jamais un mode payant)
-    state.moving_mode = scenario::start_mode(state.scenario);
-    state.settings_focus = state.moving_mode;
     state.auto_generate = true;
     state.render_style = RenderStyle::Textured;
     state.window_size = 0;
@@ -1619,9 +1614,9 @@ fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
         }
     }
     // seules les clés de réglage sont supprimées — le scénario et sa
-    // progression (`scenario`, `prog_*`) survivent au RESET
+    // progression (`scenario`, `prog_*` : minerais, modes payés, réputation,
+    // mode de déplacement choisi) survivent au RESET
     for key in [
-        "moving_mode",
         "music",
         "auto_generate",
         "volume",
@@ -1695,9 +1690,11 @@ fn set_volume_fraction(sounds: Option<&mut Sounds>, fraction: f32) {
     }
 }
 
-/// Contrôles du vaisseau selon `state.moving_mode` (port fidèle des trois
-/// blocs `select case` de `mainLoop`) + tir (Shift gauche/droit, ex
-/// `case 42, 54` des trois modes).
+/// Contrôles du vaisseau selon `state.moving_mode` (port fidèle des blocs
+/// `select case` de `mainLoop`) + tir (Shift gauche/droit, ex
+/// `case 42, 54` des modes). REALISTIC reprend INERTIAL mais laisse la
+/// vitesse angulaire du vaisseau vivre après le relâchement des propulseurs
+/// latéraux.
 ///
 /// NB : les formules QB64 `60*valeur/fps` deviennent `valeur*60*dt`
 /// (équivalent à 60 FPS). La convention d'écran (y vers le bas, `-sin` dans
@@ -1727,6 +1724,9 @@ fn player_controls(
     let player = &mut shapes[PLAYER_INDEX];
     match state.moving_mode {
         MOVING_MODE_DIRECTIONAL => {
+            // les modes sans inertie angulaire ne laissent pas une ancienne
+            // rotation de REALISTIC continuer après un changement de mode
+            player.rotation = 0.0;
             if fuel_ok && is_key_down(KeyCode::Up) {
                 player.velocity += PLAYER_ACCELERATION * 60.0 * dt;
                 state.player.thrust = 0.1;
@@ -1754,6 +1754,8 @@ fn player_controls(
             }
         }
         MOVING_MODE_INERTIAL => {
+            // INERTIAL tourne à vitesse imposée tant que la touche est tenue
+            player.rotation = 0.0;
             if fuel_ok && is_key_down(KeyCode::Up) {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
@@ -1774,7 +1776,43 @@ fn player_controls(
                 state.player.rotate_left_thrusted = -5; // jet latéral gauche
             }
         }
+        MOVING_MODE_REALISTIC => {
+            // Même poussée vectorielle qu'INERTIAL. Les propulseurs latéraux
+            // accélèrent progressivement la rotation ; la vitesse angulaire
+            // reste ensuite dans `player.rotation` quand les touches sont
+            // relâchées, et la poussée opposée permet de la compenser.
+            if fuel_ok && is_key_down(KeyCode::Up) {
+                state.player.thrust = 0.1;
+                state.player.thrusted = -5;
+                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, 1.0, -1.0);
+            }
+            let rotate_right = is_key_down(KeyCode::Right);
+            let rotate_left = is_key_down(KeyCode::Left);
+            // Le relâchement ne modifie pas la vitesse angulaire. Une poussée
+            // opposée agit comme un frein : elle peut ramener la rotation à
+            // zéro, puis la faire repartir dans l'autre sens si elle reste
+            // maintenue.
+            player.rotation = realistic_rotation_after_input(
+                player.rotation,
+                rotate_right,
+                rotate_left,
+                dt,
+            );
+            if rotate_right {
+                state.player.rotate_right_thrusted = -5; // jet latéral droit
+            }
+            if fuel_ok && is_key_down(KeyCode::Down) {
+                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, -1.0, 1.0);
+                if player.velocity > 0.0 {
+                    state.player.revert_thrusted = -5;
+                }
+            }
+            if rotate_left {
+                state.player.rotate_left_thrusted = -5; // jet latéral gauche
+            }
+        }
         MOVING_MODE_4_WAYS => {
+            player.rotation = 0.0;
             if fuel_ok && is_key_down(KeyCode::Up) {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
@@ -1815,7 +1853,7 @@ fn player_controls(
     }
     }
 
-    // tir : Shift gauche/droit (ex `case 42, 54` des trois modes) — le
+    // tir : Shift gauche/droit (ex `case 42, 54` des quatre modes) — le
     // cooldown `fire` (1/3 s) bloque les tirs suivants ; le scénario
     // consomme des munitions et bloque le tir quand le chargeur est vide
     if (is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift))
@@ -1907,6 +1945,24 @@ fn qb_keycode(k: KeyCode) -> i32 {
     }
 }
 
+/// Met à jour la vitesse angulaire du mode REALISTIC : une commande latérale
+/// l'accélère progressivement jusqu'à `±PLAYER_ROTATION_SPEED`, le relâchement
+/// la conserve, et la commande opposée la freine jusqu'à l'arrêt.
+fn realistic_rotation_after_input(
+    current: f64,
+    right: bool,
+    left: bool,
+    dt: f64,
+) -> f64 {
+    let direction = match (right, left) {
+        (true, false) => 1.0,
+        (false, true) => -1.0,
+        _ => 0.0,
+    };
+    (current + direction * PLAYER_ROTATION_ACCELERATION * dt)
+        .clamp(-PLAYER_ROTATION_SPEED, PLAYER_ROTATION_SPEED)
+}
+
 /// Ajoute une poussée le long de `orientation` (ex blocs INERTIAL de
 /// `mainLoop`) : combine la vitesse actuelle avec la poussée, puis recalcule
 /// direction/vitesse en polaires.
@@ -1962,6 +2018,22 @@ mod tests {
         t.real_min = Point::new(t.real_a.x.min(t.real_b.x).min(t.real_c.x), t.real_a.y.min(t.real_b.y).min(t.real_c.y));
         t.real_max = Point::new(t.real_a.x.max(t.real_b.x).max(t.real_c.x), t.real_a.y.max(t.real_b.y).max(t.real_c.y));
         t
+    }
+
+    #[test]
+    fn realistic_rotation_is_preserved_when_released() {
+        let dt = 1.0 / 60.0;
+        let mut speed = 0.0;
+        for _ in 0..30 {
+            speed = realistic_rotation_after_input(speed, true, false, dt);
+        }
+        assert!((speed - PLAYER_ROTATION_SPEED).abs() < 1e-12);
+        assert_eq!(realistic_rotation_after_input(speed, false, false, dt), speed);
+        for _ in 0..30 {
+            speed = realistic_rotation_after_input(speed, false, true, dt);
+        }
+        assert!(speed.abs() < 1e-12);
+        assert_eq!(realistic_rotation_after_input(speed, true, true, dt), speed);
     }
 
     #[test]
@@ -2966,68 +3038,40 @@ mod tests {
     }
 
     #[test]
-    fn closing_settings_informs_when_mode_changed() {
-        // le mode a été modifié pendant l'écran : la fermeture annonce le
-        // mode activé au HUD
+    fn closing_settings_just_closes() {
+        // l'écran de paramétrage ne touche plus au mode de déplacement (il se
+        // choisit au magasin de la station) : la fermeture ne fait que fermer
         let mut state = GameState::new();
         state.settings_box = true;
-        state.settings_previous_mode = MOVING_MODE_DIRECTIONAL;
         state.moving_mode = MOVING_MODE_INERTIAL;
 
         close_settings(&mut state);
 
         assert!(!state.settings_box);
-        assert!(state.message_queue.contains("MOVING MODE: INERTIAL"));
-    }
-
-    #[test]
-    fn closing_settings_is_silent_when_mode_unchanged() {
-        // aucun changement pendant l'écran : pas de message à la fermeture
-        let mut state = GameState::new();
-        state.settings_box = true;
-        state.settings_previous_mode = MOVING_MODE_DIRECTIONAL;
-        state.moving_mode = MOVING_MODE_DIRECTIONAL;
-
-        close_settings(&mut state);
-
-        assert!(!state.settings_box);
         assert!(state.message_queue.is_empty());
+        assert_eq!(state.moving_mode, MOVING_MODE_INERTIAL);
     }
 
     #[test]
-    fn moving_mode_labels_match_constants() {
-        // libellés de l'écran de paramétrage et du message HUD : ordre des
-        // constantes MOVING_MODE_*
-        assert_eq!(moving_mode_label(MOVING_MODE_INERTIAL), "INERTIAL");
-        assert_eq!(moving_mode_label(MOVING_MODE_4_WAYS), "4 WAYS");
-        assert_eq!(moving_mode_label(MOVING_MODE_DIRECTIONAL), "DIRECTIONAL");
-    }
-
-    #[test]
-    fn settings_focus_is_clamped_between_modes() {
-        // flèches ↑/↓ : le focus des radio-boutons reste dans
-        // [0, MOVING_MODE_COUNT-1]
-        assert_eq!(
-            settings_focus_move(MOVING_MODE_INERTIAL, -1),
-            MOVING_MODE_INERTIAL
-        );
-        assert_eq!(
-            settings_focus_move(MOVING_MODE_DIRECTIONAL, 1),
-            MOVING_MODE_DIRECTIONAL
-        );
-        assert_eq!(settings_focus_move(MOVING_MODE_INERTIAL, 1), MOVING_MODE_4_WAYS);
-        assert_eq!(settings_focus_move(MOVING_MODE_4_WAYS, 1), MOVING_MODE_DIRECTIONAL);
-        assert_eq!(settings_focus_move(MOVING_MODE_DIRECTIONAL, -1), MOVING_MODE_4_WAYS);
+    fn moving_mode_labels_match_catalog() {
+        // noms affichés (magasin, messages HUD) = catalogue `MOVING_MODES`
+        // généré par l'outil de gestion
+        assert_eq!(crate::marketplace::mode_label(MOVING_MODE_REALISTIC), "REALISTIC");
+        assert_eq!(crate::marketplace::mode_label(MOVING_MODE_INERTIAL), "INERTIAL");
+        assert_eq!(crate::marketplace::mode_label(MOVING_MODE_4_WAYS), "4 WAYS");
+        assert_eq!(crate::marketplace::mode_label(MOVING_MODE_DIRECTIONAL), "DIRECTIONAL");
+        // un mode hors catalogue n'a pas de nom
+        assert_eq!(crate::marketplace::mode_label(99), "?");
     }
 
     #[test]
     fn reset_settings_restores_defaults() {
-        // bouton RESET : mode DIRECTIONAL (défaut), focus recentré,
-        // génération automatique active, rendu texturé, fenêtre 960×540 et
-        // anticrénelage éteint (sons non testables hors jeu)
+        // bouton RESET : génération automatique active, rendu texturé,
+        // fenêtre 960×540 et anticrénelage éteint (sons non testables hors
+        // jeu) — le mode de déplacement n'est pas un réglage : il n'est pas
+        // touché
         let mut state = GameState::new();
         state.moving_mode = MOVING_MODE_4_WAYS;
-        state.settings_focus = MOVING_MODE_INERTIAL;
         state.auto_generate = false;
         state.render_style = RenderStyle::Mesh;
         state.window_size = 2;
@@ -3035,8 +3079,7 @@ mod tests {
 
         reset_settings_fields(&mut state);
 
-        assert_eq!(state.moving_mode, MOVING_MODE_DIRECTIONAL);
-        assert_eq!(state.settings_focus, MOVING_MODE_DIRECTIONAL);
+        assert_eq!(state.moving_mode, MOVING_MODE_4_WAYS);
         assert!(state.auto_generate);
         assert_eq!(state.render_style, RenderStyle::Textured);
         assert_eq!(state.window_size, 0);

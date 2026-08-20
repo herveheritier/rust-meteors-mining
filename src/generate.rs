@@ -854,15 +854,22 @@ mod tests {
         crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
         let pivot = shapes[PLAYER_INDEX].target_center;
         let spawns = crate::vaisseau::vaisseau_bullet_spawns();
+        let weapons = crate::vaisseau::vaisseau_weapons();
         let bullets_before = shapes.len();
         fire_bullet(&mut shapes, &mut triangles);
-        assert_eq!(shapes.len(), bullets_before + spawns.len());
-        // toutes les balles sont des projectiles (WHOIAM_BULLET) et la
-        // première part du centre de rotation quand la liste est vide
+        // Le catalogue d'armes remplace le tir classique : une munition par
+        // arme ; sans catalogue, une balle part de chaque emplacement.
+        let expected_bullets = if weapons.is_empty() {
+            spawns.len()
+        } else {
+            weapons.len()
+        };
+        assert_eq!(shapes.len(), bullets_before + expected_bullets);
+        // toutes les nouvelles formes sont des projectiles
         for b in &shapes[bullets_before..] {
             assert_eq!(b.who_i_am, WHOIAM_BULLET);
         }
-        if spawns.is_empty() {
+        if weapons.is_empty() && spawns.is_empty() {
             // repli : la balle part du pivot (le vaisseau est à l'origine)
             let bullet = &shapes[bullets_before];
             assert!(

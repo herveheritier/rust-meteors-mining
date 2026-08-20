@@ -94,15 +94,19 @@ fn rainbow(hue: f64) -> u32 {
 /// Écran titre : boucle jusqu'à une touche (autre que F, O ou N/B/1-3), ex
 /// `titleLoop`. `sounds` sert à l'écran de paramétrage (touche O), accessible
 /// depuis le titre — musique et volume y sont réglables ; N/B ou 1-3 changent
-/// de scénario (jeu libre ↔ Progression ↔ Survival). Renvoie `true` si le
-/// bouton RESTART de l'écran de paramétrage a été cliqué (le jeu doit se
-/// relancer).
+/// de scénario (jeu libre ↔ Progression ↔ Survival). Renvoie `(restart,
+/// progression_reset)` : `restart` si le bouton RESTART de l'écran de
+/// paramétrage a été cliqué (le jeu doit se relancer), `progression_reset` si
+/// le bouton RESET PROGRESSION a été cliqué depuis le titre (le vaisseau doit
+/// être reconstruit au lancement de la partie — les plans liés aux extensions
+/// remises à zéro ne sont pas visibles à l'écran titre, qui ne dessine pas le
+/// monde).
 pub async fn title_loop(
     state: &mut GameState,
     assets: &crate::render::Assets,
     rt: &RenderTarget,
     sounds: &mut Sounds,
-) -> bool {
+) -> (bool, bool) {
     const COLOR_STEPS: f64 = 48.0;
     const COLOR_SPEED: f64 = 0.3;
     let mut color_step = 0.0;
@@ -112,6 +116,11 @@ pub async fn title_loop(
 
     let banner_cols = BANNER[0].len();
     let mut banner_colors = vec![0u32; banner_cols];
+    // RESET PROGRESSION cliqué depuis l'écran de paramétrage du titre : la
+    // progression est remise à zéro mais le vaisseau n'est pas reconstruit ici
+    // (l'écran titre ne dessine pas le monde) — le drapeau est rendu à `main`
+    // pour que le mesh soit reconstruit au lancement de la partie.
+    let mut progression_reset = false;
 
     // pacing (ex `_limit ATTEMPT_FPS`), filet anti-fuite comme l'original.
     const LIMIT_FPS: bool = true;
@@ -189,8 +198,6 @@ pub async fn title_loop(
                 // fermeture (CLOSE ou ESC — consommé ici, ne quitte pas le
                 // jeu), puis retour à l'écran titre. Un clic sur RESTART
                 // (relance demandée) sort immédiatement du titre.
-                state.settings_previous_mode = state.moving_mode;
-                state.settings_focus = state.moving_mode;
                 state.settings_box = true;
                 while state.settings_box {
                     if LIMIT_FPS {
@@ -200,11 +207,15 @@ pub async fn title_loop(
                         }
                         last_frame = get_time();
                     }
-                    if game::handle_settings_input(state, Some(sounds)) {
+                    let result = game::handle_settings_input(state, Some(sounds));
+                    if result.progression_reset {
+                        progression_reset = true;
+                    }
+                    if result.restart {
                         // ferme l'écran : si la relance échoue (retour de
                         // `main`), la partie démarre sans l'écran ouvert
                         state.settings_box = false;
-                        return true;
+                        return (true, progression_reset);
                     }
                     draw_frame(
                         state,
@@ -287,7 +298,7 @@ pub async fn title_loop(
     }
 
     // le `break` ci-dessus quitte la boucle (lancement de la partie)
-    false
+    (false, progression_reset)
 }
 
 /// Dessine une frame de l'écran titre : caméra selon le mode d'affichage,

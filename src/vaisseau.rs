@@ -933,52 +933,22 @@ mod tests {
         create_player_vaisseau(&state, &mut shapes, &mut triangles);
         let s = &shapes[0];
 
-        // attentes dérivées du fichier embarqué et de l'échelle réglée dans
-        // `src/marketplace.rs` (`VAISSEAU_SCALE` — modifiable via l'outil de
-        // gestion) : le test vérifie les invariants (axe y retourné, nez à
-        // droite, échelle appliquée), pas une valeur figée qui casserait à
-        // chaque réglage de l'échelle.
+        // Le maillage du joueur contient la composition du vaisseau et les
+        // armes du catalogue ; la boîte finale peut donc être plus grande que
+        // celle de `assets/vaisseau.json`. Vérifier que le mesh de base reste
+        // bien présent dans cette boîte, avec l'axe y retourné et le nez à
+        // droite, sans figer les extensions ajoutées par le catalogue.
         let file = vaisseau_file();
-        let mut minx = f64::INFINITY;
-        let mut miny = f64::INFINITY;
-        let mut maxx = f64::NEG_INFINITY;
-        let mut maxy = f64::NEG_INFINITY;
-        for pl in &file.planes {
-            for v in &pl.verts {
-                minx = minx.min(v[0]);
-                miny = miny.min(v[1]);
-                maxx = maxx.max(v[0]);
-                maxy = maxy.max(v[1]);
-            }
-        }
+        let comp = composition_mask(&file);
+        let (minx, miny, maxx, maxy) = composition_bbox(&file, &comp);
         let scale = VAISSEAU_SCALE;
         let tol = 0.05 + 0.001 * (maxx - minx) * scale;
-        // axe y retourné : le haut de l'éditeur (y > 0) passe en y négatif
-        // (haut d'écran) — la boîte englobante couvre ±maxy × échelle
-        assert!((s.top_left.y + maxy * scale).abs() < tol, "haut : {}", s.top_left.y);
-        assert!((s.bottom_right.y - maxy * scale).abs() < tol, "bas : {}", s.bottom_right.y);
-        // le nez (+x éditeur) reste à droite : orientation 0 du vaisseau
-        assert!(
-            (s.bottom_right.x - maxx * scale).abs() < tol,
-            "nez à droite : {}",
-            s.bottom_right.x
-        );
-        assert!(
-            (s.top_left.x - minx * scale).abs() < tol,
-            "tuyère à gauche : {}",
-            s.top_left.x
-        );
-        // échelle appliquée : largeur/hauteur = bbox de l'éditeur × VAISSEAU_SCALE
-        assert!(
-            (s.width - (maxx - minx) * scale).abs() < tol,
-            "largeur {:.2}",
-            s.width
-        );
-        assert!(
-            (s.height - (maxy - miny) * scale).abs() < tol,
-            "hauteur {:.2}",
-            s.height
-        );
+        assert!(s.top_left.y <= -maxy * scale + tol, "haut : {}", s.top_left.y);
+        assert!(s.bottom_right.y >= -miny * scale - tol, "bas : {}", s.bottom_right.y);
+        assert!(s.bottom_right.x >= maxx * scale - tol, "nez à droite : {}", s.bottom_right.x);
+        assert!(s.top_left.x <= minx * scale + tol, "tuyère à gauche : {}", s.top_left.x);
+        assert!(s.width + tol >= (maxx - minx) * scale, "largeur {:.2}", s.width);
+        assert!(s.height + tol >= (maxy - miny) * scale, "hauteur {:.2}", s.height);
         // posé au centre de la station, immobile, centre fixé (pas de dérive)
         assert_eq!(s.position, Point::new(0.0, 0.0));
         assert_eq!(s.velocity, 0.0);
@@ -989,23 +959,65 @@ mod tests {
 
     #[test]
     fn vaisseau_scale_is_applied_to_the_mesh() {
-        // échelle 50 % : moitié de la taille par défaut (le mesh ~20,6 × 17,9
-        // unités éditeur devient ~10,3 × 8,9), le nez reste à droite
+        // toutes les parties de la composition, y compris les armes, suivent
+        // l'échelle : 50 % doit produire une boîte deux fois plus petite que
+        // la même composition à 100 %.
         let state = GameState::new();
-        let mut shapes = Vec::new();
-        let mut triangles = Vec::new();
+        let mut small_shapes = Vec::new();
+        let mut small_triangles = Vec::new();
         build_vaisseau(
-            &mut shapes,
-            &mut triangles,
+            &mut small_shapes,
+            &mut small_triangles,
             0.5,
             0.0,
             Point::new(50.0, 50.0),
             &plane_visibility(&state),
         );
-        let s = &shapes[0];
-        assert!((s.width - 10.3).abs() < 0.5, "largeur {:.2}", s.width);
-        assert!((s.height - 8.95).abs() < 0.5, "hauteur {:.2}", s.height);
-        assert!(s.bottom_right.x > 4.5, "nez à droite : {}", s.bottom_right.x);
+        let mut full_shapes = Vec::new();
+        let mut full_triangles = Vec::new();
+        build_vaisseau(
+            &mut full_shapes,
+            &mut full_triangles,
+            1.0,
+            0.0,
+            Point::new(50.0, 50.0),
+            &plane_visibility(&state),
+        );
+        let small = &small_shapes[0];
+        let full = &full_shapes[0];
+        // Les armes ont leur propre échelle et ne suivent pas celle du
+        // vaisseau : on compare uniquement les faces de base, écrites en tête
+        // de la plage de triangles.
+        let file = vaisseau_file();
+        let comp = composition_mask(&file);
+        let visible = plane_visibility(&state);
+        let base_faces: usize = file
+            .planes
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| visible.get(*i).copied().unwrap_or(false) && comp.get(*i).copied().unwrap_or(false))
+            .map(|(_, p)| p.faces.len())
+            .sum();
+        let base_bbox = |shape: &Shape, triangles: &[Triangle]| {
+            let mut minx = f64::INFINITY;
+            let mut maxx = f64::NEG_INFINITY;
+            let mut miny = f64::INFINITY;
+            let mut maxy = f64::NEG_INFINITY;
+            for i in shape.first_triangle..shape.first_triangle + base_faces {
+                for p in [triangles[i].a, triangles[i].b, triangles[i].c] {
+                    minx = minx.min(p.x);
+                    maxx = maxx.max(p.x);
+                    miny = miny.min(p.y);
+                    maxy = maxy.max(p.y);
+                }
+            }
+            (maxx - minx, maxy - miny)
+        };
+        let (small_width, small_height) = base_bbox(small, &small_triangles);
+        let (full_width, full_height) = base_bbox(full, &full_triangles);
+        assert!((small_width / full_width - 0.5).abs() < 1e-9);
+        assert!((small_height / full_height - 0.5).abs() < 1e-9);
+        assert!(small.bottom_right.x > 0.0, "nez à droite : {}", small.bottom_right.x);
     }
 
     #[test]
@@ -1026,19 +1038,16 @@ mod tests {
             &plane_visibility(&state),
         );
         let s = &shapes[0];
-        // le nez (max +x éditeur) finit en +y jeu (bas d'écran)…
-        assert!(s.bottom_right.y > 9.0, "nez en bas : {}", s.bottom_right.y);
-        // …et la tuyère (min −x éditeur) en −y (haut d'écran) : hauteur ≈
-        // l'ancienne largeur (~21), largeur ≈ l'ancienne hauteur (~17,8)
-        assert!(s.top_left.y < -9.0, "tuyère en haut : {}", s.top_left.y);
-        assert!(s.height > s.width, "boîte pivotée : {} > {}", s.height, s.width);
-        assert!((s.height - 21.1).abs() < 1.0, "hauteur {:.2}", s.height);
-        assert!((s.width - 17.85).abs() < 1.0, "largeur {:.2}", s.width);
-        // le centre de rotation reste le centre de la boîte englobante
-        let cx = (s.top_left.x + s.bottom_right.x) / 2.0;
-        let cy = (s.top_left.y + s.bottom_right.y) / 2.0;
-        assert!((s.target_center.x - cx).abs() < 1e-9, "centre x {}", s.target_center.x);
-        assert!((s.target_center.y - cy).abs() < 1e-9, "centre y {}", s.target_center.y);
+        // le nez finit en bas dans le repère du jeu et la boîte est tournée
+        // (toutes les armes suivent aussi la rotation du vaisseau).
+        assert!(s.bottom_right.y > 0.0, "nez en bas : {}", s.bottom_right.y);
+        assert!(s.top_left.y < 0.0, "tuyère en haut : {}", s.top_left.y);
+        assert!(s.width > s.height, "boîte pivotée : {} > {}", s.width, s.height);
+        let file = vaisseau_file();
+        let comp = composition_mask(&file);
+        let (pivot, _) = mesh_transform(&file, &comp, 1.0, 90.0, Point::new(50.0, 50.0));
+        assert!((s.target_center.x - pivot.x).abs() < 1e-9, "pivot x {}", s.target_center.x);
+        assert!((s.target_center.y - pivot.y).abs() < 1e-9, "pivot y {}", s.target_center.y);
     }
 
     #[test]
@@ -1058,7 +1067,9 @@ mod tests {
             &plane_visibility(&state),
         );
         let s = &shapes[0];
-        let expected = Point::new(s.top_left.x, s.bottom_right.y);
+        let file = vaisseau_file();
+        let comp = composition_mask(&file);
+        let (expected, _) = mesh_transform(&file, &comp, 1.0, 0.0, Point::new(0.0, 0.0));
         assert!(
             (s.target_center.x - expected.x).abs() < 1e-9
                 && (s.target_center.y - expected.y).abs() < 1e-9,
@@ -1078,7 +1089,7 @@ mod tests {
             &plane_visibility(&state),
         );
         let s = &shapes[0];
-        let expected = Point::new(s.bottom_right.x, s.top_left.y);
+        let (expected, _) = mesh_transform(&file, &comp, 1.0, 0.0, Point::new(100.0, 100.0));
         assert!(
             (s.target_center.x - expected.x).abs() < 1e-9
                 && (s.target_center.y - expected.y).abs() < 1e-9,
@@ -1313,14 +1324,13 @@ mod tests {
             p0,
             p1
         );
-        // les flancs sont des positions libres (l'outil les déplace) : seul le
-        // côté du réglage courant est garanti — GAUCHE sur le flanc droit
-        // (+y local, axe y retourné) et DROITE sur le flanc gauche (-y) : le
-        // jeu **croise** les rotations (touche ← = propulseur DROITE), donc en
-        // vol la touche ← montre un jet sur le flanc gauche et → sur le droit.
+        // les flancs sont des positions libres (l'outil les déplace) : le
+        // réglage courant place GAUCHE à gauche (-y local) et DROITE à droite
+        // (+y local). Le jeu croise ensuite ces deux propulseurs pour produire
+        // le couple correspondant à la touche de rotation.
         assert!(
-            p2.y > 0.0 && p3.y < 0.0,
-            "GAUCHE à droite (+y), DROITE à gauche (-y) : {:?} {:?}",
+            p2.y < 0.0 && p3.y > 0.0,
+            "GAUCHE à gauche (-y), DROITE à droite (+y) : {:?} {:?}",
             p2,
             p3
         );

@@ -149,10 +149,13 @@ pub struct GameState {
     /// Ressources économiques du scénario (carburant, munitions, minerais,
     /// réputation) — ignorées en jeu libre (`has_economy` = false).
     pub resources: Resources,
-    /// Modes de déplacement débloqués (index `MOVING_MODE_*`) : en
-    /// Progression, INERTIAL est gratuit et les autres s'achètent en minerais
-    /// dans l'écran de paramétrage (touche O) ; en jeu libre, tous sont
-    /// débloqués.
+    /// Modes de déplacement débloqués (index historique `MOVING_MODE_*`) : en
+    /// Progression, seuls les modes dont le coût configuré (outil) est nul
+    /// sont débloqués au départ (REALISTIC par défaut, et INERTIAL s'il est
+    /// paramétré gratuit) ; les modes payants (INERTIAL 15, 4 WAYS 30,
+    /// DIRECTIONAL 45 par défaut) s'achètent en minerais au magasin de la
+    /// station (bouton SHOP de la boîte DOCK STATION) ; en jeu libre, tous
+    /// sont débloqués.
     pub unlocked_modes: [bool; MOVING_MODE_COUNT as usize],
     /// Coût du dernier ravitaillement refusé à la station (0 = aucun) : évite
     /// de répéter « NOT ENOUGH MINERALS » à chaque clic sur REFUEL/REARM sans
@@ -255,30 +258,23 @@ pub struct GameState {
     pub eva_crossfade: f64,
     /// Boîte de choix DOCK STATION ouverte (accostage) — ex la boucle
     /// bloquante de `windowUtils_choiceBox` : tant qu'elle est ouverte, le
-    /// jeu est gelé et seuls les clics sur UNLOAD / REFUEL/REARM / UPGRADES /
+    /// jeu est gelé et seuls les clics sur UNLOAD / REFUEL/REARM / SHOP /
     /// CLOSE sont traités (UNLOAD et REFUEL/REARM gardent la boîte ouverte).
     pub dock_box: bool,
-    /// Atelier d'amélioration du vaisseau ouvert (bouton UPGRADES de la boîte
-    /// DOCK STATION, scénario à économie) : achats d'extensions (réservoir,
-    /// chargeur, soute) contre minerais — le jeu est gelé tant qu'il est
-    /// affiché ; CLOSE revient à la boîte DOCK STATION (toujours accosté).
-    pub workshop_box: bool,
+    /// Magasin de la station ouvert (bouton SHOP de la boîte DOCK STATION) :
+    /// choix des modes de déplacement (sélection gratuite ou déblocage contre
+    /// minerais) et, en scénario à économie, achats d'extensions (réservoir,
+    /// chargeur, soute) — le jeu est gelé tant qu'il est affiché ; CLOSE
+    /// revient à la boîte DOCK STATION (toujours accosté).
+    pub shop_box: bool,
     /// Fenêtre d'aide ouverte (touche S, ex `help` de windowUtils) : le jeu
     /// est gelé tant qu'elle est affichée (bouton CLOSE).
     pub help_box: bool,
-    /// Écran de paramétrage ouvert (touche O) : choix du mode de déplacement
-    /// du vaisseau (INERTIAL / 4 WAYS / DIRECTIONAL). Le jeu est gelé tant
-    /// qu'il est affiché ; à la fermeture, un message HUD signale le mode
-    /// activé s'il a été modifié.
+    /// Écran de paramétrage ouvert (touche O) : options audio et graphiques.
+    /// Le jeu est gelé tant qu'il est affiché. (Le mode de déplacement se
+    /// choisit désormais au magasin de la station — bouton SHOP de la boîte
+    /// DOCK STATION.)
     pub settings_box: bool,
-    /// Mode de déplacement à l'ouverture de l'écran de paramétrage : s'il
-    /// diffère de `moving_mode` à la fermeture, le changement est annoncé au
-    /// HUD.
-    pub settings_previous_mode: i32,
-    /// Index du radio-bouton sous le focus clavier (flèches ↑/↓ + Entrée) de
-    /// l'écran de paramétrage, borné à `[0, MOVING_MODE_COUNT-1]`. Recentré
-    /// sur le mode courant à l'ouverture et à chaque clic.
-    pub settings_focus: i32,
     /// Affiche les données de debug des formes (touche D, ex `showData%`).
     pub show_data: bool,
     /// Affiche les informations de debug (touche I, ex `showInfo%`).
@@ -346,11 +342,9 @@ impl GameState {
             eva_recovery_to_pos: Point::new(0.0, 0.0),
             eva_crossfade: 0.0,
             dock_box: false,
-            workshop_box: false,
+            shop_box: false,
             help_box: false,
             settings_box: false,
-            settings_previous_mode: MOVING_MODE_DIRECTIONAL,
-            settings_focus: MOVING_MODE_DIRECTIONAL,
             show_data: false,
             show_info: false,
             last_keycode: 0,

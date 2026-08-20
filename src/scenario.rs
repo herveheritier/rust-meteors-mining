@@ -10,14 +10,15 @@
 //! - `FreePlay` (défaut) : comportement historique du port — pas d'économie,
 //!   tous les modes de déplacement disponibles, carburant et munitions
 //!   illimités.
-//! - `Progression` (l'exemple décrit) : le vaisseau démarre en mode INERTIAL
-//!   et doit accumuler des minerais (gemmes collectées sur les astéroïdes,
-//!   déchargées à la station) pour débloquer les autres modes de déplacement ;
+//! - `Progression` (l'exemple décrit) : le vaisseau démarre en mode REALISTIC
+//!   (gratuit, coût 0 paramétré dans l'outil) ; il doit accumuler des minerais
+//!   (gemmes collectées sur les astéroïdes, déchargées à la station) pour
+//!   débloquer les modes payants (INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45) ;
 //!   chaque poussée consomme du carburant et chaque tir des munitions
 //!   (remplis à la station, contre minerais) ; détruire des astéroïdes
 //!   augmente la réputation, d'autant plus que la précision de tir est bonne,
 //!   et décharger de la cargaison en rapporte aussi (commerce récompensé).
-//!   À la station, un **atelier** (bouton UPGRADES de la boîte DOCK STATION)
+//!   À la station, le **magasin** (bouton SHOP de la boîte DOCK STATION)
 //!   permet d'acheter contre minerais des **extensions de vaisseau** :
 //!   réservoir de carburant, chargeur de munitions et soute (capacités
 //!   augmentées, persistées comme la progression).
@@ -38,9 +39,7 @@
 use std::io;
 use std::path::Path;
 
-use crate::config::{
-    moving_mode_label, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, MOVING_MODE_INERTIAL,
-};
+use crate::config::{MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, MOVING_MODE_REALISTIC};
 use crate::state::{Element, GameState};
 
 /// Identifiant d'un scénario (choisi à l'écran titre, touche N).
@@ -83,7 +82,7 @@ pub struct Resources {
 
 /// Types et données de la place de marché — extensions de vaisseau de
 /// l'atelier de la station, économie et rangs de réputation (scénario
-/// Progression, bouton UPGRADES de la boîte DOCK STATION). Définis dans
+/// Progression, bouton SHOP de la boîte DOCK STATION). Définis dans
 /// `src/marketplace.rs`, un **fichier généré** par l'outil de gestion
 /// `tools/marketplace-editor/index.html` : pour ajuster les objets vendus, les
 /// prix ou les rangs (seuils, noms, remises), régénérez ce fichier depuis
@@ -92,7 +91,7 @@ pub struct Resources {
 pub use crate::marketplace::{
     ReputationRank, ShipUpgrade, UpgradeTrack, DISCOUNT_PRECISION_WEIGHT, PROGRESSION_RANKS,
     AMMO_UPGRADE_TRACK, CARGO_UPGRADE_TRACK, FUEL_UPGRADE_TRACK, AMMO_PRICE, AMMO_STEP,
-    ELEMENT_VALUES, FUEL_PRICE, FUEL_STEP, MODE_COSTS,
+    ELEMENT_VALUES, FUEL_PRICE, FUEL_STEP, MODE_COSTS, mode_label,
 };
 
 /// Ligne d'amélioration du vaisseau à l'atelier (index des trois lignes).
@@ -230,7 +229,7 @@ pub const PROGRESSION_SCENARIO: Scenario = Scenario {
     fuel_per_second: 2.0, // ~50 s de poussée continue au départ
     start_ammo: 30,
     ammo_per_shot: 1,
-    mode_costs: MODE_COSTS, // INERTIAL gratuit, 4 WAYS 20, DIRECTIONAL 50 — src/marketplace.rs
+    mode_costs: MODE_COSTS, // INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45, REALISTIC gratuit
     reputation_per_asteroid: 1.0,
     reputation_precision_weight: 2.0, // 100 % de précision → ×3 par astéroïde
     reputation_per_mineral: 0.1, // 10 minerais déchargés → +1 de réputation
@@ -390,11 +389,11 @@ fn mode_costs_pairs(s: &Scenario) -> Vec<(&'static str, i32)> {
         .iter()
         .enumerate()
         .filter(|(_, &cost)| cost > 0)
-        .map(|(i, &cost)| (moving_mode_label(i as i32), cost))
+        .map(|(i, &cost)| (mode_label(i as i32), cost))
         .collect()
 }
 
-/// « 4 WAYS 20, DIRECTIONAL 50 minerais » — coûts des modes de déplacement
+/// « 4 WAYS 30, DIRECTIONAL 45 minerais » — coûts des modes de déplacement
 /// payants (coût 0 = mode déjà débloqué, omis). Réservé aux tests (les règles
 /// de l'écran titre sont découpées en segments par `scenario_rules`).
 #[cfg(test)]
@@ -470,15 +469,14 @@ pub fn save_summary(state: &GameState) -> String {
         .collect()
 }
 
-/// Mode de déplacement de départ du scénario `id` : INERTIAL en Progression
-/// (le mode que le joueur doit payer pour changer), DIRECTIONAL — le défaut
-/// historique — en jeu libre et en Survival. Utilisé par `apply_start` et par
-/// le RESET de l'écran de paramétrage (qui ne doit jamais débloquer un mode
-/// gratuitement).
+/// Mode de déplacement de départ du scénario `id` : REALISTIC en Progression,
+/// DIRECTIONAL — le défaut historique — en jeu libre et en Survival. Utilisé
+/// par `apply_start` (et par le magasin, qui ne doit jamais débloquer un mode
+/// gratuitement : le RESET des réglages ne touche plus au mode).
 pub fn start_mode(id: ScenarioId) -> i32 {
     match id {
         ScenarioId::FreePlay => MOVING_MODE_DIRECTIONAL,
-        ScenarioId::Progression => MOVING_MODE_INERTIAL,
+        ScenarioId::Progression => MOVING_MODE_REALISTIC,
         ScenarioId::Survival => MOVING_MODE_DIRECTIONAL,
     }
 }
@@ -514,7 +512,7 @@ pub fn cycle_scenario_back(state: &mut GameState) {
 }
 
 /// Applique les règles de départ du scénario courant : ressources initiales,
-/// modes débloqués et (en Progression) mode de déplacement imposé (INERTIAL).
+/// modes débloqués et (en Progression) mode de déplacement imposé (REALISTIC).
 /// Appelé au lancement (après les réglages persistés) et au changement de
 /// scénario. En jeu libre et en Survival, le mode mémorisé (fichier de
 /// config) est conservé. Remet aussi `game_over` à faux (nouvelle partie).
@@ -544,15 +542,21 @@ pub fn apply_start(state: &mut GameState) {
                 ammo_level: 0,
                 cargo_level: 0,
             };
-            state.unlocked_modes = [true, false, false]; // INERTIAL seul au départ
-            state.moving_mode = start_mode(ScenarioId::Progression);
+            // Modes débloqués au départ : ceux dont le coût configuré (outil)
+            // est nul (0 = déjà débloqué) — REALISTIC par défaut, INERTIAL
+            // seulement si l'outil le laisse gratuit. Le mode de départ
+            // (REALISTIC) reste toujours débloqué.
+            let start = start_mode(ScenarioId::Progression);
+            state.unlocked_modes = [false; MOVING_MODE_COUNT as usize];
+            for (i, unlocked) in state.unlocked_modes.iter_mut().enumerate() {
+                *unlocked = MODE_COSTS[i] == 0 || i as i32 == start;
+            }
+            state.moving_mode = start;
             // la soute démarre à la capacité de base (les extensions
             // s'achètent à l'atelier de la station)
             state.player.cargo_size = cargo_capacity(state);
         }
     }
-    state.settings_previous_mode = state.moving_mode;
-    state.settings_focus = state.moving_mode;
 }
 
 // ─── Carburant et munitions ─────────────────────────────────────────────────
@@ -830,9 +834,11 @@ pub fn purchase_supplies(state: &mut GameState) -> SupplyOutcome {
 
 // ─── Modes de déplacement ───────────────────────────────────────────────────
 
-/// Coût en minerais d'un mode pas encore débloqué (`None` = débloqué, ou pas
-/// d'économie) — affiché dans l'écran de paramétrage (touche O).
-pub fn locked_cost(state: &GameState, mode: i32) -> Option<i32> {
+/// Coûts de déblocage d'un mode pas encore débloqué : tarif de base (prix
+/// d'origine) et prix réellement payé (remise de réputation du rang courant
+/// appliquée) — `None` = débloqué, ou pas d'économie. Affichés dans le
+/// magasin de la station (bouton SHOP de la boîte DOCK STATION).
+pub fn mode_unlock_prices(state: &GameState, mode: i32) -> Option<(i32, i32)> {
     if !has_economy(state) {
         return None;
     }
@@ -841,14 +847,22 @@ pub fn locked_cost(state: &GameState, mode: i32) -> Option<i32> {
         return None;
     }
     let cost = scenario(state.scenario).mode_costs[m];
-    // remise de réputation appliquée au déblocage des modes payants
-    (cost > 0).then_some(discounted_cost(cost, current_discount(state)))
+    (cost > 0).then(|| (cost, discounted_cost(cost, current_discount(state))))
 }
 
-/// Sélectionne un mode de déplacement dans l'écran de paramétrage : débloqué
-/// → appliqué immédiatement ; verrouillé → payé en minerais (si possible,
-/// sinon message « NOT ENOUGH MINERALS ») puis appliqué. Renvoie `true` si le
-/// mode demandé est devenu le mode courant.
+/// Coût en minerais d'un mode pas encore débloqué (`None` = débloqué, ou pas
+/// d'économie) — affiché dans le magasin de la station (bouton SHOP de la
+/// boîte DOCK STATION). C'est le prix réellement payé (remise de réputation
+/// du rang courant appliquée) ; voir `mode_unlock_prices` pour le tarif de
+/// base.
+pub fn locked_cost(state: &GameState, mode: i32) -> Option<i32> {
+    mode_unlock_prices(state, mode).map(|(_, discounted)| discounted)
+}
+
+/// Sélectionne un mode de déplacement dans le magasin de la station :
+/// débloqué → appliqué immédiatement ; verrouillé → payé en minerais (si
+/// possible, sinon message « NOT ENOUGH MINERALS ») puis appliqué. Renvoie
+/// `true` si le mode demandé est devenu le mode courant.
 pub fn try_select_mode(state: &mut GameState, mode: i32) -> bool {
     match locked_cost(state, mode) {
         None => {
@@ -862,14 +876,14 @@ pub fn try_select_mode(state: &mut GameState, mode: i32) -> bool {
                 state.moving_mode = mode;
                 state.send_message(&format!(
                     "MODE {} UNLOCKED ({} MINERALS)",
-                    moving_mode_label(mode),
+                    mode_label(mode),
                     cost
                 ));
                 true
             } else {
                 state.send_message(&format!(
                     "NOT ENOUGH MINERALS FOR {} ({} NEEDED)",
-                    moving_mode_label(mode),
+                    mode_label(mode),
                     cost
                 ));
                 false
@@ -910,7 +924,7 @@ pub fn cargo_capacity(state: &GameState) -> i32 {
 
 /// Ligne d'affichage d'une amélioration de l'atelier : libellé, capacité
 /// actuelle et prochaine extension (`None` = au max) — pour l'écran atelier
-/// (`render::draw_workshop_box`).
+/// (`render::draw_shop_box`).
 pub struct UpgradeLine {
     /// Libellé de la ligne (ex « FUEL TANK »).
     pub label: &'static str,
@@ -959,7 +973,7 @@ pub enum UpgradeOutcome {
 /// en minerais et fait passer la ligne au niveau suivant — les réservoirs
 /// montent à la nouvelle capacité (plein inclus) et la soute s'agrandit
 /// immédiatement. Hors scénario à économie (pas d'atelier) ou ligne au max :
-/// sans effet (`Maxed`). Appelé par l'écran atelier (bouton UPGRADES de la
+/// sans effet (`Maxed`). Appelé par le magasin (bouton SHOP de la
 /// boîte DOCK STATION).
 pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutcome {
     let s = scenario(state.scenario);
@@ -1122,7 +1136,11 @@ pub fn load_progression_from(path: &Path, state: &mut GameState) {
         }
         if let Some(mask) = crate::persist::get_i32_from(path, PROG_MODES_KEY) {
             for (i, unlocked) in state.unlocked_modes.iter_mut().enumerate() {
-                *unlocked = mask & (1 << i) != 0;
+                // Les modes dont l'outil a fixé le coût à 0 (REALISTIC, et
+                // INERTIAL si paramétré gratuit) restent débloqués même pour
+                // une ancienne sauvegarde dont le masque ne connaissait que
+                // trois modes.
+                *unlocked = mask & (1 << i) != 0 || MODE_COSTS[i] == 0;
             }
             // le mode enregistré n'est restauré que s'il est débloqué par la
             // sauvegarde (un mode payé puis sélectionné retrouve sa place ; un
@@ -1130,8 +1148,6 @@ pub fn load_progression_from(path: &Path, state: &mut GameState) {
             if let Some(mode) = crate::persist::load_moving_mode_from(path) {
                 if (0..MOVING_MODE_COUNT).contains(&mode) && state.unlocked_modes[mode as usize] {
                     state.moving_mode = mode;
-                    state.settings_previous_mode = mode;
-                    state.settings_focus = mode;
                 }
             }
         }
@@ -1175,10 +1191,43 @@ pub fn load_progression(state: &mut GameState) {
     load_progression_from(&crate::persist::config_path(), state);
 }
 
+/// Remet la progression du scénario courant à zéro (bouton RESET PROGRESSION
+/// de l'écran de paramétrage) : les clés `prog_*` du fichier de config
+/// (minerais, modes payés, réputation, extensions d'atelier, vies/bouclier)
+/// et le mode de déplacement choisi (`moving_mode`) sont supprimées, puis les
+/// règles de départ du scénario sont réappliquées (`apply_start`) : minerais
+/// 0, seuls les modes gratuits (coût 0) débloqués, réputation nulle,
+/// réservoirs pleins, mode de départ (REALISTIC en Progression). Les réglages
+/// (musique, volume, rendu, fenêtre) et le scénario choisi sont conservés.
+pub fn reset_progression(state: &mut GameState) {
+    reset_progression_from(&crate::persist::config_path(), state);
+}
+
+/// Version chemin explicite de `reset_progression` (tests) : supprime les
+/// clés de progression du fichier donné puis réapplique `apply_start`.
+pub fn reset_progression_from(path: &Path, state: &mut GameState) {
+    for key in [
+        PROG_MINERALS_KEY,
+        PROG_MODES_KEY,
+        PROG_REPUTATION_KEY,
+        PROG_UP_FUEL_KEY,
+        PROG_UP_AMMO_KEY,
+        PROG_UP_CARGO_KEY,
+        PROG_LIVES_KEY,
+        PROG_SHIELD_KEY,
+        "moving_mode",
+    ] {
+        let _ = crate::persist::delete_key_from(path, key);
+    }
+    apply_start(state);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{MOVING_MODE_4_WAYS, MOVING_MODE_DIRECTIONAL, MOVING_MODE_INERTIAL};
+    use crate::config::{
+        MOVING_MODE_4_WAYS, MOVING_MODE_DIRECTIONAL, MOVING_MODE_INERTIAL, MOVING_MODE_REALISTIC,
+    };
     use crate::persist::{get_i32_from, set_i32_to};
     use crate::state::default_elements;
 
@@ -1217,8 +1266,9 @@ mod tests {
         assert!(free.contains("illimités"));
 
         let prog = scenario_rules_text(ScenarioId::Progression);
-        assert!(prog.contains("4 WAYS 20")); // coût du mode depuis les données
-        assert!(prog.contains("DIRECTIONAL 50"));
+        assert!(prog.contains("INERTIAL 15")); // coûts des modes depuis les données
+        assert!(prog.contains("4 WAYS 30"));
+        assert!(prog.contains("DIRECTIONAL 45"));
         assert!(prog.contains("CADET"));
         assert!(prog.contains("ACE"));
         assert!(prog.contains("minerais"));
@@ -1242,7 +1292,10 @@ mod tests {
             .filter(|s| s.color.is_some())
             .map(|s| s.text.as_str())
             .collect();
-        assert_eq!(highlighted, vec!["4 WAYS 20", "DIRECTIONAL 50", "CADET", "ACE"]);
+        assert_eq!(
+            highlighted,
+            vec!["INERTIAL 15", "4 WAYS 30", "DIRECTIONAL 45", "CADET", "ACE"]
+        );
         assert!(prog.iter().any(|s| s.color.is_none() && s.text.contains("rangs")));
         // les valeurs de Progression sont en jaune, celles de Survival en cyan
         assert!(prog.iter().filter(|s| s.color.is_some()).all(|s| s.color == Some(RULES_COLOR_YELLOW)));
@@ -1274,10 +1327,10 @@ mod tests {
         let mut prog = progression_state();
         prog.resources.minerals = 42;
         prog.resources.reputation = 60.0; // ACE
-        prog.unlocked_modes = [true, true, false];
+        prog.unlocked_modes = [true, true, false, true];
         let summary = save_summary(&prog);
         assert!(summary.contains("minerais 42"));
-        assert!(summary.contains("modes 2/3"));
+        assert!(summary.contains("modes 3/4"));
         assert!(summary.contains("réputation 60"));
         assert!(summary.contains("(ACE)"));
 
@@ -1298,14 +1351,14 @@ mod tests {
         let mut prog = progression_state();
         prog.resources.minerals = 42;
         prog.resources.reputation = 60.0; // ACE
-        prog.unlocked_modes = [true, true, false];
+        prog.unlocked_modes = [true, true, false, true];
         let segs = save_summary_segments(&prog);
         let highlighted: Vec<&str> = segs
             .iter()
             .filter(|s| s.color.is_some())
             .map(|s| s.text.as_str())
             .collect();
-        assert_eq!(highlighted, vec!["42", "2/3", "60", " (ACE)"]);
+        assert_eq!(highlighted, vec!["42", "3/4", "60", " (ACE)"]);
         assert!(segs.iter().filter(|s| s.color.is_some()).all(|s| s.color == Some(RULES_COLOR_YELLOW)));
         assert_eq!(
             save_summary(&prog),
@@ -1335,7 +1388,7 @@ mod tests {
         // seuls les modes payants apparaissent (coût 0 = déjà débloqué, omis)
         assert_eq!(
             mode_costs_text(&PROGRESSION_SCENARIO),
-            "4 WAYS 20, DIRECTIONAL 50 minerais"
+            "INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45 minerais"
         );
         assert_eq!(mode_costs_text(&FREE_PLAY_SCENARIO), "aucun");
     }
@@ -1357,19 +1410,22 @@ mod tests {
     }
 
     #[test]
-    fn progression_starts_inertial_with_start_resources() {
-        // départ : INERTIAL seul, réservoir et chargeur pleins, pas de
-        // minerais, réputation nulle
+    fn progression_starts_realistic_with_start_resources() {
+        // départ : REALISTIC (mode de départ, gratuit par configuration), les
+        // modes payants (INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45) sont
+        // verrouillés ; réservoir et chargeur pleins, pas de minerais,
+        // réputation nulle
         let s = progression_state();
         assert!(has_economy(&s));
-        assert_eq!(s.moving_mode, MOVING_MODE_INERTIAL);
+        assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
         assert_eq!(s.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
         assert_eq!(s.resources.ammo, PROGRESSION_SCENARIO.start_ammo);
         assert_eq!(s.resources.minerals, 0);
         assert_eq!(s.resources.reputation, 0.0);
-        assert_eq!(locked_cost(&s, MOVING_MODE_INERTIAL), None);
-        assert_eq!(locked_cost(&s, MOVING_MODE_4_WAYS), Some(20));
-        assert_eq!(locked_cost(&s, MOVING_MODE_DIRECTIONAL), Some(50));
+        assert_eq!(locked_cost(&s, MOVING_MODE_REALISTIC), None);
+        assert_eq!(locked_cost(&s, MOVING_MODE_INERTIAL), Some(15));
+        assert_eq!(locked_cost(&s, MOVING_MODE_4_WAYS), Some(30));
+        assert_eq!(locked_cost(&s, MOVING_MODE_DIRECTIONAL), Some(45));
     }
 
     #[test]
@@ -1379,7 +1435,7 @@ mod tests {
         let mut s = GameState::new();
         cycle_scenario(&mut s);
         assert_eq!(s.scenario, ScenarioId::Progression);
-        assert_eq!(s.moving_mode, MOVING_MODE_INERTIAL);
+        assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
         cycle_scenario(&mut s);
         assert_eq!(s.scenario, ScenarioId::Survival);
         assert_eq!(s.resources.lives, SURVIVAL_SCENARIO.lives);
@@ -1400,7 +1456,7 @@ mod tests {
         assert_eq!(s.resources.lives, SURVIVAL_SCENARIO.lives);
         cycle_scenario_back(&mut s);
         assert_eq!(s.scenario, ScenarioId::Progression);
-        assert_eq!(s.moving_mode, MOVING_MODE_INERTIAL);
+        assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
         cycle_scenario_back(&mut s);
         assert_eq!(s.scenario, ScenarioId::FreePlay);
     }
@@ -1412,7 +1468,7 @@ mod tests {
         let mut s = GameState::new(); // jeu libre
         select_scenario(&mut s, ScenarioId::Progression);
         assert_eq!(s.scenario, ScenarioId::Progression);
-        assert_eq!(s.moving_mode, MOVING_MODE_INERTIAL);
+        assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
         select_scenario(&mut s, ScenarioId::Survival);
         assert_eq!(s.scenario, ScenarioId::Survival);
         assert_eq!(s.resources.lives, SURVIVAL_SCENARIO.lives);
@@ -1424,18 +1480,22 @@ mod tests {
 
     #[test]
     fn progression_pays_minerals_to_unlock_modes() {
-        // 4 WAYS coûte 20 minerais : payé, débloqué définitivement (la
+        // 4 WAYS coûte 30 minerais : payé, débloqué définitivement (la
         // re-sélection est ensuite gratuite) ; sans assez de minerais, refus
         let mut s = progression_state();
         s.resources.minerals = 30;
         assert!(try_select_mode(&mut s, MOVING_MODE_4_WAYS));
         assert_eq!(s.moving_mode, MOVING_MODE_4_WAYS);
-        assert_eq!(s.resources.minerals, 10);
+        assert_eq!(s.resources.minerals, 0);
         assert_eq!(locked_cost(&s, MOVING_MODE_4_WAYS), None);
-        assert!(try_select_mode(&mut s, MOVING_MODE_INERTIAL));
+        // un mode gratuit (REALISTIC) reste re-sélectionnable sans frais
+        assert!(try_select_mode(&mut s, MOVING_MODE_REALISTIC));
         assert!(try_select_mode(&mut s, MOVING_MODE_4_WAYS));
-        assert_eq!(s.resources.minerals, 10);
-        // DIRECTIONAL coûte 50 : pas assez (10) → refus, mode inchangé
+        assert_eq!(s.resources.minerals, 0);
+        // INERTIAL coûte 15 : pas assez (0) → refus, mode inchangé
+        assert!(!try_select_mode(&mut s, MOVING_MODE_INERTIAL));
+        assert_eq!(s.moving_mode, MOVING_MODE_4_WAYS);
+        // DIRECTIONAL coûte 45 : pas assez (0) → refus, mode inchangé
         assert!(!try_select_mode(&mut s, MOVING_MODE_DIRECTIONAL));
         assert_eq!(s.moving_mode, MOVING_MODE_4_WAYS);
         assert!(s.message_queue.contains("NOT ENOUGH MINERALS"));
@@ -1747,7 +1807,7 @@ mod tests {
         let mut s = progression_state();
         s.resources.minerals = 42;
         s.resources.reputation = 3.5;
-        s.unlocked_modes = [true, true, false];
+        s.unlocked_modes = [true, true, false, true];
         save_progression_to(&p, &s).unwrap();
 
         let mut fresh = progression_state();
@@ -1755,9 +1815,52 @@ mod tests {
         load_progression_from(&p, &mut fresh);
         assert_eq!(fresh.resources.minerals, 42);
         assert_eq!(fresh.resources.reputation, 3.5);
-        assert_eq!(fresh.unlocked_modes, [true, true, false]);
+        assert_eq!(fresh.unlocked_modes, [true, true, false, true]);
         assert_eq!(fresh.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
         assert_eq!(fresh.resources.ammo, PROGRESSION_SCENARIO.start_ammo);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn reset_progression_clears_saved_progression() {
+        // RESET PROGRESSION : une progression (minerais, modes payés,
+        // réputation, extensions, mode choisi) est remise à zéro — les clés
+        // `prog_*` et `moving_mode` du fichier sont supprimées et l'état
+        // repart sur les règles de départ du scénario (REALISTIC seul
+        // débloqué, réservoirs pleins)
+        let p = temp_path("resetprog.cfg");
+        let _ = std::fs::remove_file(&p);
+        let mut s = progression_state();
+        s.resources.minerals = 77;
+        s.resources.reputation = 50.0;
+        s.resources.fuel_level = 2;
+        s.unlocked_modes = [true, true, true, true];
+        s.moving_mode = MOVING_MODE_4_WAYS;
+        save_progression_to(&p, &s).unwrap();
+        set_i32_to(&p, "moving_mode", MOVING_MODE_4_WAYS).unwrap();
+
+        reset_progression_from(&p, &mut s);
+        // état remis au départ : minerais 0, réputation nulle, extensions 0,
+        // seul REALISTIC (gratuit) débloqué, mode de départ
+        assert_eq!(s.resources.minerals, 0);
+        assert_eq!(s.resources.reputation, 0.0);
+        assert_eq!(s.resources.fuel_level, 0);
+        assert_eq!(s.unlocked_modes, [false, false, false, true]);
+        assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
+        assert_eq!(s.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
+        assert_eq!(s.resources.ammo, PROGRESSION_SCENARIO.start_ammo);
+
+        // clés de progression supprimées du fichier (mode compris) : un
+        // rechargement sur un départ neuf ne retrouve aucune progression
+        assert_eq!(get_i32_from(&p, "prog_minerals"), None);
+        assert_eq!(get_i32_from(&p, "prog_modes"), None);
+        assert_eq!(get_i32_from(&p, "prog_reputation"), None);
+        assert_eq!(get_i32_from(&p, "prog_up_fuel"), None);
+        assert_eq!(get_i32_from(&p, "moving_mode"), None);
+        let mut fresh = progression_state();
+        load_progression_from(&p, &mut fresh);
+        assert_eq!(fresh.resources.minerals, 0);
+        assert_eq!(fresh.unlocked_modes, [false, false, false, true]);
         let _ = std::fs::remove_file(&p);
     }
 
@@ -1799,7 +1902,8 @@ mod tests {
         save_progression_to(&p, &free).unwrap();
         assert_eq!(get_i32_from(&p, "scenario"), Some(0));
         assert_eq!(get_i32_from(&p, "prog_minerals"), Some(77)); // conservés
-        assert_eq!(get_i32_from(&p, "prog_modes"), Some(0b001));
+        // seul REALISTIC est débloqué au départ (INERTIAL est payant)
+        assert_eq!(get_i32_from(&p, "prog_modes"), Some(0b1000));
         let _ = std::fs::remove_file(&p);
     }
 
@@ -1807,11 +1911,11 @@ mod tests {
     fn load_restores_paid_moving_mode_only() {
         // un mode payé puis sélectionné (clé `moving_mode`) est restauré à la
         // reprise ; un mode jamais débloqué n'est pas imposé (départ du
-        // scénario : INERTIAL)
+        // scénario : REALISTIC)
         let p = temp_path("mode.cfg");
         let _ = std::fs::remove_file(&p);
         let mut s = progression_state();
-        s.unlocked_modes = [true, true, false];
+        s.unlocked_modes = [true, true, false, true];
         save_progression_to(&p, &s).unwrap();
         set_i32_to(&p, "moving_mode", MOVING_MODE_4_WAYS).unwrap();
 
@@ -2098,11 +2202,13 @@ mod tests {
         assert_eq!(purchase_supplies(&mut s), SupplyOutcome::Purchased(16));
         assert_eq!(s.resources.minerals, 976);
 
-        // modes payants : 4 WAYS 20 → 17
-        assert_eq!(locked_cost(&s, MOVING_MODE_4_WAYS), Some(17));
+        // modes payants : 4 WAYS 30 → 25 (tarif de base et prix remisé
+        // exposés pour l'affichage du magasin)
+        assert_eq!(locked_cost(&s, MOVING_MODE_4_WAYS), Some(25));
+        assert_eq!(mode_unlock_prices(&s, MOVING_MODE_4_WAYS), Some((30, 25)));
         s.resources.minerals = 1000;
         assert!(try_select_mode(&mut s, MOVING_MODE_4_WAYS));
-        assert_eq!(s.resources.minerals, 983);
+        assert_eq!(s.resources.minerals, 975);
     }
 
     #[test]

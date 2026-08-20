@@ -416,9 +416,9 @@
   <h1><span class="starbar">✦</span> Place de marché — éditeur <span class="starbar">✦</span></h1>
   <p class="subtitle">
     Application de gestion du jeu <b>Meteors Mining</b> : elle sert à la <b>mise au point des objets
-    vendus sur la place de marché</b> accessible depuis la base — l'atelier d'amélioration du
-    vaisseau et l'économie de la station (bouton <code>UPGRADES</code> de la boîte DOCK STATION,
-    scénario Progression). Chaque modification est enregistrée automatiquement : en mode serveur,
+    vendus sur la place de marché</b> accessible depuis la base — le magasin de la station
+    (bouton <code>SHOP</code> de la boîte DOCK STATION : modes de déplacement et, en scénario
+    Progression, l'atelier d'amélioration du vaisseau) et l'économie de la station. Chaque modification est enregistrée automatiquement : en mode serveur,
     <code>src/marketplace.rs</code> se charge à l'ouverture et « 💾 Enregistrer le fichier » l'écrit
     directement dans le projet (<code>src/scenario.rs</code> n'a plus besoin d'être modifié).
   </p>
@@ -458,8 +458,11 @@
   <p>
     <b>Dans le jeu</b> : les données ci-dessus sont les lignes d'atelier
     <code>FUEL_UPGRADE_TRACK</code>, <code>AMMO_UPGRADE_TRACK</code>, <code>CARGO_UPGRADE_TRACK</code>
-    (avec leurs extensions), l'économie de la station (<code>ELEMENT_VALUES</code>,
-    <code>MODE_COSTS</code>, <code>FUEL_PRICE</code>/<code>FUEL_STEP</code>,
+    (avec leurs extensions),    l'économie de la station (<code>ELEMENT_VALUES</code>,
+    <code>MOVING_MODES</code> — noms, descriptions et coûts des modes de
+    déplacement vendus au magasin, bouton <code>SHOP</code> de la boîte
+    DOCK STATION — <code>MODE_COSTS</code> qui en est dérivé,
+    <code>FUEL_PRICE</code>/<code>FUEL_STEP</code>,
     <code>AMMO_PRICE</code>/<code>AMMO_STEP</code>), les rangs de réputation
     (<code>PROGRESSION_RANKS</code> : seuils, noms et remises — lus par <code>src/scenario.rs</code>),
     les météores (force de réaction à la base <code>METEOR_STATION_RESTITUTION</code>,
@@ -486,7 +489,7 @@
     <code>src/cosmonaut.rs</code>) de
     <code>src/marketplace.rs</code> — un fichier <b>généré</b> par cet outil, importé par
     <code>src/scenario.rs</code>. Les extensions sont
-    achetées au bouton <code>UPGRADES</code> de la boîte DOCK STATION (atelier « SHIP WORKSHOP »,
+    achetées au bouton <code>SHOP</code> de la boîte DOCK STATION (magasin « PLACE DE MARCHÉ »,
     scénario Progression), persistées avec la progression
     (<code>prog_up_fuel</code>, <code>prog_up_ammo</code>, <code>prog_up_cargo</code>). Avec
     Chrome/Edge, « Ouvrir marketplace.rs » <b>lie</b> le fichier (lecture + écriture directe) :
@@ -579,7 +582,21 @@ const DEFAULT_DATA = {
   ],
   economy: {
     gems: { gold: 5, iron: 3, water: 2 },
-    modes: [0, 20, 50], // INERTIAL (gratuit au départ), 4 WAYS, DIRECTIONAL
+    // Modes de déplacement du vaisseau, dans l'**ordre d'affichage du
+    // magasin** (même ordre que le jeu, MOVING_MODE_ORDER : REALISTIC en
+    // tête, mode de départ de Progression). Chaque mode porte son `id`
+    // (index MOVING_MODE_* du jeu) — l'export écrit le catalogue dans
+    // l'ordre des id, car `MOVING_MODES` est indexé par MOVING_MODE_*. Nom
+    // et description s'affichent au magasin de la station (bouton SHOP de la
+    // boîte DOCK STATION), coût de déblocage en minerais (0 = déjà débloqué
+    // au départ — seul REALISTIC est gratuit par défaut ; les autres modes,
+    // INERTIAL compris, sont payants s'ils ont un coût).
+    modes: [
+      { id: 3, name: "REALISTIC", description: "INERTIAL + ROTATION DRIFT", cost: 0 },
+      { id: 0, name: "INERTIAL", description: "THRUST / REVERSE, TURN L/R", cost: 15 },
+      { id: 1, name: "4 WAYS", description: "ARROWS PUSH IN CURRENT DIR", cost: 30 },
+      { id: 2, name: "DIRECTIONAL", description: "ACCELERATE / BRAKE, TURN L/R", cost: 45 },
+    ],
     fuelPrice: 1, // minerais par pas de ravitaillement
     fuelStep: 10, // unités de carburant par plein facturé
     ammoPrice: 1,
@@ -673,6 +690,11 @@ const DEFAULT_DATA = {
 const STORAGE_KEY = "meteors-mining-marketplace-editor.v1";
 const VIEW_KEY = "meteors-mining-marketplace-editor.view"; // carte ouverte (id) — retrouvée au prochain lancement
 const CARGO_SIZE = 5; // src/config.rs — capacité de base de la soute
+
+// Ordre d'affichage des modes dans le magasin (même ordre que le jeu,
+// MOVING_MODE_ORDER de src/config.rs) : id MOVING_MODE_* dans l'ordre visuel
+// REALISTIC (mode de départ de Progression) → INERTIAL → 4 WAYS → DIRECTIONAL.
+const MODE_DISPLAY_ORDER = [3, 0, 1, 2];
 
 /* ─── Utilitaires ─────────────────────────────────────────────────────────── */
 
@@ -2562,21 +2584,58 @@ function economyCard() {
   gems.appendChild(el("p", "hint", "Prix d'une gemme déchargée à la station (ELEMENT_VALUES)."));
   host.appendChild(gems);
 
-  // coûts des modes de déplacement
+  // modes de déplacement : comme les autres extensions de l'économie, chaque
+  // mode se paramètre (nom, description, coût) — la liste est fixe (les modes
+  // sont des constantes du jeu, index MOVING_MODE_*) et vendue au magasin de
+  // la station (bouton SHOP de la boîte DOCK STATION)
   const modes = el("div", "eco-group");
-  modes.appendChild(el("h4", "", "Coûts des modes de déplacement (minerais)"));
-  const mGrid = el("div", "field-grid");
-  const inertial = document.createElement("input");
-  inertial.type = "number";
-  inertial.id = "eco-mode-0";
-  inertial.value = "0";
-  inertial.disabled = true;
-  inertial.title = "INERTIAL est le mode de départ : toujours débloqué, coût fixé à 0.";
-  mGrid.appendChild(field("INERTIAL", "eco-mode-0", inertial));
-  mGrid.appendChild(field("4 WAYS", "eco-mode-1", economyNumber("eco-mode-1", intSetter(eco.modes, 1), eco.modes[1], 0, "1")));
-  mGrid.appendChild(field("DIRECTIONAL", "eco-mode-2", economyNumber("eco-mode-2", intSetter(eco.modes, 2), eco.modes[2], 0, "1")));
-  modes.appendChild(mGrid);
-  modes.appendChild(el("p", "hint", "0 = mode déjà débloqué au départ. INERTIAL reste gratuit."));
+  modes.appendChild(el("h4", "", "Modes de déplacement (magasin de la station)"));
+  const mTable = el("table");
+  const mHead = el("thead");
+  const mHr = el("tr");
+  for (const thText of ["Nom", "Description", "Coût (minerais)"]) {
+    const th = el("th", thText === "Coût (minerais)" ? "num" : "", thText);
+    mHr.appendChild(th);
+  }
+  mHead.appendChild(mHr);
+  mTable.appendChild(mHead);
+  const mBody = el("tbody");
+  eco.modes.forEach(mode => {
+    const tr = el("tr");
+    const tdName = el("td");
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.value = mode.name;
+    nameInput.id = "eco-mode-" + mode.id + "-name";
+    nameInput.title = "Nom affiché au magasin et dans les messages du scénario.";
+    nameInput.addEventListener("input", () => { mode.name = nameInput.value; afterEdit(); });
+    tdName.appendChild(nameInput);
+    tr.appendChild(tdName);
+    const tdDesc = el("td");
+    const descInput = document.createElement("input");
+    descInput.type = "text";
+    descInput.value = mode.description;
+    descInput.id = "eco-mode-" + mode.id + "-description";
+    descInput.title = "Courte description affichée sous le nom, au magasin.";
+    descInput.addEventListener("input", () => { mode.description = descInput.value; afterEdit(); });
+    tdDesc.appendChild(descInput);
+    tr.appendChild(tdDesc);
+    const tdCost = el("td", "num");
+    tdCost.appendChild(economyNumber(
+      "eco-mode-" + mode.id + "-cost",
+      v => { mode.cost = int(v); },
+      mode.cost,
+      0,
+      "1",
+      "Coût de déblocage en minerais (0 = déjà débloqué au départ — seul REALISTIC est gratuit par défaut ; les autres modes, INERTIAL compris, sont payants s'ils ont un coût)."
+    ));
+    tr.appendChild(tdCost);
+    mBody.appendChild(tr);
+  });
+  mTable.appendChild(mBody);
+  modes.appendChild(mTable);
+  modes.appendChild(el("p", "hint",
+    "Ordre d'affichage du magasin (MOVING_MODE_ORDER du jeu) : REALISTIC en tête, puis INERTIAL, 4 WAYS et DIRECTIONAL — l'export écrit le catalogue dans l'ordre des id (index MOVING_MODE_*). Coût 0 = mode débloqué au départ (seul REALISTIC l'est par défaut)."));
   host.appendChild(modes);
 
   // ravitaillement à la station
@@ -2856,9 +2915,9 @@ function moveRank(ranks, i, dir) {
 // imports (CARGO_SIZE, MOVING_MODE_COUNT). L'économie (gemmes, modes,
 // ravitaillement) est produite par economyConsts, les types par RUST_TYPES
 // et les trois lignes d'atelier par tierConst/trackConst — voir exportRust.
-const RUST_HEADER = `//! Place de marché de la station — extensions de vaisseau de l'atelier,
-//! réglages du vaisseau joueur et économie (scénario Progression, bouton
-//! UPGRADES de la boîte DOCK STATION).
+const RUST_HEADER = `//! Place de marché de la station — extensions de vaisseau et modes de
+//! déplacement (bouton SHOP de la boîte DOCK STATION), réglages du vaisseau
+//! joueur et économie (scénario Progression).
 //!
 //! Fichier **généré** par \`tools/marketplace-editor/index.html\` — ne pas
 //! éditer à la main : régénérez-le depuis l'outil de gestion, puis
@@ -2869,8 +2928,31 @@ use crate::config::{CARGO_SIZE, MOVING_MODE_COUNT};
 `;
 
 // Définitions des types d'atelier (partie stable du fichier généré).
-const RUST_TYPES = `/// Une extension de vaisseau achetable à l'atelier de la station (scénario
-/// Progression, bouton UPGRADES de la boîte DOCK STATION) : ajoute de la
+const RUST_TYPES = `/// Un mode de déplacement du vaisseau (index \`MOVING_MODE_*\` du jeu) : nom
+/// et description affichés (magasin de la station, messages du scénario) et
+/// coût de déblocage en minerais (0 = déjà débloqué au départ). Généré par
+/// l'outil de gestion.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MovingMode {
+    /// Nom du mode (magasin, messages HUD).
+    pub name: &'static str,
+    /// Courte description (magasin de la station).
+    pub description: &'static str,
+    /// Coût en minerais pour débloquer (0 = gratuit au départ).
+    pub cost: i32,
+}
+
+/// Nom d'affichage d'un mode de déplacement (magasin de la station, messages
+/// du scénario) — lu dans \`MOVING_MODES\` (généré par l'outil de gestion).
+pub fn mode_label(mode: i32) -> &'static str {
+    MOVING_MODES
+        .get(mode as usize)
+        .map(|m| m.name)
+        .unwrap_or("?")
+}
+
+/// Une extension de vaisseau achetable à l'atelier de la station (scénario
+/// Progression, bouton SHOP de la boîte DOCK STATION) : ajoute de la
 /// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en minerais.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShipUpgrade {
@@ -3277,17 +3359,34 @@ function cosmonautConsts() {
 function economyConsts() {
   const e = data.economy;
   const g = e.gems;
-  const modeParts = ["INERTIAL", "4 WAYS", "DIRECTIONAL"]
-    .map((name, i) => name + " " + (e.modes[i] === 0 ? "gratuit" : e.modes[i]))
-    .join(", ");
+  // catalogue des modes : stocké dans l'ordre d'affichage (MODE_DISPLAY_ORDER),
+  // exporté dans l'ordre des id (MOVING_MODES est indexé par MOVING_MODE_*) ;
+  // MODE_COSTS dérive des coûts dans le même ordre
+  const ordered = [...e.modes].sort((a, b) => a.id - b.id);
+  const modeRows = ordered
+    .map(m => '    MovingMode { name: "' + rustEscape(m.name) + '", description: "' +
+      rustEscape(m.description) + '", cost: ' + int(m.cost) + " },")
+    .join("\n");
+  const modeCosts = ordered.map(m => int(m.cost)).join(", ");
   return [
     "/// Valeur en minerais d'une gemme par élément (index 1..3 = GOLD, IRON,",
     "/// WATER — voir `default_elements` ; 0 = sans valeur).",
     "pub const ELEMENT_VALUES: [i32; 4] = [0, " + g.gold + ", " + g.iron + ", " + g.water + "];",
     "",
+    "/// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre",
+    "/// historique — l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :",
+    "/// nom et description affichés (magasin de la station, messages du scénario)",
+    "/// et coût de déblocage en minerais (0 = déjà débloqué au départ). Générés",
+    "/// par l'outil de gestion.",
+    "pub const MOVING_MODES: &[MovingMode] = &[",
+    modeRows,
+    "];",
+    "",
     "/// Coût en minerais pour débloquer chaque mode de déplacement (index",
-    "/// `MOVING_MODE_*` ; 0 = déjà débloqué) : " + modeParts + ".",
-    "pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [" + e.modes.join(", ") + "];",
+    "/// `MOVING_MODE_*` ; 0 = déjà débloqué) — dérivé de `MOVING_MODES`. Seuls",
+    "/// les modes à coût nul sont débloqués au départ en Progression (REALISTIC",
+    "/// par défaut) ; les autres s'achètent au magasin.",
+    "pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [" + modeCosts + "];",
     "",
     "/// Prix (minerais) d'un plein de carburant par pas de `fuel_step` unités.",
     "pub const FUEL_PRICE: i32 = " + e.fuelPrice + ";",
@@ -3711,10 +3810,34 @@ function parseRust(text) {
       out.economy.gems = { gold: v[1], iron: v[2], water: v[3] };
     }
   }
-  const modes = grab(/MODE_COSTS[^=]*=\s*\[([^\]]*)\]/);
-  if (modes) {
-    const v = modes.split(",").map(s => parseInt(s, 10));
-    if (v.length === 3 && v.every(Number.isFinite)) out.economy.modes = v;
+  // modes de déplacement : catalogue MOVING_MODES (nom / description / coût),
+  // repli sur l'ancien MODE_COSTS (coûts numériques seuls, 3 modes). Le
+  // fichier liste les modes dans l'ordre des id (index MOVING_MODE_*) ; on
+  // stocke le catalogue dans l'ordre d'affichage du magasin (MODE_DISPLAY_ORDER).
+  const movingModes = grab(/MOVING_MODES[^=]*=\s*&\[([\s\S]*?)\n\];/);
+  if (movingModes) {
+    const rows = [];
+    const re = /MovingMode\s*\{\s*name:\s*"((?:[^"\\]|\\.)*)"\s*,\s*description:\s*"((?:[^"\\]|\\.)*)"\s*,\s*cost:\s*(\d+)\s*\}/g;
+    let mm;
+    while ((mm = re.exec(movingModes)) !== null) {
+      rows.push({
+        name: rustUnescape(mm[1]),
+        description: rustUnescape(mm[2]),
+        cost: parseInt(mm[3], 10),
+      });
+    }
+    if (rows.length > 0) {
+      out.economy.modes = MODE_DISPLAY_ORDER
+        .filter(id => rows[id])
+        .map(id => ({ ...rows[id], id }));
+    }
+  }
+  if (!out.economy.modes) {
+    const modes = grab(/MODE_COSTS[^=]*=\s*\[([^\]]*)\]/);
+    if (modes) {
+      const v = modes.split(",").map(s => parseInt(s, 10));
+      if (v.every(Number.isFinite)) out.economy.modes = v; // ancien format : coûts seuls
+    }
   }
   const price = name => {
     const m = text.match(new RegExp(name + "\\s*:\\s*(?:i32|f64|usize)\\s*=\\s*([0-9.]+)"));
@@ -3986,8 +4109,36 @@ function normalize(parsed) {
   if (Number.isFinite(gems.gold)) out.economy.gems.gold = int(gems.gold);
   if (Number.isFinite(gems.iron)) out.economy.gems.iron = int(gems.iron);
   if (Number.isFinite(gems.water)) out.economy.gems.water = int(gems.water);
-  if (Array.isArray(eco.modes) && eco.modes.length === 3) {
-    out.economy.modes = eco.modes.map(m => (Number.isFinite(m) ? Math.max(0, m) : 0));
+  // modes de déplacement : catalogue { id, name, description, cost } dans
+  // l'ordre d'affichage du magasin. Formats anciens convertis : catalogue
+  // sans id (ordre des id MOVING_MODE_*) et coûts numériques seuls (3 modes
+  // historiques) ; complétés par les défauts (toujours 4 modes)
+  if (Array.isArray(eco.modes)) {
+    const defaultsById = Object.fromEntries(out.economy.modes.map(m => [m.id, m]));
+    const toMode = (m, id, def) => {
+      if (m && typeof m === "object") {
+        return {
+          id,
+          name: typeof m.name === "string" && m.name ? m.name : def.name,
+          description: typeof m.description === "string" ? m.description : def.description,
+          cost: Number.isFinite(m.cost) ? Math.max(0, int(m.cost)) : def.cost,
+        };
+      }
+      // ancien format (nombre) : nom/description par défaut, coût lu
+      return { ...def, id, cost: Number.isFinite(m) ? Math.max(0, int(m)) : def.cost };
+    };
+    const first = eco.modes[0];
+    if (first && typeof first === "object" && Number.isFinite(first.id)) {
+      // nouveau format : déjà dans l'ordre d'affichage, avec les id
+      out.economy.modes = MODE_DISPLAY_ORDER.map(id => {
+        const found = eco.modes.find(m => m && m.id === id);
+        return found ? toMode(found, id, defaultsById[id]) : { ...defaultsById[id] };
+      });
+    } else {
+      // ancien format : liste ordonnée par id (index MOVING_MODE_*) — sans
+      // id (objets) ou coûts numériques seuls — réordonnée pour l'affichage
+      out.economy.modes = MODE_DISPLAY_ORDER.map(id => toMode(eco.modes[id], id, defaultsById[id]));
+    }
   }
   if (Number.isFinite(eco.fuelPrice)) out.economy.fuelPrice = int(eco.fuelPrice);
   if (Number.isFinite(eco.fuelStep) && eco.fuelStep > 0) out.economy.fuelStep = eco.fuelStep;

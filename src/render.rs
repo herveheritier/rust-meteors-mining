@@ -18,6 +18,7 @@ use crate::audio::Sounds;
 use crate::config::*;
 use crate::garbage::Garbage;
 use crate::geom::{Point, Triangle, World};
+use crate::marketplace::MOVING_MODES;
 use crate::scenario;
 use crate::shape::{get_border_segments, Shape};
 use crate::state::{Element, GameState, RenderStyle, ViewMode};
@@ -200,23 +201,20 @@ const BOX_FG_DIM: u32 = 0xFFC2E4FF;
 const BOX_HOVER: u32 = 0xFFFFFFFF;
 const BOX_BG: u32 = 0xD01478DC;
 const BOX_BORDER: u32 = 0xFF1AB2FF;
-/// Panneau interne de l'écran de paramétrage (les radio-boutons de mode) :
+/// Panneau interne de l'écran de paramétrage (panneau « GRAPHICS ») :
 /// fond légèrement plus clair que la fenêtre, bordure discrète.
 const BOX_PANEL_BG: u32 = 0xE01478DC;
 const BOX_PANEL_BORDER: u32 = 0x801AB2FF;
 const BOX_PADDING: f32 = 10.0;
 
 /// Largeur de la boîte DOCK STATION : assez pour le titre et les boutons
-/// (3 sans atelier, 4 avec) sans chevauchement — même formule pour la
-/// géométrie (`choice_box_layout`) et le dessin (`draw_choice_box`).
-fn choice_box_width(show_upgrades: bool) -> f32 {
+/// (UNLOAD / REFUEL/REARM / SHOP / CLOSE) sans chevauchement — même
+/// formule pour la géométrie (`choice_box_layout`) et le dessin
+/// (`draw_choice_box`).
+fn choice_box_width() -> f32 {
     let msg_w = measure_text("*** DOCK STATION ***", None, 16, 1.0).width + 2.0 * BOX_PADDING;
     let btn_w = |label: &str| (measure_text(label, None, 16, 1.0).width + 2.0 * BOX_PADDING).max(60.0);
-    let labels: &[&str] = if show_upgrades {
-        &["UNLOAD", "REFUEL/REARM", "UPGRADES", "CLOSE"]
-    } else {
-        &["UNLOAD", "REFUEL/REARM", "CLOSE"]
-    };
+    let labels: [&str; 4] = ["UNLOAD", "REFUEL/REARM", "SHOP", "CLOSE"];
     let buttons: f32 =
         labels.iter().map(|l| btn_w(l)).sum::<f32>() + (labels.len() as f32 - 1.0) * BOX_PADDING;
     300.0f32.max(msg_w).max(buttons + 2.0 * BOX_PADDING)
@@ -225,9 +223,8 @@ fn choice_box_width(show_upgrades: bool) -> f32 {
 /// Géométrie de la boîte de choix DOCK STATION (ex `windowUtils_choiceBox`) :
 /// fenêtre de 120 px de haut centrée sur l'écran, largeur assez grande pour
 /// le titre et les boutons côte à côte en bas. Renvoie les rectangles écran
-/// des boutons UNLOAD / REFUEL/REARM / [UPGRADES] / CLOSE (pour la détection
-/// de clic côté logique). Le bouton UPGRADES (atelier d'amélioration) n'est
-/// présent qu'en scénario à économie (`show_upgrades`) — rectangle vide sinon.
+/// des boutons UNLOAD / REFUEL/REARM / SHOP / CLOSE (pour la détection
+/// de clic côté logique).
 pub struct ChoiceBoxLayout {
     /// Bouton UNLOAD : décharge la soute (minerais disponibles pour
     /// REFUEL/REARM juste après — la boîte reste ouverte).
@@ -235,51 +232,44 @@ pub struct ChoiceBoxLayout {
     /// Bouton REFUEL/REARM : achète carburant + munitions contre minerais
     /// (`scenario::purchase_supplies`) — la boîte reste ouverte.
     pub refuel: Rect,
-    /// Bouton UPGRADES : ouvre l'atelier d'amélioration du vaisseau
-    /// (scénario à économie) — rectangle vide sinon (aucun clic).
-    pub upgrades: Rect,
+    /// Bouton SHOP : ouvre le magasin de la station (modes de
+    /// déplacement, et extensions en scénario à économie).
+    pub shop: Rect,
     /// Bouton CLOSE : ferme la boîte.
     pub close: Rect,
 }
 
-pub fn choice_box_layout(show_upgrades: bool) -> ChoiceBoxLayout {
+pub fn choice_box_layout() -> ChoiceBoxLayout {
     let h = 120.0;
     let btn_h = 26.0;
-    let w = choice_box_width(show_upgrades);
+    let w = choice_box_width();
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
     // boutons alignés à gauche dans la boîte (la largeur est calculée pour
     // qu'ils tiennent sans chevauchement, marges = padding)
     let btn_w = |label: &str| (measure_text(label, None, 16, 1.0).width + 2.0 * BOX_PADDING).max(60.0);
     let top_btn = top + h - 20.0 - btn_h;
+    let labels: [&str; 4] = ["UNLOAD", "REFUEL/REARM", "SHOP", "CLOSE"];
     let mut x = left + BOX_PADDING;
     let mut rects = [Rect::new(0.0, 0.0, 0.0, 0.0); 4];
-    let labels: &[&str] = if show_upgrades {
-        &["UNLOAD", "REFUEL/REARM", "UPGRADES", "CLOSE"]
-    } else {
-        &["UNLOAD", "REFUEL/REARM", "CLOSE"]
-    };
     for (i, &label) in labels.iter().enumerate() {
         rects[i] = Rect::new(x, top_btn, btn_w(label), btn_h);
         x += rects[i].w + BOX_PADDING;
     }
-    let close_i = if show_upgrades { 3 } else { 2 };
     ChoiceBoxLayout {
         unload: rects[0],
         refuel: rects[1],
-        upgrades: if show_upgrades { rects[2] } else { Rect::new(0.0, 0.0, 0.0, 0.0) },
-        close: rects[close_i],
+        shop: rects[2],
+        close: rects[3],
     }
 }
 
 /// Dessine la boîte de choix DOCK STATION (accostage) avec ses boutons
-/// UNLOAD / REFUEL/REARM / [UPGRADES] / CLOSE (hover = blanc, ex
-/// `windowUtils_choiceBox`). Le bouton UPGRADES n'apparaît qu'en scénario à
-/// économie (atelier disponible).
-pub fn draw_choice_box(state: &GameState) {
-    let show_upgrades = scenario::has_economy(state);
+/// UNLOAD / REFUEL/REARM / SHOP / CLOSE (hover = blanc, ex
+/// `windowUtils_choiceBox`).
+pub fn draw_choice_box() {
     let msg = "*** DOCK STATION ***";
-    let w = choice_box_width(show_upgrades);
+    let w = choice_box_width();
     let h = 120.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
@@ -293,56 +283,88 @@ pub fn draw_choice_box(state: &GameState) {
     draw_text(msg, left + (w - text_w) / 2.0, top + 2.0 * BOX_PADDING + 12.0, 16.0, argb_to_color(BOX_FG));
 
     // boutons avec survol
-    let l = choice_box_layout(show_upgrades);
+    let l = choice_box_layout();
     draw_box_button("UNLOAD", l.unload);
     draw_box_button("REFUEL/REARM", l.refuel);
-    if show_upgrades {
-        draw_box_button("UPGRADES", l.upgrades);
-    }
+    draw_box_button("SHOP", l.shop);
     draw_box_button("CLOSE", l.close);
 }
 
-// ─── Atelier d'amélioration du vaisseau (bouton UPGRADES) ───────────────────
+// ─── Magasin de la station (bouton SHOP) ────────────────────────────────────
 
-/// Géométrie de l'atelier d'amélioration du vaisseau (bouton UPGRADES de la
-/// boîte DOCK STATION, scénario à économie) : fenêtre centrée avec une ligne
-/// cliquable par extension (réservoir, chargeur, soute) et un bouton CLOSE
-/// (retour à la boîte DOCK STATION).
-pub struct WorkshopBoxLayout {
-    /// Ligne « réservoir de carburant » (clic = achat de l'extension).
+/// Géométrie du magasin de la station (bouton SHOP de la boîte DOCK
+/// STATION) : fenêtre centrée avec la section « MOVING MODE » (une ligne
+/// cliquable par mode de déplacement, ordre `MOVING_MODE_ORDER`), les lignes
+/// d'extension (réservoir, chargeur, soute — scénario à économie seulement)
+/// et un bouton CLOSE (retour à la boîte DOCK STATION).
+pub struct ShopBoxLayout {
+    /// Ligne « réservoir de carburant » (clic = achat de l'extension) —
+    /// rectangle vide hors économie.
     pub fuel: Rect,
-    /// Ligne « chargeur de munitions » (clic = achat de l'extension).
+    /// Ligne « chargeur de munitions » (clic = achat de l'extension) —
+    /// rectangle vide hors économie.
     pub ammo: Rect,
-    /// Ligne « soute » (clic = achat de l'extension).
+    /// Ligne « soute » (clic = achat de l'extension) — rectangle vide hors
+    /// économie.
     pub cargo: Rect,
+    /// Lignes cliquables des modes de déplacement (ordre visuel
+    /// `MOVING_MODE_ORDER` — clic = sélection gratuite ou déblocage contre
+    /// minerais).
+    pub modes: [Rect; 4],
     /// Bouton CLOSE : revient à la boîte DOCK STATION.
     pub close: Rect,
 }
 
-pub fn workshop_box_layout() -> WorkshopBoxLayout {
+pub fn shop_box_layout(show_upgrades: bool) -> ShopBoxLayout {
     let w = 540.0;
-    let h = 200.0;
+    let h = if show_upgrades { 430.0 } else { 300.0 };
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
     let row_h = 30.0;
     let row_w = w - 2.0 * BOX_PADDING;
     let rows_top = top + 3.0 * BOX_PADDING + 22.0;
-    WorkshopBoxLayout {
-        fuel: Rect::new(left + BOX_PADDING, rows_top, row_w, row_h),
-        ammo: Rect::new(left + BOX_PADDING, rows_top + row_h + 8.0, row_w, row_h),
-        cargo: Rect::new(left + BOX_PADDING, rows_top + 2.0 * (row_h + 8.0), row_w, row_h),
+    // les trois lignes d'extension n'existent qu'en scénario à économie ; la
+    // section des modes prend alors le relais en dessous
+    let (fuel, ammo, cargo, modes_top) = if show_upgrades {
+        (
+            Rect::new(left + BOX_PADDING, rows_top, row_w, row_h),
+            Rect::new(left + BOX_PADDING, rows_top + row_h + 8.0, row_w, row_h),
+            Rect::new(left + BOX_PADDING, rows_top + 2.0 * (row_h + 8.0), row_w, row_h),
+            rows_top + 3.0 * (row_h + 8.0) + 10.0,
+        )
+    } else {
+        (
+            Rect::new(0.0, 0.0, 0.0, 0.0),
+            Rect::new(0.0, 0.0, 0.0, 0.0),
+            Rect::new(0.0, 0.0, 0.0, 0.0),
+            rows_top,
+        )
+    };
+    let modes = [
+        Rect::new(left + BOX_PADDING, modes_top + 26.0, row_w, 34.0),
+        Rect::new(left + BOX_PADDING, modes_top + 66.0, row_w, 34.0),
+        Rect::new(left + BOX_PADDING, modes_top + 106.0, row_w, 34.0),
+        Rect::new(left + BOX_PADDING, modes_top + 146.0, row_w, 34.0),
+    ];
+    ShopBoxLayout {
+        fuel,
+        ammo,
+        cargo,
+        modes,
         close: Rect::new(left + w - BOX_PADDING - 90.0, top + h - 20.0 - 26.0, 90.0, 26.0),
     }
 }
 
-/// Dessine l'atelier d'amélioration du vaisseau : une ligne par extension
-/// (réservoir, chargeur, soute) — capacité actuelle, prochaine extension avec
-/// son bonus et son coût, ou « MAX » — et le bouton CLOSE. Cliquer une ligne
-/// achète l'extension (`scenario::buy_upgrade`).
-pub fn draw_workshop_box(state: &GameState) {
-    let l = workshop_box_layout();
+/// Dessine le magasin de la station : la section « MOVING MODE » (une ligne
+/// par mode de déplacement, ordre `MOVING_MODE_ORDER` — nom + description +
+/// état SELECTED / coût de déblocage / FREE, clic = sélection ou achat), les
+/// lignes d'extension (réservoir, chargeur, soute — scénario à économie) et
+/// le bouton CLOSE.
+pub fn draw_shop_box(state: &GameState) {
+    let show_upgrades = scenario::has_economy(state);
+    let l = shop_box_layout(show_upgrades);
     let w = 540.0;
-    let h = 200.0;
+    let h = if show_upgrades { 430.0 } else { 300.0 };
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
 
@@ -351,7 +373,7 @@ pub fn draw_workshop_box(state: &GameState) {
     draw_rectangle_lines(left, top, w, h, 2.0, argb_to_color(BOX_BORDER));
 
     // titre centré
-    let title = "*** SHIP WORKSHOP ***";
+    let title = "*** PLACE DE MARCHÉ ***";
     let text_w = measure_text(title, None, 16, 1.0).width;
     draw_text(
         title,
@@ -361,24 +383,63 @@ pub fn draw_workshop_box(state: &GameState) {
         argb_to_color(BOX_FG),
     );
 
-    // lignes d'extension : libellé, capacité, prochaine extension (+bonus,
-    // coût) ou MAX — survol = blanc (clic = achat)
     let m = mouse_to_game();
-    for (rect, track) in [
-        (l.fuel, crate::scenario::UpgradeTrackId::Fuel),
-        (l.ammo, crate::scenario::UpgradeTrackId::Ammo),
-        (l.cargo, crate::scenario::UpgradeTrackId::Cargo),
-    ] {
-        let line = crate::scenario::upgrade_line(state, track);
+
+    // lignes d'extension (scénario à économie) : libellé, capacité,
+    // prochaine extension (+bonus, coût) ou MAX — survol = blanc (clic =
+    // achat)
+    if show_upgrades {
+        for (rect, track) in [
+            (l.fuel, crate::scenario::UpgradeTrackId::Fuel),
+            (l.ammo, crate::scenario::UpgradeTrackId::Ammo),
+            (l.cargo, crate::scenario::UpgradeTrackId::Cargo),
+        ] {
+            let line = crate::scenario::upgrade_line(state, track);
+            let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
+            let text = match line.next {
+                Some(u) => format!(
+                    "{}: {} → {} (+{}) — {} MIN",
+                    line.label, line.capacity, u.name, u.bonus, u.cost
+                ),
+                None => format!("{}: {} (MAX)", line.label, line.capacity),
+            };
+            draw_text(&text, rect.x + 4.0, rect.y + 18.0, 16.0, color);
+        }
+    }
+
+    // section « MOVING MODE » : une ligne par mode (ordre visuel
+    // `MOVING_MODE_ORDER`) — nom (16 px) + description (12 px, sombre) à
+    // gauche, état à droite (SELECTED pour le mode courant, prix de
+    // déblocage pour un mode verrouillé — « base → prix remisé (RANG) »
+    // quand la réputation du rang courant réduit le coût, FREE sinon) —
+    // survol blanc (clic = sélection gratuite ou déblocage contre minerais)
+    let modes_header = l.modes[0].y - 12.0;
+    draw_text("MOVING MODE", left + BOX_PADDING + 4.0, modes_header, 12.0, argb_to_color(BOX_FG));
+    for (i, rect) in l.modes.iter().enumerate() {
+        let mode = MOVING_MODE_ORDER[i];
+        let catalog = MOVING_MODES[mode as usize];
         let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
-        let text = match line.next {
-            Some(u) => format!(
-                "{}: {} → {} (+{}) — {} MIN",
-                line.label, line.capacity, u.name, u.bonus, u.cost
-            ),
-            None => format!("{}: {} (MAX)", line.label, line.capacity),
+        let status = if state.moving_mode == mode {
+            "SELECTED".to_string()
+        } else {
+            match scenario::mode_unlock_prices(state, mode) {
+                // mode verrouillé : tarif de base → prix remisé par la
+                // réputation du rang courant (le rang est nommé quand une
+                // remise s'applique réellement)
+                Some((base, discounted)) if discounted < base => format!(
+                    "{} → {} MIN ({})",
+                    base,
+                    discounted,
+                    scenario::current_rank(state).unwrap_or("")
+                ),
+                Some((base, _)) => format!("{} MIN", base),
+                None => "FREE".to_string(),
+            }
         };
-        draw_text(&text, rect.x + 4.0, rect.y + 18.0, 16.0, color);
+        draw_text(catalog.name, rect.x + 4.0, rect.y + 16.0, 16.0, color);
+        let status_w = measure_text(&status, None, 16, 1.0).width;
+        draw_text(&status, rect.x + rect.w - 4.0 - status_w, rect.y + 16.0, 16.0, color);
+        draw_text(catalog.description, rect.x + 4.0, rect.y + 32.0, 12.0, argb_to_color(BOX_FG_DIM));
     }
 
     // retour à la boîte DOCK STATION
@@ -437,7 +498,7 @@ pub fn draw_help_box() {
         "D : display data",
         "F : cycle window / zoomed / native fullscreen",
         "G : generate a shape",
-        "O : settings (moving mode, graphics)",
+        "O : settings (audio, graphics)",
         "K : kill all shapes",
     ];
     for (i, label) in labels.iter().enumerate() {
@@ -461,19 +522,15 @@ pub fn draw_help_box() {
 
 // ─── Écran de paramétrage (touche O) ────────────────────────────────────────
 
-/// Géométrie des contrôles de l'écran de paramétrage : fenêtre 560×440
-/// centrée en deux colonnes — à gauche le panneau « MOVING MODE » (les trois
-/// radio-boutons de déplacement, cercle + libellé + description cliquables),
-/// la case MUSIC, la case AUTO GENERATE et la barre horizontale du volume
-/// (ascenseur) ; à droite le panneau « GRAPHICS » (style de rendu, mode
-/// d'affichage fenêtré/plein écran, définition de fenêtre, anticrénelage) ;
-/// les boutons RESET et CLOSE côte à côte en bas.
+/// Géométrie des contrôles de l'écran de paramétrage : fenêtre 560×280
+/// centrée en deux colonnes — à gauche les cases MUSIC et AUTO GENERATE, la
+/// barre horizontale du volume (ascenseur) et le bouton RESET PROGRESSION
+/// (pleine largeur de la colonne) ; à droite le panneau « GRAPHICS » (style
+/// de rendu, mode d'affichage fenêtré/plein écran, définition de fenêtre,
+/// anticrénelage) ; les boutons RESET et CLOSE côte à côte en bas. (Le mode
+/// de déplacement se choisit désormais au magasin de la station — bouton
+/// SHOP de la boîte DOCK STATION.)
 pub struct SettingsLayout {
-    /// Panneau des modes : fond + bordure + libellé « MOVING MODE » en tête,
-    /// qui regroupe les trois radio-boutons de déplacement.
-    pub modes_panel: Rect,
-    /// Lignes cliquables des radio-boutons de mode.
-    pub modes: [Rect; 3],
     /// Ligne cliquable de la case MUSIC.
     pub music: Rect,
     /// Ligne cliquable de la case AUTO GENERATE.
@@ -493,6 +550,10 @@ pub struct SettingsLayout {
     pub window_size: Rect,
     /// Ligne cliquable de la case ANTIALIAS (MSAA, appliquée au lancement).
     pub antialias: Rect,
+    /// Bouton RESET PROGRESSION (remet à zéro la progression du scénario —
+    /// minerais, modes payés, réputation, extensions, vies/bouclier ; visible
+    /// seulement en scénario à économie ou à survie).
+    pub reset_progress: Rect,
     /// Bouton RESET (réglages par défaut).
     pub reset: Rect,
     /// Bouton RESTART (relance le jeu — affiché uniquement quand un réglage
@@ -505,25 +566,22 @@ pub struct SettingsLayout {
 /// Calcule la géométrie de l'écran de paramétrage (voir `SettingsLayout`).
 pub fn settings_box_layout() -> SettingsLayout {
     let w = 560.0;
-    let h = 440.0;
+    let h = 280.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
     let col_w = 250.0;
     let col_left = left + 20.0;
     let col_right = left + w - 20.0 - col_w;
 
-    // colonne gauche : panneau des modes + audio
-    let modes_panel = Rect::new(col_left, top + 44.0, col_w, 168.0);
-    let modes = [
-        Rect::new(col_left, modes_panel.y + 22.0, col_w, 40.0),
-        Rect::new(col_left, modes_panel.y + 70.0, col_w, 40.0),
-        Rect::new(col_left, modes_panel.y + 118.0, col_w, 40.0),
-    ];
-    let music = Rect::new(col_left, top + 220.0, col_w, 26.0);
-    let auto_generate = Rect::new(col_left, top + 252.0, col_w, 26.0);
+    // colonne gauche : cases audio + volume + bouton RESET PROGRESSION
+    let music = Rect::new(col_left, top + 44.0, col_w, 26.0);
+    let auto_generate = Rect::new(col_left, top + 76.0, col_w, 26.0);
     // volume : barre horizontale (ascenseur) sur la majeure partie de la
     // ligne, après le libellé VOLUME ; zone de clic de 22 px de haut
-    let volume_track = Rect::new(col_left + 100.0, top + 286.0, col_w - 104.0, 22.0);
+    let volume_track = Rect::new(col_left + 100.0, top + 110.0, col_w - 104.0, 22.0);
+    // RESET PROGRESSION : bouton pleine largeur de la colonne gauche, sous le
+    // volume (remet à zéro la progression du scénario courant)
+    let reset_progress = Rect::new(col_left, top + 160.0, col_w, 26.0);
 
     // colonne droite : panneau des options graphiques
     let graphics_panel = Rect::new(col_right, top + 44.0, col_w, 176.0);
@@ -550,8 +608,6 @@ pub fn settings_box_layout() -> SettingsLayout {
     let restart = Rect::new(left + (w - w3) / 2.0 - BOX_PADDING, top_btn, w3, btn_h);
 
     SettingsLayout {
-        modes_panel,
-        modes,
         music,
         auto_generate,
         volume_track,
@@ -560,6 +616,7 @@ pub fn settings_box_layout() -> SettingsLayout {
         window_mode,
         window_size,
         antialias,
+        reset_progress,
         reset,
         restart,
         close,
@@ -567,12 +624,12 @@ pub fn settings_box_layout() -> SettingsLayout {
 }
 
 /// Dessine l'écran de paramétrage (touche O) : fond, bordure, titre, les
-/// deux colonnes (panneau « MOVING MODE » + audio à gauche, panneau
-/// « GRAPHICS » à droite) et les boutons RESET / CLOSE (ex `windowUtils`).
-/// `sounds` fournit l'état musique et le volume courant.
+/// deux colonnes (audio + RESET PROGRESSION à gauche, panneau « GRAPHICS » à
+/// droite) et les boutons RESET / CLOSE (ex `windowUtils`). `sounds` fournit
+/// l'état musique et le volume courant.
 pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     let w = 560.0;
-    let h = 440.0;
+    let h = 280.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
 
@@ -587,49 +644,6 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
 
     let layout = settings_box_layout();
     let m = mouse_to_game();
-
-    // panneau des modes : fond légèrement plus clair que la fenêtre, bordure
-    // discrète et libellé « MOVING MODE » en tête (explicite la finalité des
-    // trois radio-boutons qu'il regroupe)
-    let panel = layout.modes_panel;
-    draw_rectangle(panel.x, panel.y, panel.w, panel.h, argb_to_color(BOX_PANEL_BG));
-    draw_rectangle_lines(panel.x, panel.y, panel.w, panel.h, 1.0, argb_to_color(BOX_PANEL_BORDER));
-    draw_text("MOVING MODE", panel.x + 10.0, panel.y + 14.0, 12.0, argb_to_color(BOX_FG));
-
-    // les trois modes (ordre `MOVING_MODE_*`) en radio-boutons : anneau +
-    // point central quand sélectionné, libellé + description à droite
-    // (hover blanc, description en plus petit et plus sombre)
-    let labels = ["INERTIAL", "4 WAYS", "DIRECTIONAL"];
-    let descriptions = [
-        "THRUST / REVERSE, TURN L/R",
-        "ARROWS PUSH IN CURRENT DIR",
-        "ACCELERATE / BRAKE, TURN L/R",
-    ];
-    for (i, rect) in layout.modes.iter().enumerate() {
-        let selected = state.moving_mode == i as i32;
-        let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
-        // focus clavier (flèches ↑/↓ + Entrée) : ligne surlignée
-        if state.settings_focus == i as i32 {
-            draw_rectangle(rect.x, rect.y, rect.w, rect.h, argb_to_color(0x301AB2FF));
-        }
-        // anneau radio aligné sur le libellé (bord clair, intérieur =
-        // couleur de la fenêtre) + point central quand le mode est actif
-        let cx = rect.x + 13.0;
-        let cy = rect.y + 12.0;
-        draw_circle(cx, cy, 7.0, color);
-        draw_circle(cx, cy, 4.5, argb_to_color(BOX_PANEL_BG));
-        if selected {
-            draw_circle(cx, cy, 2.5, color);
-        }
-        // un mode verrouillé (scénario à économie) affiche son prix en
-        // minerais à côté du libellé
-        let label = match scenario::locked_cost(state, i as i32) {
-            Some(cost) => format!("{} ({} MIN)", labels[i], cost),
-            None => labels[i].to_string(),
-        };
-        draw_text(&label, rect.x + 30.0, rect.y + 18.0, 16.0, color);
-        draw_text(descriptions[i], rect.x + 30.0, rect.y + 34.0, 12.0, argb_to_color(BOX_FG_DIM));
-    }
 
     // cases à cocher MUSIC (état depuis les sons) et AUTO GENERATE
     draw_checkbox(layout.music, sounds.music_on, "MUSIC", m);
@@ -685,6 +699,13 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
         draw_box_button("RESTART", layout.restart);
     }
 
+    // RESET PROGRESSION : remet à zéro la progression du scénario courant
+    // (minerais, modes payés, réputation, extensions, vies/bouclier) — affiché
+    // seulement quand il y a une progression à remettre (scénario à économie
+    // ou à survie) ; en jeu libre, rien à réinitialiser
+    if scenario::has_economy(state) || scenario::has_survival(state) {
+        draw_box_button("RESET PROGRESSION", layout.reset_progress);
+    }
     draw_box_button("RESET", layout.reset);
     draw_box_button("CLOSE", layout.close);
 }
@@ -1625,7 +1646,7 @@ pub fn docking_marker_visible(
 ) -> bool {
     if state.dock_anim > 0.0
         || state.dock_box
-        || state.workshop_box
+        || state.shop_box
         || state.dock_retract > 0.0
         || state.dock_links
         || state.eva_recovery > 0.0
@@ -1859,7 +1880,7 @@ pub fn draw_docking_hud(
     let in_zone = dist < STATION_DOCK_DISTANCE;
     // récupération du cosmonaute / fondu enchaîné : considéré comme accosté
     let (text, color) = if state.dock_box
-        || state.workshop_box
+        || state.shop_box
         || state.dock_links
         || state.eva_recovery > 0.0
         || state.eva_crossfade > 0.0
@@ -2293,10 +2314,10 @@ mod tests {
         state.dock_box = true;
         assert!(!docking_marker_visible(&state, player, station, radius));
         state.dock_box = false;
-        // accosté : atelier ouvert → cachée
-        state.workshop_box = true;
+        // accosté : magasin ouvert → cachée
+        state.shop_box = true;
         assert!(!docking_marker_visible(&state, player, station, radius));
-        state.workshop_box = false;
+        state.shop_box = false;
         // départ : rétraction des liens en cours → cachée
         state.dock_retract = 1.0;
         assert!(!docking_marker_visible(&state, player, station, radius));

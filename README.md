@@ -124,7 +124,7 @@ upx --best --lzma target/release/rust-meteors-mining
 | Shift (gauche ou droit) | Tirer |
 | P | Pause |
 | S | Aide (liste des touches, fermeture au clic sur CLOSE) |
-| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : panneau « MOVING MODE » (3 modes de déplacement en radio-boutons, clic ou flèches ↑/↓ + Entrée), cases MUSIC / AUTO GENERATE / ANTIALIAS, volume (barre horizontale cliquable/glissable) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 — clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (seule la progression du scénario — minerais, modes payés, réputation — est conservée) ; fermer avec CLOSE ou ESC (le HUD annonce le mode activé s'il a changé) |
+| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS, volume (barre horizontale cliquable/glissable) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 — clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en Progression/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario — minerais, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi — puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
 | G | Générer un météore près du vaisseau |
 | A | Activer/désactiver la génération automatique des météores |
 | C | Créer un alien |
@@ -139,11 +139,14 @@ Au démarrage, le vaisseau est à la station : éloignez-vous pour commencer à
 miner. Revenez dans la zone d'accostage en **ralentissant** : la mire au
 centre de la station passe du rouge au vert avec la vitesse (vert = prêt,
 `DOCK: IN RANGE` au HUD) pour ouvrir la boîte DOCK STATION
-(UNLOAD / REFUEL/REARM / [UPGRADES] / CLOSE) : UNLOAD décharge
+(UNLOAD / REFUEL/REARM / SHOP / CLOSE) : UNLOAD décharge
 la soute, REFUEL/REARM achète carburant + munitions contre minerais,
-UPGRADES ouvre l'atelier d'amélioration du vaisseau (scénario Progression),
-CLOSE ferme — la boîte reste ouverte après UNLOAD, REFUEL/REARM et les
-achats de l'atelier pour tout faire avant de partir.
+SHOP ouvre le **magasin de la station** (section « MOVING MODE » :
+choisir un mode de déplacement, ou le débloquer contre minerais en scénario
+à économie — dans tous les scénarios ; en Progression, s'y ajoutent les
+lignes d'extension de vaisseau), CLOSE ferme — la boîte reste ouverte après
+UNLOAD, REFUEL/REARM et les achats du magasin pour tout faire avant de
+partir.
 
 ## Scénarios
 
@@ -165,9 +168,15 @@ qu'appeler des fonctions testables sans macroquad :
 - **FREE PLAY** (défaut) — le comportement historique : aucun coût, tous les
   modes de déplacement disponibles, carburant et munitions illimités.
 - **PROGRESSION** — l'exemple d'économie :
-  - le vaisseau démarre en mode **INERTIAL** ; les modes **4 WAYS** (20
-    minerais) et **DIRECTIONAL** (50 minerais) se débloquent dans l'écran de
-    paramétrage (O) en payant des minerais (affichés à côté du mode) ;
+  - le vaisseau démarre gratuitement en mode **REALISTIC**, identique à
+    **INERTIAL** pour la poussée vectorielle ; ses propulseurs latéraux
+    accélèrent progressivement la rotation, le relâchement la conserve et la
+    poussée opposée permet de la compenser jusqu'à l'arrêt ; seuls les modes
+    dont le coût configuré (outil) est nul sont débloqués au départ
+    (REALISTIC par défaut) ; les modes payants — **INERTIAL** (15 minerais),
+    **4 WAYS** (30) et **DIRECTIONAL** (45) — se débloquent dans le
+    **magasin de la station** (bouton SHOP de la boîte DOCK STATION) en
+    payant des minerais (coût affiché à côté du mode) ;
   - les minerais s'obtiennent en minant : chaque gemme déchargée à la station
     vaut selon son élément (or 5, fer 3, eau 2) ;
   - **carburant** et **munitions** sont payants : chaque poussée consomme du
@@ -175,8 +184,8 @@ qu'appeler des fonctions testables sans macroquad :
     une munition ; les pleins s'achètent à la station (10 carburant = 1
     minerai, 5 munitions = 1) via le bouton REFUEL/REARM de la boîte DOCK
     STATION (plus d'achat automatique au déchargement) ;
-  - **l'atelier** (bouton UPGRADES de la boîte DOCK STATION — une sorte de
-    place de marché/atelier) permet d'acheter contre minerais des extensions
+  - **le magasin** (bouton SHOP de la boîte DOCK STATION — la place de
+    marché/atelier) permet d'acheter contre minerais des extensions
     de vaisseau, persistées avec la progression : **réservoir** (100 de base,
     3 extensions de +50 → 250 max), **chargeur** (30 de base, 3 extensions
     → 70 max) et **soute** (5 emplacements de base, 2 extensions → 10 max) ;
@@ -215,8 +224,8 @@ les munitions, eux, repartent pleins à chaque lancement.
 
 Une **application de gestion dédiée** accompagne le jeu : son but est la
 **mise au point des objets vendus sur la place de marché** accessible depuis
-la base — les extensions de vaisseau de l'atelier (bouton `UPGRADES` de la
-boîte DOCK STATION, scénario Progression).
+la base — les extensions de vaisseau et les modes de déplacement (bouton
+`SHOP` de la boîte DOCK STATION, scénario Progression).
 
 `tools/marketplace-editor/index.html` est une **page unique, autonome** (HTML
 + CSS + JS embarqués, aucune dépendance, fonctionne hors ligne en ouvrant le
@@ -235,9 +244,12 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   unité de bonus) ; en synthèse, le coût total pour tout maxer (converti en
   gemmes d'or/fer/eau à ramasser) et les capacités finales ;
 - **éditer l'économie de la station** : valeur des gemmes en minerais
-  (`ELEMENT_VALUES` : or/fer/eau), coûts des modes de déplacement
-  (`MODE_COSTS` : 4 WAYS, DIRECTIONAL — INERTIAL reste gratuit au départ) et
-  prix du ravitaillement (`FUEL_PRICE`/`FUEL_STEP`, `AMMO_PRICE`/`AMMO_STEP`) ;
+  (`ELEMENT_VALUES` : or/fer/eau), modes de déplacement (`MOVING_MODES` :
+  nom, description et coût de déblocage de chaque mode, vendus au magasin de
+  la station — `MODE_COSTS` en est dérivé ; seuls les modes à coût nul
+  (REALISTIC par défaut) sont débloqués au départ, les autres, INERTIAL
+  compris, s'achètent au magasin) et prix du ravitaillement
+  (`FUEL_PRICE`/`FUEL_STEP`, `AMMO_PRICE`/`AMMO_STEP`) ;
 - **régler les météores & collisions** : force de réaction d'un météore qui
   percute la base (`METEOR_STATION_RESTITUTION` — le triangle qui collisionne
   explose et le météore est repoussé : sa composante de vitesse vers la base
@@ -398,7 +410,8 @@ du serveur, y est masquée).
   `_NET_WM_STATE` direct, sans outil externe).
 - Réglages persistants (`meteors_mining.cfg`, dossier de configuration
   utilisateur — norme XDG, ex `~/.config/meteors-mining/meteors_mining.cfg`) :
-  mode de déplacement, musique (touche M), volume, style de rendu, mode
+  mode de déplacement (choisi au magasin de la station, bouton SHOP de la
+  boîte DOCK STATION), musique (touche M), volume, style de rendu, mode
   d'affichage, définition de fenêtre et anticrénelage — modifiables dans
   l'écran de paramétrage (touche O) ou par les touches M/A, rechargés au
   lancement suivant. NB : la génération automatique des météores (touche A ou
@@ -406,10 +419,11 @@ du serveur, y est masquée).
   active** à chaque lancement, pour que le monde ne soit jamais vide au
   démarrage. S'y ajoutent le scénario choisi et la progression d'une partie à
   économie (`scenario`, `prog_*`), sauvegardés à chaque changement
-  (déchargement, ravitaillement, mode payé, achat à l'atelier, astéroïde
+  (déchargement, ravitaillement, mode payé, achat au magasin, astéroïde
   détruit) et restaurés au lancement (une sauvegarde finale a aussi lieu à
   la sortie du jeu). Le
-  RESET de l'écran de paramétrage ne supprime que les clés de réglage — la
+  RESET de l'écran de paramétrage ne supprime que les clés de réglage (le
+  mode de déplacement n'étant plus un réglage, il n'est pas touché) — la
   progression du scénario survit. En fenêtré, une définition plus grande que
   960×540 étire la vue (letterbox) ; l'anticrénelage MSAA est appliqué à la
   création de la fenêtre (effectif au lancement suivant).

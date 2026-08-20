@@ -11,7 +11,7 @@
 //!   puis étirée (F → fenêtre 1920×1080, même contenu juste plus grand —
 //!   voir `docs/PORTAGE.md` §4.1).
 //! - **Phases 3-4** (jalons M2 à M5 faits) : boucle de jeu — `game.rs`
-//!   (input, 3 modes de déplacement, pause, plein écran, météores : G + auto,
+//!   (input, 4 modes de déplacement, pause, plein écran, météores : G + auto,
 //!   collisions SAT + élastique, débris, messages, tirs, gemmes, accostage,
 //!   aide S, debug D/I), `title.rs` (écran titre).
 
@@ -89,16 +89,16 @@ async fn main() {
     let mut state = GameState::new();
     // réglages persistés (fichier de config utilisateur, norme XDG — ex
     // `~/.config/meteors-mining/meteors_mining.cfg`) : le mode de
-    // déplacement choisi dans l'écran de paramétrage (touche O) remplace le
-    // défaut au lancement (comme s'il venait d'être sélectionné, sans
-    // message « MODE CHANGÉ » intempestif) ; volume et musique s'appliquent
-    // aux sons ci-dessous. NB : la génération automatique des météores
+    // déplacement choisi au magasin de la station (bouton SHOP de la
+    // boîte DOCK STATION) remplace le défaut au lancement (comme s'il venait
+    // d'être sélectionné, sans message intempestif) ; volume et musique
+    // s'appliquent aux sons ci-dessous. NB : la génération automatique des
+    // météores
     // (touche A) n'est **pas** persistée — elle repart toujours active au
     // lancement (défaut de `GameState`), pour que le monde ne soit jamais
     // vide sans que le joueur l'ait demandé pour la session en cours.
     if let Some(mode) = persist::load_moving_mode() {
         state.moving_mode = mode;
-        state.settings_previous_mode = mode;
     }
     // options graphiques persistées (écran de paramétrage O) : style de
     // rendu et anticrénelage (reflété par la case, l'effet étant appliqué
@@ -128,7 +128,7 @@ async fn main() {
     // scénario (choisi à l'écran titre, touche N — défaut : jeu libre) : le
     // dernier scénario joué est persisté (`scenario`) — on le restaure avant
     // d'appliquer ses règles de départ (ressources initiales, modes débloqués
-    // et, en PROGRESSION, le mode de déplacement imposé INERTIAL), puis la
+    // et, en PROGRESSION, le mode de déplacement imposé REALISTIC), puis la
     // progression enregistrée (minerais, modes payés, réputation — clés
     // `prog_*`) est surimposée sur ces valeurs de départ
     if let Some(id) = crate::scenario::load_scenario() {
@@ -197,7 +197,15 @@ async fn main() {
     // `sounds` est transmis pour l'écran de paramétrage (touche O) accessible
     // depuis le titre (musique et volume y sont réglables). `true` en retour :
     // le bouton RESTART a été cliqué → on relance le jeu immédiatement.
-    let title_restart = title::title_loop(&mut state, &assets, &render_target, &mut sounds).await;
+    let (title_restart, title_progression_reset) =
+        title::title_loop(&mut state, &assets, &render_target, &mut sounds).await;
+    if title_progression_reset {
+        // RESET PROGRESSION cliqué depuis l'écran de paramétrage du titre : la
+        // progression a été remise à zéro, mais l'écran titre ne dessine pas
+        // le monde — le vaisseau est reconstruit ici pour retirer les plans
+        // liés aux extensions désormais perdues
+        vaisseau::rebuild_player_vaisseau(&state, &mut shapes, &mut triangles);
+    }
     if title_restart {
         if restart_process() {
             return;
@@ -287,7 +295,7 @@ async fn main() {
         // pendant l'animation d'accostage / la rétraction des liens
         let engine_on = state.player.thrusted != 0
             && !state.dock_box
-            && !state.workshop_box
+            && !state.shop_box
             && !state.help_box
             && !state.settings_box
             && state.dock_anim <= 0.0
@@ -296,7 +304,7 @@ async fn main() {
         sounds.reverse_engine(
             state.player.revert_thrusted != 0
                 && !state.dock_box
-                && !state.workshop_box
+                && !state.shop_box
                 && !state.help_box
                 && !state.settings_box
                 && state.dock_anim <= 0.0
@@ -517,14 +525,14 @@ async fn main() {
         }
         render::draw_message(&mut state);
 
-        // boîte de choix DOCK STATION (accostage), atelier d'amélioration
-        // (bouton UPGRADES), fenêtre d'aide (touche S) et écran de
+        // boîte de choix DOCK STATION (accostage), magasin de la station
+        // (bouton SHOP), fenêtre d'aide (touche S) et écran de
         // paramétrage (touche O) par-dessus le jeu
         if state.dock_box {
-            render::draw_choice_box(&state);
+            render::draw_choice_box();
         }
-        if state.workshop_box {
-            render::draw_workshop_box(&state);
+        if state.shop_box {
+            render::draw_shop_box(&state);
         }
         if state.help_box {
             render::draw_help_box();

@@ -55,23 +55,29 @@ pub const WHOIAM_ALIEN: i32 = 5;
 pub const WHOIAM_COSMONAUT: i32 = 6;
 
 /// Modes de déplacement du vaisseau.
+///
+/// Les valeurs historiques d'INERTIAL, 4 WAYS et DIRECTIONAL sont conservées
+/// pour que les réglages persistés restent compatibles ; REALISTIC est ajouté
+/// en dernier et placé en tête de l'écran de sélection.
 pub const MOVING_MODE_INERTIAL: i32 = 0;
 pub const MOVING_MODE_4_WAYS: i32 = 1;
 pub const MOVING_MODE_DIRECTIONAL: i32 = 2;
-/// Nombre de modes de déplacement (bornes du focus clavier de l'écran de
-/// paramétrage).
-pub const MOVING_MODE_COUNT: i32 = 3;
+pub const MOVING_MODE_REALISTIC: i32 = 3;
+/// Nombre de modes de déplacement (taille des tableaux `MOVING_MODES` /
+/// `MODE_COSTS` de `src/marketplace.rs`).
+pub const MOVING_MODE_COUNT: i32 = 4;
 
-/// Libellé d'affichage d'un mode de déplacement (écran de paramétrage,
-/// message HUD d'activation).
-pub fn moving_mode_label(mode: i32) -> &'static str {
-    match mode {
-        MOVING_MODE_INERTIAL => "INERTIAL",
-        MOVING_MODE_4_WAYS => "4 WAYS",
-        MOVING_MODE_DIRECTIONAL => "DIRECTIONAL",
-        _ => "?",
-    }
-}
+/// Ordre d'affichage des modes dans le magasin de la station (bouton
+/// SHOP de la boîte DOCK STATION) : REALISTIC est le mode de départ de
+/// PROGRESSION, puis INERTIAL, 4 WAYS et DIRECTIONAL. Les noms, descriptions
+/// et coûts de chaque mode sont définis dans `MOVING_MODES`
+/// (`src/marketplace.rs`, généré par l'outil de gestion).
+pub const MOVING_MODE_ORDER: [i32; MOVING_MODE_COUNT as usize] = [
+    MOVING_MODE_REALISTIC,
+    MOVING_MODE_INERTIAL,
+    MOVING_MODE_4_WAYS,
+    MOVING_MODE_DIRECTIONAL,
+];
 
 /// Styles de rendu des triangles (écran de paramétrage, touche O).
 pub const RENDER_STYLE_TEXTURED: i32 = 0;
@@ -154,8 +160,12 @@ pub const TEXTURE_STATION: i32 = 4;
 
 /// Accélération du joueur (par seconde de jeu : `60*0.05/fps` → `0.05*60*dt`).
 pub const PLAYER_ACCELERATION: f64 = 0.05;
-/// Rotation du joueur (rad/s : `60*(TAU/210)/fps` → `(TAU/210)*60*dt`).
+/// Rotation maximale du joueur (rad/s : `60*(TAU/210)/fps` →
+/// `(TAU/210)*60*dt`).
 pub const PLAYER_ROTATION_SPEED: f64 = TAU / 210.0;
+/// Accélération angulaire du mode REALISTIC : la vitesse de rotation atteint
+/// son maximum en environ 0,5 seconde avec une poussée latérale maintenue.
+pub const PLAYER_ROTATION_ACCELERATION: f64 = PLAYER_ROTATION_SPEED * 2.0;
 /// Cooldown de tir en secondes (`fps/3` frames à 60 FPS = 1/3 s).
 pub const PLAYER_FIRE_COOLDOWN: f64 = 1.0 / 3.0;
 /// Cargo du joueur.
