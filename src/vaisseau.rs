@@ -40,7 +40,8 @@ use crate::geom::{Point, Triangle};
 use crate::marketplace::{
     PlaneUpgradeLink, PlaneUpgradeTrack, VAISSEAU_BULLET_SPAWNS, VAISSEAU_CENTER_X_PERCENT,
     VAISSEAU_CENTER_Y_PERCENT, VAISSEAU_JSON, VAISSEAU_ORIENTATION_DEGREES, VAISSEAU_PLANE_LINKS,
-    VAISSEAU_PLANES_ALWAYS, VAISSEAU_SCALE, VAISSEAU_WEAPONS, VaisseauWeapon,
+    VAISSEAU_PLANES_ALWAYS, VAISSEAU_SCALE, VAISSEAU_THRUSTERS, VAISSEAU_WEAPONS, VaisseauThruster,
+    VaisseauWeapon,
 };
 use crate::shape::{compute_real_positions, compute_shape_center, free_shape, Shape};
 use crate::state::GameState;
@@ -94,6 +95,20 @@ pub fn weapons_face_count() -> usize {
         .sum()
 }
 
+/// Nombre total de faces des **propulseurs** (`VAISSEAU_THRUSTERS` — chaque
+/// propulseur d'éjection de gaz est toujours visible, ses faces s'ajoutent à
+/// celles du vaisseau : le propulseur est dessiné sur le vaisseau à sa
+/// position). Liste vide → 0 (repli).
+pub fn thrusters_face_count() -> usize {
+    VAISSEAU_THRUSTERS
+        .iter()
+        .map(|t| {
+            let file = parse_mesh(t.mesh);
+            file.planes.iter().map(|p| p.faces.len()).sum::<usize>()
+        })
+        .sum()
+}
+
 /// Nombre de faces de la **composition maximale** du vaisseau (plans
 /// toujours visibles + plans liés aux upgrades, quel que soit le niveau) +
 /// faces du catalogue d'armes — la taille d'allocation du maillage : le
@@ -113,16 +128,16 @@ pub fn vaisseau_face_count() -> usize {
         .filter(|(i, _)| comp.get(*i).copied().unwrap_or(false))
         .map(|(_, p)| p.faces.len())
         .sum::<usize>();
-    planes + weapons_face_count()
+    planes + weapons_face_count() + thrusters_face_count()
 }
 
 /// Nombre de faces **visibles aux niveaux d'atelier courants** (plans
 /// toujours visibles + plans liés dont la ligne a atteint le niveau) +
-/// faces du catalogue d'armes — la valeur de `life` du vaisseau construit
-/// avec cet état. Exposé pour les tests d'invariant : un plan lié
-/// (`VAISSEAU_PLANE_LINKS`) n'apparaît qu'à partir de son niveau, `life` ne
-/// vaut `vaisseau_face_count()` (la composition maximale) qu'une fois toutes
-/// les lignes montées.
+/// faces du catalogue d'armes et des propulseurs — la valeur de `life` du
+/// vaisseau construit avec cet état. Exposé pour les tests d'invariant : un
+/// plan lié (`VAISSEAU_PLANE_LINKS`) n'apparaît qu'à partir de son niveau,
+/// `life` ne vaut `vaisseau_face_count()` (la composition maximale) qu'une
+/// fois toutes les lignes montées.
 #[cfg(test)]
 pub fn vaisseau_visible_face_count(state: &GameState) -> usize {
     let file = vaisseau_file();
@@ -134,7 +149,7 @@ pub fn vaisseau_visible_face_count(state: &GameState) -> usize {
         .filter(|(i, _)| visible.get(*i).copied().unwrap_or(false))
         .map(|(_, p)| p.faces.len())
         .sum::<usize>();
-    planes + weapons_face_count()
+    planes + weapons_face_count() + thrusters_face_count()
 }
 
 /// RGBA (flottants 0..1) → ARGB 32 bits au format QB64 (AARRGGBB).
@@ -262,6 +277,50 @@ fn vaisseau_bullet_spawns_with(
             let ex = minx + x / 100.0 * (maxx - minx);
             let ey = miny + y / 100.0 * (maxy - miny);
             pt([ex, ey])
+        })
+        .collect()
+}
+
+/// Propulseurs des éjections de gaz (`VAISSEAU_THRUSTERS`) : chaque
+/// propulseur + son **point local** sur le vaisseau — sa `position` (en % de
+/// la boîte englobante de la composition) convertie par la même
+/// transformation que les sommets (pivot en %, rotation `−orientation`,
+/// échelle, axe y retourné). Les meshes sont écrits dans le maillage du
+/// vaisseau (`write_vaisseau`) et le gaz sort des points (src/main.rs).
+/// Liste vide = repli : pas de propulseur (le gaz classique sort du centre
+/// de rotation).
+pub fn vaisseau_thrusters() -> Vec<(VaisseauThruster, Point)> {
+    vaisseau_thrusters_with(
+        VAISSEAU_THRUSTERS,
+        VAISSEAU_SCALE,
+        VAISSEAU_ORIENTATION_DEGREES,
+        Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT),
+    )
+}
+
+/// Variante pure de `vaisseau_thrusters` (tests) : propulseur + point local
+/// de sa position. Liste vide → aucune.
+fn vaisseau_thrusters_with(
+    thrusters: &[VaisseauThruster],
+    scale: f64,
+    orientation_degrees: f64,
+    center_percent: Point,
+) -> Vec<(VaisseauThruster, Point)> {
+    if thrusters.is_empty() {
+        return Vec::new();
+    }
+    let file = vaisseau_file();
+    let comp = composition_mask(&file);
+    let (minx, miny, maxx, maxy) = composition_bbox(&file, &comp);
+    let (_pivot, pt) =
+        mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
+    thrusters
+        .iter()
+        .map(|t| {
+            let (x, y) = t.position;
+            let ex = minx + x / 100.0 * (maxx - minx);
+            let ey = miny + y / 100.0 * (maxy - miny);
+            (*t, pt([ex, ey]))
         })
         .collect()
 }
@@ -396,6 +455,7 @@ fn write_vaisseau(
     pt: &impl Fn([f64; 2]) -> Point,
     visible: &[bool],
     weapons: &[(VaisseauWeapon, Point)],
+    thrusters: &[(VaisseauThruster, Point)],
 ) {
     let first = shapes[shape_index].first_triangle;
     let mut k = 0usize;
@@ -417,7 +477,60 @@ fn write_vaisseau(
     for (weapon, spawn) in weapons {
         k = write_weapon(weapon, *spawn, shapes, triangles, shape_index, k);
     }
+    for (thruster, spawn) in thrusters {
+        k = write_thruster(thruster, *spawn, shapes, triangles, shape_index, k);
+    }
     shapes[shape_index].life = k as i32;
+}
+
+/// Écrit le mesh d'un **propulseur** d'éjection de gaz dans la plage du
+/// vaisseau, à partir de l'index `k` : même principe que `write_weapon` — le
+/// mesh est transformé (échelle `thruster.scale`, rotation de
+/// `−thruster.orientation_degrees` autour du centre de sa boîte englobante,
+/// axe y retourné) puis translaté pour que son pivot soit posé sur `spawn`
+/// (point local du vaisseau). Renvoie l'index du prochain triangle écrit.
+fn write_thruster(
+    thruster: &VaisseauThruster,
+    spawn: Point,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
+    shape_index: usize,
+    k: usize,
+) -> usize {
+    let file = parse_mesh(thruster.mesh);
+    let comp = vec![true; file.planes.len()]; // tout le propulseur visible
+    let (pivot, pt) = mesh_transform(
+        &file,
+        &comp,
+        thruster.scale,
+        thruster.orientation_degrees,
+        Point::new(50.0, 50.0),
+    );
+    // translation : le pivot du propulseur posé sur l'emplacement
+    let dx = spawn.x - pivot.x;
+    let dy = spawn.y - pivot.y;
+    let first = shapes[shape_index].first_triangle;
+    let mut k = k;
+    for plane in &file.planes {
+        for face in &plane.faces {
+            let [i, j, l] = face.v;
+            let mut t = Triangle::default();
+            let p1 = pt(plane.verts[i]);
+            let p2 = pt(plane.verts[j]);
+            let p3 = pt(plane.verts[l]);
+            t.create(
+                Point::new(p1.x + dx, p1.y + dy),
+                Point::new(p2.x + dx, p2.y + dy),
+                Point::new(p3.x + dx, p3.y + dy),
+            );
+            t.color = rgba_to_argb(face.color);
+            t.shape_index = shape_index as i32;
+            t.id = (first + k) as i32;
+            triangles[first + k] = t;
+            k += 1;
+        }
+    }
+    k
 }
 
 /// Écrit le mesh d'une arme du catalogue dans la plage du vaisseau, à partir
@@ -603,7 +716,7 @@ fn build_vaisseau(
     let file = vaisseau_file();
     let comp = composition_mask(&file);
     // nombre de triangles alloués : la composition maximale (toujours + liés)
-    // + toutes les armes du catalogue (elles sont toujours visibles)
+    // + toutes les armes du catalogue + tous les propulseurs (toujours visibles)
     let max_faces: usize = file
         .planes
         .iter()
@@ -611,12 +724,19 @@ fn build_vaisseau(
         .filter(|(i, _)| comp.get(*i).copied().unwrap_or(false))
         .map(|(_, p)| p.faces.len())
         .sum::<usize>()
-        + weapons_face_count();
+        + weapons_face_count()
+        + thrusters_face_count();
     let (pivot, pt) =
         mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
     let weapons = vaisseau_weapons_with(
         VAISSEAU_WEAPONS,
         VAISSEAU_BULLET_SPAWNS,
+        scale,
+        orientation_degrees,
+        center_percent,
+    );
+    let thrusters = vaisseau_thrusters_with(
+        VAISSEAU_THRUSTERS,
         scale,
         orientation_degrees,
         center_percent,
@@ -650,7 +770,16 @@ fn build_vaisseau(
     shape.orientation = 0.0;
     shape.rotation = 0.0;
 
-    write_vaisseau(&file, shapes, triangles, shape_index, &pt, visible, &weapons);
+    write_vaisseau(
+        &file,
+        shapes,
+        triangles,
+        shape_index,
+        &pt,
+        visible,
+        &weapons,
+        &thrusters,
+    );
 
     let shape = &mut shapes[shape_index];
     compute_shape_center(shape, triangles);
@@ -694,13 +823,28 @@ pub fn rebuild_player_vaisseau(
         VAISSEAU_ORIENTATION_DEGREES,
         Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT),
     );
+    let thrusters = vaisseau_thrusters_with(
+        VAISSEAU_THRUSTERS,
+        VAISSEAU_SCALE,
+        VAISSEAU_ORIENTATION_DEGREES,
+        Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT),
+    );
     // reconstruction en place : toute la plage réservée est tuée puis
     // réécrite (les triangles des plans non visibles restent morts)
     let shape = &shapes[PLAYER_INDEX];
     for i in shape.first_triangle..=shape.last_triangle {
         triangles[i].life = 0;
     }
-    write_vaisseau(&file, shapes, triangles, PLAYER_INDEX, &pt, &visible, &weapons);
+    write_vaisseau(
+        &file,
+        shapes,
+        triangles,
+        PLAYER_INDEX,
+        &pt,
+        &visible,
+        &weapons,
+        &thrusters,
+    );
 
     let shape = &mut shapes[PLAYER_INDEX];
     compute_shape_center(shape, triangles);
@@ -1178,5 +1322,44 @@ mod tests {
             "90 % nez à droite, 10 % arrière à gauche : {:?}",
             pts
         );
+    }
+
+    #[test]
+    fn thrusters_follow_the_4_keys_order_and_sides() {
+        // `VAISSEAU_THRUSTERS` : 4 propulseurs ordonnés ↑ (arrière, -x local),
+        // ↓ (avant, +x local), ← et → (flancs) — chaque `position` (en % de la
+        // boîte englobante) convertie comme les emplacements de tir ; liste
+        // vide = repli (aucun propulseur).
+        let pts = vaisseau_thrusters_with(
+            VAISSEAU_THRUSTERS,
+            1.0,
+            0.0,
+            Point::new(50.0, 50.0),
+        );
+        assert_eq!(pts.len(), 4);
+        assert_eq!(pts[0].0.name, "ARRIÈRE");
+        assert_eq!(pts[1].0.name, "AVANT");
+        // pivot = centre de rotation (50/50) : l'origine du repère local
+        let p0 = &pts[0].1; // ↑ arrière
+        let p1 = &pts[1].1; // ↓ avant
+        let p2 = &pts[2].1; // ← (flanc gauche : -y local, axe y retourné)
+        let p3 = &pts[3].1; // → (flanc droit : +y local)
+        assert!(p0.x < 0.0 && p1.x > 0.0, "↑ derrière, ↓ devant : {:?} {:?}", p0, p1);
+        assert!(
+            (p0.y - p1.y).abs() < 1e-9,
+            "↑ et ↓ sur l'axe central (même y) : {:?} {:?}",
+            p0,
+            p1
+        );
+        // les flancs sont des positions libres (l'outil les déplace) : seul le
+        // côté est garanti — ← à gauche (-y), → à droite (+y)
+        assert!(
+            p2.y < 0.0 && p3.y > 0.0,
+            "← à gauche (-y), → à droite (+y) : {:?} {:?}",
+            p2,
+            p3
+        );
+        // liste vide = repli
+        assert!(vaisseau_thrusters_with(&[], 1.0, 0.0, Point::new(50.0, 50.0)).is_empty());
     }
 }

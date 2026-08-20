@@ -1289,9 +1289,16 @@ fn draw_element_dot(t: &Triangle, camera: Point, elements: &[Element], world: &W
 // ─── Poussée, débris, cargo, HUD ─────────────────────────────────────────────
 
 /// Effet de poussée : 3 cercles dégradés le long de `orientation + angle`
-/// (ex `ejectionFlow`). Angle `TAU/2` = avant (orange), `0` = recul (bleu).
+/// (ex `ejectionFlow`), partant d'un **point local du vaisseau** (position
+/// d'un propulseur, ex `vaisseau_thrusters`) tourné avec le vaisseau
+/// autour de son centre de rotation comme les sommets du mesh
+/// (`compute_real_positions`). Angle `TAU/2` = arrière (gaz de poussée,
+/// orange), `0` = avant (gaz de frein, bleu), `±TAU/4` = jets latéraux des
+/// rotations (← / →). L'éjection est courte : les cercles partent du point
+/// (pas de loin au-dessus de la forme).
 pub fn ejection_flow(
     shape: &Shape,
+    local: Point,
     angle: f64,
     flow_color: u32,
     camera: Point,
@@ -1300,13 +1307,17 @@ pub fn ejection_flow(
     // NB : comme l'original, les rayons et le jitter sont tronqués en entiers
     let u01 = rand::rand() as f64 / u32::MAX as f64; // [0,1)
     let f = (u01 * 2.0 - 1.0).trunc();
-    let r1 = (shape.radius + 3.0 + u01 * 3.0).trunc();
-    let r2 = r1 + 6.0;
+    let r1 = (4.0 + u01 * 3.0).trunc();
+    let r2 = r1 + 4.0;
     let r3 = r2 + 4.0;
     let c = (shape.orientation + angle).cos();
     let s = (shape.orientation + angle).sin();
-    let x = shape.position.x + shape.center.x + camera.x;
-    let y = shape.position.y + shape.center.y + camera.y;
+    // point local → monde : tourné autour du centre de rotation puis translaté
+    // (même calcul que les balles de `fire_bullet`, generate.rs)
+    let mut local = local;
+    local.rotate_around(Point::new(shape.center.x, shape.center.y), shape.orientation);
+    let x = shape.position.x + local.x + camera.x;
+    let y = shape.position.y + local.y + camera.y;
     let color = argb_to_color(flow_color);
 
     let mut p = Point::new(r1 * c + x, r1 * s + y);

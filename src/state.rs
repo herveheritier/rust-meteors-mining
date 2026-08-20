@@ -54,6 +54,11 @@ pub struct Player {
     pub thrusted: i32,
     /// Idem pour la poussée arrière.
     pub revert_thrusted: i32,
+    /// Compteur de frames du **jet latéral gauche** (touche ←, rotation) :
+    /// même principe que `thrusted` — le jet est dessiné tant qu'il est négatif.
+    pub rotate_left_thrusted: i32,
+    /// Compteur de frames du **jet latéral droit** (touche →, rotation).
+    pub rotate_right_thrusted: i32,
     /// Cooldown de tir en secondes restantes (0 = prêt à tirer).
     pub fire: f64,
     pub cargo_size: i32,
@@ -67,6 +72,8 @@ impl Default for Player {
             thrust: 0.0,
             thrusted: 0,
             revert_thrusted: 0,
+            rotate_left_thrusted: 0,
+            rotate_right_thrusted: 0,
             fire: 0.0,
             cargo_size: CARGO_SIZE,
             cargo_qty: 0,

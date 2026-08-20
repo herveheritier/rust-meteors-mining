@@ -270,14 +270,23 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   et **emplacements de départ des projectiles** : positions en % de la même
   boîte englobante (marquées d'un losange doré sur l'aperçu), **une balle
   part de chaque emplacement au tir** (Shift), tournée avec le vaisseau —
-  liste vide = un seul emplacement au centre de rotation ; sur l'aperçu, la
-  **molette** tourne le mesh (orientation), **Ctrl/Cmd + molette** zoome
-  (échelle) et le **clic** place le centre de rotation au point visé ;
-  constantes `VAISSEAU_JSON`, `VAISSEAU_SCALE`, `VAISSEAU_ORIENTATION_DEGREES`,
-  `VAISSEAU_CENTER_X/Y_PERCENT`, `VAISSEAU_BULLET_SPAWNS` de
-  `src/marketplace.rs`, lues par `src/vaisseau.rs` et `src/generate.rs` ; le
-  mesh choisi est embarqué au compile (`include_str!`), il doit exister dans
-  le projet ;
+  liste vide = un seul emplacement au centre de rotation ; et les
+  **propulseurs des éjections de gaz** des 4 touches de contrôle (marqués
+  d'un losange coloré + la touche, glissables sur l'aperçu) : **un mesh par
+  propulseur** (choisi dans le catalogue `assets/*.json`, comme le vaisseau),
+  avec son échelle, son orientation et sa position en % de la même boîte
+  englobante, ordre fixe ↑ (poussée avant, gaz orange à l'arrière),
+  ↓ (frein/recul, bleu à l'avant), ← et → (jets latéraux des rotations) —
+  le jeu dessine la poussée depuis ces propulseurs, tournés avec le
+  vaisseau ; sur l'aperçu, la **molette** tourne le mesh (orientation),
+  **Ctrl/Cmd + molette** zoome (échelle) et le **clic** place le centre de
+  rotation au point visé ; constantes `VAISSEAU_JSON`, `VAISSEAU_SCALE`,
+  `VAISSEAU_ORIENTATION_DEGREES`, `VAISSEAU_CENTER_X/Y_PERCENT`,
+  `VAISSEAU_BULLET_SPAWNS`, `VAISSEAU_THRUSTERS` (+ meshes de propulseurs
+  `VAISSEAU_THRUSTER_MESH_i`, `include_str!`) de
+  `src/marketplace.rs`, lues par `src/vaisseau.rs`, `src/generate.rs` et
+  `src/main.rs` ; le mesh choisi est embarqué au compile (`include_str!`),
+  il doit exister dans le projet ;
 - **gérer un catalogue d'armes** : chaque arme est un mesh posé **sur le
   vaisseau** à un emplacement de tir (`spawnIndex` — liste **contrainte**
   aux emplacements de la section « Départ des projectiles ») et tire sa
@@ -326,14 +335,15 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   `METEOR_VELOCITY_MAX`, `TRIANGLES_IN_SHAPE_*` / `TRIANGLE_*`,
   `INITIAL_MAX_METEOR_SHAPES`, `SHAPES_COUNT`), rangs de réputation
   `PROGRESSION_RANKS`, constantes `VAISSEAU_*` du vaisseau (réglages +
-  emplacements de tir `VAISSEAU_BULLET_SPAWNS` + catalogue d'armes
-  `VAISSEAU_WEAPONS` + meshes d'armes `VAISSEAU_WEAPON_MESH_i` /
-  `VAISSEAU_WEAPON_AMMO_MESH_i` + composition `VAISSEAU_PLANES_ALWAYS` /
-  `VAISSEAU_PLANE_LINKS`) et `COSMONAUTE_*` du
+  emplacements de tir `VAISSEAU_BULLET_SPAWNS` + propulseurs d'éjection de
+  gaz `VAISSEAU_THRUSTERS` (+ meshes `VAISSEAU_THRUSTER_MESH_i`) +
+  catalogue d'armes `VAISSEAU_WEAPONS` + meshes d'armes
+  `VAISSEAU_WEAPON_MESH_i` / `VAISSEAU_WEAPON_AMMO_MESH_i` + composition
+  `VAISSEAU_PLANES_ALWAYS` / `VAISSEAU_PLANE_LINKS`) et `COSMONAUTE_*` du
   cosmonaute EVA (dont `COSMONAUTE_PLANES`), types `ShipUpgrade` +
   `UpgradeTrack` + `ReputationRank` + `PlaneUpgradeTrack` +
-  `PlaneUpgradeLink` + `VaisseauWeapon` et lignes `FUEL_UPGRADE_TRACK` …
-  `CARGO_UPGRADE_TRACK`)
+  `PlaneUpgradeLink` + `VaisseauWeapon` + `VaisseauThruster` et lignes
+  `FUEL_UPGRADE_TRACK` … `CARGO_UPGRADE_TRACK`)
   dans le style exact du code du jeu ; on recompile ensuite
   (`cargo build --release` — les tests `cargo test` valident les nouvelles
   valeurs) et `src/scenario.rs` n'a plus besoin d'être modifié : il importe

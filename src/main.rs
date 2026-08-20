@@ -427,19 +427,44 @@ async fn main() {
             );
         }
 
-        // effet de poussée : le vaisseau a sa flamme classique (3 cercles
-        // orange en avant, bleu en recul) ; le cosmonaute EVA, lui, n'a qu'un
-        // **petit propulseur sur le dos** — une flamme animée, et pas de
-        // marche arrière (voir `render::draw_cosmonaut_thruster`)
-        if state.player.thrusted != 0 {
+        // effet de poussée : les gaz sortent des propulseurs configurés
+        // (`VAISSEAU_THRUSTERS` — ↑ orange à l'arrière, ↓ bleu
+        // à l'avant, ← et → jets latéraux pendant les rotations) ; le
+        // cosmonaute EVA, lui, n'a qu'un **petit propulseur sur le dos** —
+        // une flamme animée, et pas de marche arrière ni de jets latéraux
+        // (voir `render::draw_cosmonaut_thruster`)
+        if state.player.thrusted != 0 || state.player.revert_thrusted != 0
+            || state.player.rotate_left_thrusted != 0 || state.player.rotate_right_thrusted != 0
+        {
             if state.cosmonaut_active {
-                render::draw_cosmonaut_thruster(&shapes[pilot], camera, &state.world);
+                if state.player.thrusted != 0 {
+                    render::draw_cosmonaut_thruster(&shapes[pilot], camera, &state.world);
+                }
             } else {
-                render::ejection_flow(&shapes[pilot], TAU / 2.0, 0xFFFFA000, camera, &state.world);
+                // points locaux d'éjection des propulseurs (liste vide = repli
+                // au centre de rotation) et directions : ↑ arrière, ↓ avant,
+                // ← gauche, → droite
+                let jets = crate::vaisseau::vaisseau_thrusters();
+                let at = |i: usize, angle: f64, color: u32| {
+                    let local = jets
+                        .get(i)
+                        .map(|(_, p)| *p)
+                        .unwrap_or(shapes[pilot].center);
+                    render::ejection_flow(&shapes[pilot], local, angle, color, camera, &state.world);
+                };
+                if state.player.thrusted != 0 {
+                    at(0, TAU / 2.0, 0xFFFFA000);
+                }
+                if state.player.revert_thrusted != 0 {
+                    at(1, 0.0, 0xFF00A0FF);
+                }
+                if state.player.rotate_left_thrusted != 0 {
+                    at(2, -TAU / 4.0, 0xFFFF5AC8);
+                }
+                if state.player.rotate_right_thrusted != 0 {
+                    at(3, TAU / 4.0, 0xFF39FF88);
+                }
             }
-        }
-        if state.player.revert_thrusted != 0 && !state.cosmonaut_active {
-            render::ejection_flow(&shapes[pilot], 0.0, 0xFF00A0FF, camera, &state.world);
         }
 
         // débris

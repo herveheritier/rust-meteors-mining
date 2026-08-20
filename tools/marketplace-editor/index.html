@@ -192,12 +192,26 @@
   .hint { font-size: 11.5px; color: var(--muted); }
 
   .ship-preview-wrap { display: flex; gap: 14px; align-items: flex-start; }
+  /* carte vaisseau : l'aperçu reste **toujours visible** pendant le défilement
+     des réglages (sticky dans la carte, comme la barre latérale) — fond opaque
+     + ombre pour se détacher des sections qui défilent dessous, l'utilisateur
+     voit à la fois les paramètres et le vaisseau */
+  .ship-preview-wrap.sticky-preview {
+    position: sticky;
+    top: 10px;
+    z-index: 5;
+    background: var(--panel);
+    padding: 10px;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  }
   .ship-preview {
     background: #0a0d14;
     border: 1px solid var(--border-soft);
     border-radius: 6px;
-    width: 280px;
-    height: 200px;
+    width: 420px;
+    height: 280px;
     flex: none;
     cursor: crosshair;
     touch-action: none; /* la molette = rotation (Ctrl+molette = zoom), pas de défilement */
@@ -290,6 +304,8 @@
   .spawn-row .field { flex: 0 0 auto; }
   .spawn-row .field input { width: 64px; }
   .spawn-idx { color: var(--muted); font-size: 12px; width: 26px; }
+  /* libellé de la ligne « Éjection des gaz » (définition de la touche) */
+  .thrust-label { color: var(--muted); font-size: 12px; align-self: center; }
   /* ligne du catalogue d'armes : beaucoup de champs (8 par arme) — les champs
      se partagent la largeur disponible et passent à la ligne au lieu de
      déborder (scrolling horizontal) */
@@ -456,7 +472,10 @@
     (<code>VAISSEAU_JSON</code>, <code>VAISSEAU_SCALE</code>, <code>VAISSEAU_ORIENTATION_DEGREES</code>,
     <code>VAISSEAU_CENTER_X/Y_PERCENT</code>, <code>VAISSEAU_BULLET_SPAWNS</code> — emplacements de
     départ des projectiles, en % de la boîte englobante : une balle part de chaque emplacement au
-    tir, tournée avec le vaisseau ; vide = un seul emplacement au centre de rotation — et le
+    tir, tournée avec le vaisseau ; vide = un seul emplacement au centre de rotation —
+    <code>VAISSEAU_THRUSTERS</code> — éjections de gaz des 4 touches de contrôle (↑ poussée,
+    ↓ frein, ← → rotations) : mesh, échelle, orientation et position en % de la boîte englobante
+    par propulseur, utilisés par le jeu pour dessiner les propulseurs et la poussée (src/main.rs) — et le
     <b>catalogue d'armes</b> <code>VAISSEAU_WEAPONS</code> : chaque arme est un mesh posé sur le
     vaisseau à un emplacement de tir (<code>spawn_index</code> dans
     <code>VAISSEAU_BULLET_SPAWNS</code> — liste contrainte) et tire sa propre munition (mesh) ;
@@ -605,6 +624,16 @@ const DEFAULT_DATA = {
     // la boîte englobante de la composition (50/50 = centre), une balle part
     // de chaque emplacement. Vide = un seul emplacement au centre de rotation.
     bulletSpawns: [], // [{ x, y }, …]
+    // éjections de gaz (les 4 touches de contrôle) : un **propulseur** par
+    // touche — mesh (JSON), échelle, orientation et position en % de la boîte
+    // englobante, ordre fixe : ↑ arrière (gaz de poussée), ↓ avant (gaz de
+    // frein), ← flanc gauche, → flanc droit. Vide = repli du jeu (gaz classique).
+    thrusters: [
+      { name: "ARRIÈRE", asset: "assets/propulseur.json", scalePercent: 100, orientationDeg: 0, x: 6, y: 50 },
+      { name: "AVANT", asset: "assets/propulseur.json", scalePercent: 100, orientationDeg: 0, x: 94, y: 50 },
+      { name: "GAUCHE", asset: "assets/propulseur.json", scalePercent: 100, orientationDeg: 0, x: 77, y: 69 },
+      { name: "DROITE", asset: "assets/propulseur.json", scalePercent: 100, orientationDeg: 0, x: 79, y: 31 },
+    ],
     // catalogue d'armes : chaque arme est un mesh posé sur le vaisseau à un
     // emplacement de tir (`spawnIndex` dans bulletSpawns — liste contrainte,
     // la position de l'arme sur le vaisseau) et tire sa propre munition
@@ -1234,60 +1263,71 @@ function attachMeshInteractions(canvas, cfg) {
     afterEdit();
   });
 
-  // glisser-déposer des emplacements de tir (vaisseau uniquement — le
-  // cosmonaute n'a pas de `bulletSpawns`) : mousedown sur un losange doré =
+  // glisser-déposer des emplacements (vaisseau uniquement — le cosmonaute
+  // n'a ni `bulletSpawns` ni `thrusters`) : mousedown sur un losange =
   // début de drag (le losange suit la souris, X/Y % mis à jour en direct) ;
-  // liste vide = le losange de repli au pivot, glissé, crée le premier
-  // emplacement. Le clic simple sur un losange ne déplace pas le centre de
-  // rotation (un clic en dehors des losanges conserve ce comportement).
+  // liste d'emplacements de tir vide = le losange de repli au pivot, glissé,
+  // crée le premier emplacement. Les 4 éjections de gaz se déplacent comme
+  // les emplacements de tir. Le clic simple sur un losange ne déplace pas le
+  // centre de rotation (un clic en dehors conserve ce comportement).
   canvas.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return;
     const mesh = meshCache && meshCache.mesh;
-    if (!mesh || !Array.isArray(cfg.bulletSpawns)) return;
+    if (!mesh) return;
     const rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     const px = (e.clientX - rect.left) * (canvas.width / rect.width);
     const py = (e.clientY - rect.top) * (canvas.height / rect.height);
-    const pts = spawnScreenPoints(canvas, mesh, cfg);
-    let hit = -1, best = 10; // rayon de saisie : 10 px autour du losange
-    for (let i = 0; i < pts.length; i++) {
-      const d = Math.hypot(pts[i].sx - px, pts[i].sy - py);
-      if (d < best) { best = d; hit = i; }
+    let best = 10, hit = null; // rayon de saisie : 10 px autour du losange
+    if (Array.isArray(cfg.bulletSpawns)) {
+      for (const p of spawnScreenPoints(canvas, mesh, cfg)) {
+        const d = Math.hypot(p.sx - px, p.sy - py);
+        if (d < best) { best = d; hit = { kind: "spawn", p }; }
+      }
     }
-    if (hit < 0) return; // pas sur un emplacement : le clic reste « centre »
+    if (Array.isArray(cfg.thrusters)) {
+      for (const p of thrustScreenPoints(canvas, mesh, cfg)) {
+        const d = Math.hypot(p.sx - px, p.sy - py);
+        if (d < best) { best = d; hit = { kind: "thrust", p }; }
+      }
+    }
+    if (!hit) return; // pas sur un emplacement : le clic reste « centre »
     e.preventDefault();
     suppressCenterClick = true;
-    const p = pts[hit];
-    if (p.fallback) {
+    if (hit.kind === "thrust") {
+      activeSpawnDrag = { canvas, cfg, kind: "thrust", index: hit.p.index, moved: false, created: false };
+    } else if (hit.p.fallback) {
       // liste vide : le glisser du losange de repli crée le premier emplacement
       if (!Array.isArray(cfg.bulletSpawns)) cfg.bulletSpawns = [];
       cfg.bulletSpawns.push({ x: cfg.centerXPercent, y: cfg.centerYPercent });
-      activeSpawnDrag = { canvas, cfg, index: cfg.bulletSpawns.length - 1, moved: false, created: true };
+      activeSpawnDrag = { canvas, cfg, kind: "spawn", index: cfg.bulletSpawns.length - 1, moved: false, created: true };
     } else {
-      activeSpawnDrag = { canvas, cfg, index: p.index, moved: false, created: false };
+      activeSpawnDrag = { canvas, cfg, kind: "spawn", index: hit.p.index, moved: false, created: false };
     }
   });
 }
 
-// Glisser-déposer des emplacements de tir : état global partagé entre le
-// mousedown du canvas (attachMeshInteractions) et les écouteurs fenêtre
-// ci-dessous (attachés une seule fois — chaque rendu recrée le canvas, pas
-// la fenêtre). Le déplacement met à jour X/Y % en direct (aperçu redessiné
-// sans re-render) ; au lâcher, afterEdit() synchronise les champs.
+// Glisser-déposer des emplacements : état global partagé entre le mousedown
+// du canvas (attachMeshInteractions) et les écouteurs fenêtre ci-dessous
+// (attachés une seule fois — chaque rendu recrée le canvas, pas la fenêtre).
+// Le déplacement met à jour X/Y % en direct (aperçu redessiné sans re-render) ;
+// au lâcher, afterEdit() synchronise les champs.
 let activeSpawnDrag = null;
 
 window.addEventListener("mousemove", (e) => {
   const d = activeSpawnDrag;
   if (!d) return;
   const mesh = meshCache && meshCache.mesh;
-  if (!mesh || !d.cfg.bulletSpawns[d.index]) return;
+  if (!mesh) return;
+  const list = d.kind === "thrust" ? d.cfg.thrusters : d.cfg.bulletSpawns;
+  if (!Array.isArray(list) || !list[d.index]) return;
   const rect = d.canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   const px = (e.clientX - rect.left) * (d.canvas.width / rect.width);
   const py = (e.clientY - rect.top) * (d.canvas.height / rect.height);
   const pt = pixelToMeshPercent(d.canvas, mesh, d.cfg, px, py);
   if (!pt) return;
-  const sp = d.cfg.bulletSpawns[d.index];
+  const sp = list[d.index];
   sp.x = Math.max(0, Math.min(100, Math.round(pt[0])));
   sp.y = Math.max(0, Math.min(100, Math.round(pt[1])));
   d.moved = true;
@@ -1300,6 +1340,23 @@ window.addEventListener("mouseup", () => {
   activeSpawnDrag = null;
   if (d.moved || d.created) afterEdit(); // synchronise champs + sauvegarde
 });
+
+// Éjections de gaz du vaisseau — un marqueur par touche de contrôle
+// (↑ poussée avant, ↓ frein/recul, ← rotation gauche, → rotation droite) :
+// position **par défaut** en % de la boîte englobante de la composition (même
+// repère que les emplacements de tir, y vers le haut dans l'éditeur), couleur,
+// libellé et **direction d'éjection** (`angle` dans le repère de l'éditeur :
+// ↑ à l'arrière → gaz vers l'arrière, ↓ à l'avant → gaz vers l'avant, ← sur
+// le flanc gauche → gaz vers la gauche, → sur le flanc droit → gaz vers la
+// droite). Positions éditables (`cfg.thrusters`, exportées dans
+// `VAISSEAU_THRUSTERS`, un propulseur par touche) ; la direction, elle, est
+// fixe.
+const THRUST_MARKERS = [
+  { key: "↑", x: 6, y: 50, color: "#ffa020", angle: Math.PI, label: "poussée avant" },
+  { key: "↓", x: 94, y: 50, color: "#40a0ff", angle: 0, label: "frein / recul" },
+  { key: "←", x: 50, y: 94, color: "#ff5ac8", angle: Math.PI / 2, label: "rotation gauche" },
+  { key: "→", x: 50, y: 6, color: "#39ff88", angle: -Math.PI / 2, label: "rotation droite" },
+];
 
 function drawMeshPreview(canvas, mesh, cfg) {
   const ctx = canvas.getContext("2d");
@@ -1396,6 +1453,83 @@ function drawMeshPreview(canvas, mesh, cfg) {
         diamond(p.sx, p.sy, true);
       }
     }
+  }
+
+  // éjections de gaz (vaisseau) : 4 propulseurs — où les gaz sortent du
+  // vaisseau pour chaque touche de contrôle (↑ poussée avant, ↓ frein/recul,
+  // ← rotation gauche, → rotation droite). Chaque propulseur a son **mesh**
+  // (dessiné à sa position, transformé avec sa propre échelle/orientation),
+  // sa position éditable en % de la composition (`VAISSEAU_THRUSTERS`) et sa
+  // direction d'éjection fixe (gouttelettes). Glisser un propulseur le déplace.
+  if (Array.isArray(cfg.thrusters) && mesh.planes) {
+    const bw = (bounds.maxx - bounds.minx) || 1;
+    const bh = (bounds.maxy - bounds.miny) || 1;
+    // point local (repère du vaisseau transformé) d'une position d'écran
+    const localOf = sp => [(sp.sx - ox) / s, (sp.sy - oy) / s];
+    const pts = thrustScreenPoints(canvas, mesh, cfg);
+    THRUST_MARKERS.forEach((m, i) => {
+      const sp = pts[i];
+      if (!sp) return;
+      const sx = sp.sx, sy = sp.sy;
+      const t = cfg.thrusters[i];
+      // mesh du propulseur à la position (si chargé) — sinon losange + touche
+      const tm = t && weaponMeshPool[String(t.asset)];
+      if (tm && tm.tris && tm.tris.length > 0) {
+        const view = meshTransform(
+          { scalePercent: t.scalePercent, orientationDeg: t.orientationDeg,
+            centerXPercent: 50, centerYPercent: 50 },
+          tm.tris
+        );
+        const [lx, ly] = localOf(sp);
+        for (const tri of tm.tris) {
+          const pts2 = [tri.a, tri.b, tri.c].map(vtx => {
+            const lp = view.tf(vtx);
+            return px([lp[0] - view.pivot[0] + lx, lp[1] - view.pivot[1] + ly]);
+          });
+          ctx.beginPath();
+          ctx.moveTo(pts2[0][0], pts2[0][1]);
+          ctx.lineTo(pts2[1][0], pts2[1][1]);
+          ctx.lineTo(pts2[2][0], pts2[2][1]);
+          ctx.closePath();
+          const c = tri.color;
+          const a = Math.max(0, Math.min(1, c.length > 3 ? c[3] : 1));
+          ctx.fillStyle = "rgba(" + Math.round(c[0] * 255) + "," + Math.round(c[1] * 255) + "," +
+            Math.round(c[2] * 255) + "," + a + ")";
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.2)";
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      } else {
+        // mesh non chargé : losange coloré à la position + touche en dessous
+        ctx.fillStyle = m.color;
+        ctx.strokeStyle = "rgba(0,0,0,0.55)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 4); ctx.lineTo(sx + 4, sy); ctx.lineTo(sx, sy + 4); ctx.lineTo(sx - 4, sy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#e8ecf5";
+        ctx.font = "9px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(m.key, sx, sy + 14);
+      }
+      // gouttelettes de gaz dans la direction d'éjection (tournée avec le
+      // vaisseau par tf) — depuis la position du propulseur
+      const ex = bounds.minx + (sp.x / 100) * bw;
+      const ey = bounds.miny + (sp.y / 100) * bh;
+      const [gx, gy] = px(tf([ex + Math.cos(m.angle) * 7, ey + Math.sin(m.angle) * 7]));
+      const gdx = gx - sx, gdy = gy - sy;
+      const gl = Math.hypot(gdx, gdy) || 1;
+      ctx.fillStyle = m.color;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.arc(sx + (gdx / gl) * 6, sy + (gdy / gl) * 6, 1.7, 0, Math.PI * 2);
+      ctx.arc(sx + (gdx / gl) * 10, sy + (gdy / gl) * 10, 1.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    });
   }
 
   // catalogue d'armes (vaisseau) : chaque arme est dessinée **sur le
@@ -1505,6 +1639,46 @@ function spawnScreenPoints(canvas, mesh, cfg) {
   return out;
 }
 
+// Positions d'écran (pixels du canvas) des **propulseurs** d'éjection de gaz
+// du vaisseau (`VAISSEAU_THRUSTERS`) — même géométrie que spawnScreenPoints.
+// Toujours 4 points (un par touche ↑↓←→, ordre fixe) ; une position
+// manquante dans `cfg.thrusters` retombe sur la valeur par défaut de
+// THRUST_MARKERS. Sert au dessin et au glisser-déposer.
+function thrustScreenPoints(canvas, mesh, cfg) {
+  const out = [];
+  if (!mesh || !Array.isArray(cfg.thrusters)) return out;
+  const tris = compositionTris(cfg, mesh);
+  if (!tris || tris.length === 0) return out;
+  const view = meshTransform(cfg, tris);
+  const W = canvas.width, H = canvas.height;
+  let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
+  for (const t of tris) {
+    for (const v of [t.a, t.b, t.c]) {
+      const p = view.tf(v);
+      bx1 = Math.min(bx1, p[0]); by1 = Math.min(by1, p[1]);
+      bx2 = Math.max(bx2, p[0]); by2 = Math.max(by2, p[1]);
+    }
+  }
+  const pad = 12;
+  const w = bx2 - bx1 || 1, h = by2 - by1 || 1;
+  const s = Math.min((W - 2 * pad) / w, (H - 2 * pad) / h);
+  const ox = W / 2 - ((bx1 + bx2) / 2) * s;
+  const oy = H / 2 - ((by1 + by2) / 2) * s;
+  const toPx = p => [ox + p[0] * s, oy + p[1] * s];
+  const b = view.bounds;
+  const bw = (b.maxx - b.minx) || 1, bh = (b.maxy - b.miny) || 1;
+  THRUST_MARKERS.forEach((m, i) => {
+    const t = cfg.thrusters[i];
+    const x = t && Number.isFinite(t.x) ? t.x : m.x;
+    const y = t && Number.isFinite(t.y) ? t.y : m.y;
+    const ex = b.minx + (x / 100) * bw;
+    const ey = b.miny + (y / 100) * bh;
+    const [sx, sy] = toPx(view.tf([ex, ey]));
+    out.push({ x, y, sx, sy, index: i });
+  });
+  return out;
+}
+
 // Mesh de l'aperçu affiché pour cette carte (cache de `ensureMesh`) — la
 // composition des plans s'applique à ce mesh (un mesh chargé en local, ex
 // « Charger un mesh », compte aussi).
@@ -1518,14 +1692,19 @@ async function refreshMeshPreview(cfg, canvasId) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const mesh = await ensureMesh(cfg.asset);
-  // vaisseau : les meshes du catalogue d'armes sont chargés en parallèle
-  // (chaque arme est dessinée sur l'aperçu à son emplacement)
+  // vaisseau : les meshes du catalogue d'armes et des propulseurs sont
+  // chargés en parallèle (chaque arme / propulseur est dessiné sur l'aperçu
+  // à son emplacement)
   if (canvasId === "ship-preview") {
-    const weapons = Array.isArray(cfg.weapons) ? cfg.weapons : [];
     const assets = [];
+    const weapons = Array.isArray(cfg.weapons) ? cfg.weapons : [];
     for (const w of weapons) {
       if (String(w.asset)) assets.push(ensureWeaponMesh(w.asset));
       if (String(w.ammoAsset)) assets.push(ensureWeaponMesh(w.ammoAsset));
+    }
+    const thrusters = Array.isArray(cfg.thrusters) ? cfg.thrusters : [];
+    for (const t of thrusters) {
+      if (t && String(t.asset)) assets.push(ensureWeaponMesh(t.asset));
     }
     await Promise.all(assets);
   }
@@ -1833,12 +2012,12 @@ function meshCard(opts) {
   card.appendChild(h);
   card.appendChild(el("p", "desc", opts.desc));
 
-  const wrap = el("div", "ship-preview-wrap");
+  const wrap = el("div", "ship-preview-wrap" + (opts.stickyPreview ? " sticky-preview" : ""));
   const canvas = document.createElement("canvas");
   canvas.id = opts.canvasId;
   canvas.className = "ship-preview";
-  canvas.width = 280;
-  canvas.height = 200;
+  canvas.width = 360;
+  canvas.height = 240;
   // souris : clic = centre de rotation, molette = rotation, Ctrl+molette = zoom
   attachMeshInteractions(canvas, cfg);
   wrap.appendChild(canvas);
@@ -1865,6 +2044,11 @@ function meshCard(opts) {
   // catalogue d'armes (vaisseau uniquement) : chaque arme est un mesh posé
   // sur le vaisseau à un emplacement de tir et tire sa propre munition
   if (opts.weapons) card.appendChild(weaponsSection(cfg, opts));
+
+  // éjection des gaz (vaisseau uniquement) : 4 propulseurs (mesh, échelle,
+  // orientation, position), un par touche de contrôle (↑ ↓ ← →) — exportés
+  // dans `VAISSEAU_THRUSTERS`
+  if (opts.thrust) card.appendChild(thrustSection(cfg));
 
   // composition des plans (vaisseau : liens vers les lignes d'atelier)
   card.appendChild(compositionSection(cfg, currentMeshFor(cfg), opts));
@@ -1923,6 +2107,68 @@ function spawnsSection(cfg, opts) {
       afterEdit();
     });
     list.appendChild(add);
+  };
+  render();
+  sec.appendChild(list);
+  return sec;
+}
+
+// Section « Éjection des gaz » du vaisseau (4 touches de contrôle) : un point
+// par touche — où les gaz sortent du vaisseau, positions en % de la boîte
+// englobante de la composition (50/50 = centre), tournées avec le vaisseau.
+// Ordre fixe : ↑ poussée avant (gaz orange à l'arrière), ↓ frein/recul (bleu
+// à l'avant), ← rotation gauche, → rotation droite (jets latéraux). Chaque
+// propulseur a son **mesh** (JSON), son échelle, son orientation et sa
+// position en % de la boîte englobante. Réglage souris : sur l'aperçu,
+// glisser un propulseur le déplace (la direction d'éjection, elle, est
+// fixe). Exportés dans `VAISSEAU_THRUSTERS`.
+function thrustSection(cfg) {
+  const sec = el("section", "card-section");
+  const h = el("h3");
+  h.appendChild(el("span", "dot", "", { style: "background:#ffa020" }));
+  h.appendChild(document.createTextNode("Éjection des gaz (4 touches)"));
+  h.appendChild(el("span", "const", "VAISSEAU_THRUSTERS"));
+  sec.appendChild(h);
+  sec.appendChild(el("p", "desc",
+    "Un **propulseur** par touche de contrôle — mesh (JSON, dessiné sur le vaisseau à sa " +
+    "position), échelle, orientation et position en % de la boîte englobante de la composition " +
+    "(50/50 = centre), tournés avec le vaisseau : <b>↑</b> poussée avant (gaz orange à " +
+    "l'arrière), <b>↓</b> frein/recul (bleu à l'avant), <b>←</b> et <b>→</b> jets latéraux " +
+    "pendant les rotations. <b>Sur l'aperçu : glisser un propulseur le déplace</b> " +
+    "(gouttelettes = direction de l'éjection)."));
+
+  const list = el("div", "spawns-list");
+  const render = () => {
+    list.textContent = "";
+    if (!Array.isArray(cfg.thrusters)) return;
+    THRUST_MARKERS.forEach((m, i) => {
+      const t = cfg.thrusters[i];
+      if (!t) return;
+      const row = el("div", "spawn-row weapon-row");
+      const sw = el("span", "spawn-idx", m.key, { style: "color:" + m.color });
+      row.appendChild(sw);
+      // nom du propulseur
+      const name = el("input", "weapon-name");
+      name.value = t.name || "";
+      name.placeholder = "Nom";
+      name.addEventListener("input", () => { t.name = name.value; afterEdit(); });
+      row.appendChild(field("Nom", "ship-thrust-" + i + "-name", name));
+      // mesh du propulseur
+      const mesh = meshAssetInput(t, "ship-thrust-" + i, undefined, "asset");
+      row.appendChild(field("Mesh (JSON)", "ship-thrust-" + i + "-asset", mesh));
+      // échelle et orientation
+      row.appendChild(field("Échelle (%)", "ship-thrust-" + i + "-scale",
+        meshNumberInput(t, "ship-thrust-" + i, "scalePercent", 1, 1000)));
+      row.appendChild(field("Orientation (°)", "ship-thrust-" + i + "-orient",
+        meshNumberInput(t, "ship-thrust-" + i, "orientationDeg", -360, 360)));
+      // position (X %, Y %) — glissable sur l'aperçu
+      row.appendChild(field("X (%)", "ship-thrust-" + i + "-x",
+        meshNumberInput(t, "ship-thrust-" + i, "x", 0, 100)));
+      row.appendChild(field("Y (%)", "ship-thrust-" + i + "-y",
+        meshNumberInput(t, "ship-thrust-" + i, "y", 0, 100)));
+      row.appendChild(el("span", "thrust-label", m.label));
+      list.appendChild(row);
+    });
   };
   render();
   sec.appendChild(list);
@@ -2032,24 +2278,31 @@ function shipCard() {
     links: true, // les plans peuvent être liés aux lignes d'atelier (Progression)
     spawns: true, // emplacements de départ des projectiles (VAISSEAU_BULLET_SPAWNS)
     weapons: true, // catalogue d'armes (VAISSEAU_WEAPONS)
+    thrust: true, // éjections de gaz des 4 touches (VAISSEAU_THRUSTERS)
+    stickyPreview: true, // l'aperçu reste visible pendant le défilement des réglages
     defaultTrack: "cargo",
     desc: "Mesh du vaisseau (format « meshes-designer », assets/*.json), échelle, orientation du nez, " +
-      "centre de rotation, **emplacements de tir** et **composition des plans** — constantes " +
-      "VAISSEAU_JSON / VAISSEAU_SCALE / VAISSEAU_ORIENTATION_DEGREES / VAISSEAU_CENTER_X/Y_PERCENT / " +
-      "VAISSEAU_BULLET_SPAWNS / VAISSEAU_PLANES_ALWAYS / VAISSEAU_PLANE_LINKS de src/marketplace.rs " +
-      "(lues par src/vaisseau.rs et src/generate.rs).",
+      "centre de rotation, **emplacements de tir**, **éjections de gaz** (propulseurs) et " +
+      "**composition des plans** — constantes VAISSEAU_JSON / VAISSEAU_SCALE / " +
+      "VAISSEAU_ORIENTATION_DEGREES / VAISSEAU_CENTER_X/Y_PERCENT / VAISSEAU_BULLET_SPAWNS / " +
+      "VAISSEAU_THRUSTERS / VAISSEAU_PLANES_ALWAYS / VAISSEAU_PLANE_LINKS de src/marketplace.rs " +
+      "(lues par src/vaisseau.rs, src/generate.rs et src/main.rs).",
     compositionHint: "Chaque plan du mesh est <b>toujours visible</b>, <b>exclu</b> (jamais construit) ou " +
       "<b>lié à une ligne d'atelier</b> (FUEL TANK / MAGAZINE / CARGO BAY) : un plan lié n'apparaît en " +
       "jeu qu'à partir du niveau indiqué — l'achat d'une extension reconstruit le vaisseau. L'aperçu " +
       "montre la composition complète ; le centre de rotation est calculé dessus, il reste donc stable " +
       "à tous les niveaux. Liste vides à l'export = tous les plans (repli).",
-    hint: "L'aperçu montre le vaisseau tel qu'il volera (nez aligné sur l'avant, axe y du jeu). " +
-      "Orientation = angle du nez du mesh dans l'éditeur : 0 = nez vers la droite, +90 = vers le haut — " +
-      "le jeu tourne le mesh pour le ramener nez à droite. Le centre de rotation est le pivot autour " +
-      "duquel le vaisseau pivote (50/50 = centre de la boîte englobante de la composition). Sur " +
-      "l'aperçu : <b>glisser un losange doré = déplacer un emplacement de tir</b> (liste vide : " +
-      "le losange de repli au pivot crée le premier), <b>molette = rotation</b> (orientation), " +
-      "<b>Ctrl/Cmd + molette = zoom</b> (échelle), <b>clic = centre de rotation au point visé</b>.",
+    hint: "L'aperçu montre le vaisseau tel qu'il volera (nez aligné sur l'avant, axe y du jeu), " +
+      "agrandi pour suivre les réglages en direct. Les **propulseurs** des touches ↑ ↓ ← → sont " +
+      "dessinés sur le vaisseau (meshes, échelle et orientation éditables — VAISSEAU_THRUSTERS) ; " +
+      "le jeu dessine la poussée à ces emplacements. Orientation = angle du nez du mesh dans " +
+      "l'éditeur : 0 = nez vers la droite, +90 = vers le haut — le jeu tourne le mesh pour le " +
+      "ramener nez à droite. Le centre de rotation est le pivot autour duquel le vaisseau pivote " +
+      "(50/50 = centre de la boîte englobante de la composition). Sur l'aperçu : <b>glisser un " +
+      "losange doré = déplacer un emplacement de tir</b>, <b>glisser un propulseur = déplacer " +
+      "une éjection de gaz</b> (liste d'emplacements de tir vide : le losange de repli au pivot " +
+      "crée le premier), <b>molette = rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> " +
+      "(échelle), <b>clic = centre de rotation au point visé</b>.",
   });
 }
 
@@ -2675,6 +2928,34 @@ pub struct VaisseauWeapon {
     /// l'éditeur — la munition part nez en avant.
     pub ammo_orientation_degrees: f64,
 }
+
+/// Une éjection de gaz du vaisseau (les 4 touches de contrôle de la
+/// poussée/orientation) : mesh du **propulseur** posé **sur le vaisseau** à
+/// une position (en **pourcentage de la boîte englobante de la composition**,
+/// 50/50 = centre, repère du mesh de l'éditeur, y vers le haut), avec sa
+/// propre échelle et orientation. Le gaz (flamme) sort de la position, dans
+/// la direction d'éjection correspondant à la touche — index 0 = **↑**
+/// (poussée avant, gaz orange à l'arrière), 1 = **↓** (frein/recul, gaz bleu
+/// à l'avant), 2 = **←** (rotation gauche), 3 = **→** (rotation droite).
+/// Générée par l'outil de gestion. Le champ \`name\` n'est lu que par les
+/// tests et l'outil — \`dead_code\` quand la liste est vide.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub struct VaisseauThruster {
+    /// Nom du propulseur (outil, export).
+    pub name: &'static str,
+    /// Mesh du propulseur — fichier « meshes-designer » embarqué au compile.
+    pub mesh: &'static str,
+    /// Échelle du propulseur (multiplicateur des sommets du mesh) : 1.0 = 100 %.
+    pub scale: f64,
+    /// Orientation du propulseur (degrés) : angle de l'avant du mesh dans
+    /// l'éditeur (0 = avant vers la droite, +90 = vers le haut) — le mesh est
+    /// tourné de −orientation à la construction.
+    pub orientation_degrees: f64,
+    /// Position sur le vaisseau : en % de la boîte englobante de la
+    /// composition (50/50 = centre), dans le repère de l'éditeur.
+    pub position: (f64, f64),
+}
 `;
 
 // Constantes économiques du scénario Progression (valeur des gemmes, coûts
@@ -2756,6 +3037,57 @@ function spawnsExport(cfg) {
     .join(", ") + "]";
 }
 
+// Export Rust des propulseurs d'éjection de gaz (`VAISSEAU_THRUSTERS`) : les
+// meshes sont embarqués au compile (`include_str!`, un par propulseur :
+// `VAISSEAU_THRUSTER_MESH_i`) et la liste référence ces constantes avec la
+// position en % (ordre fixe ↑, ↓, ←, →). Vide → liste vide (repli du jeu :
+// gaz classique au centre de rotation). Renvoie un tableau de lignes Rust.
+function thrustersConsts(cfg) {
+  const thrusters = Array.isArray(cfg.thrusters) ? cfg.thrusters : [];
+  if (thrusters.length === 0) {
+    return [
+      "/// Éjections de gaz du vaisseau — 4 propulseurs, un par touche de contrôle",
+      "/// (ordre fixe : ↑ arrière, ↓ avant, ← flanc gauche, → flanc droit). **Liste",
+      "/// vide = repli** : pas de propulseur, le gaz classique sort du centre de",
+      "/// rotation (comportement d'origine). Générée par l'outil de gestion.",
+      "pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[];",
+    ];
+  }
+  const lines = [];
+  const norm = a => String(a).replace(/^(\.\.?\/)+/, "");
+  thrusters.forEach((t, i) => {
+    const meshPath = norm(t.asset || "assets/propulseur.json");
+    lines.push(
+      "/// Mesh du propulseur « " + rustEscape(String(t.name || ("PROPULSEUR " + (i + 1)))) + " » (VAISSEAU_THRUSTERS[" + i + "]) — embarqué au compile.",
+      "pub const VAISSEAU_THRUSTER_MESH_" + i + ": &str = include_str!(\"../" + meshPath + "\");",
+      "",
+    );
+  });
+  lines.push(
+    "/// Éjections de gaz du vaisseau — 4 propulseurs, un par touche de contrôle",
+    "/// (ordre fixe : ↑ arrière, ↓ avant, ← flanc gauche, → flanc droit). Chaque",
+    "/// propulseur est un mesh posé **sur le vaisseau** à sa position (le gaz sort",
+    "/// de là, dans la direction d'éjection correspondante — src/main.rs).",
+    "/// **Liste vide = repli** : pas de propulseur, le gaz classique sort du",
+    "/// centre de rotation (comportement d'origine). Générée par l'outil de gestion.",
+    "pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[",
+  );
+  thrusters.forEach((t, i) => {
+    lines.push(
+      "    VaisseauThruster {",
+      "        name: \"" + rustEscape(String(t.name || ("PROPULSEUR " + (i + 1)))) + "\",",
+      "        mesh: VAISSEAU_THRUSTER_MESH_" + i + ",",
+      "        scale: " + fmtFloat(Math.max(1, Number(t.scalePercent) || 100) / 100) + ",",
+      "        orientation_degrees: " + fmtFloat(Number(t.orientationDeg) || 0) + ",",
+      "        position: (" + fmtFloat(Math.max(0, Math.min(100, Number(t.x) || 0))) + ", "
+        + fmtFloat(Math.max(0, Math.min(100, Number(t.y) || 0))) + "),",
+      "    },",
+    );
+  });
+  lines.push("];");
+  return lines;
+}
+
 // Export Rust d'une liste d'indices de plans (composition) : les plans
 // « always » uniquement (les plans « upgrade » partent dans
 // `VAISSEAU_PLANE_LINKS`, les exclus dans aucune liste — le jeu ne les
@@ -2829,6 +3161,8 @@ function shipConsts() {
     "/// vide = un seul emplacement au centre de rotation** (repli :",
     "/// comportement d'origine). Générée par l'outil de gestion.",
     "pub const VAISSEAU_BULLET_SPAWNS: &[(f64, f64)] = " + spawnsExport(s) + ";",
+    "",
+    ...thrustersConsts(s),
     "",
     ...weaponsConsts(s),
     "",
@@ -3410,6 +3744,33 @@ function parseRust(text) {
     }
     out.ship.bulletSpawns = spawns; // vide = &[] → un seul emplacement au centre
   }
+  // éjections de gaz : meshes des propulseurs (`VAISSEAU_THRUSTER_MESH_i`) et
+  // liste `VAISSEAU_THRUSTERS` (ordre fixe ↑, ↓, ←, →)
+  const thrusterMeshes = {};
+  const tmRe = /pub const VAISSEAU_THRUSTER_MESH_(\d+): &str = include_str!\("([^"]+)"\)/g;
+  let tm;
+  while ((tm = tmRe.exec(text)) !== null) thrusterMeshes[tm[1]] = tm[2].replace(/^\.\.\//, "");
+  const thrustBlock = grab(/pub const VAISSEAU_THRUSTERS: &\[VaisseauThruster\] = &\[([^\]]*)\]/);
+  if (thrustBlock) {
+    const names = [...thrustBlock.matchAll(/name: "([^"]+)"/g)].map(m => m[1]);
+    const meshes = [...thrustBlock.matchAll(/mesh: VAISSEAU_THRUSTER_MESH_(\d+)/g)].map(m => m[1]);
+    const scales = [...thrustBlock.matchAll(/scale: ([0-9.]+)/g)].map(m => m[1]);
+    const orients = [...thrustBlock.matchAll(/orientation_degrees: (-?[0-9.]+)/g)].map(m => m[1]);
+    const posRe = /\(\s*(-?[0-9.]+)\s*,\s*(-?[0-9.]+)\s*\)/g;
+    const positions = [];
+    let m;
+    while ((m = posRe.exec(thrustBlock)) !== null) positions.push([m[1], m[2]]);
+    if (positions.length === 4) {
+      out.ship.thrusters = positions.map((p, i) => ({
+        name: names[i] || "PROPULSEUR " + (i + 1),
+        asset: thrusterMeshes[meshes[i]] ? "assets/" + thrusterMeshes[meshes[i]] : "assets/propulseur.json",
+        scalePercent: Math.round((parseFloat(scales[i]) || 1) * 100),
+        orientationDeg: parseFloat(orients[i]) || 0,
+        x: parseFloat(p[0]),
+        y: parseFloat(p[1]),
+      }));
+    }
+  }
   // catalogue d'armes : meshes (arme + munition, include_str!) et liste
   // `VAISSEAU_WEAPONS` — chaque arme référence ses constantes par index
   const weaponMeshes = {};
@@ -3628,6 +3989,21 @@ function normalize(parsed) {
       }))
       .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
   }
+  // éjections de gaz : toujours 4 propulseurs (ordre ↑↓←→) — les valeurs
+  // manquantes ou invalides retombent sur les défauts (mesh propulseur)
+  out.ship.thrusters = THRUST_MARKERS.map((m, i) => {
+    const p = Array.isArray(ship.thrusters) ? ship.thrusters[i] : null;
+    return {
+      name: p && typeof p.name === "string" && p.name ? p.name : (m.label === "poussée avant" ? "ARRIÈRE" : m.label === "frein / recul" ? "AVANT" : m.label === "rotation gauche" ? "GAUCHE" : "DROITE"),
+      asset: p && typeof p.asset === "string" && p.asset ? p.asset : "assets/propulseur.json",
+      scalePercent: Number.isFinite(p && p.scalePercent)
+        ? Math.max(1, Math.min(1000, Math.round(p.scalePercent)))
+        : 100,
+      orientationDeg: Number.isFinite(p && p.orientationDeg) ? p.orientationDeg : 0,
+      x: Number.isFinite(p && p.x) ? Math.max(0, Math.min(100, p.x)) : m.x,
+      y: Number.isFinite(p && p.y) ? Math.max(0, Math.min(100, p.y)) : m.y,
+    };
+  });
   // catalogue d'armes : mesh de l'arme + munition (assets, échelles,
   // orientations) et emplacement contraint aux emplacements de tir
   if (Array.isArray(ship.weapons)) {

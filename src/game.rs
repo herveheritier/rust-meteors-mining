@@ -350,6 +350,13 @@ pub fn update(
     if state.player.revert_thrusted != 0 {
         state.player.revert_thrusted += 1;
     }
+    // idem pour les jets latéraux de rotation (touches ← et →)
+    if state.player.rotate_left_thrusted != 0 {
+        state.player.rotate_left_thrusted += 1;
+    }
+    if state.player.rotate_right_thrusted != 0 {
+        state.player.rotate_right_thrusted += 1;
+    }
 
     // animation des membres du cosmonaute EVA : bras et jambes qui **s'agitent
     // pendant la poussée** puis retombent au repos (`cosmonaut::animate_eva_cosmonaut`)
@@ -855,6 +862,8 @@ fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [
     // flamme et cooldown de tir coupés (le moteur ne brûle plus au respawn)
     state.player.thrusted = 0;
     state.player.revert_thrusted = 0;
+    state.player.rotate_left_thrusted = 0;
+    state.player.rotate_right_thrusted = 0;
     state.player.fire = 0.0;
     state.player_at_station = -1; // docké à la station (comme au lancement)
     state.player_enter_station = 0;
@@ -946,6 +955,8 @@ fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &m
     }
     state.player.thrusted = 0; // flamme coupée : plus de poussée
     state.player.revert_thrusted = 0;
+    state.player.rotate_left_thrusted = 0; // ni de jets latéraux
+    state.player.rotate_right_thrusted = 0;
     state.send_message("STATION RECOVERY — HOLD ON");
 }
 
@@ -1724,6 +1735,7 @@ fn player_controls(
             if is_key_down(KeyCode::Right) {
                 player.direction -= PLAYER_ROTATION_SPEED * 60.0 * dt;
                 player.orientation = -player.direction;
+                state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
             if fuel_ok && is_key_down(KeyCode::Down) {
                 if player.velocity > 0.0 {
@@ -1738,6 +1750,7 @@ fn player_controls(
             if is_key_down(KeyCode::Left) {
                 player.direction += PLAYER_ROTATION_SPEED * 60.0 * dt;
                 player.orientation = -player.direction;
+                state.player.rotate_left_thrusted = -5; // jet latéral gauche
             }
         }
         MOVING_MODE_INERTIAL => {
@@ -1748,6 +1761,7 @@ fn player_controls(
             }
             if is_key_down(KeyCode::Right) {
                 player.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
+                state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
             if fuel_ok && is_key_down(KeyCode::Down) {
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, -1.0, 1.0);
@@ -1757,6 +1771,7 @@ fn player_controls(
             }
             if is_key_down(KeyCode::Left) {
                 player.orientation -= PLAYER_ROTATION_SPEED * 60.0 * dt;
+                state.player.rotate_left_thrusted = -5; // jet latéral gauche
             }
         }
         MOVING_MODE_4_WAYS => {
@@ -1775,6 +1790,7 @@ fn player_controls(
                 player.direction = dy.atan2(dx);
                 player.velocity = dx.hypot(dy);
                 player.orientation = -player.direction;
+                state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
             if fuel_ok && is_key_down(KeyCode::Down) {
                 let dx = player.direction.cos() * player.velocity;
@@ -1792,6 +1808,7 @@ fn player_controls(
                 player.direction = dy.atan2(dx);
                 player.velocity = dx.hypot(dy);
                 player.orientation = -player.direction;
+                state.player.rotate_left_thrusted = -5; // jet latéral gauche
             }
         }
         _ => {}

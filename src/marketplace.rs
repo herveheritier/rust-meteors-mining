@@ -97,7 +97,7 @@ pub const VAISSEAU_ORIENTATION_DEGREES: f64 = 0.0;
 
 /// Centre de rotation du vaisseau : position du pivot en pourcentage de
 /// la boîte englobante du mesh (50 = centre), axe x.
-pub const VAISSEAU_CENTER_X_PERCENT: f64 = 51.0;
+pub const VAISSEAU_CENTER_X_PERCENT: f64 = 54.0;
 
 /// Centre de rotation du vaisseau (voir `VAISSEAU_CENTER_X_PERCENT`), axe y.
 pub const VAISSEAU_CENTER_Y_PERCENT: f64 = 50.0;
@@ -109,6 +109,55 @@ pub const VAISSEAU_CENTER_Y_PERCENT: f64 = 50.0;
 /// vide = un seul emplacement au centre de rotation** (repli :
 /// comportement d'origine). Générée par l'outil de gestion.
 pub const VAISSEAU_BULLET_SPAWNS: &[(f64, f64)] = &[(91.0, 50.0), (53.0, 74.0), (53.0, 26.0), (41.0, 96.0)];
+
+/// Mesh du propulseur « ARRIÈRE » (VAISSEAU_THRUSTERS[0]) — embarqué au compile.
+pub const VAISSEAU_THRUSTER_MESH_0: &str = include_str!("../assets/propellerUp.json");
+
+/// Mesh du propulseur « AVANT » (VAISSEAU_THRUSTERS[1]) — embarqué au compile.
+pub const VAISSEAU_THRUSTER_MESH_1: &str = include_str!("../assets/propellerDown.json");
+
+/// Mesh du propulseur « GAUCHE » (VAISSEAU_THRUSTERS[2]) — embarqué au compile.
+pub const VAISSEAU_THRUSTER_MESH_2: &str = include_str!("../assets/propellerLeft.json");
+
+/// Mesh du propulseur « DROITE » (VAISSEAU_THRUSTERS[3]) — embarqué au compile.
+pub const VAISSEAU_THRUSTER_MESH_3: &str = include_str!("../assets/propellerRight.json");
+
+/// Éjections de gaz du vaisseau — 4 propulseurs, un par touche de contrôle
+/// (ordre fixe : ↑ arrière, ↓ avant, ← flanc gauche, → flanc droit). Chaque
+/// propulseur est un mesh posé **sur le vaisseau** à sa position (le gaz sort
+/// de là, dans la direction d'éjection correspondante — src/main.rs).
+/// **Liste vide = repli** : pas de propulseur, le gaz classique sort du
+/// centre de rotation (comportement d'origine). Générée par l'outil de gestion.
+pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[
+    VaisseauThruster {
+        name: "ARRIÈRE",
+        mesh: VAISSEAU_THRUSTER_MESH_0,
+        scale: 2.0,
+        orientation_degrees: 0.0,
+        position: (0.0, 50.0),
+    },
+    VaisseauThruster {
+        name: "AVANT",
+        mesh: VAISSEAU_THRUSTER_MESH_1,
+        scale: 2.0,
+        orientation_degrees: 180.0,
+        position: (100.0, 50.0),
+    },
+    VaisseauThruster {
+        name: "GAUCHE",
+        mesh: VAISSEAU_THRUSTER_MESH_2,
+        scale: 2.0,
+        orientation_degrees: -90.0,
+        position: (88.0, 76.0),
+    },
+    VaisseauThruster {
+        name: "DROITE",
+        mesh: VAISSEAU_THRUSTER_MESH_3,
+        scale: 2.01,
+        orientation_degrees: 90.0,
+        position: (87.0, 25.0),
+    },
+];
 
 /// Mesh de l'arme « ARME 1 » (VAISSEAU_WEAPONS[0]) — embarqué au compile.
 pub const VAISSEAU_WEAPON_MESH_0: &str = include_str!("../assets/bulletWeapon.json");
@@ -295,6 +344,34 @@ pub struct VaisseauWeapon {
     /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
     /// l'éditeur — la munition part nez en avant.
     pub ammo_orientation_degrees: f64,
+}
+
+/// Une éjection de gaz du vaisseau (les 4 touches de contrôle de la
+/// poussée/orientation) : mesh du **propulseur** posé **sur le vaisseau** à
+/// une position (en **pourcentage de la boîte englobante de la composition**,
+/// 50/50 = centre, repère du mesh de l'éditeur, y vers le haut), avec sa
+/// propre échelle et orientation. Le gaz (flamme) sort de la position, dans
+/// la direction d'éjection correspondant à la touche — index 0 = **↑**
+/// (poussée avant, gaz orange à l'arrière), 1 = **↓** (frein/recul, gaz bleu
+/// à l'avant), 2 = **←** (rotation gauche), 3 = **→** (rotation droite).
+/// Générée par l'outil de gestion. Le champ `name` n'est lu que par les
+/// tests et l'outil — `dead_code` quand la liste est vide.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub struct VaisseauThruster {
+    /// Nom du propulseur (outil, export).
+    pub name: &'static str,
+    /// Mesh du propulseur — fichier « meshes-designer » embarqué au compile.
+    pub mesh: &'static str,
+    /// Échelle du propulseur (multiplicateur des sommets du mesh) : 1.0 = 100 %.
+    pub scale: f64,
+    /// Orientation du propulseur (degrés) : angle de l'avant du mesh dans
+    /// l'éditeur (0 = avant vers la droite, +90 = vers le haut) — le mesh est
+    /// tourné de −orientation à la construction.
+    pub orientation_degrees: f64,
+    /// Position sur le vaisseau : en % de la boîte englobante de la
+    /// composition (50/50 = centre), dans le repère de l'éditeur.
+    pub position: (f64, f64),
 }
 
 /// Extensions de réservoir (Progression) : 100 → 130 → 170 → 220 unités.
