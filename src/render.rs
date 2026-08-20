@@ -1288,10 +1288,11 @@ fn draw_element_dot(t: &Triangle, camera: Point, elements: &[Element], world: &W
 
 // ─── Poussée, débris, cargo, HUD ─────────────────────────────────────────────
 
-/// Effet de poussée : 3 cercles dégradés le long de `orientation + angle`
-/// (ex `ejectionFlow`), partant d'un **point local du vaisseau** (position
-/// d'un propulseur, ex `vaisseau_thrusters`) tourné avec le vaisseau
-/// autour de son centre de rotation comme les sommets du mesh
+/// Effet de poussée **de repli** (liste `VAISSEAU_THRUSTERS` vide — sinon le
+/// jeu dessine le mesh configuré de chaque propulseur, `draw_thruster_gas`) :
+/// 3 cercles dégradés le long de `orientation + angle` (ex `ejectionFlow`),
+/// partant du **point local** (au centre de rotation en repli) tourné avec le
+/// vaisseau autour de son centre de rotation comme les sommets du mesh
 /// (`compute_real_positions`). Angle `TAU/2` = arrière (gaz de poussée,
 /// orange), `0` = avant (gaz de frein, bleu), `±TAU/4` = jets latéraux des
 /// rotations (← / →). L'éjection est courte : les cercles partent du point
@@ -1329,6 +1330,71 @@ pub fn ejection_flow(
     let mut p = Point::new(r3 * c + x, r3 * s + y);
     p.normalize_world(world);
     draw_circle(p.x as f32, p.y as f32, (3.0 + f) as f32, color);
+}
+
+/// Gaz d'éjection d'un propulseur : son **mesh configuré** (la flamme du
+/// propulseur, ex propellerUp.json) dessiné **scintillant** — le mesh
+/// n'apparaît que quand le propulseur tire, sinon il n'est pas affiché
+/// (remplace l'ancien `ejection_flow`, cercles calculés). Les triangles
+/// (`vaisseau::thruster_mesh_triangles`, repère local du vaisseau) sont
+/// teintés de la **couleur configurée** (`tint`, ARGB) puis tournés avec le
+/// vaisseau autour de son centre de rotation comme les sommets du mesh ; la
+/// flamme **vacille** : allongée le long de la direction d'éjection
+/// (`flow_angle`, repère du jeu) et opacité animées (sinus rapide + bruit).
+pub fn draw_thruster_gas(
+    shape: &Shape,
+    tris: &[([f64; 2], [f64; 2], [f64; 2])],
+    local: Point,
+    flow_angle: f64,
+    tint: u32,
+    camera: Point,
+    world: &World,
+) {
+    if tris.is_empty() {
+        return;
+    }
+    // scintillement : la flamme pulse le long de l'axe du flux (sinus + bruit)
+    let t = get_time();
+    let n = rand::rand() as f64 / u32::MAX as f64;
+    let stretch = 0.12 * (t * 35.0).sin() + 0.05 * n;
+    let alpha = 0.85 + 0.15 * (t * 42.0 + 1.0).sin();
+    let (fx, fy) = (flow_angle.cos(), flow_angle.sin());
+    let (qx, qy) = (-fy, fx); // perpendiculaire au flux
+    let axis = Point::new(shape.center.x, shape.center.y);
+    // échelle anisotrope autour du point d'éjection (repère local) : allongée
+    // le long du flux, rétractée en travers
+    let scal = |p: &[f64; 2]| {
+        let dx = p[0] - local.x;
+        let dy = p[1] - local.y;
+        let along = dx * fx + dy * fy;
+        let across = dx * qx + dy * qy;
+        Point::new(
+            local.x + fx * along * (1.0 + stretch) + qx * across * (1.0 - 0.35 * stretch),
+            local.y + fy * along * (1.0 + stretch) + qy * across * (1.0 - 0.35 * stretch),
+        )
+    };
+    // couleur de la flamme : la couleur configurée, opacité animée
+    let mut col = argb_to_color(tint);
+    col.a = alpha as f32;
+    for (a, b, c) in tris {
+        // puis rotation avec le vaisseau et translation monde (comme les
+        // sommets du mesh — `compute_real_positions`)
+        let mut pa = scal(a);
+        let mut pb = scal(b);
+        let mut pc = scal(c);
+        pa.rotate_around(axis, shape.orientation);
+        pb.rotate_around(axis, shape.orientation);
+        pc.rotate_around(axis, shape.orientation);
+        let wa = Point::new(shape.position.x + pa.x, shape.position.y + pa.y);
+        let wb = Point::new(shape.position.x + pb.x, shape.position.y + pb.y);
+        let wc = Point::new(shape.position.x + pc.x, shape.position.y + pc.y);
+        macroquad::shapes::draw_triangle(
+            screen_point(wa, camera, world),
+            screen_point(wb, camera, world),
+            screen_point(wc, camera, world),
+            col,
+        );
+    }
 }
 
 /// Petit **propulseur de la combinaison EVA** : une flamme animée sur le dos

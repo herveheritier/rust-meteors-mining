@@ -134,28 +134,36 @@ pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[
         mesh: VAISSEAU_THRUSTER_MESH_0,
         scale: 2.0,
         orientation_degrees: 0.0,
-        position: (0.0, 50.0),
+        position: (-15.0, 50.0),
+        ejection_angle_degrees: 180.0,
+        color: 0xFFFFA000,
     },
     VaisseauThruster {
         name: "AVANT",
         mesh: VAISSEAU_THRUSTER_MESH_1,
         scale: 2.0,
         orientation_degrees: 180.0,
-        position: (100.0, 50.0),
+        position: (116.0, 50.0),
+        ejection_angle_degrees: 0.0,
+        color: 0xFF00A0FF,
     },
     VaisseauThruster {
         name: "GAUCHE",
         mesh: VAISSEAU_THRUSTER_MESH_2,
-        scale: 2.0,
-        orientation_degrees: -90.0,
-        position: (88.0, 76.0),
+        scale: 1.0,
+        orientation_degrees: 90.0,
+        position: (88.0, 75.0),
+        ejection_angle_degrees: 90.0,
+        color: 0xFF97d3c4,
     },
     VaisseauThruster {
         name: "DROITE",
         mesh: VAISSEAU_THRUSTER_MESH_3,
-        scale: 2.01,
-        orientation_degrees: 90.0,
-        position: (87.0, 25.0),
+        scale: 1.0,
+        orientation_degrees: -90.0,
+        position: (89.0, 25.0),
+        ejection_angle_degrees: -90.0,
+        color: 0xFFFF5AC8,
     },
 ];
 
@@ -372,6 +380,13 @@ pub struct VaisseauThruster {
     /// Position sur le vaisseau : en % de la boîte englobante de la
     /// composition (50/50 = centre), dans le repère de l'éditeur.
     pub position: (f64, f64),
+    /// Direction d'éjection du gaz (degrés, repère de l'éditeur y vers le
+    /// haut : 0 = avant, +90 = haut) — convertie par le jeu pour
+    /// `ejection_flow` (src/main.rs).
+    pub ejection_angle_degrees: f64,
+    /// Couleur du gaz d'éjection (ARGB, ex 0xFFFFA000) — `ejection_flow`
+    /// (src/main.rs).
+    pub color: u32,
 }
 
 /// Extensions de réservoir (Progression) : 100 → 130 → 170 → 220 unités.

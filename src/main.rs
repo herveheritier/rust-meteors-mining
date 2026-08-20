@@ -441,28 +441,53 @@ async fn main() {
                     render::draw_cosmonaut_thruster(&shapes[pilot], camera, &state.world);
                 }
             } else {
-                // points locaux d'éjection des propulseurs (liste vide = repli
-                // au centre de rotation) et directions : ↑ arrière, ↓ avant,
-                // ← gauche, → droite
+                // gaz d'éjection : le mesh configuré de chaque propulseur
+                // (`VAISSEAU_THRUSTERS` — ↑, ↓, ←, →) est affiché **scintillant**
+                // seulement quand il tire, sinon rien n'est affiché. Les jets
+                // latéraux sont **croisés** : touche ← = propulseur DROITE,
+                // touche → = propulseur GAUCHE (la flamme sort du propulseur
+                // qui pousse). Repli (liste vide) : gaz classique au centre de
+                // rotation (cercles), angles et couleurs par défaut par touche.
                 let jets = crate::vaisseau::vaisseau_thrusters();
-                let at = |i: usize, angle: f64, color: u32| {
-                    let local = jets
-                        .get(i)
-                        .map(|(_, p)| *p)
-                        .unwrap_or(shapes[pilot].center);
-                    render::ejection_flow(&shapes[pilot], local, angle, color, camera, &state.world);
+                const DEFAULT_ANGLE: [f64; 4] = [TAU / 2.0, 0.0, -TAU / 4.0, TAU / 4.0];
+                const DEFAULT_COLOR: [u32; 4] =
+                    [0xFFFFA000, 0xFF00A0FF, 0xFFFF5AC8, 0xFF39FF88];
+                let at = |i: usize| match jets.get(i) {
+                    Some((t, p)) => {
+                        // le propulseur tire : son mesh (la flamme) scintille —
+                        // teinté de la couleur configurée et allongé le long de
+                        // la direction d'éjection (repère éditeur → jeu)
+                        let tris = crate::vaisseau::thruster_mesh_triangles(t, *p);
+                        render::draw_thruster_gas(
+                            &shapes[pilot],
+                            &tris,
+                            *p,
+                            -t.ejection_angle_degrees.to_radians(),
+                            t.color,
+                            camera,
+                            &state.world,
+                        );
+                    }
+                    None => render::ejection_flow(
+                        &shapes[pilot],
+                        shapes[pilot].center,
+                        DEFAULT_ANGLE[i],
+                        DEFAULT_COLOR[i],
+                        camera,
+                        &state.world,
+                    ),
                 };
                 if state.player.thrusted != 0 {
-                    at(0, TAU / 2.0, 0xFFFFA000);
+                    at(0); // propulseur arrière
                 }
                 if state.player.revert_thrusted != 0 {
-                    at(1, 0.0, 0xFF00A0FF);
+                    at(1); // propulseur avant
                 }
                 if state.player.rotate_left_thrusted != 0 {
-                    at(2, -TAU / 4.0, 0xFFFF5AC8);
+                    at(3); // propulseur DROITE (croisé : rotation gauche)
                 }
                 if state.player.rotate_right_thrusted != 0 {
-                    at(3, TAU / 4.0, 0xFF39FF88);
+                    at(2); // propulseur GAUCHE (croisé : rotation droite)
                 }
             }
         }

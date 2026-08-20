@@ -1181,7 +1181,7 @@ function meshTransform(cfg, tris) {
 // boîte englobante — sert au clic « centre de rotation au point visé ».
 // Même échelle de dessin que drawMeshPreview (marge 12 px). La boîte
 // englobante est celle de la **composition** affichée (comme dans le jeu).
-function pixelToMeshPercent(canvas, mesh, cfg, px, py) {
+function pixelToMeshPercent(canvas, mesh, cfg, px, py, clamp) {
   const tris = compositionTris(cfg, mesh);
   if (!tris || tris.length === 0) return null;
   const W = canvas.width, H = canvas.height;
@@ -1210,9 +1210,12 @@ function pixelToMeshPercent(canvas, mesh, cfg, px, py) {
   const vy = view.py - dx * view.sin + dy * view.cos;
   const b = view.bounds;
   if (b.maxx <= b.minx || b.maxy <= b.miny) return null;
+  // clamp = false → valeurs libres (négatives / > 100 %) : utilisé par le
+  // glisser-déposer des propulseurs, qui peuvent sortir du gabarit
+  const toPct = v => (clamp === false ? v : Math.max(0, Math.min(100, v)));
   return [
-    Math.max(0, Math.min(100, ((vx - b.minx) / (b.maxx - b.minx)) * 100)),
-    Math.max(0, Math.min(100, ((vy - b.miny) / (b.maxy - b.miny)) * 100)),
+    toPct(((vx - b.minx) / (b.maxx - b.minx)) * 100),
+    toPct(((vy - b.miny) / (b.maxy - b.miny)) * 100),
   ];
 }
 
@@ -1325,11 +1328,14 @@ window.addEventListener("mousemove", (e) => {
   if (!rect.width || !rect.height) return;
   const px = (e.clientX - rect.left) * (d.canvas.width / rect.width);
   const py = (e.clientY - rect.top) * (d.canvas.height / rect.height);
-  const pt = pixelToMeshPercent(d.canvas, mesh, d.cfg, px, py);
+  // propulseurs : positions libres (négatives / > 100 %, le jeu les accepte) ;
+  // emplacements de tir : toujours bornés 0-100
+  const clamp = d.kind !== "thrust";
+  const pt = pixelToMeshPercent(d.canvas, mesh, d.cfg, px, py, clamp);
   if (!pt) return;
   const sp = list[d.index];
-  sp.x = Math.max(0, Math.min(100, Math.round(pt[0])));
-  sp.y = Math.max(0, Math.min(100, Math.round(pt[1])));
+  sp.x = Math.round(pt[0]);
+  sp.y = Math.round(pt[1]);
   d.moved = true;
   drawMeshPreview(d.canvas, mesh, d.cfg); // redessin direct (léger)
 });
@@ -1345,17 +1351,18 @@ window.addEventListener("mouseup", () => {
 // (↑ poussée avant, ↓ frein/recul, ← rotation gauche, → rotation droite) :
 // position **par défaut** en % de la boîte englobante de la composition (même
 // repère que les emplacements de tir, y vers le haut dans l'éditeur), couleur,
-// libellé et **direction d'éjection** (`angle` dans le repère de l'éditeur :
-// ↑ à l'arrière → gaz vers l'arrière, ↓ à l'avant → gaz vers l'avant, ← sur
-// le flanc gauche → gaz vers la gauche, → sur le flanc droit → gaz vers la
-// droite). Positions éditables (`cfg.thrusters`, exportées dans
-// `VAISSEAU_THRUSTERS`, un propulseur par touche) ; la direction, elle, est
-// fixe.
+// libellé et **direction d'éjection** (`angle` en radians du repère de
+// l'éditeur ; `angleDeg` en degrés : ↑ à l'arrière → gaz vers l'arrière, ↓ à
+// l'avant → gaz vers l'avant, ← sur le flanc gauche → gaz vers la gauche, →
+// sur le flanc droit → gaz vers la droite). Positions, **couleur du gaz** et
+// **direction d'éjection** sont éditables (`cfg.thrusters`, exportées dans
+// `VAISSEAU_THRUSTERS`, un propulseur par touche — le jeu dessine la flamme
+// avec ces réglages, src/main.rs).
 const THRUST_MARKERS = [
-  { key: "↑", x: 6, y: 50, color: "#ffa020", angle: Math.PI, label: "poussée avant" },
-  { key: "↓", x: 94, y: 50, color: "#40a0ff", angle: 0, label: "frein / recul" },
-  { key: "←", x: 50, y: 94, color: "#ff5ac8", angle: Math.PI / 2, label: "rotation gauche" },
-  { key: "→", x: 50, y: 6, color: "#39ff88", angle: -Math.PI / 2, label: "rotation droite" },
+  { key: "↑", x: 6, y: 50, color: "#ffa020", angle: Math.PI, angleDeg: 180, label: "poussée avant" },
+  { key: "↓", x: 94, y: 50, color: "#40a0ff", angle: 0, angleDeg: 0, label: "frein / recul" },
+  { key: "←", x: 50, y: 94, color: "#ff5ac8", angle: Math.PI / 2, angleDeg: 90, label: "rotation gauche" },
+  { key: "→", x: 50, y: 6, color: "#39ff88", angle: -Math.PI / 2, angleDeg: -90, label: "rotation droite" },
 ];
 
 function drawMeshPreview(canvas, mesh, cfg) {
@@ -1459,8 +1466,9 @@ function drawMeshPreview(canvas, mesh, cfg) {
   // vaisseau pour chaque touche de contrôle (↑ poussée avant, ↓ frein/recul,
   // ← rotation gauche, → rotation droite). Chaque propulseur a son **mesh**
   // (dessiné à sa position, transformé avec sa propre échelle/orientation),
-  // sa position éditable en % de la composition (`VAISSEAU_THRUSTERS`) et sa
-  // direction d'éjection fixe (gouttelettes). Glisser un propulseur le déplace.
+  // sa position éditable en % de la composition (`VAISSEAU_THRUSTERS`) et son
+  // **affichage de gaz** : direction d'éjection + couleur (gouttelettes).
+  // Glisser un propulseur le déplace.
   if (Array.isArray(cfg.thrusters) && mesh.planes) {
     const bw = (bounds.maxx - bounds.minx) || 1;
     const bh = (bounds.maxy - bounds.miny) || 1;
@@ -1515,14 +1523,20 @@ function drawMeshPreview(canvas, mesh, cfg) {
         ctx.textAlign = "center";
         ctx.fillText(m.key, sx, sy + 14);
       }
-      // gouttelettes de gaz dans la direction d'éjection (tournée avec le
-      // vaisseau par tf) — depuis la position du propulseur
+      // gouttelettes de gaz dans la direction d'éjection **configurée**
+      // (repère de l'éditeur, tournée avec le vaisseau par tf) — depuis la
+      // position du propulseur ; direction et couleur éditables dans la
+      // section (repli : valeurs par défaut du marqueur)
+      const tAngle = Number.isFinite(t && t.ejectionAngleDeg)
+        ? t.ejectionAngleDeg * Math.PI / 180
+        : m.angle;
+      const tColor = t && /^#([0-9a-fA-F]{6})$/.test(t.color) ? t.color : m.color;
       const ex = bounds.minx + (sp.x / 100) * bw;
       const ey = bounds.miny + (sp.y / 100) * bh;
-      const [gx, gy] = px(tf([ex + Math.cos(m.angle) * 7, ey + Math.sin(m.angle) * 7]));
+      const [gx, gy] = px(tf([ex + Math.cos(tAngle) * 7, ey + Math.sin(tAngle) * 7]));
       const gdx = gx - sx, gdy = gy - sy;
       const gl = Math.hypot(gdx, gdy) || 1;
-      ctx.fillStyle = m.color;
+      ctx.fillStyle = tColor;
       ctx.globalAlpha = 0.5;
       ctx.beginPath();
       ctx.arc(sx + (gdx / gl) * 6, sy + (gdy / gl) * 6, 1.7, 0, Math.PI * 2);
@@ -1746,6 +1760,20 @@ function meshNumberInput(cfg, prefix, key, min, max) {
   input.addEventListener("input", () => {
     const v = parseFloat(input.value);
     cfg[key] = Math.min(max, Math.max(min, Number.isFinite(v) ? v : 0));
+    afterEdit();
+  });
+  return input;
+}
+
+// Champ de couleur du gaz d'éjection (`cfg.thrusters[i].color`, hex #rrggbb)
+// — exporté en ARGB (0xFFrrggbb) dans `VAISSEAU_THRUSTERS` et lu par le jeu
+// (`ejection_flow`, src/main.rs). Repli : couleur du marqueur de la touche.
+function thrusterColorInput(t, fallback) {
+  const input = document.createElement("input");
+  input.type = "color";
+  input.value = t && /^#([0-9a-fA-F]{6})$/.test(t.color) ? t.color : fallback;
+  input.addEventListener("input", () => {
+    t.color = input.value;
     afterEdit();
   });
   return input;
@@ -2130,12 +2158,16 @@ function thrustSection(cfg) {
   h.appendChild(el("span", "const", "VAISSEAU_THRUSTERS"));
   sec.appendChild(h);
   sec.appendChild(el("p", "desc",
-    "Un **propulseur** par touche de contrôle — mesh (JSON, dessiné sur le vaisseau à sa " +
-    "position), échelle, orientation et position en % de la boîte englobante de la composition " +
-    "(50/50 = centre), tournés avec le vaisseau : <b>↑</b> poussée avant (gaz orange à " +
-    "l'arrière), <b>↓</b> frein/recul (bleu à l'avant), <b>←</b> et <b>→</b> jets latéraux " +
-    "pendant les rotations. <b>Sur l'aperçu : glisser un propulseur le déplace</b> " +
-    "(gouttelettes = direction de l'éjection)."));
+    "Un **propulseur** par touche de contrôle — son mesh (JSON, la flamme du gaz) est affiché " +
+    "**seulement quand il tire** (scintillant, teinté de la couleur configurée, allongé le long " +
+    "de la direction d'éjection) — sinon il n'apparaît pas en jeu. Réglages : mesh, échelle, " +
+    "orientation et position en % de la boîte englobante de la composition (50/50 = centre — " +
+    "<b>valeurs libres</b> : négatives ou &gt; 100 % possibles, le propulseur sort alors du " +
+    "gabarit), tournés avec le vaisseau, plus la <b>couleur du gaz</b> et la <b>direction " +
+    "d'éjection</b> : <b>↑</b> poussée avant (gaz orange à l'arrière), <b>↓</b> frein/recul " +
+    "(bleu à l'avant), <b>←</b> et <b>→</b> jets latéraux des rotations. Sur l'aperçu, les " +
+    "flammes sont dessinées en permanence pour le positionnement ; <b>glisser un propulseur le " +
+    "déplace</b> (gouttelettes = direction et couleur configurées)."));
 
   const list = el("div", "spawns-list");
   const render = () => {
@@ -2161,11 +2193,20 @@ function thrustSection(cfg) {
         meshNumberInput(t, "ship-thrust-" + i, "scalePercent", 1, 1000)));
       row.appendChild(field("Orientation (°)", "ship-thrust-" + i + "-orient",
         meshNumberInput(t, "ship-thrust-" + i, "orientationDeg", -360, 360)));
-      // position (X %, Y %) — glissable sur l'aperçu
+      // affichage du gaz dans le jeu : couleur et direction d'éjection
+      // (repère de l'éditeur, y vers le haut — 0 = avant, +90 = haut) —
+      // `ejection_flow` (src/main.rs)
+      row.appendChild(field("Couleur gaz", "ship-thrust-" + i + "-color",
+        thrusterColorInput(t, m.color)));
+      row.appendChild(field("Direction (°)", "ship-thrust-" + i + "-angle",
+        meshNumberInput(t, "ship-thrust-" + i, "ejectionAngleDeg", -360, 360)));
+      // position (X %, Y %) — glissable sur l'aperçu ; valeurs **libres** :
+      // négatives ou > 100 % possibles (le jeu les accepte, le propulseur
+      // sort alors du gabarit du vaisseau)
       row.appendChild(field("X (%)", "ship-thrust-" + i + "-x",
-        meshNumberInput(t, "ship-thrust-" + i, "x", 0, 100)));
+        meshNumberInput(t, "ship-thrust-" + i, "x", -1000, 1000)));
       row.appendChild(field("Y (%)", "ship-thrust-" + i + "-y",
-        meshNumberInput(t, "ship-thrust-" + i, "y", 0, 100)));
+        meshNumberInput(t, "ship-thrust-" + i, "y", -1000, 1000)));
       row.appendChild(el("span", "thrust-label", m.label));
       list.appendChild(row);
     });
@@ -2955,6 +2996,13 @@ pub struct VaisseauThruster {
     /// Position sur le vaisseau : en % de la boîte englobante de la
     /// composition (50/50 = centre), dans le repère de l'éditeur.
     pub position: (f64, f64),
+    /// Direction d'éjection du gaz (degrés, repère de l'éditeur y vers le
+    /// haut : 0 = avant, +90 = haut) — convertie par le jeu pour
+    /// \`ejection_flow\` (src/main.rs).
+    pub ejection_angle_degrees: f64,
+    /// Couleur du gaz d'éjection (ARGB, ex 0xFFFFA000) — \`ejection_flow\`
+    /// (src/main.rs).
+    pub color: u32,
 }
 `;
 
@@ -3079,8 +3127,10 @@ function thrustersConsts(cfg) {
       "        mesh: VAISSEAU_THRUSTER_MESH_" + i + ",",
       "        scale: " + fmtFloat(Math.max(1, Number(t.scalePercent) || 100) / 100) + ",",
       "        orientation_degrees: " + fmtFloat(Number(t.orientationDeg) || 0) + ",",
-      "        position: (" + fmtFloat(Math.max(0, Math.min(100, Number(t.x) || 0))) + ", "
-        + fmtFloat(Math.max(0, Math.min(100, Number(t.y) || 0))) + "),",
+      "        position: (" + fmtFloat(Number(t.x) || 0) + ", "
+        + fmtFloat(Number(t.y) || 0) + "),",
+      "        ejection_angle_degrees: " + fmtFloat(Number(t.ejectionAngleDeg) || 0) + ",",
+      "        color: 0xFF" + String(t.color || m.color).replace(/^#/, "").slice(0, 6) + ",",
       "    },",
     );
   });
@@ -3760,14 +3810,25 @@ function parseRust(text) {
     const positions = [];
     let m;
     while ((m = posRe.exec(thrustBlock)) !== null) positions.push([m[1], m[2]]);
+    // direction d'éjection (degrés, repère éditeur) et couleur ARGB du gaz
+    const angleRe = /ejection_angle_degrees: (-?[0-9.]+)/g;
+    const angles = [];
+    let am;
+    while ((am = angleRe.exec(thrustBlock)) !== null) angles.push(parseFloat(am[1]));
+    const colorRe = /color: (0x[0-9A-Fa-f]+)/g;
+    const colors = [];
+    let cm;
+    while ((cm = colorRe.exec(thrustBlock)) !== null) colors.push(cm[1]);
     if (positions.length === 4) {
       out.ship.thrusters = positions.map((p, i) => ({
         name: names[i] || "PROPULSEUR " + (i + 1),
-        asset: thrusterMeshes[meshes[i]] ? "assets/" + thrusterMeshes[meshes[i]] : "assets/propulseur.json",
+        asset: thrusterMeshes[meshes[i]] || "assets/propulseur.json",
         scalePercent: Math.round((parseFloat(scales[i]) || 1) * 100),
         orientationDeg: parseFloat(orients[i]) || 0,
         x: parseFloat(p[0]),
         y: parseFloat(p[1]),
+        color: colors[i] ? "#" + colors[i].slice(-6) : THRUST_MARKERS[i].color,
+        ejectionAngleDeg: Number.isFinite(angles[i]) ? angles[i] : THRUST_MARKERS[i].angleDeg,
       }));
     }
   }
@@ -4000,8 +4061,17 @@ function normalize(parsed) {
         ? Math.max(1, Math.min(1000, Math.round(p.scalePercent)))
         : 100,
       orientationDeg: Number.isFinite(p && p.orientationDeg) ? p.orientationDeg : 0,
-      x: Number.isFinite(p && p.x) ? Math.max(0, Math.min(100, p.x)) : m.x,
-      y: Number.isFinite(p && p.y) ? Math.max(0, Math.min(100, p.y)) : m.y,
+      // positions libres : négatives et > 100 % sont acceptées (le jeu les
+      // interprète hors de la boîte englobante — propulseur sorti du gabarit)
+      x: Number.isFinite(p && p.x) ? p.x : m.x,
+      y: Number.isFinite(p && p.y) ? p.y : m.y,
+      // affichage du gaz : couleur (hex #rrggbb) et direction d'éjection en
+      // degrés (repère de l'éditeur, y vers le haut) — le jeu les utilise
+      // pour dessiner la flamme (ejection_flow, src/main.rs)
+      color: p && /^#([0-9a-fA-F]{6})$/.test(p.color) ? p.color : m.color,
+      ejectionAngleDeg: Number.isFinite(p && p.ejectionAngleDeg)
+        ? p.ejectionAngleDeg
+        : m.angleDeg,
     };
   });
   // catalogue d'armes : mesh de l'arme + munition (assets, échelles,

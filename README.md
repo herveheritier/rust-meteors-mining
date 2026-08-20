@@ -273,14 +273,18 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   liste vide = un seul emplacement au centre de rotation ; et les
   **propulseurs des éjections de gaz** des 4 touches de contrôle (marqués
   d'un losange coloré + la touche, glissables sur l'aperçu) : **un mesh par
-  propulseur** (choisi dans le catalogue `assets/*.json`, comme le vaisseau),
-  avec son échelle, son orientation et sa position en % de la même boîte
-  englobante, ordre fixe ↑ (poussée avant, gaz orange à l'arrière),
-  ↓ (frein/recul, bleu à l'avant), ← et → (jets latéraux des rotations) —
-  le jeu dessine la poussée depuis ces propulseurs, tournés avec le
-  vaisseau ; sur l'aperçu, la **molette** tourne le mesh (orientation),
-  **Ctrl/Cmd + molette** zoome (échelle) et le **clic** place le centre de
-  rotation au point visé ; constantes `VAISSEAU_JSON`, `VAISSEAU_SCALE`,
+  propulseur** (choisi dans le catalogue `assets/*.json`, comme le vaisseau,
+  ex propellerUp.json — la flamme du gaz), affiché **seulement quand il
+  tire** (scintillant, teinté de la couleur configurée, allongé le long de
+  la direction d'éjection) — sinon il n'apparaît pas en jeu — avec son
+  échelle, son orientation, sa position en % de la même boîte englobante
+  (valeurs libres, négatives ou > 100 %), sa **couleur de gaz** et sa
+  **direction d'éjection** — ordre fixe ↑ (poussée avant, gaz orange à
+  l'arrière), ↓ (frein/recul, bleu à l'avant), ← et → (jets latéraux des
+  rotations) ; la flamme est tournée avec le vaisseau ; sur l'aperçu, la
+  **molette** tourne le mesh (orientation), **Ctrl/Cmd + molette** zoome
+  (échelle) et le **clic** place le centre de rotation au point visé ;
+  constantes `VAISSEAU_JSON`, `VAISSEAU_SCALE`,
   `VAISSEAU_ORIENTATION_DEGREES`, `VAISSEAU_CENTER_X/Y_PERCENT`,
   `VAISSEAU_BULLET_SPAWNS`, `VAISSEAU_THRUSTERS` (+ meshes de propulseurs
   `VAISSEAU_THRUSTER_MESH_i`, `include_str!`) de
