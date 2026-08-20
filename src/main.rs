@@ -24,11 +24,13 @@ mod generate;
 mod geom;
 mod marketplace;
 mod persist;
+mod remote;
 mod render;
 mod scenario;
 mod shape;
 mod state;
 mod title;
+mod touch;
 mod vaisseau;
 mod x11;
 
@@ -121,6 +123,14 @@ async fn main() {
     if let Some(aa) = persist::get_bool("antialias") {
         state.antialias = aa;
     }
+    // interface tactile (joystick + bouton de tir, case TOUCH UI de l'écran
+    // de paramétrage) : affichée par défaut — le réglage est persisté (clé
+    // `touch_ui`) et synchronise l'interrupteur de `touch.rs` (les contrôles
+    // ne sont pris en compte que s'ils sont affichés)
+    if let Some(on) = persist::get_bool("touch_ui") {
+        state.touch_ui = on;
+    }
+    crate::touch::set_enabled(state.touch_ui);
     // la valeur effectivement appliquée par la fenêtre (`window_conf` lit la
     // même clé) : si `antialias` en diffère ensuite, un redémarrage est
     // nécessaire (bouton RESTART de l'écran de paramétrage)
@@ -216,6 +226,24 @@ async fn main() {
     // file d'input : sans ça, la première frame de jeu le verrait (ex F →
     // `state.view_mode` re-basculé) et annulerait le redimensionnement.
     clear_input_queue();
+
+    // ─── Télécommande HTTP (piloter le jeu depuis un téléphone) ─────────────
+    // Le serveur local démarre au lancement (`remote.rs`) : la page de
+    // contrôle (joystick + FIRE + état en direct) est servie sur le réseau
+    // local — l'URL à ouvrir sur le téléphone est annoncée (message HUD +)
+    // et journalisée. En cas d'échec (port occupé…), le jeu continue sans
+    // télécommande.
+    match crate::remote::start() {
+        Ok(url) => {
+            info!("Remote control ready: {url}");
+            // NB : la file de messages du HUD découpe sur '/' (séparateur) —
+            // le message affiche l'adresse sans le schéma `http://` (l'URL
+            // complète est visible dans l'écran de paramétrage, touche O)
+            let host_port = url.trim_start_matches("http://").trim_end_matches('/');
+            state.send_message(&format!("REMOTE CONTROL: {host_port}"));
+        }
+        Err(e) => info!("Remote control disabled: {e}"),
+    }
 
     // ambiance + musique de la partie (ex `_sndloop sh6&/sh7&` de mainLoop).
     // La musique est relue du fichier : un changement fait pendant l'écran de
@@ -524,6 +552,21 @@ async fn main() {
             render::draw_info(&state, &shapes, &triangles, &garbages, &elements);
         }
         render::draw_message(&mut state);
+
+        // interface tactile (joystick virtuel bas-gauche + bouton de tir
+        // bas-droite, `touch.rs`) : affichée pendant le jeu quand le réglage
+        // TOUCH UI est coché — masquée quand une boîte (accostage, magasin,
+        // aide, paramétrage) recouvre l'écran ou en fin de partie (le monde
+        // est gelé, les contrôles ne servent plus)
+        if state.touch_ui
+            && !state.dock_box
+            && !state.shop_box
+            && !state.help_box
+            && !state.settings_box
+            && !state.game_over
+        {
+            crate::touch::draw();
+        }
 
         // boîte de choix DOCK STATION (accostage), magasin de la station
         // (bouton SHOP), fenêtre d'aide (touche S) et écran de

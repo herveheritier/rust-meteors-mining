@@ -15,6 +15,9 @@ serde_json = "1"
 # l'asset d'origine (`reference/assets/meteor_surface_tile.jpg`, 457 Ko vs 3,1 Mo
 # en PNG) — pour réduire la taille du binaire autonome.
 image = { version = "0.24", default-features = false, features = ["jpeg"] }
+# Serveur HTTP minimal (sans SSL) pour la télécommande : le téléphone pilote
+# le vaisseau depuis une page web servie par le jeu (voir src/remote.rs).
+tiny_http = { version = "0.12", default-features = false }
 
 [profile.release]
 opt-level = 3

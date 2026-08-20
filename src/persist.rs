@@ -14,6 +14,7 @@
 //!   (le mode d'affichage fenêtré / zoomé / natif n'est, lui, **pas**
 //!   persisté : le jeu démarre toujours fenêtré, cycle F prévisible)
 //! - `antialias`        — MSAA 4× (0/1, écran O ; appliqué au lancement)
+//! - `touch_ui`         — interface tactile affichée (0/1, écran O)
 //! - `scenario`         — scénario choisi (0 = jeu libre, 1 = Progression,
 //!   2 = Survival, touche N de l'écran titre)
 //! - `prog_minerals`    — minerais en banque (Progression)

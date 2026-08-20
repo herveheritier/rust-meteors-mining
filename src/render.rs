@@ -523,13 +523,13 @@ pub fn draw_help_box() {
 // ─── Écran de paramétrage (touche O) ────────────────────────────────────────
 
 /// Géométrie des contrôles de l'écran de paramétrage : fenêtre 560×280
-/// centrée en deux colonnes — à gauche les cases MUSIC et AUTO GENERATE, la
-/// barre horizontale du volume (ascenseur) et le bouton RESET PROGRESSION
-/// (pleine largeur de la colonne) ; à droite le panneau « GRAPHICS » (style
-/// de rendu, mode d'affichage fenêtré/plein écran, définition de fenêtre,
-/// anticrénelage) ; les boutons RESET et CLOSE côte à côte en bas. (Le mode
-/// de déplacement se choisit désormais au magasin de la station — bouton
-/// SHOP de la boîte DOCK STATION.)
+/// centrée en deux colonnes — à gauche les cases MUSIC, AUTO GENERATE et
+/// TOUCH UI, la barre horizontale du volume (ascenseur) et le bouton RESET
+/// PROGRESSION (pleine largeur de la colonne) ; à droite le panneau
+/// « GRAPHICS » (style de rendu, mode d'affichage fenêtré/plein écran,
+/// définition de fenêtre, anticrénelage) ; les boutons RESET et CLOSE côte
+/// à côte en bas. (Le mode de déplacement se choisit désormais au magasin de
+/// la station — bouton SHOP de la boîte DOCK STATION.)
 pub struct SettingsLayout {
     /// Ligne cliquable de la case MUSIC.
     pub music: Rect,
@@ -554,6 +554,9 @@ pub struct SettingsLayout {
     /// minerais, modes payés, réputation, extensions, vies/bouclier ; visible
     /// seulement en scénario à économie ou à survie).
     pub reset_progress: Rect,
+    /// Ligne cliquable de la case TOUCH UI (interface tactile bas-gauche /
+    /// bas-droite, `touch.rs`).
+    pub touch_ui: Rect,
     /// Bouton RESET (réglages par défaut).
     pub reset: Rect,
     /// Bouton RESTART (relance le jeu — affiché uniquement quand un réglage
@@ -582,6 +585,9 @@ pub fn settings_box_layout() -> SettingsLayout {
     // RESET PROGRESSION : bouton pleine largeur de la colonne gauche, sous le
     // volume (remet à zéro la progression du scénario courant)
     let reset_progress = Rect::new(col_left, top + 160.0, col_w, 26.0);
+    // TOUCH UI : case à cocher sous RESET PROGRESSION (interface tactile
+    // joystick + bouton de tir, `touch.rs`)
+    let touch_ui = Rect::new(col_left, top + 192.0, col_w, 26.0);
 
     // colonne droite : panneau des options graphiques
     let graphics_panel = Rect::new(col_right, top + 44.0, col_w, 176.0);
@@ -617,6 +623,7 @@ pub fn settings_box_layout() -> SettingsLayout {
         window_size,
         antialias,
         reset_progress,
+        touch_ui,
         reset,
         restart,
         close,
@@ -706,6 +713,19 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     if scenario::has_economy(state) || scenario::has_survival(state) {
         draw_box_button("RESET PROGRESSION", layout.reset_progress);
     }
+    draw_checkbox(layout.touch_ui, state.touch_ui, "TOUCH UI", m);
+    // télécommande : rappel de l'URL de la page de contrôle (le téléphone
+    // pilote le vaisseau sur le réseau local — voir `remote.rs`), en bas de
+    // la colonne gauche, au-dessus des boutons RESET / CLOSE
+    if let Some(url) = crate::remote::url() {
+        draw_text(
+            &format!("REMOTE: {url}"),
+            layout.music.x + 4.0,
+            top + 232.0,
+            12.0,
+            argb_to_color(BOX_FG_DIM),
+        );
+    }
     draw_box_button("RESET", layout.reset);
     draw_box_button("CLOSE", layout.close);
 }
@@ -774,15 +794,19 @@ pub fn window_scaled() -> bool {
     screen_width() != VIEWPORT_WIDTH as f32 || screen_height() != VIEWPORT_HEIGHT as f32
 }
 
+/// Position écran (px fenêtre) convertie en coordonnées du jeu (960×540) —
+/// même mapping letterbox que `mouse_to_game` : utilisé par les touches de
+/// l'interface tactile (`touch.rs`), dont les positions sont aussi en px.
+pub fn screen_to_game(pos: Vec2) -> Vec2 {
+    let scale = zoom_scale();
+    let r = zoom_rect();
+    vec2((pos.x - r.x) / scale, (pos.y - r.y) / scale)
+}
+
 /// Position souris de la fenêtre convertie en coordonnées du jeu (960×540),
 /// pour que les clics/hovers des boîtes restent corrects en plein écran.
 pub fn mouse_to_game() -> Vec2 {
-    let scale = zoom_scale();
-    let r = zoom_rect();
-    vec2(
-        (mouse_position().0 - r.x) / scale,
-        (mouse_position().1 - r.y) / scale,
-    )
+    screen_to_game(vec2(mouse_position().0, mouse_position().1))
 }
 
 /// Caméra de rendu vers la vue virtuelle 960×540 (ex `letterbox.rs`).

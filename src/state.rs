@@ -189,6 +189,11 @@ pub struct GameState {
     /// de la fenêtre** (macroquad ne permet pas de le changer à chaud) — la
     /// valeur prend effet au prochain lancement.
     pub antialias: bool,
+    /// Interface tactile affichée et active (case TOUCH UI de l'écran de
+    /// paramétrage, persistée — clé `touch_ui`) : joystick virtuel bas-gauche
+    /// + bouton de tir bas-droite (`touch.rs`). Masquée (et inopérante) quand
+    /// le réglage est éteint — le jeu se pilote alors au clavier seul.
+    pub touch_ui: bool,
     /// Valeur d'anticrénelage effectivement appliquée par la fenêtre au
     /// lancement (`Conf.sample_count`). Si `antialias` en diffère, un
     /// redémarrage est nécessaire (bouton RESTART de l'écran de paramétrage).
@@ -327,6 +332,7 @@ impl GameState {
             window_size: 0,
             antialias: false,
             antialias_applied: false,
+            touch_ui: true, // interface tactile affichée par défaut
             max_meteor_shapes: INITIAL_MAX_METEOR_SHAPES,
             dock_anim: 0.0,
             dock_anim_from_pos: Point::new(0.0, 0.0),

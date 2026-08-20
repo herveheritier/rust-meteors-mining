@@ -419,6 +419,10 @@ pub fn update(
         create_shape(state, shapes, triangles, camera, elements, rng);
     }
 
+    // télécommande (`remote.rs`) : publie l'état du jeu (HUD, ressources) que
+    // la page du téléphone affiche en direct via `GET /state`
+    crate::remote::publish_state(state);
+
     (Action::Continue, camera)
 }
 
@@ -1210,10 +1214,35 @@ fn update_docking_guide(
 /// les modes de déplacement) ? Utilisé pour déclencher la rétraction des
 /// liens quand le vaisseau démarre de la base (voir `update`).
 fn player_moving_input() -> bool {
-    is_key_down(KeyCode::Up)
-        || is_key_down(KeyCode::Down)
-        || is_key_down(KeyCode::Left)
-        || is_key_down(KeyCode::Right)
+    up_pressed() || down_pressed() || left_pressed() || right_pressed()
+}
+
+/// Commandes de déplacement : touche clavier, joystick tactile (`touch.rs`,
+/// bas-gauche) OU télécommande (`remote.rs`, téléphone sur le réseau local) —
+/// les trois pilotent comme les flèches.
+fn up_pressed() -> bool {
+    is_key_down(KeyCode::Up) || crate::touch::up() || crate::remote::up()
+}
+
+fn down_pressed() -> bool {
+    is_key_down(KeyCode::Down) || crate::touch::down() || crate::remote::down()
+}
+
+fn left_pressed() -> bool {
+    is_key_down(KeyCode::Left) || crate::touch::left() || crate::remote::left()
+}
+
+fn right_pressed() -> bool {
+    is_key_down(KeyCode::Right) || crate::touch::right() || crate::remote::right()
+}
+
+/// Tir : Shift (clavier), bouton de tir tactile (`touch.rs`, bas-droite) OU
+/// télécommande (`remote.rs`).
+fn fire_pressed() -> bool {
+    is_key_down(KeyCode::LeftShift)
+        || is_key_down(KeyCode::RightShift)
+        || crate::touch::fire()
+        || crate::remote::fire()
 }
 
 /// Fait avancer la rétraction des liens d'accostage d'une frame : le vaisseau
@@ -1424,6 +1453,8 @@ enum SettingsClick {
     WindowMode,
     WindowSize,
     Antialias,
+    /// Affiche/coupe l'interface tactile (joystick + bouton de tir, `touch.rs`).
+    TouchUi,
     /// Relance le jeu (affiché quand un réglage modifié exige un redémarrage).
     Restart,
     Reset,
@@ -1463,6 +1494,9 @@ fn settings_box_click(state: &GameState) -> SettingsClick {
     }
     if l.antialias.contains(m) {
         return SettingsClick::Antialias;
+    }
+    if l.touch_ui.contains(m) {
+        return SettingsClick::TouchUi;
     }
     if state.antialias != state.antialias_applied && l.restart.contains(m) {
         return SettingsClick::Restart;
@@ -1540,6 +1574,11 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
                 "ANTIALIAS OFF"
             });
         }
+        SettingsClick::TouchUi => {
+            state.touch_ui = !state.touch_ui;
+            let _ = persist::set_bool("touch_ui", state.touch_ui);
+            crate::touch::set_enabled(state.touch_ui);
+        }
         SettingsClick::Restart => result.restart = true,
         SettingsClick::Reset => reset_settings(state, sounds.as_deref_mut()),
         SettingsClick::ResetProgress => {
@@ -1591,6 +1630,7 @@ fn reset_settings_fields(state: &mut GameState) {
     state.render_style = RenderStyle::Textured;
     state.window_size = 0;
     state.antialias = false;
+    state.touch_ui = true; // interface tactile affichée par défaut
 }
 
 /// Remet les réglages par défaut (bouton RESET) : champs par défaut
@@ -1623,9 +1663,11 @@ fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
         "render_style",
         "window_size",
         "antialias",
+        "touch_ui",
     ] {
         let _ = persist::delete_key(key);
     }
+    crate::touch::set_enabled(state.touch_ui);
 }
 
 /// Style de rendu suivant dans le cycle (TEXTURED → COLORED → MESH → …).
@@ -1727,17 +1769,17 @@ fn player_controls(
             // les modes sans inertie angulaire ne laissent pas une ancienne
             // rotation de REALISTIC continuer après un changement de mode
             player.rotation = 0.0;
-            if fuel_ok && is_key_down(KeyCode::Up) {
+            if fuel_ok && up_pressed() {
                 player.velocity += PLAYER_ACCELERATION * 60.0 * dt;
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
             }
-            if is_key_down(KeyCode::Right) {
+            if right_pressed() {
                 player.direction -= PLAYER_ROTATION_SPEED * 60.0 * dt;
                 player.orientation = -player.direction;
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
-            if fuel_ok && is_key_down(KeyCode::Down) {
+            if fuel_ok && down_pressed() {
                 if player.velocity > 0.0 {
                     // peut devenir négatif une frame (comme l'original), puis
                     // sera ramené à 0
@@ -1747,7 +1789,7 @@ fn player_controls(
                     player.velocity = 0.0;
                 }
             }
-            if is_key_down(KeyCode::Left) {
+            if left_pressed() {
                 player.direction += PLAYER_ROTATION_SPEED * 60.0 * dt;
                 player.orientation = -player.direction;
                 state.player.rotate_left_thrusted = -5; // jet latéral gauche
@@ -1756,22 +1798,22 @@ fn player_controls(
         MOVING_MODE_INERTIAL => {
             // INERTIAL tourne à vitesse imposée tant que la touche est tenue
             player.rotation = 0.0;
-            if fuel_ok && is_key_down(KeyCode::Up) {
+            if fuel_ok && up_pressed() {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, 1.0, -1.0);
             }
-            if is_key_down(KeyCode::Right) {
+            if right_pressed() {
                 player.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
-            if fuel_ok && is_key_down(KeyCode::Down) {
+            if fuel_ok && down_pressed() {
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, -1.0, 1.0);
                 if player.velocity > 0.0 {
                     state.player.revert_thrusted = -5;
                 }
             }
-            if is_key_down(KeyCode::Left) {
+            if left_pressed() {
                 player.orientation -= PLAYER_ROTATION_SPEED * 60.0 * dt;
                 state.player.rotate_left_thrusted = -5; // jet latéral gauche
             }
@@ -1781,13 +1823,13 @@ fn player_controls(
             // accélèrent progressivement la rotation ; la vitesse angulaire
             // reste ensuite dans `player.rotation` quand les touches sont
             // relâchées, et la poussée opposée permet de la compenser.
-            if fuel_ok && is_key_down(KeyCode::Up) {
+            if fuel_ok && up_pressed() {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, 1.0, -1.0);
             }
-            let rotate_right = is_key_down(KeyCode::Right);
-            let rotate_left = is_key_down(KeyCode::Left);
+            let rotate_right = right_pressed();
+            let rotate_left = left_pressed();
             // Le relâchement ne modifie pas la vitesse angulaire. Une poussée
             // opposée agit comme un frein : elle peut ramener la rotation à
             // zéro, puis la faire repartir dans l'autre sens si elle reste
@@ -1801,7 +1843,7 @@ fn player_controls(
             if rotate_right {
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
-            if fuel_ok && is_key_down(KeyCode::Down) {
+            if fuel_ok && down_pressed() {
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, -1.0, 1.0);
                 if player.velocity > 0.0 {
                     state.player.revert_thrusted = -5;
@@ -1813,7 +1855,7 @@ fn player_controls(
         }
         MOVING_MODE_4_WAYS => {
             player.rotation = 0.0;
-            if fuel_ok && is_key_down(KeyCode::Up) {
+            if fuel_ok && up_pressed() {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 let dx = player.direction.cos() * player.velocity;
@@ -1822,7 +1864,7 @@ fn player_controls(
                 player.velocity = dx.hypot(dy);
                 player.orientation = -player.direction;
             }
-            if fuel_ok && is_key_down(KeyCode::Right) {
+            if fuel_ok && right_pressed() {
                 let dx = player.direction.cos() * player.velocity + PLAYER_ACCELERATION * 60.0 * dt;
                 let dy = player.direction.sin() * player.velocity;
                 player.direction = dy.atan2(dx);
@@ -1830,7 +1872,7 @@ fn player_controls(
                 player.orientation = -player.direction;
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
-            if fuel_ok && is_key_down(KeyCode::Down) {
+            if fuel_ok && down_pressed() {
                 let dx = player.direction.cos() * player.velocity;
                 let dy = player.direction.sin() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt;
                 player.direction = dy.atan2(dx);
@@ -1840,7 +1882,7 @@ fn player_controls(
                     state.player.revert_thrusted = -5;
                 }
             }
-            if fuel_ok && is_key_down(KeyCode::Left) {
+            if fuel_ok && left_pressed() {
                 let dx = player.direction.cos() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt;
                 let dy = player.direction.sin() * player.velocity;
                 player.direction = dy.atan2(dx);
@@ -1856,9 +1898,7 @@ fn player_controls(
     // tir : Shift gauche/droit (ex `case 42, 54` des quatre modes) — le
     // cooldown `fire` (1/3 s) bloque les tirs suivants ; le scénario
     // consomme des munitions et bloque le tir quand le chargeur est vide
-    if (is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift))
-        && state.player.fire <= 0.0
-        && scenario::try_fire(state)
+    if fire_pressed() && state.player.fire <= 0.0 && scenario::try_fire(state)
     {
         fire_bullet(shapes, triangles);
         state.player.fire = PLAYER_FIRE_COOLDOWN;
@@ -1887,17 +1927,17 @@ fn cosmonaut_controls(state: &mut GameState, shapes: &mut [Shape], dt: f64) {
     state.player.thrust = 0.0;
     // poussée vectorielle : la poussée (selon l'orientation) s'ajoute au
     // vecteur de déplacement actuel, direction et vitesse recalculées
-    if is_key_down(KeyCode::Up) {
+    if up_pressed() {
         state.player.thrust = 0.1;
         state.player.thrusted = -5;
         thrust_vector(c, PLAYER_ACCELERATION * 60.0 * dt, c.orientation, 1.0, -1.0);
     }
     // orientation seule : la figure tourne, la trajectoire ne change pas
     // (elle ne sera déviée que par une poussée ultérieure)
-    if is_key_down(KeyCode::Right) {
+    if right_pressed() {
         c.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
     }
-    if is_key_down(KeyCode::Left) {
+    if left_pressed() {
         c.orientation -= PLAYER_ROTATION_SPEED * 60.0 * dt;
     }
 }
