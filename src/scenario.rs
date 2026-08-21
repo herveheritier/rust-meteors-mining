@@ -39,7 +39,9 @@
 use std::io;
 use std::path::Path;
 
-use crate::config::{MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, MOVING_MODE_REALISTIC};
+use crate::config::{
+    MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, MOVING_MODE_REALISTIC, WEAPON_SLOTS,
+};
 use crate::state::{Element, GameState};
 
 /// Identifiant d'un scénario (choisi à l'écran titre, touche N).
@@ -59,10 +61,8 @@ pub enum ScenarioId {
 pub struct Resources {
     /// Carburant en unités (0 = réservoir vide, plus de poussée).
     pub fuel: f64,
-    /// Munitions en unités (0 = plus de tirs).
-    pub ammo: i32,
     /// Minerais — la monnaie : déchargés à la station, dépensés pour les
-    /// modes de déplacement et le ravitaillement.
+    /// modes de déplacement, les armes et le ravitaillement.
     pub minerals: i32,
     /// Réputation — augmente avec les astéroïdes détruits et la précision.
     pub reputation: f64,
@@ -78,6 +78,17 @@ pub struct Resources {
     pub ammo_level: i32,
     /// Niveau de la soute (atelier) — Progression.
     pub cargo_level: i32,
+    /// Munitions par arme du catalogue (`VAISSEAU_WEAPONS`, index de l'arme ;
+    /// catalogue vide = un seul emplacement pour le canon classique de
+    /// repli) : chaque arme tire tant que son propre stock n'est pas vide —
+    /// 0 = plus de tirs pour cette arme (scénarios à économie ; ignorées en
+    /// jeu libre, les munitions y sont illimitées).
+    pub weapon_ammo: [i32; WEAPON_SLOTS],
+    /// Armes du catalogue **possédées** (achetées au magasin) : `false` = à
+    /// acheter (son mesh n'est pas construit sur le vaisseau et elle ne
+    /// tire pas) ; toujours `true` hors économie et pour les armes de base
+    /// (coût 0). Le canon classique (catalogue vide) est toujours possédé.
+    pub weapon_owned: [bool; WEAPON_SLOTS],
 }
 
 /// Types et données de la place de marché — extensions de vaisseau de
@@ -152,10 +163,6 @@ pub struct Scenario {
     pub fuel_price: i32,
     /// Pas de ravitaillement en carburant (unités par plein facturé).
     pub fuel_step: f64,
-    /// Prix (minerais) d'un plein par pas de `ammo_step` unités.
-    pub ammo_price: i32,
-    /// Pas de ravitaillement en munitions.
-    pub ammo_step: i32,
     /// Nombre de vies (scénario Survival ; 0 = illimité/classique).
     pub lives: i32,
     /// Capacité du bouclier (points absorbés avant la coque, scénario
@@ -207,8 +214,6 @@ pub const FREE_PLAY_SCENARIO: Scenario = Scenario {
     discount_precision_weight: 0.0,
     fuel_price: 0,
     fuel_step: 10.0,
-    ammo_price: 0,
-    ammo_step: 5,
     lives: 0,
     shield_capacity: 0.0,
     damage_multiplier: 1.0,
@@ -236,8 +241,6 @@ pub const PROGRESSION_SCENARIO: Scenario = Scenario {
     discount_precision_weight: DISCOUNT_PRECISION_WEIGHT, // précision sur la remise — src/marketplace.rs
     fuel_price: FUEL_PRICE, // 1 minerai pour 10 unités — src/marketplace.rs
     fuel_step: FUEL_STEP,
-    ammo_price: AMMO_PRICE, // 1 minerai pour 5 munitions — src/marketplace.rs
-    ammo_step: AMMO_STEP,
     lives: 0,
     shield_capacity: 0.0,
     damage_multiplier: 1.0,
@@ -266,8 +269,6 @@ pub const SURVIVAL_SCENARIO: Scenario = Scenario {
     discount_precision_weight: 0.0,
     fuel_price: 0,
     fuel_step: 10.0,
-    ammo_price: 0,
-    ammo_step: 5,
     lives: 3,
     shield_capacity: 3.0,
     damage_multiplier: 1.0,
@@ -533,7 +534,6 @@ pub fn apply_start(state: &mut GameState) {
         ScenarioId::Progression => {
             state.resources = Resources {
                 fuel: s.start_fuel,
-                ammo: s.start_ammo,
                 minerals: 0,
                 reputation: 0.0,
                 lives: 0,
@@ -541,7 +541,19 @@ pub fn apply_start(state: &mut GameState) {
                 fuel_level: 0,
                 ammo_level: 0,
                 cargo_level: 0,
+                weapon_ammo: [0; WEAPON_SLOTS],
+                weapon_owned: [false; WEAPON_SLOTS],
             };
+            // Armes équipées au départ : celles dont le coût configuré
+            // (outil) est nul (0 = arme de base) — chargées à la capacité
+            // courante. Les armes payantes s'achètent au magasin (bouton
+            // SHOP de la boîte DOCK STATION).
+            for i in 0..weapon_slot_count() {
+                if weapon_spec(i).cost == 0 {
+                    state.resources.weapon_owned[i] = true;
+                    state.resources.weapon_ammo[i] = s.start_ammo;
+                }
+            }
             // Modes débloqués au départ : ceux dont le coût configuré (outil)
             // est nul (0 = déjà débloqué) — REALISTIC par défaut, INERTIAL
             // seulement si l'outil le laisse gratuit. Le mode de départ
@@ -585,23 +597,176 @@ pub fn consume_fuel(state: &mut GameState, dt: f64) {
     }
 }
 
-/// Consomme des munitions pour un tir (scénarios à économie). Renvoie `false`
-/// si le chargeur est vide (le HUD affiche `AMMO:0` ; aucun message répété).
-/// Annonce « OUT OF AMMO » quand le chargeur se vide.
-pub fn try_fire(state: &mut GameState) -> bool {
+/// Consomme des munitions pour un tir (scénarios à économie) et renvoie le
+/// **masque des armes qui ont tiré** (index de `VAISSEAU_WEAPONS`, borné à
+/// `WEAPON_SLOTS`) : chaque arme possédée dont le stock couvre `ammo_per_shot`
+/// tire (ses munitions sont consommées) ; une arme à court de munitions ne
+/// tire pas, les autres continuent. Aucune arme ne peut tirer (toutes les
+/// munitions épuisées) → masque tout faux, le tir est bloqué (cooldown non
+/// réinitialisé — le tir part dès qu'une arme a des munitions ; aucun message
+/// répété). Hors économie : toutes les armes possédées tirent, sans
+/// consommation. Annonce « OUT OF AMMO » quand le dernier stock se vide.
+pub fn try_fire(state: &mut GameState) -> [bool; WEAPON_SLOTS] {
     let s = scenario(state.scenario);
+    let mut fired = [false; WEAPON_SLOTS];
     if !s.has_economy {
-        return true;
-    }
-    if state.resources.ammo >= s.ammo_per_shot {
-        state.resources.ammo -= s.ammo_per_shot;
-        if state.resources.ammo == 0 {
-            state.send_message("OUT OF AMMO");
+        // jeu libre / Survival : toutes les armes du catalogue tirent
+        for i in 0..weapon_slot_count() {
+            fired[i] = true;
         }
-        true
-    } else {
-        false
+        return fired;
     }
+    let total_before = total_ammo(state);
+    for i in 0..weapon_slot_count() {
+        if weapon_owned(state, i) && state.resources.weapon_ammo[i] >= s.ammo_per_shot {
+            state.resources.weapon_ammo[i] -= s.ammo_per_shot;
+            fired[i] = true;
+        }
+    }
+    if total_before > 0 && total_ammo(state) == 0 {
+        state.send_message("OUT OF AMMO");
+    }
+    fired
+}
+
+// ─── Armes du catalogue (achat et munitions par arme) ──────────────────────
+
+/// Données économiques d'une arme du catalogue (index dans `VAISSEAU_WEAPONS`) :
+/// nom, coût d'achat au magasin, prix et taille du paquet de munitions du
+/// ravitaillement (ligne AMMO du magasin). **Catalogue vide = un seul
+/// « canon classique »** (repli :
+/// coût 0, toujours équipé, paquets aux valeurs globales `AMMO_PRICE` /
+/// `AMMO_STEP`) — le comportement historique est préservé.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponSpec {
+    /// Nom de l'arme (magasin, messages HUD).
+    pub name: &'static str,
+    /// Coût d'achat en minerais (0 = arme de base, équipée au départ).
+    pub cost: i32,
+    /// Prix (minerais) d'un paquet de munitions.
+    pub ammo_price: i32,
+    /// Taille d'un paquet (munitions par paquet).
+    pub ammo_pack: i32,
+}
+
+/// Spécification économique de l'arme `i` du catalogue (hors catalogue →
+/// canon classique de repli). Pure (tests).
+pub fn weapon_spec(i: usize) -> WeaponSpec {
+    match crate::marketplace::VAISSEAU_WEAPONS.get(i) {
+        Some(w) => WeaponSpec {
+            name: w.name,
+            cost: w.cost,
+            ammo_price: w.ammo_price,
+            ammo_pack: w.ammo_pack,
+        },
+        None => WeaponSpec {
+            name: "CANON CLASSIQUE",
+            cost: 0,
+            ammo_price: AMMO_PRICE,
+            ammo_pack: AMMO_STEP,
+        },
+    }
+}
+
+/// Nombre d'emplacements d'armes actifs : le nombre d'armes du catalogue
+/// (`VAISSEAU_WEAPONS`), borné à `WEAPON_SLOTS` — **au moins 1** (le canon
+/// classique de repli quand le catalogue est vide). Pure (tests).
+pub fn weapon_slot_count() -> usize {
+    crate::marketplace::VAISSEAU_WEAPONS.len().clamp(1, WEAPON_SLOTS)
+}
+
+/// L'arme `i` est-elle **possédée** (équipée) ? Hors économie : toujours
+/// `true` (toutes les armes du catalogue). En économie : achetée au magasin
+/// (`weapon_owned`), ou coût 0 (arme de base — comme les modes de
+/// déplacement gratuits). Le canon classique (hors catalogue) est toujours
+/// possédé. Pure (tests).
+pub fn weapon_owned(state: &GameState, i: usize) -> bool {
+    if !has_economy(state) {
+        return i < weapon_slot_count();
+    }
+    state.resources.weapon_owned.get(i).copied().unwrap_or(false) || weapon_spec(i).cost == 0
+}
+
+/// Tarifs d'achat d'une arme pas encore possédée : tarif de base (prix
+/// d'origine) et prix réellement payé (remise de réputation du rang courant
+/// appliquée) — `None` = déjà possédée, coût nul ou pas d'économie. Comme
+/// `mode_unlock_prices` : affichés dans le magasin de la station.
+pub fn weapon_prices(state: &GameState, i: usize) -> Option<(i32, i32)> {
+    if !has_economy(state) || weapon_owned(state, i) {
+        return None;
+    }
+    let cost = weapon_spec(i).cost;
+    (cost > 0).then(|| (cost, discounted_cost(cost, current_discount(state))))
+}
+
+/// Coût en minerais d'une arme pas encore possédée (`None` = déjà possédée,
+/// coût nul ou pas d'économie) — le prix réellement payé (remisé).
+pub fn weapon_cost(state: &GameState, i: usize) -> Option<i32> {
+    weapon_prices(state, i).map(|(_, discounted)| discounted)
+}
+
+/// Résultat d'un achat d'arme au magasin (`buy_weapon`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeaponOutcome {
+    /// Arme déjà possédée (ou pas d'économie).
+    Owned,
+    /// Arme achetée (coût en minerais déduit, équipée — livrée chargée).
+    Purchased(i32),
+    /// Pas assez de minerais (coût nécessaire).
+    Insufficient(i32),
+}
+
+/// Achète une arme du catalogue au magasin de la station : paie en minerais
+/// (remise de réputation appliquée), l'équipe — son mesh apparaît sur le
+/// vaisseau (`vaisseau::rebuild_player_vaisseau` côté jeu) — et la livre
+/// **chargée** à la capacité courante. Hors scénario à économie : sans effet
+/// (`Owned`). Appelé par le magasin (bouton SHOP de la boîte DOCK STATION).
+pub fn buy_weapon(state: &mut GameState, i: usize) -> WeaponOutcome {
+    if !has_economy(state) || weapon_owned(state, i) {
+        return WeaponOutcome::Owned;
+    }
+    let Some(cost) = weapon_cost(state, i) else {
+        return WeaponOutcome::Owned; // coût 0 → arme de base, déjà équipée
+    };
+    if state.resources.minerals < cost {
+        state.send_message(&format!(
+            "NOT ENOUGH MINERALS FOR {} ({} NEEDED)",
+            weapon_spec(i).name,
+            cost
+        ));
+        return WeaponOutcome::Insufficient(cost);
+    }
+    state.resources.minerals -= cost;
+    if i < WEAPON_SLOTS {
+        state.resources.weapon_owned[i] = true;
+        state.resources.weapon_ammo[i] = ammo_capacity(state); // livrée chargée
+    }
+    state.send_message(&format!(
+        "WEAPON {} PURCHASED: -{} MINERALS",
+        weapon_spec(i).name,
+        cost
+    ));
+    WeaponOutcome::Purchased(cost)
+}
+
+/// Total des munitions restantes des armes **possédées** (toutes armes
+/// confondues) — affiché au HUD (`AMMO:x/y`) et sur la télécommande.
+/// Pure (tests).
+pub fn total_ammo(state: &GameState) -> i32 {
+    (0..weapon_slot_count())
+        .filter(|&i| weapon_owned(state, i))
+        .map(|i| state.resources.weapon_ammo[i])
+        .sum()
+}
+
+/// Capacité totale des chargeurs des armes **possédées** (somme des
+/// capacités courantes, extensions de chargeur comprises). Pure (tests).
+pub fn total_ammo_capacity(state: &GameState) -> i32 {
+    let cap = ammo_capacity(state);
+    (0..weapon_slot_count())
+        .filter(|&i| weapon_owned(state, i))
+        .map(|_| cap)
+        .sum()
 }
 
 // ─── Réputation et rangs ────────────────────────────────────────────────────
@@ -756,8 +921,8 @@ pub fn player_hit(state: &mut GameState, damage: f64) -> PlayerHit {
 /// comme le tir l'est par les astéroïdes détruits). Appelé par `docking`
 /// (déchargement automatique de l'original, au plus tard à la frame suivant
 /// la fermeture de la boîte) et par le bouton UNLOAD de la boîte DOCK STATION
-/// (déchargement immédiat — les minerais financent le REFUEL/REARM du même
-/// accostage).
+/// (déchargement immédiat — les minerais financent le ravitaillement
+/// carburant/munitions acheté au magasin du même accostage).
 pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
     let s = scenario(state.scenario);
     if !s.has_economy {
@@ -783,10 +948,11 @@ pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
     }
 }
 
-/// Résultat d'un ravitaillement à la station (`purchase_supplies`).
+/// Résultat d'un ravitaillement à la station (`buy_fuel_qty` /
+/// `buy_ammo_qty`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupplyOutcome {
-    /// Réservoirs déjà pleins (rien à payer).
+    /// Réservoir(s) déjà plein(s) (rien à payer).
     Full,
     /// Ravitaillement payé (coût en minerais déduit).
     Purchased(i32),
@@ -794,42 +960,304 @@ pub enum SupplyOutcome {
     Insufficient(i32),
 }
 
-/// Achète du carburant et des munitions à la station : remplit les réservoirs
-/// au prix du scénario (pas de `fuel_step`/`ammo_step`), déduit les minerais
-/// et annonce le coût. Appelé par le bouton REFUEL/REARM de la boîte DOCK
-/// STATION (plus d'achat automatique au déchargement).
-pub fn purchase_supplies(state: &mut GameState) -> SupplyOutcome {
+/// Coût (minerais, remise de réputation appliquée) d'un **plein de
+/// carburant** : le manque au réservoir courant est facturé au pas du
+/// scénario (`fuel_price` par `fuel_step` unités, arrondi au pas supérieur).
+/// Hors économie ou réservoir plein : 0. Équivalent à `fuel_qty_cost` sur
+/// tout le manque — le plein complet (extrémité haute du curseur FUEL).
+/// Réservé aux tests (le magasin achète à la quantité du curseur).
+#[cfg(test)]
+pub fn fuel_refill_cost(state: &GameState) -> i32 {
     let s = scenario(state.scenario);
     if !s.has_economy {
+        return 0;
+    }
+    let missing = (fuel_capacity(state) - state.resources.fuel).max(0.0);
+    let raw = (missing / s.fuel_step).ceil() as i32 * s.fuel_price;
+    discounted_cost(raw, current_discount(state))
+}
+
+/// Coût (minerais, remise de réputation appliquée) du **rechargement des
+/// munitions** : chaque arme possédée est facturée au paquet de l'arme
+/// (`ammo_price` par paquet de `ammo_pack` munitions, arrondi au paquet
+/// supérieur) — les armes non possédées ne se rechargent pas. Hors économie
+/// ou toutes les armes pleines : 0. Réservé aux tests (le magasin achète à
+/// la quantité des curseurs AMMO, un par arme possédée).
+#[cfg(test)]
+pub fn ammo_refill_cost(state: &GameState) -> i32 {
+    if !has_economy(state) {
+        return 0;
+    }
+    let max_ammo = ammo_capacity(state);
+    let mut raw = 0;
+    for i in 0..weapon_slot_count() {
+        if !weapon_owned(state, i) {
+            continue;
+        }
+        let spec = weapon_spec(i);
+        let missing = (max_ammo - state.resources.weapon_ammo[i]).max(0);
+        raw += ((missing + spec.ammo_pack - 1) / spec.ammo_pack) * spec.ammo_price;
+    }
+    discounted_cost(raw, current_discount(state))
+}
+
+/// Nombre de **paquets facturés** pour `qty` unités de carburant au magasin
+/// (arrondi au paquet supérieur — tout achat paie au moins un paquet) ; 0 si
+/// la quantité est nulle ou hors économie. Affiche la ligne FUEL (« +30
+/// (3 paquets) »). Pure (tests).
+pub fn fuel_pack_count(state: &GameState, qty: f64) -> i32 {
+    let s = scenario(state.scenario);
+    if !s.has_economy || qty <= 0.0 {
+        return 0;
+    }
+    (qty / s.fuel_step).ceil() as i32
+}
+
+/// Coût (minerais, remise de réputation appliquée) de l'achat de `qty`
+/// **unités** de carburant au magasin (ligne FUEL, curseur) : facturées au
+/// paquet du scénario (`fuel_price` par `fuel_step` — voir `fuel_pack_count`),
+/// puis remise appliquée. `qty <= 0` ou hors économie : 0. Pure (tests).
+pub fn fuel_qty_cost(state: &GameState, qty: f64) -> i32 {
+    discounted_cost(
+        fuel_pack_count(state, qty) * scenario(state.scenario).fuel_price,
+        current_discount(state),
+    )
+}
+
+/// Nombre de **paquets facturés** pour `qty` munitions de l'arme `i` au
+/// magasin (paquet de l'arme, arrondi au supérieur) ; 0 si la quantité est
+/// nulle ou hors économie. Affiche la ligne AMMO de l'arme. Pure (tests).
+pub fn ammo_pack_count(state: &GameState, i: usize, qty: i32) -> i32 {
+    if !has_economy(state) || qty <= 0 {
+        return 0;
+    }
+    let spec = weapon_spec(i);
+    (qty + spec.ammo_pack - 1) / spec.ammo_pack
+}
+
+/// Coût (minerais, remise de réputation appliquée) de l'achat de `qty`
+/// **unités** de munitions pour l'arme `i` (ligne AMMO de l'arme, curseur) :
+/// facturées au paquet de l'arme (`ammo_price` par paquet de `ammo_pack` —
+/// voir `ammo_pack_count`), puis remise appliquée. `qty <= 0` ou hors
+/// économie : 0. Pure (tests).
+pub fn ammo_qty_cost(state: &GameState, i: usize, qty: i32) -> i32 {
+    discounted_cost(
+        ammo_pack_count(state, i, qty) * weapon_spec(i).ammo_price,
+        current_discount(state),
+    )
+}
+
+/// Achète un **plein de carburant** à la station : remplit le réservoir à la
+/// capacité courante et déduit les minerais (voir `buy_fuel_qty`). Équivaut
+/// au curseur FUEL du magasin à son maximum. Réservé aux tests (le magasin
+/// achète à la quantité du curseur).
+#[cfg(test)]
+pub fn purchase_fuel(state: &mut GameState) -> SupplyOutcome {
+    let missing = (fuel_capacity(state) - state.resources.fuel).max(0.0);
+    buy_fuel_qty(state, missing)
+}
+
+/// Achète `qty` unités de carburant à la station (ligne FUEL du magasin,
+/// curseur) : facturées au paquet (`fuel_qty_cost` — un paquet minimum pour
+/// tout achat) ; le réservoir reçoit exactement `qty` unités, bornées au
+/// manque de la capacité courante. Minerais insuffisants → `Insufficient`
+/// (message « NOT ENOUGH MINERALS FOR FUEL », non répété au même coût).
+pub fn buy_fuel_qty(state: &mut GameState, qty: f64) -> SupplyOutcome {
+    if !has_economy(state) {
         return SupplyOutcome::Full;
     }
-    // capacités courantes (base + extensions d'atelier achetées)
-    let max_fuel = fuel_capacity(state);
-    let max_ammo = ammo_capacity(state);
-    let missing_fuel = (max_fuel - state.resources.fuel).max(0.0);
-    let missing_ammo = (max_ammo - state.resources.ammo).max(0);
-    let fuel_cost = (missing_fuel / s.fuel_step).ceil() as i32 * s.fuel_price;
-    let ammo_cost = ((missing_ammo + s.ammo_step - 1) / s.ammo_step) * s.ammo_price;
-    // remise de réputation appliquée au total du ravitaillement
-    let cost = discounted_cost(fuel_cost + ammo_cost, current_discount(state));
+    let missing = (fuel_capacity(state) - state.resources.fuel).max(0.0);
+    let qty = qty.clamp(0.0, missing);
+    if qty <= 0.0 {
+        return SupplyOutcome::Full;
+    }
+    let cost = fuel_qty_cost(state, qty);
     if cost == 0 {
         return SupplyOutcome::Full;
     }
     if state.resources.minerals < cost {
-        // le message n'est envoyé qu'au début du manque (pas à chaque frame
-        // tant que le joueur reste à quai — `supplies_shortage_cost`)
+        // le message n'est envoyé qu'au début du manque (pas à chaque clic
+        // répété — `supplies_shortage_cost`)
         if state.supplies_shortage_cost != cost {
             state.supplies_shortage_cost = cost;
-            state.send_message(&format!("NOT ENOUGH MINERALS FOR SUPPLIES ({} NEEDED)", cost));
+            state.send_message(&format!("NOT ENOUGH MINERALS FOR FUEL ({} NEEDED)", cost));
         }
         return SupplyOutcome::Insufficient(cost);
     }
     state.supplies_shortage_cost = 0;
     state.resources.minerals -= cost;
-    state.resources.fuel = max_fuel;
-    state.resources.ammo = max_ammo;
-    state.send_message(&format!("SUPPLIES PURCHASED: -{} MINERALS", cost));
+    state.resources.fuel = (state.resources.fuel + qty).min(fuel_capacity(state));
+    state.send_message(&format!("FUEL PURCHASED: -{} MINERALS", cost));
     SupplyOutcome::Purchased(cost)
+}
+
+/// Achète le **rechargement des munitions** à la station : chaque arme
+/// possédée repart pleine à la capacité courante (`ammo_refill_cost`, par
+/// paquet de l'arme) et les minerais sont déduits. Les munitions s'achètent
+/// **indépendamment** du carburant. Réservé aux tests (le magasin achète à
+/// la quantité des curseurs AMMO, un par arme possédée).
+#[cfg(test)]
+pub fn purchase_ammo(state: &mut GameState) -> SupplyOutcome {
+    if !has_economy(state) {
+        return SupplyOutcome::Full;
+    }
+    let cost = ammo_refill_cost(state);
+    if cost == 0 {
+        return SupplyOutcome::Full;
+    }
+    if state.resources.minerals < cost {
+        if state.supplies_shortage_cost != cost {
+            state.supplies_shortage_cost = cost;
+            state.send_message(&format!("NOT ENOUGH MINERALS FOR AMMO ({} NEEDED)", cost));
+        }
+        return SupplyOutcome::Insufficient(cost);
+    }
+    state.supplies_shortage_cost = 0;
+    state.resources.minerals -= cost;
+    let max_ammo = ammo_capacity(state);
+    for i in 0..weapon_slot_count() {
+        if weapon_owned(state, i) {
+            state.resources.weapon_ammo[i] = max_ammo;
+        }
+    }
+    state.send_message(&format!("AMMO PURCHASED: -{} MINERALS", cost));
+    SupplyOutcome::Purchased(cost)
+}
+
+/// Achète `qty` unités de munitions pour l'arme `i` (ligne AMMO de l'arme,
+/// curseur) : facturées au paquet de l'arme (`ammo_qty_cost` — un paquet
+/// minimum pour tout achat) ; le chargeur reçoit exactement `qty` unités,
+/// bornées au manque de la capacité courante. Arme non possédée ou quantité
+/// nulle : sans effet (`Full`). Minerais insuffisants → `Insufficient`
+/// (message « NOT ENOUGH MINERALS FOR AMMO », non répété au même coût).
+pub fn buy_ammo_qty(state: &mut GameState, i: usize, qty: i32) -> SupplyOutcome {
+    if !has_economy(state) || !weapon_owned(state, i) {
+        return SupplyOutcome::Full;
+    }
+    let missing = (ammo_capacity(state) - state.resources.weapon_ammo[i]).max(0);
+    let qty = qty.clamp(0, missing);
+    if qty <= 0 {
+        return SupplyOutcome::Full;
+    }
+    let cost = ammo_qty_cost(state, i, qty);
+    if cost == 0 {
+        return SupplyOutcome::Full;
+    }
+    if state.resources.minerals < cost {
+        if state.supplies_shortage_cost != cost {
+            state.supplies_shortage_cost = cost;
+            state.send_message(&format!("NOT ENOUGH MINERALS FOR AMMO ({} NEEDED)", cost));
+        }
+        return SupplyOutcome::Insufficient(cost);
+    }
+    state.supplies_shortage_cost = 0;
+    state.resources.minerals -= cost;
+    state.resources.weapon_ammo[i] += qty;
+    state.send_message(&format!(
+        "{} AMMO PURCHASED: -{} MINERALS",
+        weapon_spec(i).name,
+        cost
+    ));
+    SupplyOutcome::Purchased(cost)
+}
+
+/// Quantité maximale de carburant **achetable** avec les minerais courants :
+/// le plus grand multiple du pas (`fuel_step`) dont le coût (remisé) ne
+/// dépasse pas les minerais, borné au manque du réservoir — 0 si même un
+/// paquet est hors de portée (ou hors économie). Positionne le curseur FUEL
+/// du magasin à l'ouverture. Pure (tests).
+pub fn affordable_fuel_qty(state: &GameState) -> f64 {
+    let s = scenario(state.scenario);
+    if !s.has_economy {
+        return 0.0;
+    }
+    let missing = (fuel_capacity(state) - state.resources.fuel).max(0.0);
+    let max_packs = (missing / s.fuel_step).ceil() as i32;
+    for n in (1..=max_packs).rev() {
+        if discounted_cost(n * s.fuel_price, current_discount(state)) <= state.resources.minerals {
+            return (n as f64 * s.fuel_step).min(missing);
+        }
+    }
+    0.0
+}
+
+/// Quantité maximale de munitions **achetable** pour l'arme `i` avec les
+/// minerais courants : le plus grand multiple du paquet de l'arme dont le
+/// coût (remisé) ne dépasse pas les minerais, borné au manque du chargeur —
+/// 0 si même un paquet est hors de portée (ou hors économie). Positionne le
+/// curseur AMMO de l'arme à l'ouverture du magasin. Pure (tests).
+pub fn affordable_ammo_qty(state: &GameState, i: usize) -> i32 {
+    if !has_economy(state) {
+        return 0;
+    }
+    let spec = weapon_spec(i);
+    let missing = (ammo_capacity(state) - state.resources.weapon_ammo[i]).max(0);
+    let max_packs = (missing + spec.ammo_pack - 1) / spec.ammo_pack;
+    for n in (1..=max_packs).rev() {
+        if discounted_cost(n * spec.ammo_price, current_discount(state)) <= state.resources.minerals {
+            return (n * spec.ammo_pack).min(missing);
+        }
+    }
+    0
+}
+
+/// Borne les quantités des curseurs du magasin (carburant et munitions par
+/// arme possédée) à ce que les minerais permettent (`affordable_fuel_qty` /
+/// Aimanate une quantité de curseur au **multiple du paquet** le plus proche
+/// (pour ne jamais payer un paquet sans en prendre les unités) — sauf le
+/// **maximum** (`max`, le plein du réservoir), qui reste atteignable même
+/// s'il ne tombe pas pile sur un multiple : le dernier paquet est alors pris
+/// en entier (aucune unité perdue). `qty` est arrondi au multiple le plus
+/// proche et borné à `max` (0 si le paquet ou le maximum est nul). Pure
+/// (tests).
+pub fn snap_to_pack(qty: f64, pack: f64, max: f64) -> f64 {
+    if pack <= 0.0 || max <= 0.0 {
+        return 0.0;
+    }
+    let qty = qty.clamp(0.0, max);
+    // le maximum (plein du réservoir) reste une position valide : au-delà,
+    // le dernier paquet payé est pris en entier
+    if qty >= max {
+        return max;
+    }
+    (qty / pack).round() * pack
+}
+
+/// Borne les quantités des curseurs du magasin (carburant et munitions par
+/// arme possédée) à ce que les minerais permettent (`affordable_fuel_qty` /
+/// `affordable_ammo_qty` — déjà bornées au manque des réservoirs) : jamais
+/// une quantité dont le coût dépasserait les minerais disponibles — on ne
+/// peut pas se retrouver avec un curseur hors de portée. Les quantités sont
+/// aussi **aimantées aux multiples du paquet** (`snap_to_pack`) pour ne
+/// jamais payer un paquet sans en prendre les unités en glissant à la
+/// souris. Appelé à chaque frame par le magasin (`game.rs`). Pur (tests).
+pub fn clamp_shop_quantities(state: &mut GameState) {
+    if !has_economy(state) {
+        state.shop_fuel_qty = 0.0;
+        state.shop_ammo_qty = [0.0; WEAPON_SLOTS];
+        return;
+    }
+    let missing_fuel = (fuel_capacity(state) - state.resources.fuel).max(0.0);
+    state.shop_fuel_qty = snap_to_pack(
+        state.shop_fuel_qty,
+        scenario(state.scenario).fuel_step,
+        missing_fuel,
+    );
+    state.shop_fuel_qty = state.shop_fuel_qty.clamp(0.0, affordable_fuel_qty(state));
+    for i in 0..weapon_slot_count() {
+        if weapon_owned(state, i) {
+            let missing = (ammo_capacity(state) - state.resources.weapon_ammo[i]).max(0) as f64;
+            state.shop_ammo_qty[i] = snap_to_pack(
+                state.shop_ammo_qty[i],
+                weapon_spec(i).ammo_pack as f64,
+                missing,
+            );
+            state.shop_ammo_qty[i] = state.shop_ammo_qty[i].clamp(
+                0.0,
+                affordable_ammo_qty(state, i) as f64,
+            );
+        }
+    }
 }
 
 // ─── Modes de déplacement ───────────────────────────────────────────────────
@@ -1007,7 +1435,13 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
         }
         UpgradeTrackId::Ammo => {
             state.resources.ammo_level += 1;
-            state.resources.ammo = ammo_capacity(state);
+            // chargeur agrandi : chaque arme possédée passe à la nouvelle
+            // capacité, pleine (les armes non possédées restent à 0)
+            for i in 0..weapon_slot_count() {
+                if weapon_owned(state, i) {
+                    state.resources.weapon_ammo[i] = ammo_capacity(state);
+                }
+            }
         }
         UpgradeTrackId::Cargo => {
             state.resources.cargo_level += 1;
@@ -1035,6 +1469,9 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
 /// - `prog_up_fuel`    — extensions de réservoir achetées (Progression)
 /// - `prog_up_ammo`    — extensions de chargeur achetées (Progression)
 /// - `prog_up_cargo`   — extensions de soute achetées (Progression)
+/// - `prog_weapons`    — armes du catalogue possédées (masque binaire : bit
+///   i = arme i achetée, Progression ; les munitions par arme repartent
+///   pleines à chaque lancement, non persistées)
 const SCENARIO_KEY: &str = "scenario";
 const PROG_MINERALS_KEY: &str = "prog_minerals";
 const PROG_MODES_KEY: &str = "prog_modes";
@@ -1044,6 +1481,7 @@ const PROG_SHIELD_KEY: &str = "prog_shield";
 const PROG_UP_FUEL_KEY: &str = "prog_up_fuel";
 const PROG_UP_AMMO_KEY: &str = "prog_up_ammo";
 const PROG_UP_CARGO_KEY: &str = "prog_up_cargo";
+const PROG_WEAPONS_KEY: &str = "prog_weapons";
 
 /// Masque binaire des modes de déplacement débloqués (bit i = mode i).
 fn unlocked_mask(state: &GameState) -> i32 {
@@ -1056,13 +1494,27 @@ fn unlocked_mask(state: &GameState) -> i32 {
     })
 }
 
+/// Masque binaire des armes possédées (bit i = arme i du catalogue — seules
+/// les armes du catalogue sont persistées, le canon classique de repli est
+/// toujours possédé).
+fn weapons_owned_mask(state: &GameState) -> i32 {
+    (0..weapon_slot_count()).fold(0, |mask, i| {
+        if state.resources.weapon_owned[i] {
+            mask | (1 << i)
+        } else {
+            mask
+        }
+    })
+}
+
 /// Enregistre la progression courante dans un fichier de config donné :
 /// toujours le scénario choisi, et les ressources du scénario — minerais,
-/// modes débloqués et réputation en Progression, vies et bouclier en
-/// Survival. Chaque scénario n'écrit que ses propres clés : les clés `prog_*`
-/// de l'autre scénario ne sont pas réécrites (une partie Progression ne vide
-/// pas la sauvegarde Survival, et inversement). Version chemin explicite
-/// (tests).
+/// modes débloqués, réputation, extensions d'atelier et **armes possédées**
+/// en Progression, vies et bouclier en Survival (les munitions par arme
+/// repartent pleines au lancement : non persistées). Chaque scénario n'écrit
+/// que ses propres clés : les clés `prog_*` de l'autre scénario ne sont pas
+/// réécrites (une partie Progression ne vide pas la sauvegarde Survival, et
+/// inversement). Version chemin explicite (tests).
 pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
     crate::persist::set_i32_to(path, SCENARIO_KEY, state.scenario as i32)?;
     if has_economy(state) {
@@ -1077,6 +1529,9 @@ pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
         crate::persist::set_i32_to(path, PROG_UP_FUEL_KEY, state.resources.fuel_level)?;
         crate::persist::set_i32_to(path, PROG_UP_AMMO_KEY, state.resources.ammo_level)?;
         crate::persist::set_i32_to(path, PROG_UP_CARGO_KEY, state.resources.cargo_level)?;
+        // armes possédées (les munitions par arme repartent pleines au
+        // lancement : non persistées)
+        crate::persist::set_i32_to(path, PROG_WEAPONS_KEY, weapons_owned_mask(state))?;
     }
     if has_survival(state) {
         crate::persist::set_i32_to(path, PROG_LIVES_KEY, state.resources.lives)?;
@@ -1091,7 +1546,8 @@ pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
 
 /// Enregistre la progression courante dans le fichier de config utilisateur
 /// (voir `save_progression_to`). Appelé à chaque modification de la
-/// progression (déchargement, ravitaillement REFUEL/REARM, achat de mode,
+/// progression (déchargement, ravitaillement carburant/munitions au magasin,
+/// achat de mode,
 /// astéroïde détruit, achat d'extension à l'atelier, impact subi), après un
 /// changement de scénario (écran titre, touche N) et à la sortie du jeu
 /// (filet de sécurité dans `main.rs`).
@@ -1164,10 +1620,27 @@ pub fn load_progression_from(path: &Path, state: &mut GameState) {
         if let Some(level) = crate::persist::get_i32_from(path, PROG_UP_CARGO_KEY) {
             state.resources.cargo_level = level.clamp(0, s.cargo_upgrades.tiers.len() as i32);
         }
+        // armes possédées restaurées (masque binaire) : les armes de base
+        // (coût 0) restent équipées même pour une ancienne sauvegarde sans
+        // la clé ; chaque arme possédée repart **chargée** à la capacité
+        // courante (les munitions ne sont pas persistées)
+        if let Some(mask) = crate::persist::get_i32_from(path, PROG_WEAPONS_KEY) {
+            for i in 0..weapon_slot_count() {
+                state.resources.weapon_owned[i] = mask & (1 << i) != 0;
+            }
+        }
+        for i in 0..weapon_slot_count() {
+            state.resources.weapon_owned[i] =
+                state.resources.weapon_owned[i] || weapon_spec(i).cost == 0;
+            state.resources.weapon_ammo[i] = if state.resources.weapon_owned[i] {
+                ammo_capacity(state)
+            } else {
+                0
+            };
+        }
         // réservoirs pleins à la capacité courante (extensions comprises) et
         // soute à la taille du niveau restauré
         state.resources.fuel = fuel_capacity(state);
-        state.resources.ammo = ammo_capacity(state);
         state.player.cargo_size = cargo_capacity(state);
     }
     if s.lives > 0 {
@@ -1193,12 +1666,13 @@ pub fn load_progression(state: &mut GameState) {
 
 /// Remet la progression du scénario courant à zéro (bouton RESET PROGRESSION
 /// de l'écran de paramétrage) : les clés `prog_*` du fichier de config
-/// (minerais, modes payés, réputation, extensions d'atelier, vies/bouclier)
-/// et le mode de déplacement choisi (`moving_mode`) sont supprimées, puis les
-/// règles de départ du scénario sont réappliquées (`apply_start`) : minerais
-/// 0, seuls les modes gratuits (coût 0) débloqués, réputation nulle,
-/// réservoirs pleins, mode de départ (REALISTIC en Progression). Les réglages
-/// (musique, volume, rendu, fenêtre) et le scénario choisi sont conservés.
+/// (minerais, modes payés, réputation, extensions d'atelier, armes
+/// possédées, vies/bouclier) et le mode de déplacement choisi (`moving_mode`)
+/// sont supprimées, puis les règles de départ du scénario sont réappliquées
+/// (`apply_start`) : minerais 0, seuls les modes gratuits (coût 0) débloqués
+/// et les armes de base (coût 0) équipées, réputation nulle, réservoirs
+/// pleins, mode de départ (REALISTIC en Progression). Les réglages (musique,
+/// volume, rendu, fenêtre) et le scénario choisi sont conservés.
 pub fn reset_progression(state: &mut GameState) {
     reset_progression_from(&crate::persist::config_path(), state);
 }
@@ -1213,6 +1687,7 @@ pub fn reset_progression_from(path: &Path, state: &mut GameState) {
         PROG_UP_FUEL_KEY,
         PROG_UP_AMMO_KEY,
         PROG_UP_CARGO_KEY,
+        PROG_WEAPONS_KEY,
         PROG_LIVES_KEY,
         PROG_SHIELD_KEY,
         "moving_mode",
@@ -1400,8 +1875,8 @@ mod tests {
         let mut s = GameState::new();
         assert!(!has_economy(&s));
         assert!(fuel_available(&s));
-        assert!(try_fire(&mut s)); // pas de consommation
-        assert_eq!(s.resources.ammo, 0);
+        assert!(try_fire(&mut s).iter().any(|&f| f)); // pas de consommation
+        assert_eq!(total_ammo(&s), 0);
         for m in 0..MOVING_MODE_COUNT {
             assert_eq!(locked_cost(&s, m), None);
             assert!(try_select_mode(&mut s, m));
@@ -1419,7 +1894,7 @@ mod tests {
         assert!(has_economy(&s));
         assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
         assert_eq!(s.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
-        assert_eq!(s.resources.ammo, PROGRESSION_SCENARIO.start_ammo);
+        assert_eq!(total_ammo(&s), PROGRESSION_SCENARIO.start_ammo); // arme de base
         assert_eq!(s.resources.minerals, 0);
         assert_eq!(s.resources.reputation, 0.0);
         assert_eq!(locked_cost(&s, MOVING_MODE_REALISTIC), None);
@@ -1518,14 +1993,149 @@ mod tests {
 
     #[test]
     fn ammo_is_consumed_per_shot_and_blocks_when_empty() {
+        // seules les armes possédées tirent : au départ seule l'arme de base
+        // (coût 0) est équipée — un tir consomme 1 munition de son stock, les
+        // autres slots restent à 0 (armes non possédées)
         let mut s = progression_state();
-        assert!(try_fire(&mut s));
-        assert_eq!(s.resources.ammo, PROGRESSION_SCENARIO.start_ammo - 1);
-        s.resources.ammo = 1;
-        assert!(try_fire(&mut s));
+        let mut only_base = [false; WEAPON_SLOTS];
+        only_base[0] = true;
+        assert_eq!(try_fire(&mut s), only_base);
+        assert_eq!(total_ammo(&s), PROGRESSION_SCENARIO.start_ammo - 1);
+        s.resources.weapon_ammo[0] = 1;
+        assert_eq!(try_fire(&mut s), only_base);
         assert!(s.message_queue.contains("OUT OF AMMO"));
-        assert!(!try_fire(&mut s)); // chargeur vide
-        assert_eq!(s.resources.ammo, 0);
+        // chargeur vide : plus aucune arme ne peut tirer (tir bloqué)
+        assert_eq!(try_fire(&mut s), [false; WEAPON_SLOTS]);
+        assert_eq!(total_ammo(&s), 0);
+    }
+
+    // ─── armes du catalogue (achat, munitions par arme) ────────────────────
+
+    #[test]
+    fn base_weapons_are_owned_and_paid_weapons_are_locked() {
+        // au départ en Progression : les armes à coût nul (arme de base) sont
+        // équipées et chargées ; les armes payantes sont à acheter (non
+        // équipées, munitions à 0) ; jeu libre : toutes les armes sont
+        // équipées
+        let s = progression_state();
+        for i in 0..weapon_slot_count() {
+            let spec = weapon_spec(i);
+            assert_eq!(weapon_owned(&s, i), spec.cost == 0, "{}", spec.name);
+            assert_eq!(
+                s.resources.weapon_ammo[i],
+                if spec.cost == 0 {
+                    PROGRESSION_SCENARIO.start_ammo
+                } else {
+                    0
+                },
+                "{}",
+                spec.name
+            );
+            assert_eq!(weapon_cost(&s, i), (spec.cost > 0).then_some(spec.cost));
+        }
+        let f = GameState::new();
+        assert!((0..weapon_slot_count()).all(|i| weapon_owned(&f, i)));
+    }
+
+    #[test]
+    fn paid_weapon_is_bought_with_minerals_and_loaded() {
+        // une arme payante (ex ARME 2, 30 minerais) : refusée sans assez de
+        // minerais, achetée ensuite — équipée, livrée chargée à la capacité
+        // courante, puis non rachetable
+        let mut s = progression_state();
+        let i = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
+        assert_eq!(
+            buy_weapon(&mut s, i),
+            WeaponOutcome::Insufficient(weapon_spec(i).cost)
+        );
+        assert!(s.message_queue.contains("NOT ENOUGH MINERALS"));
+        s.resources.minerals = 100;
+        let cost = weapon_cost(&s, i).unwrap();
+        assert_eq!(buy_weapon(&mut s, i), WeaponOutcome::Purchased(cost));
+        assert!(weapon_owned(&s, i));
+        assert_eq!(s.resources.weapon_ammo[i], ammo_capacity(&s)); // livrée chargée
+        assert_eq!(s.resources.minerals, 100 - cost);
+        assert!(s.message_queue.contains("WEAPON"));
+        assert_eq!(buy_weapon(&mut s, i), WeaponOutcome::Owned); // déjà possédée
+    }
+
+    #[test]
+    fn each_weapon_fires_its_own_ammo() {
+        // deux armes possédées : un tir consomme 1 munition de chacune ; une
+        // arme à court de munitions ne tire pas, l'autre continue
+        let mut s = progression_state();
+        let paid = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
+        s.resources.minerals = 1000;
+        let cost = weapon_cost(&s, paid).unwrap();
+        assert_eq!(buy_weapon(&mut s, paid), WeaponOutcome::Purchased(cost));
+        let mut both = [false; WEAPON_SLOTS];
+        both[0] = true;
+        both[paid] = true;
+        assert_eq!(try_fire(&mut s), both);
+        assert_eq!(s.resources.weapon_ammo[0], PROGRESSION_SCENARIO.start_ammo - 1);
+        assert_eq!(s.resources.weapon_ammo[paid], ammo_capacity(&s) - 1);
+        // arme de base à court : seul l'arme payante tire (masque partiel)
+        s.resources.weapon_ammo[0] = 0;
+        let mut only_paid = [false; WEAPON_SLOTS];
+        only_paid[paid] = true;
+        assert_eq!(try_fire(&mut s), only_paid);
+        assert_eq!(s.resources.weapon_ammo[paid], ammo_capacity(&s) - 2);
+        // les deux à court : tir bloqué (aucun slot armé)
+        s.resources.weapon_ammo[paid] = 0;
+        assert_eq!(try_fire(&mut s), [false; WEAPON_SLOTS]);
+    }
+
+    #[test]
+    fn supplies_charge_ammo_packs_per_weapon() {
+        // la recharge des munitions (magasin, ligne AMMO — indépendante du
+        // carburant) facture **par arme possédée**, au paquet de l'arme :
+        // 6 paquets × prix ARME 1 + 6 paquets × prix ARME 2 (30 munitions à
+        // la capacité de base, paquets de 5) ; le carburant reste intact
+        let mut s = progression_state();
+        let paid = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
+        s.resources.minerals = 1000;
+        let cost = weapon_cost(&s, paid).unwrap();
+        assert_eq!(buy_weapon(&mut s, paid), WeaponOutcome::Purchased(cost));
+        s.resources.weapon_ammo[0] = 0;
+        s.resources.weapon_ammo[paid] = 0;
+        let expected = [0, paid]
+            .iter()
+            .map(|&i| {
+                let spec = weapon_spec(i);
+                (ammo_capacity(&s) / spec.ammo_pack) * spec.ammo_price
+            })
+            .sum::<i32>();
+        assert_eq!(ammo_refill_cost(&s), expected);
+        assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Purchased(expected));
+        assert_eq!(total_ammo(&s), 2 * ammo_capacity(&s));
+        assert_eq!(s.resources.fuel, PROGRESSION_SCENARIO.start_fuel); // intact
+    }
+
+    #[test]
+    fn owned_weapons_persist_and_restore_loaded() {
+        // les armes achetées sont enregistrées avec la progression
+        // (`prog_weapons`) et restaurées au lancement suivant — **chargées**
+        // (les munitions par arme repartent pleines, non persistées) ; les
+        // armes de base (coût 0) restent équipées même sans la clé (ancienne
+        // sauvegarde)
+        let p = temp_path("weapons.cfg");
+        let _ = std::fs::remove_file(&p);
+        let mut s = progression_state();
+        let paid = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
+        s.resources.minerals = 1000;
+        let cost = weapon_cost(&s, paid).unwrap();
+        assert_eq!(buy_weapon(&mut s, paid), WeaponOutcome::Purchased(cost));
+        s.resources.weapon_ammo[paid] = 3; // non persisté
+        save_progression_to(&p, &s).unwrap();
+        assert_eq!(get_i32_from(&p, "prog_weapons"), Some(weapons_owned_mask(&s)));
+
+        let mut t = progression_state();
+        assert!(!weapon_owned(&t, paid)); // départ neuf
+        load_progression_from(&p, &mut t);
+        assert!(weapon_owned(&t, paid));
+        assert_eq!(t.resources.weapon_ammo[paid], ammo_capacity(&t)); // repart chargée
+        assert_eq!(t.resources.minerals, 1000 - cost);
+        let _ = std::fs::remove_file(&p);
     }
 
     #[test]
@@ -1599,7 +2209,7 @@ mod tests {
         assert_eq!(s.resources.shield, SURVIVAL_SCENARIO.shield_capacity);
         assert!(s.unlocked_modes.iter().all(|&u| u));
         assert!(fuel_available(&s));
-        assert!(try_fire(&mut s.clone())); // pas de consommation
+        assert!(try_fire(&mut s.clone()).iter().any(|&f| f)); // pas de consommation
         assert_eq!(current_rank(&s), None);
     }
 
@@ -1747,52 +2357,181 @@ mod tests {
     }
 
     #[test]
-    fn supplies_are_purchased_and_charge_minerals() {
-        // réservoir à moitié vide : plein payé au pas (10 carburant = 1
-        // minerai, 5 munitions = 1) et déduit des minerais
+    fn fuel_and_ammo_are_purchased_independently() {
+        // carburant et munitions s'achètent **indépendamment** au magasin :
+        // le plein de carburant (5 pas × 1 = 5) ne touche pas aux munitions,
+        // et le rechargement des munitions (4 paquets × 1 = 4) pas au
+        // carburant — chacun est facturé à part
         let mut s = progression_state();
         s.resources.minerals = 100;
         s.resources.fuel = 50.0;
-        s.resources.ammo = 10;
-        match purchase_supplies(&mut s) {
-            SupplyOutcome::Purchased(cost) => {
-                assert_eq!(cost, 9); // 5 × 1 (carburant) + 4 × 1 (munitions)
-                assert_eq!(s.resources.minerals, 100 - cost);
-            }
-            _ => panic!("achat attendu"),
-        }
+        s.resources.weapon_ammo[0] = 10;
+        assert_eq!(fuel_refill_cost(&s), 5); // 50 manquants / 10 par pas
+        assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Purchased(5));
         assert_eq!(s.resources.fuel, fuel_capacity(&s)); // 100 (base)
-        assert_eq!(s.resources.ammo, ammo_capacity(&s)); // 30 (base)
-        assert!(s.message_queue.contains("SUPPLIES PURCHASED"));
+        assert_eq!(s.resources.minerals, 95);
+        assert_eq!(s.resources.weapon_ammo[0], 10); // munitions intactes
+        assert!(s.message_queue.contains("FUEL PURCHASED"));
+
+        assert_eq!(ammo_refill_cost(&s), 4); // 20 manquants / 5 par paquet
+        assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Purchased(4));
+        assert_eq!(s.resources.minerals, 91);
+        assert_eq!(total_ammo(&s), ammo_capacity(&s)); // 30 (base)
+        assert_eq!(s.resources.fuel, 100.0); // carburant intact
+        assert!(s.message_queue.contains("AMMO PURCHASED"));
     }
 
     #[test]
     fn supplies_are_refused_without_enough_minerals() {
-        // ravitaillement complet (100 carburant + 30 munitions = 16 minerais)
-        // refusé avec seulement 2 : réservoirs inchangés, message envoyé une
-        // seule fois (pas de répétition à chaque frame à quai)
+        // carburant et munitions refusés séparément avec seulement 2 minerais
+        // (plein de carburant 10, recharge de munitions 6) : réservoirs
+        // inchangés, message envoyé une seule fois par coût (pas de
+        // répétition à chaque clic)
         let mut s = progression_state();
         s.resources.minerals = 2;
         s.resources.fuel = 0.0;
-        s.resources.ammo = 0;
-        assert_eq!(purchase_supplies(&mut s), SupplyOutcome::Insufficient(16));
+        s.resources.weapon_ammo[0] = 0;
+        assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Insufficient(10));
         assert_eq!(s.resources.fuel, 0.0);
-        assert!(s.message_queue.contains("NOT ENOUGH MINERALS"));
+        assert!(s.message_queue.contains("NOT ENOUGH MINERALS FOR FUEL"));
         let queue = s.message_queue.clone();
-        assert_eq!(purchase_supplies(&mut s), SupplyOutcome::Insufficient(16));
+        assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Insufficient(10));
         assert_eq!(s.message_queue, queue); // pas de nouveau message
-        // minerais obtenus : le ravitaillement est accepté et le manque effacé
+        // munitions : coût différent (6) → message distinct
+        assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Insufficient(6));
+        assert!(s.message_queue.contains("NOT ENOUGH MINERALS FOR AMMO"));
+        // minerais obtenus : chaque achat est accepté et le manque effacé
+        // (assez pour les deux : plein de carburant 10 + recharge 6)
         s.resources.minerals = 16;
-        assert_eq!(purchase_supplies(&mut s), SupplyOutcome::Purchased(16));
+        assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Purchased(10));
         assert_eq!(s.supplies_shortage_cost, 0);
+        assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Purchased(6));
     }
 
     #[test]
     fn full_tank_costs_nothing() {
-        // réservoirs pleins : rien à payer, aucun message
+        // réservoir et chargeurs pleins : rien à payer, aucun message
         let mut s = progression_state();
-        assert_eq!(purchase_supplies(&mut s), SupplyOutcome::Full);
+        assert_eq!(fuel_refill_cost(&s), 0);
+        assert_eq!(ammo_refill_cost(&s), 0);
+        assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Full);
+        assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Full);
         assert!(s.message_queue.is_empty());
+    }
+
+    #[test]
+    fn supplies_can_be_bought_by_unit() {
+        // le ravitaillement s'achète **à la quantité** (ligne FUEL / AMMO du
+        // magasin, curseur) : tout achat paie au moins un paquet de la
+        // ressource (10 carburant, le paquet de l'arme pour les munitions) —
+        // même avec peu de minerais, on peut toujours s'en sortir (ex 3
+        // minerais → 30 carburant) sans devoir financer un plein complet
+        let mut s = progression_state();
+        s.resources.minerals = 3;
+        s.resources.fuel = 0.0;
+        s.resources.weapon_ammo[0] = 0;
+        // carburant : 1 minerai par paquet de 10 — 30 unités = 3 paquets,
+        // 5 unités = 1 paquet (minimum), 0 = rien ; le nombre de paquets
+        // affiché suit la facturation
+        assert_eq!(fuel_pack_count(&s, 30.0), 3);
+        assert_eq!(fuel_pack_count(&s, 5.0), 1);
+        assert_eq!(fuel_qty_cost(&s, 30.0), 3);
+        assert_eq!(fuel_qty_cost(&s, 5.0), 1);
+        assert_eq!(fuel_qty_cost(&s, 0.0), 0);
+        assert_eq!(buy_fuel_qty(&mut s, 30.0), SupplyOutcome::Purchased(3));
+        assert_eq!(s.resources.fuel, 30.0);
+        assert_eq!(s.resources.minerals, 0);
+        assert!(s.message_queue.contains("FUEL PURCHASED"));
+        // munitions : paquets de 5 à 1 minerai (ARME 1) — 7 unités = 2
+        // paquets, et le carburant acheté reste intact
+        s.resources.minerals = 5;
+        assert_eq!(ammo_pack_count(&s, 0, 7), 2);
+        assert_eq!(ammo_qty_cost(&s, 0, 7), 2);
+        assert_eq!(buy_ammo_qty(&mut s, 0, 7), SupplyOutcome::Purchased(2));
+        assert_eq!(s.resources.weapon_ammo[0], 7);
+        assert_eq!(s.resources.minerals, 3);
+        assert_eq!(s.resources.fuel, 30.0);
+        assert!(s.message_queue.contains("AMMO PURCHASED"));
+        // quantité nulle : rien à payer ; quantité au-delà du manque : bornée
+        assert_eq!(buy_fuel_qty(&mut s, 0.0), SupplyOutcome::Full);
+        assert_eq!(buy_ammo_qty(&mut s, 0, 0), SupplyOutcome::Full);
+        s.resources.minerals = 10;
+        assert_eq!(buy_fuel_qty(&mut s, 999.0), SupplyOutcome::Purchased(7)); // 70 manquants
+        assert_eq!(s.resources.fuel, fuel_capacity(&s));
+        assert_eq!(s.resources.minerals, 3);
+    }
+
+    #[test]
+    fn shop_sliders_clamp_to_affordable() {
+        // les curseurs du magasin sont bornés au **manque** des réservoirs et
+        // à ce que les minerais permettent : jamais une quantité dont le coût
+        // dépasserait les minerais — 4 minerais → 40 carburant (4 paquets de
+        // 10), 3 minerais → 15 munitions (3 paquets de 5)
+        let mut s = progression_state();
+        s.resources.minerals = 4;
+        s.resources.fuel = 0.0;
+        assert_eq!(affordable_fuel_qty(&s), 40.0);
+        s.shop_fuel_qty = 100.0; // au-delà de l'achetable
+        clamp_shop_quantities(&mut s);
+        assert_eq!(s.shop_fuel_qty, 40.0);
+        // le curseur ne dépasse jamais le manque du réservoir
+        s.resources.minerals = 100;
+        s.resources.fuel = 90.0;
+        assert_eq!(affordable_fuel_qty(&s), 10.0);
+        s.shop_fuel_qty = 50.0;
+        clamp_shop_quantities(&mut s);
+        assert_eq!(s.shop_fuel_qty, 10.0);
+        // munitions : paquets de 5 → 3 minerais = 15 unités
+        s.resources.minerals = 3;
+        s.resources.fuel = 0.0;
+        s.resources.weapon_ammo[0] = 0;
+        assert_eq!(affordable_ammo_qty(&s, 0), 15);
+        s.shop_ammo_qty[0] = 30.0;
+        clamp_shop_quantities(&mut s);
+        assert_eq!(s.shop_ammo_qty[0], 15.0);
+        // sans minerais : plus rien d'achetable, curseurs à zéro
+        s.resources.minerals = 0;
+        assert_eq!(affordable_fuel_qty(&s), 0.0);
+        assert_eq!(affordable_ammo_qty(&s, 0), 0);
+        s.shop_fuel_qty = 20.0;
+        s.shop_ammo_qty[0] = 10.0;
+        clamp_shop_quantities(&mut s);
+        assert_eq!(s.shop_fuel_qty, 0.0);
+        assert_eq!(s.shop_ammo_qty[0], 0.0);
+    }
+
+    #[test]
+    fn shop_sliders_snap_to_packs() {
+        // l'aimantation aux paquets : une quantité glissée entre deux paquets
+        // retombe sur le multiple le plus proche (jamais un paquet payé sans
+        // ses unités) — sauf le plein du réservoir, qui reste atteignable en
+        // bout de piste même si le manque n'est pas multiple du paquet (le
+        // dernier paquet est alors pris en entier, aucune unité perdue)
+        assert_eq!(snap_to_pack(24.0, 10.0, 100.0), 20.0);
+        assert_eq!(snap_to_pack(26.0, 10.0, 100.0), 30.0);
+        assert_eq!(snap_to_pack(7.0, 5.0, 30.0), 5.0);
+        assert_eq!(snap_to_pack(0.0, 10.0, 100.0), 0.0);
+        assert_eq!(snap_to_pack(84.0, 10.0, 85.0), 80.0); // pas encore le bout
+        assert_eq!(snap_to_pack(85.0, 10.0, 85.0), 85.0); // le plein reste valide
+
+        // curseur FUEL : 27 (entre 2 et 3 paquets) → aimanté à 30
+        let mut s = progression_state();
+        s.resources.minerals = 5;
+        s.resources.fuel = 50.0; // manque 50 → paquets de 10
+        s.shop_fuel_qty = 27.0;
+        clamp_shop_quantities(&mut s);
+        assert_eq!(s.shop_fuel_qty, 30.0);
+        // manque non multiple (85) : les paquets s'aimantent, le plein (85,
+        // 9 paquets — le dernier partiel pris en entier) reste atteignable
+        s.resources.minerals = 1000;
+        s.resources.fuel = 15.0;
+        s.shop_fuel_qty = 84.0;
+        clamp_shop_quantities(&mut s);
+        assert_eq!(s.shop_fuel_qty, 80.0);
+        s.shop_fuel_qty = 85.0; // bout de la piste
+        clamp_shop_quantities(&mut s);
+        assert_eq!(s.shop_fuel_qty, 85.0);
+        assert_eq!(fuel_qty_cost(&s, 85.0), 9);
     }
 
     // ─── persistance de la progression ─────────────────────────────────────
@@ -1817,7 +2556,7 @@ mod tests {
         assert_eq!(fresh.resources.reputation, 3.5);
         assert_eq!(fresh.unlocked_modes, [true, true, false, true]);
         assert_eq!(fresh.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
-        assert_eq!(fresh.resources.ammo, PROGRESSION_SCENARIO.start_ammo);
+        assert_eq!(total_ammo(&fresh), PROGRESSION_SCENARIO.start_ammo);
         let _ = std::fs::remove_file(&p);
     }
 
@@ -1848,7 +2587,7 @@ mod tests {
         assert_eq!(s.unlocked_modes, [false, false, false, true]);
         assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
         assert_eq!(s.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
-        assert_eq!(s.resources.ammo, PROGRESSION_SCENARIO.start_ammo);
+        assert_eq!(total_ammo(&s), PROGRESSION_SCENARIO.start_ammo); // arme de base
 
         // clés de progression supprimées du fichier (mode compris) : un
         // rechargement sur un départ neuf ne retrouve aucune progression
@@ -1856,6 +2595,7 @@ mod tests {
         assert_eq!(get_i32_from(&p, "prog_modes"), None);
         assert_eq!(get_i32_from(&p, "prog_reputation"), None);
         assert_eq!(get_i32_from(&p, "prog_up_fuel"), None);
+        assert_eq!(get_i32_from(&p, "prog_weapons"), None);
         assert_eq!(get_i32_from(&p, "moving_mode"), None);
         let mut fresh = progression_state();
         load_progression_from(&p, &mut fresh);
@@ -1866,19 +2606,25 @@ mod tests {
 
     #[test]
     fn refuel_spent_minerals_are_persisted() {
-        // un ravitaillement déduit des minerais : la sauvegarde doit conserver
-        // la valeur déduite — pas de ravitaillement gratuit au lancement
-        // suivant (le jeu écrit la progression après chaque REFUEL/REARM)
+        // un ravitaillement (carburant + munitions achetés au magasin)
+        // déduit des minerais : la sauvegarde doit conserver la valeur
+        // déduite — pas de ravitaillement gratuit au lancement suivant (le
+        // jeu écrit la progression après chaque achat)
         let p = temp_path("refuel.cfg");
         let _ = std::fs::remove_file(&p);
         let mut s = progression_state();
         s.resources.minerals = 100;
         s.resources.fuel = 50.0;
-        s.resources.ammo = 10;
-        let cost = match purchase_supplies(&mut s) {
+        s.resources.weapon_ammo[0] = 10;
+        let cost_fuel = match purchase_fuel(&mut s) {
             SupplyOutcome::Purchased(c) => c,
-            _ => panic!("achat attendu"),
+            _ => panic!("carburant attendu"),
         };
+        let cost_ammo = match purchase_ammo(&mut s) {
+            SupplyOutcome::Purchased(c) => c,
+            _ => panic!("munitions attendues"),
+        };
+        let cost = cost_fuel + cost_ammo;
         assert_eq!(s.resources.minerals, 100 - cost);
         save_progression_to(&p, &s).unwrap();
 
@@ -2196,10 +2942,14 @@ mod tests {
         assert_eq!(line.next.map(|u| u.cost), Some(8), "prix affiché remisé (10 → 8)");
 
         // ravitaillement : 13 pas de carburant (130/10) + 6 pas de munitions
-        // (30/5) = 19 → 16 remisés
+        // (30/5) = 19 → 16 remisés, achetés indépendamment (13 → 11,
+        // 6 → 5) : les coûts affichés au magasin sont les prix remisés
         s.resources.fuel = 0.0;
-        s.resources.ammo = 0;
-        assert_eq!(purchase_supplies(&mut s), SupplyOutcome::Purchased(16));
+        s.resources.weapon_ammo[0] = 0;
+        assert_eq!(fuel_refill_cost(&s), 11); // 13 × 85 % = 11,05 → 11
+        assert_eq!(ammo_refill_cost(&s), 5); // 6 × 85 % = 5,1 → 5
+        assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Purchased(11));
+        assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Purchased(5));
         assert_eq!(s.resources.minerals, 976);
 
         // modes payants : 4 WAYS 30 → 25 (tarif de base et prix remisé
@@ -2213,16 +2963,18 @@ mod tests {
 
     #[test]
     fn supplies_fill_to_upgraded_capacity() {
-        // après une extension de chargeur, le ravitaillement remplit la
-        // nouvelle capacité (et le prix est recalculé sur ce qu'il manque)
+        // après une extension de chargeur, la recharge (magasin, ligne AMMO)
+        // remplit la nouvelle capacité (et le prix est recalculé sur ce
+        // qu'il manque)
         let mut s = progression_state();
         s.resources.minerals = 200;
         assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Ammo), UpgradeOutcome::Purchased(10));
         assert_eq!(ammo_capacity(&s), 40);
-        s.resources.ammo = 20;
+        s.resources.weapon_ammo[0] = 20;
         // 20 munitions manquantes = 4 pas de 5 × 1 minerai (carburant plein)
-        assert_eq!(purchase_supplies(&mut s), SupplyOutcome::Purchased(4));
-        assert_eq!(s.resources.ammo, 40);
+        assert_eq!(ammo_refill_cost(&s), 4);
+        assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Purchased(4));
+        assert_eq!(total_ammo(&s), 40);
     }
 
     #[test]
@@ -2249,7 +3001,7 @@ mod tests {
         assert_eq!(t.resources.ammo_level, 1);
         assert_eq!(t.resources.cargo_level, 1);
         assert_eq!(t.resources.fuel, 170.0); // 100 + 30 + 40
-        assert_eq!(t.resources.ammo, 40); // 30 + 10
+        assert_eq!(total_ammo(&t), 40); // 30 + 10
         assert_eq!(t.player.cargo_size, 7); // 5 + 2
         assert_eq!(t.resources.minerals, 77);
 

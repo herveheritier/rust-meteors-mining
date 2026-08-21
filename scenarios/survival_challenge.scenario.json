@@ -1,0 +1,76 @@
+{
+  "id": "survival_challenge",
+  "name": "DÉFI DE SURVIE EXTRÊME",
+  "description": "Survivez aux vagues de météores, maintenez votre bouclier et détruisez les menaces.",
+  "rules_color": "0xFF00FFFF",
+  "initial_state": {
+    "start_fuel": 0.0,
+    "start_ammo": 0,
+    "start_minerals": 0,
+    "start_reputation": 0.0,
+    "start_mode": 3,
+    "lives": 3,
+    "shield_capacity": 5.0
+  },
+  "objectives": [
+    {
+      "id": "surv_start",
+      "title": "Alerte Impact",
+      "description": "Survivez pendant 30 secondes sans vous faire détruire.",
+      "prerequisites": [],
+      "condition": {
+        "type": "SurviveTime",
+        "seconds": 30.0
+      },
+      "reward": {
+        "type": "None"
+      },
+      "position": { "x": 120, "y": 200 }
+    },
+    {
+      "id": "surv_destroy_20",
+      "title": "Nettoyage du Secteur",
+      "description": "Détruisez 20 météores menaçants.",
+      "prerequisites": ["surv_start"],
+      "condition": {
+        "type": "DestroyAsteroids",
+        "required": 20
+      },
+      "reward": {
+        "type": "Reputation",
+        "amount": 50.0
+      },
+      "position": { "x": 420, "y": 120 }
+    },
+    {
+      "id": "surv_precision",
+      "title": "Tir de Précision",
+      "description": "Réalisez 15 tirs au but avec au moins 80% de précision.",
+      "prerequisites": ["surv_start"],
+      "condition": {
+        "type": "PrecisionShooting",
+        "hits": 15,
+        "min_precision": 0.8
+      },
+      "reward": {
+        "type": "Minerals",
+        "amount": 25
+      },
+      "position": { "x": 420, "y": 280 }
+    },
+    {
+      "id": "surv_final",
+      "title": "As de l'Espace",
+      "description": "Détruisez 100 météores et accostez pour valider la victoire.",
+      "prerequisites": ["surv_destroy_20", "surv_precision"],
+      "condition": {
+        "type": "DestroyAsteroids",
+        "required": 100
+      },
+      "reward": {
+        "type": "Victory"
+      },
+      "position": { "x": 750, "y": 200 }
+    }
+  ]
+}

@@ -18,7 +18,7 @@ use crate::audio::Sounds;
 use crate::config::*;
 use crate::garbage::Garbage;
 use crate::geom::{Point, Triangle, World};
-use crate::marketplace::MOVING_MODES;
+use crate::marketplace::{MOVING_MODES, VAISSEAU_WEAPONS};
 use crate::scenario;
 use crate::shape::{get_border_segments, Shape};
 use crate::state::{Element, GameState, RenderStyle, ViewMode};
@@ -208,13 +208,12 @@ const BOX_PANEL_BORDER: u32 = 0x801AB2FF;
 const BOX_PADDING: f32 = 10.0;
 
 /// Largeur de la boîte DOCK STATION : assez pour le titre et les boutons
-/// (UNLOAD / REFUEL/REARM / SHOP / CLOSE) sans chevauchement — même
-/// formule pour la géométrie (`choice_box_layout`) et le dessin
-/// (`draw_choice_box`).
+/// (UNLOAD / SHOP / CLOSE) sans chevauchement — même formule pour la
+/// géométrie (`choice_box_layout`) et le dessin (`draw_choice_box`).
 fn choice_box_width() -> f32 {
     let msg_w = measure_text("*** DOCK STATION ***", None, 16, 1.0).width + 2.0 * BOX_PADDING;
     let btn_w = |label: &str| (measure_text(label, None, 16, 1.0).width + 2.0 * BOX_PADDING).max(60.0);
-    let labels: [&str; 4] = ["UNLOAD", "REFUEL/REARM", "SHOP", "CLOSE"];
+    let labels: [&str; 3] = ["UNLOAD", "SHOP", "CLOSE"];
     let buttons: f32 =
         labels.iter().map(|l| btn_w(l)).sum::<f32>() + (labels.len() as f32 - 1.0) * BOX_PADDING;
     300.0f32.max(msg_w).max(buttons + 2.0 * BOX_PADDING)
@@ -223,17 +222,15 @@ fn choice_box_width() -> f32 {
 /// Géométrie de la boîte de choix DOCK STATION (ex `windowUtils_choiceBox`) :
 /// fenêtre de 120 px de haut centrée sur l'écran, largeur assez grande pour
 /// le titre et les boutons côte à côte en bas. Renvoie les rectangles écran
-/// des boutons UNLOAD / REFUEL/REARM / SHOP / CLOSE (pour la détection
-/// de clic côté logique).
+/// des boutons UNLOAD / SHOP / CLOSE (pour la détection de clic côté
+/// logique). Le bouton REFUEL/REARM n'existe plus : le carburant et les
+/// munitions s'achètent au magasin (bouton SHOP).
 pub struct ChoiceBoxLayout {
-    /// Bouton UNLOAD : décharge la soute (minerais disponibles pour
-    /// REFUEL/REARM juste après — la boîte reste ouverte).
+    /// Bouton UNLOAD : décharge la soute (minerais disponibles pour le
+    /// ravitaillement au magasin juste après — la boîte reste ouverte).
     pub unload: Rect,
-    /// Bouton REFUEL/REARM : achète carburant + munitions contre minerais
-    /// (`scenario::purchase_supplies`) — la boîte reste ouverte.
-    pub refuel: Rect,
-    /// Bouton SHOP : ouvre le magasin de la station (modes de
-    /// déplacement, et extensions en scénario à économie).
+    /// Bouton SHOP : ouvre le magasin de la station (carburant, munitions,
+    /// armes, extensions et modes de déplacement en scénario à économie).
     pub shop: Rect,
     /// Bouton CLOSE : ferme la boîte.
     pub close: Rect,
@@ -249,24 +246,22 @@ pub fn choice_box_layout() -> ChoiceBoxLayout {
     // qu'ils tiennent sans chevauchement, marges = padding)
     let btn_w = |label: &str| (measure_text(label, None, 16, 1.0).width + 2.0 * BOX_PADDING).max(60.0);
     let top_btn = top + h - 20.0 - btn_h;
-    let labels: [&str; 4] = ["UNLOAD", "REFUEL/REARM", "SHOP", "CLOSE"];
+    let labels: [&str; 3] = ["UNLOAD", "SHOP", "CLOSE"];
     let mut x = left + BOX_PADDING;
-    let mut rects = [Rect::new(0.0, 0.0, 0.0, 0.0); 4];
+    let mut rects = [Rect::new(0.0, 0.0, 0.0, 0.0); 3];
     for (i, &label) in labels.iter().enumerate() {
         rects[i] = Rect::new(x, top_btn, btn_w(label), btn_h);
         x += rects[i].w + BOX_PADDING;
     }
     ChoiceBoxLayout {
         unload: rects[0],
-        refuel: rects[1],
-        shop: rects[2],
-        close: rects[3],
+        shop: rects[1],
+        close: rects[2],
     }
 }
 
 /// Dessine la boîte de choix DOCK STATION (accostage) avec ses boutons
-/// UNLOAD / REFUEL/REARM / SHOP / CLOSE (hover = blanc, ex
-/// `windowUtils_choiceBox`).
+/// UNLOAD / SHOP / CLOSE (hover = blanc, ex `windowUtils_choiceBox`).
 pub fn draw_choice_box() {
     let msg = "*** DOCK STATION ***";
     let w = choice_box_width();
@@ -285,7 +280,6 @@ pub fn draw_choice_box() {
     // boutons avec survol
     let l = choice_box_layout();
     draw_box_button("UNLOAD", l.unload);
-    draw_box_button("REFUEL/REARM", l.refuel);
     draw_box_button("SHOP", l.shop);
     draw_box_button("CLOSE", l.close);
 }
@@ -293,19 +287,37 @@ pub fn draw_choice_box() {
 // ─── Magasin de la station (bouton SHOP) ────────────────────────────────────
 
 /// Géométrie du magasin de la station (bouton SHOP de la boîte DOCK
-/// STATION) : fenêtre centrée avec la section « MOVING MODE » (une ligne
-/// cliquable par mode de déplacement, ordre `MOVING_MODE_ORDER`), les lignes
-/// d'extension (réservoir, chargeur, soute — scénario à économie seulement)
-/// et un bouton CLOSE (retour à la boîte DOCK STATION).
+/// STATION) : fenêtre centrée avec la section « ARMES » (une ligne par arme
+/// du catalogue — scénario à économie seulement), la section « MOVING MODE »
+/// (une ligne cliquable par mode de déplacement, ordre `MOVING_MODE_ORDER`),
+/// les lignes d'extension (réservoir, chargeur, soute — scénario à économie
+/// seulement) et un bouton CLOSE (retour à la boîte DOCK STATION).
 pub struct ShopBoxLayout {
-    /// Ligne « réservoir de carburant » (clic = achat de l'extension) —
-    /// rectangle vide hors économie.
+    /// Lignes des armes du catalogue (index dans `VAISSEAU_WEAPONS`, scénario
+    /// à économie seulement — clic = achat de l'arme contre minerais) ;
+    /// rectangles vides hors économie ou catalogue vide.
+    pub weapons: [Rect; WEAPON_SLOTS],
+    /// Ligne « FUEL » du ravitaillement (clic = achat de la quantité du
+    /// curseur contre minerais, `scenario::buy_fuel_qty`) — rectangle vide
+    /// hors économie.
+    pub supplies_fuel: Rect,
+    /// Piste du curseur de carburant (glisser / molette = quantité à
+    /// acheter) — rectangle vide hors économie.
+    pub slider_fuel: Rect,
+    /// Lignes « AMMO » du ravitaillement, **une par arme possédée** (index
+    /// catalogue — clic = achat de la quantité du curseur de l'arme,
+    /// `scenario::buy_ammo_qty`) ; rectangles vides hors économie ou arme
+    /// non possédée.
+    pub supplies_ammo: [Rect; WEAPON_SLOTS],
+    /// Pistes des curseurs de munitions par arme (glisser / molette).
+    pub slider_ammo: [Rect; WEAPON_SLOTS],
+    /// Ligne « réservoir de carburant » de l'atelier (clic = achat de
+    /// l'extension) — rectangle vide hors économie.
     pub fuel: Rect,
-    /// Ligne « chargeur de munitions » (clic = achat de l'extension) —
-    /// rectangle vide hors économie.
-    pub ammo: Rect,
-    /// Ligne « soute » (clic = achat de l'extension) — rectangle vide hors
+    /// Ligne « chargeur de munitions » de l'atelier — rectangle vide hors
     /// économie.
+    pub ammo: Rect,
+    /// Ligne « soute » de l'atelier — rectangle vide hors économie.
     pub cargo: Rect,
     /// Lignes cliquables des modes de déplacement (ordre visuel
     /// `MOVING_MODE_ORDER` — clic = sélection gratuite ou déblocage contre
@@ -315,38 +327,109 @@ pub struct ShopBoxLayout {
     pub close: Rect,
 }
 
-pub fn shop_box_layout(show_upgrades: bool) -> ShopBoxLayout {
+/// Hauteur de la fenêtre du magasin (scénario à économie) : le contenu
+/// s'empile — titre, section ARMES (une ligne par arme du catalogue),
+/// section RAVITAILLEMENT (carburant + une ligne AMMO **par arme possédée**),
+/// lignes d'atelier, section MOVING MODE, bouton CLOSE. Hors économie :
+/// hauteur fixe (modes seuls).
+fn shop_box_height(show_upgrades: bool, weapons_n: usize, ammo_rows: usize) -> f32 {
+    if !show_upgrades {
+        return 300.0;
+    }
+    let mut h = 3.0 * BOX_PADDING + 22.0; // titre
+    if weapons_n > 0 {
+        h += 14.0 + weapons_n as f32 * 36.0 + 2.0; // ARMES
+    }
+    h += 14.0 + (1 + ammo_rows) as f32 * 36.0 + 2.0; // RAVITAILLEMENT (FUEL + AMMO par arme)
+    h += 3.0 * 30.0 + 2.0; // atelier (extensions de capacité)
+    h += 14.0 + 4.0 * 36.0; // MOVING MODE
+    h += 20.0 + 26.0 + 12.0; // bouton CLOSE + marge basse
+    h
+}
+
+pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
+    // section « ARMES » (scénario à économie, catalogue non vide) : en-tête
+    // + une ligne (34 px) par arme — la hauteur de la fenêtre grandit avec le
+    // catalogue (pensé pour quelques armes, comme les 2 exportées par défaut)
+    let show_upgrades = scenario::has_economy(state);
+    let weapons_n = if show_upgrades {
+        VAISSEAU_WEAPONS.len().min(WEAPON_SLOTS)
+    } else {
+        0
+    };
+    // lignes AMMO du ravitaillement : une par **arme possédée** (seule une
+    // arme possédée se recharge) — le canon classique de repli (catalogue
+    // vide) compte pour une ; les armes payantes s'ajoutent à leur achat
+    let slots = scenario::weapon_slot_count();
+    let ammo_rows = (0..slots).filter(|&i| scenario::weapon_owned(state, i)).count();
     let w = 540.0;
-    let h = if show_upgrades { 430.0 } else { 300.0 };
+    let h = shop_box_height(show_upgrades, weapons_n, ammo_rows);
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
-    let row_h = 30.0;
     let row_w = w - 2.0 * BOX_PADDING;
     let rows_top = top + 3.0 * BOX_PADDING + 22.0;
-    // les trois lignes d'extension n'existent qu'en scénario à économie ; la
-    // section des modes prend alors le relais en dessous
-    let (fuel, ammo, cargo, modes_top) = if show_upgrades {
-        (
-            Rect::new(left + BOX_PADDING, rows_top, row_w, row_h),
-            Rect::new(left + BOX_PADDING, rows_top + row_h + 8.0, row_w, row_h),
-            Rect::new(left + BOX_PADDING, rows_top + 2.0 * (row_h + 8.0), row_w, row_h),
-            rows_top + 3.0 * (row_h + 8.0) + 10.0,
-        )
-    } else {
-        (
-            Rect::new(0.0, 0.0, 0.0, 0.0),
-            Rect::new(0.0, 0.0, 0.0, 0.0),
-            Rect::new(0.0, 0.0, 0.0, 0.0),
-            rows_top,
-        )
-    };
+    // les lignes s'empilent : armes (en tête), ravitaillement (carburant et
+    // munitions, indépendants), atelier (extensions), puis la section des
+    // modes en dessous — tout n'existe qu'en scénario à économie
+    let mut y = rows_top;
+    let mut weapons = [Rect::new(0.0, 0.0, 0.0, 0.0); WEAPON_SLOTS];
+    if weapons_n > 0 {
+        y += 14.0; // en-tête « ARMES » (dessiné à y − 12)
+        for i in 0..weapons_n {
+            weapons[i] = Rect::new(left + BOX_PADDING, y, row_w, 34.0);
+            y += 36.0;
+        }
+        y += 2.0;
+    }
+    let (supplies_fuel, slider_fuel, supplies_ammo, slider_ammo, fuel, ammo, cargo, modes_top) =
+        if show_upgrades {
+            y += 14.0; // en-tête « RAVITAILLEMENT »
+            // ligne FUEL : libellé à gauche, piste du curseur au centre,
+            // coût à droite — le clic hors piste achète la quantité choisie
+            let sf = Rect::new(left + BOX_PADDING, y, row_w, 34.0);
+            let sfu = Rect::new(left + 184.0, y + 10.0, row_w - 184.0 - 132.0, 14.0);
+            y += 36.0;
+            // lignes AMMO : une par arme possédée (index catalogue)
+            let mut sa = [Rect::new(0.0, 0.0, 0.0, 0.0); WEAPON_SLOTS];
+            let mut sau = [Rect::new(0.0, 0.0, 0.0, 0.0); WEAPON_SLOTS];
+            for i in 0..slots {
+                if scenario::weapon_owned(state, i) {
+                    sa[i] = Rect::new(left + BOX_PADDING, y, row_w, 34.0);
+                    sau[i] = Rect::new(left + 184.0, y + 10.0, row_w - 184.0 - 132.0, 14.0);
+                    y += 36.0;
+                }
+            }
+            y += 2.0;
+            // atelier : trois lignes d'extension (réservoir, chargeur, soute)
+            let af = Rect::new(left + BOX_PADDING, y, row_w, 28.0);
+            let aa = Rect::new(left + BOX_PADDING, y + 30.0, row_w, 28.0);
+            let ac = Rect::new(left + BOX_PADDING, y + 60.0, row_w, 28.0);
+            y += 3.0 * 30.0 + 2.0;
+            (sf, sfu, sa, sau, af, aa, ac, y)
+        } else {
+            (
+                Rect::new(0.0, 0.0, 0.0, 0.0),
+                Rect::new(0.0, 0.0, 0.0, 0.0),
+                [Rect::new(0.0, 0.0, 0.0, 0.0); WEAPON_SLOTS],
+                [Rect::new(0.0, 0.0, 0.0, 0.0); WEAPON_SLOTS],
+                Rect::new(0.0, 0.0, 0.0, 0.0),
+                Rect::new(0.0, 0.0, 0.0, 0.0),
+                Rect::new(0.0, 0.0, 0.0, 0.0),
+                rows_top,
+            )
+        };
     let modes = [
-        Rect::new(left + BOX_PADDING, modes_top + 26.0, row_w, 34.0),
-        Rect::new(left + BOX_PADDING, modes_top + 66.0, row_w, 34.0),
-        Rect::new(left + BOX_PADDING, modes_top + 106.0, row_w, 34.0),
-        Rect::new(left + BOX_PADDING, modes_top + 146.0, row_w, 34.0),
+        Rect::new(left + BOX_PADDING, modes_top + 24.0, row_w, 34.0),
+        Rect::new(left + BOX_PADDING, modes_top + 60.0, row_w, 34.0),
+        Rect::new(left + BOX_PADDING, modes_top + 96.0, row_w, 34.0),
+        Rect::new(left + BOX_PADDING, modes_top + 132.0, row_w, 34.0),
     ];
     ShopBoxLayout {
+        weapons,
+        supplies_fuel,
+        slider_fuel,
+        supplies_ammo,
+        slider_ammo,
         fuel,
         ammo,
         cargo,
@@ -362,9 +445,20 @@ pub fn shop_box_layout(show_upgrades: bool) -> ShopBoxLayout {
 /// le bouton CLOSE.
 pub fn draw_shop_box(state: &GameState) {
     let show_upgrades = scenario::has_economy(state);
-    let l = shop_box_layout(show_upgrades);
+    let l = shop_box_layout(state);
     let w = 540.0;
-    let h = if show_upgrades { 430.0 } else { 300.0 };
+    // même hauteur que la géométrie : la section « ARMES » (économie) fait
+    // grandir la fenêtre avec le catalogue, la section RAVITAILLEMENT avec
+    // les armes possédées
+    let weapons_n = if show_upgrades {
+        VAISSEAU_WEAPONS.len().min(WEAPON_SLOTS)
+    } else {
+        0
+    };
+    let ammo_rows = (0..scenario::weapon_slot_count())
+        .filter(|&i| scenario::weapon_owned(state, i))
+        .count();
+    let h = shop_box_height(show_upgrades, weapons_n, ammo_rows);
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
 
@@ -384,6 +478,133 @@ pub fn draw_shop_box(state: &GameState) {
     );
 
     let m = mouse_to_game();
+
+    // section « ARMES » (scénario à économie, catalogue non vide) : une ligne
+    // par arme — nom (16 px) + état à droite (OWNED / prix d'achat, comme les
+    // modes : « base → prix remisé (RANG) » quand la réputation réduit le
+    // coût) et prix/taille du paquet de munitions en dessous (12 px, sombre) —
+    // survol blanc (clic = achat ; une arme possédée n'est pas cliquable)
+    if show_upgrades && weapons_n > 0 {
+        let header = l.weapons[0].y - 12.0;
+        draw_text("ARMES", left + BOX_PADDING + 4.0, header, 12.0, argb_to_color(BOX_FG));
+        for (i, rect) in l.weapons.iter().enumerate().take(weapons_n) {
+            let spec = scenario::weapon_spec(i);
+            let owned = scenario::weapon_owned(state, i);
+            let color = argb_to_color(if !owned && rect.contains(m) { BOX_HOVER } else { BOX_FG });
+            let status = if owned {
+                "OWNED".to_string()
+            } else {
+                match scenario::weapon_prices(state, i) {
+                    Some((base, discounted)) if discounted < base => format!(
+                        "{} → {} MIN ({})",
+                        base,
+                        discounted,
+                        scenario::current_rank(state).unwrap_or("")
+                    ),
+                    Some((base, _)) => format!("{} MIN", base),
+                    None => "FREE".to_string(),
+                }
+            };
+            draw_text(
+                &format!("W{} {}", i + 1, spec.name),
+                rect.x + 4.0,
+                rect.y + 16.0,
+                16.0,
+                color,
+            );
+            let status_w = measure_text(&status, None, 16, 1.0).width;
+            draw_text(&status, rect.x + rect.w - 4.0 - status_w, rect.y + 16.0, 16.0, color);
+            draw_text(
+                &format!("MUNITIONS: {} m / {} u", spec.ammo_price, spec.ammo_pack),
+                rect.x + 4.0,
+                rect.y + 32.0,
+                12.0,
+                argb_to_color(BOX_FG_DIM),
+            );
+        }
+    }
+
+    // section « RAVITAILLEMENT » (scénario à économie) : le carburant et les
+    // munitions s'achètent **indépendamment** (plus de bouton REFUEL/REARM
+    // dans la boîte DOCK STATION), **à la quantité** — une ligne par
+    // ressource (FUEL, puis AMMO par arme possédée) : état courant à gauche,
+    // curseur au centre (glisser / molette, même style que la barre de
+    // volume des réglages), coût de la quantité choisie à droite ; survol =
+    // blanc, clic sur la ligne hors piste = achat de la quantité
+    if show_upgrades {
+        let header = l.supplies_fuel.y - 12.0;
+        draw_text(
+            "RAVITAILLEMENT",
+            left + BOX_PADDING + 4.0,
+            header,
+            12.0,
+            argb_to_color(BOX_FG),
+        );
+        // FUEL : réservoir courant + curseur (manque du réservoir) + coût
+        let fuel_cap = scenario::fuel_capacity(state);
+        let fuel_missing = (fuel_cap - state.resources.fuel).max(0.0);
+        let fuel_color = argb_to_color(if l.supplies_fuel.contains(m) { BOX_HOVER } else { BOX_FG });
+        let fuel_txt = if fuel_missing <= 0.0 {
+            format!("FUEL: {:.0}/{:.0} (PLEIN)", state.resources.fuel, fuel_cap)
+        } else {
+            format!("FUEL: {:.0}/{:.0}", state.resources.fuel, fuel_cap)
+        };
+        draw_text(&fuel_txt, l.supplies_fuel.x + 4.0, l.supplies_fuel.y + 22.0, 16.0, fuel_color);
+        draw_supply_slider(l.slider_fuel, fuel_missing, state.shop_fuel_qty, m);
+        let fuel_qty = state.shop_fuel_qty;
+        let fuel_packs = (fuel_missing > 0.0 && fuel_qty > 0.0).then(|| {
+            let n = scenario::fuel_pack_count(state, fuel_qty);
+            format!("({} paquet{})", n, if n > 1 { "s" } else { "" })
+        });
+        draw_supply_cost(
+            l.supplies_fuel,
+            if fuel_missing <= 0.0 {
+                "PLEIN".to_string()
+            } else if fuel_qty <= 0.0 {
+                "—".to_string()
+            } else {
+                format!("+{:.0} → {} MIN", fuel_qty, scenario::fuel_qty_cost(state, fuel_qty))
+            },
+            fuel_packs,
+            fuel_color,
+        );
+
+        // AMMO : une ligne par arme possédée — chargeur courant + curseur
+        // (manque de l'arme, paquet propre à l'arme) + coût
+        let ammo_cap = scenario::ammo_capacity(state);
+        for (i, rect) in l.supplies_ammo.iter().enumerate() {
+            if rect.w <= 0.0 {
+                continue;
+            }
+            let spec = scenario::weapon_spec(i);
+            let missing = (ammo_cap - state.resources.weapon_ammo[i]).max(0);
+            let qty = state.shop_ammo_qty[i] as i32;
+            let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
+            let ammo_txt = if missing <= 0 {
+                format!("{}: {}/{} (PLEIN)", spec.name, state.resources.weapon_ammo[i], ammo_cap)
+            } else {
+                format!("{}: {}/{}", spec.name, state.resources.weapon_ammo[i], ammo_cap)
+            };
+            draw_text(&ammo_txt, rect.x + 4.0, rect.y + 22.0, 16.0, color);
+            draw_supply_slider(l.slider_ammo[i], missing as f64, state.shop_ammo_qty[i], m);
+            let ammo_packs = (missing > 0 && qty > 0).then(|| {
+                let n = scenario::ammo_pack_count(state, i, qty);
+                format!("({} paquet{})", n, if n > 1 { "s" } else { "" })
+            });
+            draw_supply_cost(
+                *rect,
+                if missing <= 0 {
+                    "PLEIN".to_string()
+                } else if qty <= 0 {
+                    "—".to_string()
+                } else {
+                    format!("+{} → {} MIN", qty, scenario::ammo_qty_cost(state, i, qty))
+                },
+                ammo_packs,
+                color,
+            );
+        }
+    }
 
     // lignes d'extension (scénario à économie) : libellé, capacité,
     // prochaine extension (+bonus, coût) ou MAX — survol = blanc (clic =
@@ -444,6 +665,39 @@ pub fn draw_shop_box(state: &GameState) {
 
     // retour à la boîte DOCK STATION
     draw_box_button("CLOSE", l.close);
+}
+
+/// Dessine la **quantité + coût** d'une ligne du ravitaillement (droite de
+/// la ligne) : « +30 → 5 MIN » (quantité sélectionnée sur le curseur et son
+/// montant) en couleur de la ligne (hover blanc), et le **nombre de
+/// paquets** en dessous (« (3 paquets) », 12 px discret). « PLEIN » quand
+/// rien ne manque, « — » quand rien n'est sélectionné (aucun minerai).
+fn draw_supply_cost(rect: Rect, txt: String, packs: Option<String>, color: Color) {
+    let w = measure_text(&txt, None, 16, 1.0).width;
+    draw_text(&txt, rect.x + rect.w - 4.0 - w, rect.y + 22.0, 16.0, color);
+    if let Some(packs) = packs {
+        let pw = measure_text(&packs, None, 12, 1.0).width;
+        draw_text(&packs, rect.x + rect.w - 4.0 - pw, rect.y + 32.0, 12.0, argb_to_color(BOX_FG_DIM));
+    }
+}
+
+/// Dessine un **curseur de quantité** du ravitaillement du magasin (même
+/// style que la barre de volume des réglages) : piste sombre, portion
+/// remplie selon `value` sur un maximum `max` et pouce vertical — survol
+/// blanc (glisser / molette = quantité à acheter, `game.rs`).
+fn draw_supply_slider(track: Rect, max: f64, value: f64, m: Vec2) {
+    if max <= 0.0 || track.w <= 0.0 {
+        return; // réservoir plein : pas de curseur
+    }
+    let frac = (value / max).clamp(0.0, 1.0) as f32;
+    let color = argb_to_color(if track.contains(m) { BOX_HOVER } else { BOX_FG });
+    let bar_y = track.y + (track.h - 6.0) / 2.0;
+    let fill = track.w * frac;
+    draw_rectangle(track.x, bar_y, track.w, 6.0, argb_to_color(0x601AB2FF));
+    draw_rectangle(track.x, bar_y, fill, 6.0, color);
+    // pouce (ascenseur) : barre verticale de 14 px, centrée sur la piste
+    let thumb_x = (track.x + fill - 2.0).clamp(track.x, track.x + track.w - 4.0);
+    draw_rectangle(thumb_x, bar_y - 4.0, 4.0, 14.0, color);
 }
 
 /// Dessine un bouton de la boîte de choix (cadre + texte centré, hover blanc).
@@ -2018,13 +2272,15 @@ pub fn draw_hud(state: &GameState) -> f32 {
         // et munitions alternent blanc ↔ rouge tant qu'ils restent sous
         // `HUD_LOW_RESERVE_RATIO` de leur capacité
         let fuel_cap = scenario::fuel_capacity(state);
-        let ammo_cap = scenario::ammo_capacity(state);
+        // munitions : totaux des armes possédées (chaque arme a son stock,
+        // le HUD en montre la somme — `scenario::total_ammo`)
+        let ammo_cap = scenario::total_ammo_capacity(state);
         let fuel_txt = format!("FUEL:{:>3.0}/{:>3}", state.resources.fuel, fuel_cap);
-        let ammo_txt = format!(" AMMO:{:>2}/{:>2}", state.resources.ammo, ammo_cap);
+        let ammo_txt = format!(" AMMO:{:>2}/{:>2}", scenario::total_ammo(state), ammo_cap);
         let min_txt = format!(" MINERALS:{:>5}", state.resources.minerals);
         let blink_on = (get_time() * HUD_BLINK_HZ) as i64 % 2 == 0;
         let fuel_low = state.resources.fuel <= fuel_cap * HUD_LOW_RESERVE_RATIO;
-        let ammo_low = state.resources.ammo as f64 <= ammo_cap as f64 * HUD_LOW_RESERVE_RATIO;
+        let ammo_low = scenario::total_ammo(state) as f64 <= ammo_cap as f64 * HUD_LOW_RESERVE_RATIO;
         let fuel_color = if fuel_low && blink_on { HUD_WARN_COLOR } else { 0xFFFFFFFF };
         let ammo_color = if ammo_low && blink_on { HUD_WARN_COLOR } else { 0xFFFFFFFF };
         let x = hud_col_x(HUD_RESOURCES_COL);

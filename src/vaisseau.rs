@@ -663,7 +663,19 @@ pub fn create_player_vaisseau(
         VAISSEAU_ORIENTATION_DEGREES,
         Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT),
         &plane_visibility(state),
+        &weapons_mask(state),
     )
+}
+
+/// Armes du catalogue **possédées** (masque par index, `scenario::weapon_owned`
+/// — hors économie toutes les armes sont équipées ; en Progression seules
+/// celles achetées au magasin, les armes de base à coût nul étant équipées
+/// d'office). Le mesh d'une arme non possédée n'est pas construit sur le
+/// vaisseau (elle ne tire pas non plus).
+fn weapons_mask(state: &GameState) -> Vec<bool> {
+    (0..VAISSEAU_WEAPONS.len())
+        .map(|i| crate::scenario::weapon_owned(state, i))
+        .collect()
 }
 
 /// Construit la forme « vaisseau » : une `Triangle` par face des plans
@@ -672,10 +684,13 @@ pub fn create_player_vaisseau(
 /// `center_percent` (position en **pourcentage de la boîte englobante de la
 /// composition**, 50/50 = centre géométrique) et posée à l'origine (le
 /// vaisseau démarre au centre de la station, position 0,0 — le monde n'est
-/// pas encore initialisé). La plage allouée couvre la **composition
-/// maximale** (plans toujours visibles + liés) : une reconstruction ultérieure
-/// (`rebuild_player_vaisseau`) ne révèle que des plans déjà réservés. Le
-/// pivot devient le centre de la forme : le vaisseau pivote autour de lui
+/// pas encore initialisé). Seules les armes du catalogue dont le masque
+/// `weapons_mask` (index de `VAISSEAU_WEAPONS`) est `true` — les armes
+/// **possédées** — sont dessinées sur le vaisseau. La plage allouée couvre la
+/// **composition maximale** (plans toujours visibles + liés, et **toutes**
+/// les armes du catalogue) : une reconstruction ultérieure
+/// (`rebuild_player_vaisseau`) ne révèle que des plans/armes déjà réservés.
+/// Le pivot devient le centre de la forme : le vaisseau pivote autour de lui
 /// dans le jeu (rotation des triangles autour de `shape.center`). Renvoie
 /// l'index de la forme créée (réutilise une forme détruite au même nombre de
 /// triangles quand c'est possible, comme `meshes_to_shape` — ici `shapes`
@@ -687,6 +702,7 @@ fn build_vaisseau(
     orientation_degrees: f64,
     center_percent: Point,
     visible: &[bool],
+    weapons_mask: &[bool],
 ) -> usize {
     let file = vaisseau_file();
     let comp = composition_mask(&file);
@@ -703,13 +719,15 @@ fn build_vaisseau(
         + weapons_face_count();
     let (pivot, pt) =
         mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
-    let weapons = vaisseau_weapons_with(
-        VAISSEAU_WEAPONS,
-        VAISSEAU_BULLET_SPAWNS,
-        scale,
-        orientation_degrees,
-        center_percent,
-    );
+    // seules les armes possédées sont dessinées (masque par index du
+    // catalogue — les armes à acheter n'apparaissent qu'après l'achat)
+    let weapons: Vec<(VaisseauWeapon, Point)> =
+        vaisseau_weapons_with(VAISSEAU_WEAPONS, VAISSEAU_BULLET_SPAWNS, scale, orientation_degrees, center_percent)
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| weapons_mask.get(*i).copied().unwrap_or(false))
+            .map(|(_, w)| w)
+            .collect();
 
     // emplacement de la forme : réutilise un slot mort au même nombre de
     // triangles, sinon alloue — même schéma que `build_cosmonaut`
@@ -784,13 +802,16 @@ pub fn rebuild_player_vaisseau(
         VAISSEAU_ORIENTATION_DEGREES,
         Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT),
     );
-    let weapons = vaisseau_weapons_with(
-        VAISSEAU_WEAPONS,
-        VAISSEAU_BULLET_SPAWNS,
-        VAISSEAU_SCALE,
-        VAISSEAU_ORIENTATION_DEGREES,
-        Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT),
-    );
+    // seules les armes possédées sont dessinées (une arme achetée apparaît
+    // à la reconstruction — `buy_weapon_and_save` côté jeu)
+    let mask = weapons_mask(state);
+    let weapons: Vec<(VaisseauWeapon, Point)> =
+        vaisseau_weapons_with(VAISSEAU_WEAPONS, VAISSEAU_BULLET_SPAWNS, VAISSEAU_SCALE, VAISSEAU_ORIENTATION_DEGREES, Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT))
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| mask.get(*i).copied().unwrap_or(false))
+            .map(|(_, w)| w)
+            .collect();
     // reconstruction en place : toute la plage réservée est tuée puis
     // réécrite (les triangles des plans non visibles restent morts)
     let shape = &shapes[PLAYER_INDEX];
@@ -849,6 +870,9 @@ pub fn vaisseau_test_weapons() -> Vec<VaisseauWeapon> {
             ammo_mesh: vaisseau_test_ammo_mesh(),
             ammo_scale: 1.0,
             ammo_orientation_degrees: 0.0,
+            cost: 0,
+            ammo_price: 1,
+            ammo_pack: 5,
         },
         VaisseauWeapon {
             name: "CANON ARRIÈRE",
@@ -859,6 +883,9 @@ pub fn vaisseau_test_weapons() -> Vec<VaisseauWeapon> {
             ammo_mesh: vaisseau_test_ammo_mesh(),
             ammo_scale: 1.0,
             ammo_orientation_degrees: 0.0,
+            cost: 0,
+            ammo_price: 1,
+            ammo_pack: 5,
         },
     ]
 }
@@ -926,6 +953,53 @@ mod tests {
     }
 
     #[test]
+    fn ascii_munition_mesh_parses_and_points_forward() {
+        // le mesh généré depuis l'art ASCII `assets/asciiart-fr.txt`
+        // (tools/ascii-art-to-mesh.py) est compatible avec le parseur du
+        // catalogue : plans/sommets/faces valides, indices dans les bornes,
+        // couleurs portées — et, comme toute munition, le **nez** du missile
+        // pointe vers +x (convention du catalogue : la munition est dessinée
+        // nez en avant, `ammo_orientation_degrees = 0`)
+        let json = include_str!("../assets/missileWeapon.json");
+        let file = parse_mesh(json);
+        assert!(!file.planes.is_empty());
+        let mut min_x = f64::MAX;
+        let mut max_x = f64::MIN;
+        for plane in &file.planes {
+            assert!(!plane.faces.is_empty());
+            for face in &plane.faces {
+                assert!(face.v.iter().all(|&i| i < plane.verts.len()));
+                assert_ne!(rgba_to_argb(face.color), 0);
+            }
+            for v in &plane.verts {
+                min_x = min_x.min(v[0]);
+                max_x = max_x.max(v[0]);
+            }
+        }
+        // le nez (le haut de l'art) est ramené sur +x : le mesh part de
+        // l'origine et le corps s'étend vers la droite
+        assert!(min_x >= -0.001, "le nez doit être à l'origine (x={min_x})");
+        assert!(max_x > 10.0, "le corps doit s'étendre vers +x (x={max_x})");
+
+        // la forme « munition » se construit comme au tir (`fire_bullet` →
+        // `create_ammo_shape`) : une Triangle vivante par face, chaque face
+        // portant sa couleur
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        let idx = create_ammo_shape(&mut shapes, &mut triangles, json, 1.0, 0.0);
+        let expected: usize = file.planes.iter().map(|p| p.faces.len()).sum();
+        assert_eq!(shapes[idx].life as usize, expected);
+        let mut colored = 0;
+        for t in &triangles[shapes[idx].first_triangle..=shapes[idx].last_triangle] {
+            if t.life > 0 {
+                colored += 1;
+                assert_ne!(t.color, 0);
+            }
+        }
+        assert_eq!(colored, expected);
+    }
+
+    #[test]
     fn vaisseau_y_is_flipped_and_nose_points_right() {
         let state = GameState::new();
         let mut shapes = Vec::new();
@@ -972,6 +1046,7 @@ mod tests {
             0.0,
             Point::new(50.0, 50.0),
             &plane_visibility(&state),
+            &weapons_mask(&state),
         );
         let mut full_shapes = Vec::new();
         let mut full_triangles = Vec::new();
@@ -982,6 +1057,7 @@ mod tests {
             0.0,
             Point::new(50.0, 50.0),
             &plane_visibility(&state),
+            &weapons_mask(&state),
         );
         let small = &small_shapes[0];
         let full = &full_shapes[0];
@@ -1036,6 +1112,7 @@ mod tests {
             90.0,
             Point::new(50.0, 50.0),
             &plane_visibility(&state),
+            &weapons_mask(&state),
         );
         let s = &shapes[0];
         // le nez finit en bas dans le repère du jeu et la boîte est tournée
@@ -1065,6 +1142,7 @@ mod tests {
             0.0,
             Point::new(0.0, 0.0),
             &plane_visibility(&state),
+            &weapons_mask(&state),
         );
         let s = &shapes[0];
         let file = vaisseau_file();
@@ -1087,6 +1165,7 @@ mod tests {
             0.0,
             Point::new(100.0, 100.0),
             &plane_visibility(&state),
+            &weapons_mask(&state),
         );
         let s = &shapes[0];
         let (expected, _) = mesh_transform(&file, &comp, 1.0, 0.0, Point::new(100.0, 100.0));

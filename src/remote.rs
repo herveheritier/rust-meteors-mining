@@ -15,9 +15,10 @@
 //! combinées au clavier et au tactile dans `game.rs`) ; l'état y est publié à
 //! chaque frame (`publish_state`). La section critique (`STATE`) n'est jamais
 //! tenue pendant une requête réseau : le verrou est court des deux côtés.
-
+//!
 use std::sync::Mutex;
 
+use macroquad::prelude::info;
 use tiny_http::{Header, Method, Response, Server};
 
 use crate::state::GameState;
@@ -135,15 +136,17 @@ pub fn fire() -> bool {
 }
 
 /// Démarre le serveur de contrôle dans un thread dédié et renvoie l'URL à
-/// ouvrir sur le téléphone (ex `http://192.168.1.42:8642/`). En cas d'échec
-/// (port occupé, …), renvoie l'erreur — le jeu continue sans télécommande.
+/// ouvrir sur le téléphone (ex `http://192.168.1.42:8642/`). Le serveur
+/// écoute sur toutes les interfaces (`0.0.0.0`) — joignable depuis le réseau
+/// local ou un hotspot créé sur le PC.
+///
+/// En cas d'échec (port occupé…), renvoie l'erreur — le jeu continue sans
+/// télécommande.
 pub fn start() -> Result<String, String> {
     let server = Server::http(format!("0.0.0.0:{}", REMOTE_PORT)).map_err(|e| e.to_string())?;
-    let url = format!(
-        "http://{}:{}/",
-        lan_ip().unwrap_or_else(|| "localhost".to_string()),
-        REMOTE_PORT
-    );
+    let ip = lan_ip().unwrap_or_else(|| "localhost".to_string());
+    info!("Remote control listening on {ip}");
+    let url = format!("http://{}:{}/", ip, REMOTE_PORT);
     *URL.lock().unwrap() = Some(url.clone());
     std::thread::spawn(move || serve(server));
     Ok(url)
@@ -216,8 +219,8 @@ fn snapshot(state: &GameState) -> RemoteState {
     s.survival = crate::scenario::has_survival(state);
     s.fuel = state.resources.fuel;
     s.fuel_cap = crate::scenario::fuel_capacity(state);
-    s.ammo = state.resources.ammo;
-    s.ammo_cap = crate::scenario::ammo_capacity(state);
+    s.ammo = crate::scenario::total_ammo(state);
+    s.ammo_cap = crate::scenario::total_ammo_capacity(state);
     s.minerals = state.resources.minerals;
     s.reputation = if economy {
         state.resources.reputation as i32
@@ -232,9 +235,20 @@ fn snapshot(state: &GameState) -> RemoteState {
 }
 
 /// Publie l'état du jeu courant dans l'état partagé (`GET /state` le lira).
-/// Appelé à chaque frame par `game::update`.
+/// Appelé à chaque frame par `game::update`. Les commandes reçues du
+/// téléphone (`up/down/left/right/fire`) sont préservées : seuls les champs
+/// HUD et ressources sont mis à jour, pour que les boutons du téléphone
+/// restent « enfoncés » entre deux envois `POST /cmd`.
 pub fn publish_state(state: &GameState) {
-    *STATE.lock().unwrap() = snapshot(state);
+    let mut guard = STATE.lock().unwrap();
+    // conserver les commandes reçues du téléphone
+    let (up, down, left, right, fire) = (guard.up, guard.down, guard.left, guard.right, guard.fire);
+    *guard = snapshot(state);
+    guard.up = up;
+    guard.down = down;
+    guard.left = left;
+    guard.right = right;
+    guard.fire = fire;
 }
 
 /// Sérialise un snapshot en JSON (`GET /state`) pour la page de contrôle.
@@ -273,6 +287,8 @@ fn lan_ip() -> Option<String> {
     sock.connect("8.8.8.8:80").ok()?;
     sock.local_addr().ok().map(|a| a.ip().to_string())
 }
+
+
 
 /// Page de contrôle servie sur `GET /` : **bouton de tir bas-gauche** +
 /// **D-pad** à 4 boutons directionnels (▲▼◀▶, bas-droite — mêmes commandes
@@ -483,5 +499,21 @@ mod tests {
         let state = conn("GET /state HTTP/1.1", "");
         assert!(state.contains("200 OK"), "{state}");
         assert!(state.contains("\"fps\""), "{state}");
+    }
+
+    #[test]
+    fn publish_state_preserves_commands() {
+        // simuler une commande reçue du téléphone
+        {
+            let mut s = STATE.lock().unwrap();
+            s.up = true;
+            s.fire = true;
+        }
+        // publish_state doit conserver up et fire
+        crate::remote::publish_state(&crate::state::GameState::new());
+        let s = STATE.lock().unwrap();
+        assert!(s.up, "up doit être préservé après publish_state");
+        assert!(s.fire, "fire doit être préservé après publish_state");
+        assert!(!s.down, "down doit rester à false");
     }
 }

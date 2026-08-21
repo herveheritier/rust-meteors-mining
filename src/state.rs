@@ -5,8 +5,8 @@
 //! `src/config.rs` — seul l'état mutable reste ici.
 
 use crate::config::{
-    ATTEMPT_FPS, CARGO_SIZE, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, PLAYER_INDEX, WORLD_HEIGHT,
-    WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
+    ATTEMPT_FPS, CARGO_SIZE, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, PLAYER_INDEX, WEAPON_SLOTS,
+    WORLD_HEIGHT, WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
 };
 use crate::geom::{Point, World};
 // population de météores : constante de la carte « Météores & collisions »
@@ -157,10 +157,24 @@ pub struct GameState {
     /// station (bouton SHOP de la boîte DOCK STATION) ; en jeu libre, tous
     /// sont débloqués.
     pub unlocked_modes: [bool; MOVING_MODE_COUNT as usize],
-    /// Coût du dernier ravitaillement refusé à la station (0 = aucun) : évite
-    /// de répéter « NOT ENOUGH MINERALS » à chaque clic sur REFUEL/REARM sans
-    /// assez de minerais (`scenario::purchase_supplies`).
+    /// Coût du dernier ravitaillement refusé au magasin (0 = aucun) : évite
+    /// de répéter « NOT ENOUGH MINERALS » à chaque clic sur les lignes FUEL /
+    /// AMMO sans assez de minerais (`scenario::buy_fuel_qty` /
+    /// `scenario::buy_ammo_qty`).
     pub supplies_shortage_cost: i32,
+    /// Quantité de carburant sélectionnée sur le curseur du magasin (section
+    /// RAVITAILLEMENT, ligne FUEL) : achetée par clic sur la ligne — bornée
+    /// au manque du réservoir et à ce que les minerais permettent
+    /// (`scenario::clamp_shop_quantities`).
+    pub shop_fuel_qty: f64,
+    /// Quantités de munitions sélectionnées sur les curseurs du magasin (une
+    /// par arme du catalogue, ligne AMMO de l'arme possédée) — achetées par
+    /// clic sur la ligne, bornées comme `shop_fuel_qty`.
+    pub shop_ammo_qty: [f64; WEAPON_SLOTS],
+    /// Curseur du magasin en cours de glisser (`Some(0)` = carburant,
+    /// `Some(1 + i)` = munitions de l'arme `i`) — `None` = aucun. La valeur
+    /// suit le pointeur tant que le bouton est maintenu (`game.rs`).
+    pub shop_drag: Option<usize>,
     /// Pause (touche P) : gèle déplacements et collisions, mais pas le rendu
     /// ni l'input (voir `docs/PORTAGE.md` §6).
     pub paused: bool,
@@ -263,8 +277,9 @@ pub struct GameState {
     pub eva_crossfade: f64,
     /// Boîte de choix DOCK STATION ouverte (accostage) — ex la boucle
     /// bloquante de `windowUtils_choiceBox` : tant qu'elle est ouverte, le
-    /// jeu est gelé et seuls les clics sur UNLOAD / REFUEL/REARM / SHOP /
-    /// CLOSE sont traités (UNLOAD et REFUEL/REARM gardent la boîte ouverte).
+    /// jeu est gelé et seuls les clics sur UNLOAD / SHOP / CLOSE sont traités
+    /// (UNLOAD garde la boîte ouverte ; le carburant et les munitions
+    /// s'achètent au magasin, bouton SHOP).
     pub dock_box: bool,
     /// Magasin de la station ouvert (bouton SHOP de la boîte DOCK STATION) :
     /// choix des modes de déplacement (sélection gratuite ou déblocage contre
@@ -323,6 +338,9 @@ impl GameState {
             resources: Resources::default(),
             unlocked_modes: [true; MOVING_MODE_COUNT as usize],
             supplies_shortage_cost: 0,
+            shop_fuel_qty: 0.0,
+            shop_ammo_qty: [0.0; WEAPON_SLOTS],
+            shop_drag: None,
             paused: false,
             game_over: false,
             invulnerable: 0.0,

@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Éditeur de Scénarios & Objectifs (DAG) — Meteors Mining</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #12161f;
+    --panel-2: #0f131c;
+    --border: #262e3f;
+    --border-soft: #1c2330;
+    --text: #e6e9f0;
+    --muted: #8b93a7;
+    --accent: #39ff88;      /* vert néon Meteors Mining */
+    --cyan: #00ffff;        /* cyan survival */
+    --orange: #ffa040;      /* orange cordon EVA */
+    --gold: #ffd700;        /* or minerais */
+    --red: #ff5c5c;         /* erreur cycle / danger */
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 500px at 70% -10%, #14203a 0%, transparent 60%),
+      radial-gradient(900px 400px at -10% 110%, #141a2c 0%, transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.45;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  a { color: var(--accent); }
+
+  /* HEADER */
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: none;
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+  h1 .star { color: var(--accent); }
+  .tabs { display: flex; gap: 4px; background: var(--panel-2); padding: 3px; border-radius: 8px; border: 1px solid var(--border-soft); }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  .tab-btn.active { color: var(--bg); background: var(--accent); font-weight: 600; }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+
+  /* BUTTONS & BADGES */
+  .btn {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  .btn:hover { border-color: var(--accent); color: #fff; }
+  .btn-accent { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+  .btn-accent:hover { background: #45ff93; color: var(--bg); }
+  .btn-danger { background: rgba(255,92,92,0.15); color: var(--red); border-color: var(--red); }
+  .btn-danger:hover { background: var(--red); color: #fff; }
+  .btn-sm { padding: 4px 8px; font-size: 12px; }
+
+  .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid transparent;
+  }
+  .badge-valid { background: rgba(57,255,136,0.12); color: var(--accent); border-color: rgba(57,255,136,0.3); }
+  .badge-invalid { background: rgba(255,92,92,0.15); color: var(--red); border-color: rgba(255,92,92,0.3); }
+  .badge-info { background: rgba(0,255,255,0.12); color: var(--cyan); border-color: rgba(0,255,255,0.3); }
+
+  /* MAIN LAYOUT */
+  .layout { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 280px;
+    flex: none;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .sidebar-section { padding: 14px; border-bottom: 1px solid var(--border-soft); }
+  .sidebar-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin: 0 0 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .scenario-list { display: flex; flex-direction: column; gap: 4px; }
+  .scenario-item {
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--border-soft);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: all 0.15s ease;
+  }
+  .scenario-item:hover { border-color: var(--muted); }
+  .scenario-item.active { border-color: var(--accent); background: rgba(57,255,136,0.06); }
+  .scenario-item-name { font-weight: 500; font-size: 13px; }
+  .scenario-item-meta { font-size: 11px; color: var(--muted); }
+
+  /* FORMS & INPUTS */
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  .form-control {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.15s ease;
+  }
+  .form-control:focus { outline: none; border-color: var(--accent); }
+  textarea.form-control { resize: vertical; min-height: 60px; }
+
+  /* GRAPH CANVAS VIEW */
+  .view-container { flex: 1; display: none; position: relative; overflow: hidden; }
+  .view-container.active { display: flex; flex-direction: column; }
+
+  #graph-canvas-wrap {
+    flex: 1;
+    position: relative;
+    background: radial-gradient(circle at center, rgba(38,46,63,0.2) 1px, transparent 1px) 0 0 / 24px 24px, var(--bg);
+    overflow: hidden;
+    cursor: grab;
+  }
+  #graph-canvas-wrap:active { cursor: grabbing; }
+
+  #graph-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .nodes-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    z-index: 2;
+  }
+
+  /* OBJECTIVE NODE CARD */
+  .node-card {
+    position: absolute;
+    width: 240px;
+    background: var(--panel);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    cursor: move;
+    user-select: none;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  .node-card:hover { border-color: var(--accent); box-shadow: 0 8px 24px rgba(57,255,136,0.2); }
+  .node-card.selected { border-color: var(--accent); ring: 2px var(--accent); }
+  .node-card.root-node { border-left: 5px solid var(--accent); }
+  .node-card.cycle-error { border-color: var(--red) !important; box-shadow: 0 0 16px rgba(255,92,92,0.4); }
+
+  .node-header {
+    padding: 8px 10px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border-soft);
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .node-title { font-weight: 600; font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+  .node-body { padding: 10px; }
+  .node-desc { font-size: 11px; color: var(--muted); margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .node-condition { font-size: 11px; font-family: var(--mono); color: var(--cyan); background: rgba(0,255,255,0.08); padding: 4px 6px; border-radius: 4px; margin-bottom: 6px; }
+  .node-reward { font-size: 11px; color: var(--gold); background: rgba(255,215,0,0.08); padding: 3px 6px; border-radius: 4px; display: inline-block; }
+  .node-footer {
+    padding: 6px 10px;
+    border-top: 1px solid var(--border-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* GRAPH CONTROLS OVERLAY */
+  .graph-controls {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px;
+    display: flex;
+    gap: 6px;
+    z-index: 10;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  }
+
+  /* STEP LIST VIEW */
+  .step-list-wrap { padding: 20px; overflow-y: auto; flex: 1; }
+  .step-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .step-number {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    background: rgba(57,255,136,0.1);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    margin-right: 14px;
+  }
+
+  /* INSPECTOR PANEL */
+  .inspector-panel {
+    width: 320px;
+    flex: none;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .inspector-header { padding: 14px; border-bottom: 1px solid var(--border-soft); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+
+  /* CARGO CONSOLE DRAWER */
+  .console-drawer {
+    background: #07090e;
+    border-top: 1px solid var(--border);
+    height: 140px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .console-header {
+    background: var(--panel);
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .console-log { padding: 10px; overflow-y: auto; flex: 1; color: #a9b7c6; white-space: pre-wrap; margin: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1><span class="star">✦</span> Éditeur de Scénarios & Objectifs DAG</h1>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('graph')">🌐 Graphe DAG</button>
+      <button class="tab-btn" onclick="switchTab('steps')">📋 Séquence & Étapes</button>
+      <button class="tab-btn" onclick="switchTab('rust')">🦀 Export Rust</button>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span id="dag-status-badge" class="badge badge-valid">✓ DAG Valide</span>
+    <button class="btn btn-sm" onclick="createNewObjective()">+ Nouvel Objectif</button>
+    <button class="btn btn-sm btn-accent" onclick="saveCurrentScenario()">💾 Sauvegarder</button>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- LEFT SIDEBAR: Scénarios & Règles Globale -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title">
+        <span>Fichiers Scénarios</span>
+        <button class="btn btn-sm" onclick="createNewScenario()">+ Nouveau</button>
+      </div>
+      <div class="scenario-list" id="scenarios-list">
+        <!-- Rempli en JS -->
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Règles du Scénario</div>
+      <div class="form-group">
+        <label>ID du Scénario</label>
+        <input type="text" id="scen-id" class="form-control" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Nom Affiché</label>
+        <input type="text" id="scen-name" class="form-control" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="scen-desc" class="form-control" onchange="updateScenarioMeta()"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Couleur d'Accent</label>
+        <select id="scen-color" class="form-control" onchange="updateScenarioMeta()">
+          <option value="0xFF39FF88">Vert Néon (#39ff88)</option>
+          <option value="0xFF00FFFF">Cyan Survie (#00ffff)</option>
+          <option value="0xFFFFD700">Or Minerais (#ffd700)</option>
+          <option value="0xFFFF5C5C">Rouge Alerte (#ff5c5c)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">État Initial du Joueur</div>
+      <div class="form-group">
+        <label>Carburant de Départ</label>
+        <input type="number" id="scen-fuel" class="form-control" value="100" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Munitions de Départ</label>
+        <input type="number" id="scen-ammo" class="form-control" value="30" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Minerais de Départ</label>
+        <input type="number" id="scen-minerals" class="form-control" value="0" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Vies (0 = Illimité)</label>
+        <input type="number" id="scen-lives" class="form-control" value="0" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Capacité Bouclier (0.0 = Aucun)</label>
+        <input type="number" step="0.5" id="scen-shield" class="form-control" value="0.0" onchange="updateScenarioMeta()">
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-title">Actions & Tests Cargo</div>
+      <button class="btn btn-sm" style="width:100%; margin-bottom:6px;" onclick="runCargo('test')">🧪 Lancer Cargo Test</button>
+      <button class="btn btn-sm" style="width:100%;" onclick="runCargo('run')">🚀 Lancer le Jeu (Cargo Run)</button>
+    </div>
+  </div>
+
+  <!-- VIEW 1: GRAPH CANVAS (DAG VISUALIZER) -->
+  <div id="view-graph" class="view-container active">
+    <div id="graph-canvas-wrap" onmousedown="startPan(event)" onwheel="handleZoom(event)">
+      <svg id="graph-svg">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#39ff88" />
+          </marker>
+          <marker id="arrowhead-error" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#ff5c5c" />
+          </marker>
+        </defs>
+      </svg>
+      <div class="nodes-layer" id="nodes-layer">
+        <!-- Nœuds d'objectifs injectés dynamiquement -->
+      </div>
+    </div>
+    <div class="graph-controls">
+      <button class="btn btn-sm" onclick="zoomIn()">+</button>
+      <button class="btn btn-sm" onclick="zoomOut()">-</button>
+      <button class="btn btn-sm" onclick="resetZoom()">1:1</button>
+      <button class="btn btn-sm" onclick="autoLayoutDAG()">✨ Auto-Layout</button>
+    </div>
+  </div>
+
+  <!-- VIEW 2: STEP FLOW LIST -->
+  <div id="view-steps" class="view-container">
+    <div class="step-list-wrap" id="step-list-container">
+      <!-- Rempli en JS -->
+    </div>
+  </div>
+
+  <!-- VIEW 3: RUST CODE PREVIEW -->
+  <div id="view-rust" class="view-container">
+    <div style="padding: 14px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-family: var(--mono); color: var(--accent);">src/scenario_objectives.rs</span>
+      <button class="btn btn-sm btn-accent" onclick="saveRustCode()">💾 Exporter vers src/scenario_objectives.rs</button>
+    </div>
+    <textarea id="rust-code-preview" class="form-control" style="flex: 1; font-family: var(--mono); border: none; border-radius: 0; background: #07090e; color: #a9b7c6; font-size: 12px; padding: 14px;" readonly></textarea>
+  </div>
+
+  <!-- RIGHT INSPECTOR PANEL: ÉDITION D'OBJECTIF SELECTIONNÉ -->
+  <div class="inspector-panel" id="inspector-panel">
+    <div class="inspector-header">
+      <span>Inspecteur d'Objectif</span>
+      <button class="btn btn-sm btn-danger" onclick="deleteSelectedObjective()">🗑️ Supprimer</button>
+    </div>
+    <div class="sidebar-section" id="inspector-content">
+      <p style="color: var(--muted); text-align: center; margin-top: 40px;">Sélectionnez un objectif dans le graphe ou créez-en un nouveau.</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- CARGO CONSOLE DRAWER -->
+<div class="console-drawer">
+  <div class="console-header">
+    <span>CONSOLE CARGO</span>
+    <button class="btn btn-sm" onclick="stopCargo()">Arrêter</button>
+  </div>
+  <pre class="console-log" id="console-output">Prêt.</pre>
+</div>
+
+<script>
+// État global de l'application
+let currentScenario = {
+  id: "campaign_prospector",
+  name: "CAMPAGNE DE PROSPECTION",
+  description: "Séquence d'objectifs guidée pour devenir un prospecteur chevronné.",
+  rules_color: "0xFF39FF88",
+  initial_state: { start_fuel: 100, start_ammo: 30, start_minerals: 0, start_reputation: 0, start_mode: 0, lives: 0, shield_capacity: 0 },
+  objectives: []
+};
+
+let selectedObjId = null;
+let connectingSourceId = null;
+
+// Pan & Zoom graph state
+let zoomLevel = 1.0;
+let panX = 40;
+let panY = 40;
+let isPanning = false;
+let startMouseX = 0;
+let startMouseY = 0;
+
+// Au chargement
+window.addEventListener('DOMContentLoaded', async () => {
+  await loadScenarioList();
+  await loadScenario('campaign_prospector.scenario.json');
+});
+
+// Navigation Onglets
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+
+  if (tab === 'graph') {
+    document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+    document.getElementById('view-graph').classList.add('active');
+    renderGraph();
+  } else if (tab === 'steps') {
+    document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+    document.getElementById('view-steps').classList.add('active');
+    renderStepList();
+  } else if (tab === 'rust') {
+    document.querySelector('.tab-btn:nth-child(3)').classList.add('active');
+    document.getElementById('view-rust').classList.add('active');
+    generateRustCode();
+  }
+}
+
+// Chargement de la liste des scénarios
+async function loadScenarioList() {
+  try {
+    const res = await fetch('/api/scenarios');
+    const data = await res.json();
+    const listEl = document.getElementById('scenarios-list');
+    listEl.innerHTML = '';
+
+    data.scenarios.forEach(file => {
+      const item = document.createElement('div');
+      item.className = 'scenario-item' + (file.includes(currentScenario.id) ? ' active' : '');
+      item.onclick = () => loadScenario(file);
+      item.innerHTML = `
+        <div>
+          <div class="scenario-item-name">${file.replace('.scenario.json', '')}</div>
+          <div class="scenario-item-meta">JSON</div>
+        </div>
+      `;
+      listEl.appendChild(item);
+    });
+  } catch (err) {
+    console.error("Erreur chargement scénarios:", err);
+  }
+}
+
+// Chargement d'un scénario JSON
+async function loadScenario(filename) {
+  try {
+    const res = await fetch('/api/scenarios/' + filename);
+    if (!res.ok) return;
+    currentScenario = await res.json();
+    populateFormMeta();
+    validateDAG();
+    renderGraph();
+    loadScenarioList();
+  } catch (err) {
+    console.error("Erreur lecture scénario:", err);
+  }
+}
+
+// Remplissage métadonnées formulaires
+function populateFormMeta() {
+  document.getElementById('scen-id').value = currentScenario.id || '';
+  document.getElementById('scen-name').value = currentScenario.name || '';
+  document.getElementById('scen-desc').value = currentScenario.description || '';
+  document.getElementById('scen-color').value = currentScenario.rules_color || '0xFF39FF88';
+  document.getElementById('scen-fuel').value = currentScenario.initial_state?.start_fuel ?? 100;
+  document.getElementById('scen-ammo').value = currentScenario.initial_state?.start_ammo ?? 30;
+  document.getElementById('scen-minerals').value = currentScenario.initial_state?.start_minerals ?? 0;
+  document.getElementById('scen-lives').value = currentScenario.initial_state?.lives ?? 0;
+  document.getElementById('scen-shield').value = currentScenario.initial_state?.shield_capacity ?? 0.0;
+}
+
+function updateScenarioMeta() {
+  currentScenario.id = document.getElementById('scen-id').value.trim();
+  currentScenario.name = document.getElementById('scen-name').value.trim();
+  currentScenario.description = document.getElementById('scen-desc').value.trim();
+  currentScenario.rules_color = document.getElementById('scen-color').value;
+  currentScenario.initial_state = {
+    start_fuel: parseFloat(document.getElementById('scen-fuel').value) || 0,
+    start_ammo: parseInt(document.getElementById('scen-ammo').value) || 0,
+    start_minerals: parseInt(document.getElementById('scen-minerals').value) || 0,
+    start_reputation: 0.0,
+    start_mode: 0,
+    lives: parseInt(document.getElementById('scen-lives').value) || 0,
+    shield_capacity: parseFloat(document.getElementById('scen-shield').value) || 0.0
+  };
+  validateDAG();
+}
+
+// Validation du DAG (Absence de cycle)
+function validateDAG() {
+  const ids = new Set();
+  const objMap = new Map();
+  let hasCycle = false;
+  let cycleNodes = new Set();
+
+  currentScenario.objectives.forEach(obj => {
+    ids.add(obj.id);
+    objMap.set(obj.id, obj);
+  });
+
+  // Détection de cycles par DFS
+  function checkCycle(nodeId, visited, stack) {
+    visited.add(nodeId);
+    stack.add(nodeId);
+    const obj = objMap.get(nodeId);
+    if (obj && obj.prerequisites) {
+      for (const pre of obj.prerequisites) {
+        if (!visited.has(pre)) {
+          if (checkCycle(pre, visited, stack)) return true;
+        } else if (stack.has(pre)) {
+          cycleNodes.add(nodeId);
+          cycleNodes.add(pre);
+          return true;
+        }
+      }
+    }
+    stack.delete(nodeId);
+    return false;
+  }
+
+  const visited = new Set();
+  const stack = new Set();
+  currentScenario.objectives.forEach(obj => {
+    if (!visited.has(obj.id)) {
+      if (checkCycle(obj.id, visited, stack)) {
+        hasCycle = true;
+      }
+    }
+  });
+
+  const badge = document.getElementById('dag-status-badge');
+  if (hasCycle) {
+    badge.className = 'badge badge-invalid';
+    badge.textContent = '❌ Cycle Détecté dans le DAG';
+  } else {
+    badge.className = 'badge badge-valid';
+    badge.textContent = `✓ DAG Valide (${currentScenario.objectives.length} objectifs)`;
+  }
+
+  return { hasCycle, cycleNodes };
+}
+
+// RENDU DU GRAPHE VISUEL (CANVAS + SVG ARROWS)
+function renderGraph() {
+  const layer = document.getElementById('nodes-layer');
+  const svg = document.getElementById('graph-svg');
+  layer.innerHTML = '';
+
+  // Nettoyer les lignes SVG pré-existantes
+  const paths = svg.querySelectorAll('path.link-line');
+  paths.forEach(p => p.remove());
+
+  layer.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+
+  const { cycleNodes } = validateDAG();
+
+  currentScenario.objectives.forEach(obj => {
+    const isRoot = !obj.prerequisites || obj.prerequisites.length === 0;
+    const isSelected = obj.id === selectedObjId;
+    const isCycle = cycleNodes.has(obj.id);
+
+    const card = document.createElement('div');
+    card.className = `node-card ${isRoot ? 'root-node' : ''} ${isSelected ? 'selected' : ''} ${isCycle ? 'cycle-error' : ''}`;
+    card.style.left = (obj.position?.x ?? 100) + 'px';
+    card.style.top = (obj.position?.y ?? 100) + 'px';
+
+    card.onmousedown = (e) => startDragNode(e, obj);
+    card.onclick = (e) => {
+      e.stopPropagation();
+      selectObjective(obj.id);
+    };
+
+    const condText = formatConditionText(obj.condition);
+    const rewardText = formatRewardText(obj.reward);
+
+    card.innerHTML = `
+      <div class="node-header">
+        <span class="node-title">${escapeHtml(obj.title || obj.id)}</span>
+        <span class="badge ${isRoot ? 'badge-info' : 'badge-valid'}">${isRoot ? 'DEPART' : 'ÉTAPE'}</span>
+      </div>
+      <div class="node-body">
+        <div class="node-desc">${escapeHtml(obj.description || '')}</div>
+        <div class="node-condition">⚙️ ${escapeHtml(condText)}</div>
+        ${rewardText ? `<div class="node-reward">🎁 ${escapeHtml(rewardText)}</div>` : ''}
+      </div>
+      <div class="node-footer">
+        <button class="btn btn-sm" onclick="event.stopPropagation(); startConnectMode('${obj.id}')">🔗 Connecter</button>
+        <span style="font-size:10px; color:var(--muted); font-family:var(--mono);">${obj.id}</span>
+      </div>
+    `;
+
+    layer.appendChild(card);
+  });
+
+  // Lignes de dépendances SVG
+  drawLinks();
+}
+
+function formatConditionText(cond) {
+  if (!cond) return "Aucune condition";
+  switch (cond.type) {
+    case 'DestroyAsteroids': return `${cond.required} météores détruits`;
+    case 'CollectMinerals': return `${cond.required} minerais récoltés`;
+    case 'ReachReputation': return `${cond.required} pts de réputation`;
+    case 'DockAtStation': return `${cond.required} accostages station`;
+    case 'BuyUpgrade': return `Atelier ${cond.track} niveau ${cond.level}`;
+    case 'UnlockMovementMode': return `Mode de vol #${cond.mode} débloqué`;
+    case 'SurviveTime': return `Survie ${cond.seconds} secondes`;
+    case 'PrecisionShooting': return `${cond.hits} tirs à >${Math.round((cond.min_precision||0)*100)}% préc.`;
+    default: return cond.type;
+  }
+}
+
+function formatRewardText(rew) {
+  if (!rew || rew.type === 'None') return null;
+  switch (rew.type) {
+    case 'Minerals': return `+${rew.amount} Minerais`;
+    case 'Reputation': return `+${rew.amount} Réputation`;
+    case 'Fuel': return `+${rew.amount} Carburant`;
+    case 'Ammo': return `+${rew.amount} Munitions`;
+    case 'Victory': return `🏆 Victoire !`;
+    default: return rew.type;
+  }
+}
+
+// Dessin des connecteurs de dépendances (Flèches SVG Bézier)
+function drawLinks() {
+  const svg = document.getElementById('graph-svg');
+  const paths = svg.querySelectorAll('path.link-line');
+  paths.forEach(p => p.remove());
+
+  const objMap = new Map();
+  currentScenario.objectives.forEach(o => objMap.set(o.id, o));
+
+  currentScenario.objectives.forEach(targetObj => {
+    if (!targetObj.prerequisites) return;
+    targetObj.prerequisites.forEach(preId => {
+      const sourceObj = objMap.get(preId);
+      if (!sourceObj) return;
+
+      const x1 = (sourceObj.position?.x ?? 100) * zoomLevel + panX + 240 * zoomLevel;
+      const y1 = (sourceObj.position?.y ?? 100) * zoomLevel + panY + 50 * zoomLevel;
+
+      const x2 = (targetObj.position?.x ?? 100) * zoomLevel + panX;
+      const y2 = (targetObj.position?.y ?? 100) * zoomLevel + panY + 50 * zoomLevel;
+
+      const dx = Math.abs(x2 - x1) * 0.5;
+      const pathData = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', pathData);
+      path.setAttribute('class', 'link-line');
+      path.setAttribute('stroke', '#39ff88');
+      path.setAttribute('stroke-width', '2');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('marker-end', 'url(#arrowhead)');
+
+      svg.appendChild(path);
+    });
+  });
+}
+
+// Mode Connexion de Dépendances
+function startConnectMode(sourceId) {
+  connectingSourceId = sourceId;
+  alert(`Mode Connexion : Cliquez maintenant sur l'objectif qui DEPENDRA de '${sourceId}'.`);
+}
+
+// Sélection et Édition dans l'Inspecteur
+function selectObjective(id) {
+  if (connectingSourceId) {
+    if (connectingSourceId !== id) {
+      const targetObj = currentScenario.objectives.find(o => o.id === id);
+      if (targetObj) {
+        if (!targetObj.prerequisites) targetObj.prerequisites = [];
+        if (!targetObj.prerequisites.includes(connectingSourceId)) {
+          targetObj.prerequisites.push(connectingSourceId);
+        }
+      }
+    }
+    connectingSourceId = null;
+    validateDAG();
+    renderGraph();
+  }
+
+  selectedObjId = id;
+  renderInspector();
+  renderGraph();
+}
+
+function renderInspector() {
+  const container = document.getElementById('inspector-content');
+  const obj = currentScenario.objectives.find(o => o.id === selectedObjId);
+
+  if (!obj) {
+    container.innerHTML = `<p style="color:var(--muted); text-align:center; margin-top:40px;">Aucun objectif sélectionné.</p>`;
+    return;
+  }
+
+  const cond = obj.condition || { type: 'DestroyAsteroids', required: 10 };
+  const rew = obj.reward || { type: 'Minerals', amount: 10 };
+
+  container.innerHTML = `
+    <div class="form-group">
+      <label>ID Unique (Slug)</label>
+      <input type="text" class="form-control" value="${escapeHtml(obj.id)}" onchange="updateObjField('id', this.value)">
+    </div>
+    <div class="form-group">
+      <label>Titre de l'Objectif</label>
+      <input type="text" class="form-control" value="${escapeHtml(obj.title || '')}" onchange="updateObjField('title', this.value)">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea class="form-control" onchange="updateObjField('description', this.value)">${escapeHtml(obj.description || '')}</textarea>
+    </div>
+
+    <hr style="border:0; border-top:1px solid var(--border-soft); margin:14px 0;">
+    <div class="sidebar-title">Condition de Réussite</div>
+
+    <div class="form-group">
+      <label>Type de Condition</label>
+      <select class="form-control" onchange="updateObjConditionType(this.value)">
+        <option value="DestroyAsteroids" ${cond.type==='DestroyAsteroids'?'selected':''}>Détruire Météores</option>
+        <option value="CollectMinerals" ${cond.type==='CollectMinerals'?'selected':''}>Collecter Minerais</option>
+        <option value="ReachReputation" ${cond.type==='ReachReputation'?'selected':''}>Atteindre Réputation</option>
+        <option value="DockAtStation" ${cond.type==='DockAtStation'?'selected':''}>Accostages Station</option>
+        <option value="BuyUpgrade" ${cond.type==='BuyUpgrade'?'selected':''}>Amélioration Atelier</option>
+        <option value="UnlockMovementMode" ${cond.type==='UnlockMovementMode'?'selected':''}>Débloquer Mode Vol</option>
+        <option value="SurviveTime" ${cond.type==='SurviveTime'?'selected':''}>Survie Chronométrée</option>
+        <option value="PrecisionShooting" ${cond.type==='PrecisionShooting'?'selected':''}>Tir de Précision</option>
+      </select>
+    </div>
+    ${renderConditionInputs(cond)}
+
+    <hr style="border:0; border-top:1px solid var(--border-soft); margin:14px 0;">
+    <div class="sidebar-title">Récompense</div>
+
+    <div class="form-group">
+      <label>Type de Récompense</label>
+      <select class="form-control" onchange="updateObjRewardType(this.value)">
+        <option value="Minerals" ${rew.type==='Minerals'?'selected':''}>Minerais</option>
+        <option value="Reputation" ${rew.type==='Reputation'?'selected':''}>Réputation</option>
+        <option value="Fuel" ${rew.type==='Fuel'?'selected':''}>Carburant</option>
+        <option value="Ammo" ${rew.type==='Ammo'?'selected':''}>Munitions</option>
+        <option value="Victory" ${rew.type==='Victory'?'selected':''}>🏆 Victoire Finale</option>
+        <option value="None" ${rew.type==='None'?'selected':''}>Aucune</option>
+      </select>
+    </div>
+    ${rew.type !== 'Victory' && rew.type !== 'None' ? `
+      <div class="form-group">
+        <label>Quantité / Valeur</label>
+        <input type="number" class="form-control" value="${rew.amount || 10}" onchange="updateObjRewardAmount(this.value)">
+      </div>
+    ` : ''}
+
+    <hr style="border:0; border-top:1px solid var(--border-soft); margin:14px 0;">
+    <div class="sidebar-title">Prérequis (Graphe DAG)</div>
+    <div style="max-height:140px; overflow-y:auto; background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:6px;">
+      ${currentScenario.objectives.filter(o => o.id !== obj.id).map(other => `
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin:4px 0; cursor:pointer;">
+          <input type="checkbox" ${obj.prerequisites?.includes(other.id) ? 'checked' : ''} onchange="toggleObjPrerequisite('${other.id}', this.checked)">
+          <span>${escapeHtml(other.title || other.id)}</span>
+        </label>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderConditionInputs(cond) {
+  switch (cond.type) {
+    case 'DestroyAsteroids':
+    case 'CollectMinerals':
+    case 'DockAtStation':
+      return `
+        <div class="form-group">
+          <label>Nombre Requis</label>
+          <input type="number" class="form-control" value="${cond.required || 10}" onchange="updateObjCondVal('required', parseInt(this.value))">
+        </div>`;
+    case 'ReachReputation':
+    case 'SurviveTime':
+      return `
+        <div class="form-group">
+          <label>Valeur Requise</label>
+          <input type="number" step="0.5" class="form-control" value="${cond.required || cond.seconds || 25}" onchange="updateObjCondVal(cond.type==='SurviveTime'?'seconds':'required', parseFloat(this.value))">
+        </div>`;
+    case 'UnlockMovementMode':
+      return `
+        <div class="form-group">
+          <label>Index du Mode (1=Inertial, 2=4Ways, 3=Directional)</label>
+          <input type="number" class="form-control" value="${cond.mode || 1}" onchange="updateObjCondVal('mode', parseInt(this.value))">
+        </div>`;
+    default:
+      return '';
+  }
+}
+
+function updateObjField(field, val) {
+  const obj = currentScenario.objectives.find(o => o.id === selectedObjId);
+  if (obj) {
+    obj[field] = val;
+    validateDAG();
+    renderGraph();
+  }
+}
+
+function updateObjConditionType(type) {
+  const obj = currentScenario.objectives.find(o => o.id === selectedObjId);
+  if (obj) {
+    obj.condition = { type, required: 10 };
+    renderInspector();
+    renderGraph();
+  }
+}
+
+function updateObjCondVal(key, val) {
+  const obj = currentScenario.objectives.find(o => o.id === selectedObjId);
+  if (obj && obj.condition) {
+    obj.condition[key] = val;
+    renderGraph();
+  }
+}
+
+function updateObjRewardType(type) {
+  const obj = currentScenario.objectives.find(o => o.id === selectedObjId);
+  if (obj) {
+    obj.reward = { type, amount: 10 };
+    renderInspector();
+    renderGraph();
+  }
+}
+
+function updateObjRewardAmount(val) {
+  const obj = currentScenario.objectives.find(o => o.id === selectedObjId);
+  if (obj && obj.reward) {
+    obj.reward.amount = parseFloat(val) || 0;
+    renderGraph();
+  }
+}
+
+function toggleObjPrerequisite(preId, enable) {
+  const obj = currentScenario.objectives.find(o => o.id === selectedObjId);
+  if (obj) {
+    if (!obj.prerequisites) obj.prerequisites = [];
+    if (enable && !obj.prerequisites.includes(preId)) {
+      obj.prerequisites.push(preId);
+    } else if (!enable) {
+      obj.prerequisites = obj.prerequisites.filter(p => p !== preId);
+    }
+    validateDAG();
+    renderGraph();
+  }
+}
+
+// Création d'un nouvel objectif
+function createNewObjective() {
+  const newId = "obj_" + Date.now().toString(36);
+  const newObj = {
+    id: newId,
+    title: "Nouvel Objectif",
+    description: "Description des actions à accomplir.",
+    prerequisites: [],
+    condition: { type: "DestroyAsteroids", required: 10 },
+    reward: { type: "Minerals", amount: 10 },
+    position: { x: 200 + Math.random() * 200, y: 150 + Math.random() * 150 }
+  };
+  currentScenario.objectives.push(newObj);
+  validateDAG();
+  selectObjective(newId);
+}
+
+function deleteSelectedObjective() {
+  if (!selectedObjId) return;
+  currentScenario.objectives = currentScenario.objectives.filter(o => o.id !== selectedObjId);
+  // Nettoyer les prérequis référençant cet ID
+  currentScenario.objectives.forEach(o => {
+    if (o.prerequisites) {
+      o.prerequisites = o.prerequisites.filter(p => p !== selectedObjId);
+    }
+  });
+  selectedObjId = null;
+  renderInspector();
+  validateDAG();
+  renderGraph();
+}
+
+// Panning & Dragging des nœuds
+function startDragNode(e, obj) {
+  let isDraggingNode = true;
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const initObjX = obj.position?.x ?? 100;
+  const initObjY = obj.position?.y ?? 100;
+
+  function onMouseMove(me) {
+    if (!isDraggingNode) return;
+    const dx = (me.clientX - startX) / zoomLevel;
+    const dy = (me.clientY - startY) / zoomLevel;
+    obj.position = { x: initObjX + dx, y: initObjY + dy };
+    renderGraph();
+  }
+
+  function onMouseUp() {
+    isDraggingNode = false;
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  }
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+}
+
+function startPan(e) {
+  if (e.target.closest('.node-card')) return;
+  isPanning = true;
+  startMouseX = e.clientX - panX;
+  startMouseY = e.clientY - panY;
+
+  function onPanMove(me) {
+    if (!isPanning) return;
+    panX = me.clientX - startMouseX;
+    panY = me.clientY - startMouseY;
+    renderGraph();
+  }
+
+  function onPanEnd() {
+    isPanning = false;
+    window.removeEventListener('mousemove', onPanMove);
+    window.removeEventListener('mouseup', onPanEnd);
+  }
+
+  window.addEventListener('mousemove', onPanMove);
+  window.addEventListener('mouseup', onPanEnd);
+}
+
+function handleZoom(e) {
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? 1.1 : 0.9;
+  zoomLevel = Math.max(0.3, Math.min(2.5, zoomLevel * delta));
+  renderGraph();
+}
+
+function zoomIn() { zoomLevel = Math.min(2.5, zoomLevel * 1.2); renderGraph(); }
+function zoomOut() { zoomLevel = Math.max(0.3, zoomLevel / 1.2); renderGraph(); }
+function resetZoom() { zoomLevel = 1.0; panX = 40; panY = 40; renderGraph(); }
+
+// SÉQUENCE & ÉTAPES (VUE LISTE HIERARCHIQUE)
+function renderStepList() {
+  const container = document.getElementById('step-list-container');
+  container.innerHTML = '';
+
+  if (!currentScenario.objectives.length) {
+    container.innerHTML = `<p style="color:var(--muted); text-align:center;">Aucun objectif dans ce scénario.</p>`;
+    return;
+  }
+
+  currentScenario.objectives.forEach((obj, idx) => {
+    const card = document.createElement('div');
+    card.className = 'step-card';
+    card.innerHTML = `
+      <div style="display:flex; align-items:flex-start;">
+        <div class="step-number">${idx + 1}</div>
+        <div>
+          <div style="font-weight:600; font-size:15px; color:#fff;">${escapeHtml(obj.title || obj.id)}</div>
+          <div style="color:var(--muted); font-size:12px; margin:4px 0;">${escapeHtml(obj.description || '')}</div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <span class="badge badge-info">Condition: ${formatConditionText(obj.condition)}</span>
+            ${obj.reward ? `<span class="badge badge-valid">Récompense: ${formatRewardText(obj.reward)}</span>` : ''}
+          </div>
+          <div style="font-size:11px; color:var(--muted); margin-top:6px;">
+            Prérequis : ${obj.prerequisites?.length ? obj.prerequisites.join(', ') : '<em>Aucun (Départ)</em>'}
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-sm" onclick="selectObjective('${obj.id}'); switchTab('graph');">🔍 Voir sur le Graphe</button>
+    `;
+    container.appendChild(card);
+  });
+}
+
+// GÉNÉRATION DE CODE RUST COMPILABLE
+function generateRustCode() {
+  const codeBox = document.getElementById('rust-code-preview');
+  let code = `//! Code généré automatiquement par l'Éditeur de Scénarios DAG.
+//! Fichier : src/scenario_objectives.rs
+
+use std::collections::HashSet;
+
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum ObjectiveCondition {
+    DestroyAsteroids { required: u32 },
+    CollectMinerals { required: u32 },
+    ReachReputation { required: f64 },
+    DockAtStation { required: u32 },
+    BuyUpgrade { track: &'static str, level: i32 },
+    UnlockMovementMode { mode: i32 },
+    SurviveTime { seconds: f64 },
+    PrecisionShooting { hits: u32, min_precision: f64 },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+pub enum ObjectiveReward {
+    Minerals(i32),
+    Reputation(f64),
+    Fuel(f64),
+    Ammo(i32),
+    UnlockMode(i32),
+    Victory,
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectiveSpec {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub prerequisites: &'static [&'static str],
+    pub condition: ObjectiveCondition,
+    pub reward: ObjectiveReward,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScenarioChain {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub rules_color: u32,
+    pub objectives: &'static [ObjectiveSpec],
+}
+
+pub const GENERATED_OBJECTIVES: &[ObjectiveSpec] = &[\n`;
+
+  currentScenario.objectives.forEach(obj => {
+    const preList = (obj.prerequisites || []).map(p => `"${p}"`).join(', ');
+    const condRust = formatConditionRust(obj.condition);
+    const rewRust = formatRewardRust(obj.reward);
+
+    code += `    ObjectiveSpec {\n`;
+    code += `        id: "${obj.id}",\n`;
+    code += `        title: "${escapeRustStr(obj.title || obj.id)}",\n`;
+    code += `        description: "${escapeRustStr(obj.description || '')}",\n`;
+    code += `        prerequisites: &[${preList}],\n`;
+    code += `        condition: ${condRust},\n`;
+    code += `        reward: ${rewRust},\n`;
+    code += `    },\n`;
+  });
+
+  code += `];\n\n`;
+  code += `pub const GENERATED_SCENARIO_CHAIN: ScenarioChain = ScenarioChain {\n`;
+  code += `    id: "${currentScenario.id || 'scenario_custom'}",\n`;
+  code += `    name: "${escapeRustStr(currentScenario.name || 'SCÉNARIO PERSONNALISÉ')}",\n`;
+  code += `    description: "${escapeRustStr(currentScenario.description || '')}",\n`;
+  code += `    rules_color: ${currentScenario.rules_color || '0xFF39FF88'},\n`;
+  code += `    objectives: GENERATED_OBJECTIVES,\n`;
+  code += `};\n`;
+
+  codeBox.value = code;
+}
+
+function formatConditionRust(cond) {
+  if (!cond) return `ObjectiveCondition::DestroyAsteroids { required: 1 }`;
+  switch (cond.type) {
+    case 'DestroyAsteroids': return `ObjectiveCondition::DestroyAsteroids { required: ${cond.required || 10} }`;
+    case 'CollectMinerals': return `ObjectiveCondition::CollectMinerals { required: ${cond.required || 10} }`;
+    case 'ReachReputation': return `ObjectiveCondition::ReachReputation { required: ${cond.required || 25}.0 }`;
+    case 'DockAtStation': return `ObjectiveCondition::DockAtStation { required: ${cond.required || 1} }`;
+    case 'UnlockMovementMode': return `ObjectiveCondition::UnlockMovementMode { mode: ${cond.mode || 1} }`;
+    case 'SurviveTime': return `ObjectiveCondition::SurviveTime { seconds: ${cond.seconds || 30}.0 }`;
+    default: return `ObjectiveCondition::DestroyAsteroids { required: 10 }`;
+  }
+}
+
+function formatRewardRust(rew) {
+  if (!rew || rew.type === 'None') return `ObjectiveReward::None`;
+  switch (rew.type) {
+    case 'Minerals': return `ObjectiveReward::Minerals(${rew.amount || 10})`;
+    case 'Reputation': return `ObjectiveReward::Reputation(${rew.amount || 10}.0)`;
+    case 'Fuel': return `ObjectiveReward::Fuel(${rew.amount || 50}.0)`;
+    case 'Ammo': return `ObjectiveReward::Ammo(${rew.amount || 30})`;
+    case 'Victory': return `ObjectiveReward::Victory`;
+    default: return `ObjectiveReward::None`;
+  }
+}
+
+function escapeRustStr(str) { return str.replace(/"/g, '\\"'); }
+function escapeHtml(str) { return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+// SAUVEGARDES HTTP
+async function saveCurrentScenario() {
+  try {
+    const filename = `${currentScenario.id || 'custom'}.scenario.json`;
+    const res = await fetch('/api/scenarios/' + filename, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(currentScenario, null, 2)
+    });
+    if (res.ok) {
+      alert(`Scénario enregistré dans scenarios/${filename} !`);
+      loadScenarioList();
+    }
+  } catch (err) {
+    alert("Erreur lors de la sauvegarde JSON.");
+  }
+}
+
+async function saveRustCode() {
+  generateRustCode();
+  const code = document.getElementById('rust-code-preview').value;
+  try {
+    const res = await fetch('/scenario_objectives.rs', {
+      method: 'PUT',
+      body: code
+    });
+    if (res.ok) {
+      alert("Code Rust exporté avec succès dans src/scenario_objectives.rs !");
+    }
+  } catch (err) {
+    alert("Erreur lors de l'export Rust.");
+  }
+}
+
+// CONSOLE CARGO
+async function runCargo(cmd) {
+  const out = document.getElementById('console-output');
+  out.textContent = `Execution de cargo ${cmd}...\n`;
+  try {
+    const res = await fetch('/api/cargo', {
+      method: 'POST',
+      body: JSON.stringify({ command: cmd })
+    });
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out.textContent += decoder.decode(value);
+      out.scrollTop = out.scrollHeight;
+    }
+  } catch (err) {
+    out.textContent += `Erreur: ${err.message}\n`;
+  }
+}
+
+async function stopCargo() {
+  await fetch('/api/cargo-stop', { method: 'POST' });
+}
+</script>
+</body>
+</html>

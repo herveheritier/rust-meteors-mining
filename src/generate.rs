@@ -417,11 +417,15 @@ pub fn eject_cargo_gems(
 /// de rotation (comportement d'origine : ex `fireBullet`).
 ///
 /// **Catalogue d'armes** (`VAISSEAU_WEAPONS`) : quand il est rempli, chaque
-/// arme tire sa propre munition (mesh embarqué, échelle et orientation) depuis
-/// son emplacement sur le vaisseau (`spawn_index` dans `VAISSEAU_BULLET_SPAWNS`
-/// — liste contrainte) ; toutes les armes tirent ensemble. Catalogue vide =
-/// tir classique (une balle rouge par emplacement, repli).
-pub fn fire_bullet(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
+/// arme **possédée et armée** tire sa propre munition (mesh embarqué, échelle
+/// et orientation) depuis son emplacement sur le vaisseau (`spawn_index` dans
+/// `VAISSEAU_BULLET_SPAWNS` — liste contrainte). Le masque `fired` (produit
+/// par `scenario::try_fire`, index du catalogue borné à `WEAPON_SLOTS`)
+/// sélectionne les armes qui tirent : une arme sans munitions (ou non
+/// possédée) ne tire pas, les autres continuent. Catalogue vide = tir
+/// classique (une balle rouge par emplacement, repli) — il n'a lieu que si le
+/// slot 0 (le canon classique) a tiré.
+pub fn fire_bullet(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>, fired: &[bool; WEAPON_SLOTS]) {
     // cinématiques du vaisseau figées avant la boucle : `create_specific_shape`
     // / `create_ammo_shape` peuvent allouer dans `shapes` (le joueur reste à
     // l'index 0, mais un emprunt concurrent serait invalide)
@@ -431,13 +435,19 @@ pub fn fire_bullet(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
     let cy = shapes[PLAYER_INDEX].center.y;
     let orientation = shapes[PLAYER_INDEX].orientation;
     let velocity = shapes[PLAYER_INDEX].velocity;
-    // catalogue d'armes : une munition par arme, depuis son emplacement
+    // catalogue d'armes : une munition par arme armée, depuis son emplacement
     let weapons = crate::vaisseau::vaisseau_weapons();
     if !weapons.is_empty() {
+        let armed: Vec<(crate::marketplace::VaisseauWeapon, Point)> = weapons
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| fired.get(*i).copied().unwrap_or(false))
+            .map(|(_, w)| w)
+            .collect();
         fire_bullet_with(
             shapes,
             triangles,
-            &weapons,
+            &armed,
             px,
             py,
             cx,
@@ -445,6 +455,11 @@ pub fn fire_bullet(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
             orientation,
             velocity,
         );
+        return;
+    }
+    // tir classique (repli) : une balle par emplacement, seulement si le
+    // canon classique (slot 0) a tiré
+    if !fired[0] {
         return;
     }
     for spawn in crate::vaisseau::vaisseau_bullet_spawns() {
@@ -856,7 +871,7 @@ mod tests {
         let spawns = crate::vaisseau::vaisseau_bullet_spawns();
         let weapons = crate::vaisseau::vaisseau_weapons();
         let bullets_before = shapes.len();
-        fire_bullet(&mut shapes, &mut triangles);
+        fire_bullet(&mut shapes, &mut triangles, &[true; WEAPON_SLOTS]);
         // Le catalogue d'armes remplace le tir classique : une munition par
         // arme ; sans catalogue, une balle part de chaque emplacement.
         let expected_bullets = if weapons.is_empty() {

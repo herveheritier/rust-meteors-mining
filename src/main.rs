@@ -27,6 +27,7 @@ mod persist;
 mod remote;
 mod render;
 mod scenario;
+mod scenario_objectives;
 mod shape;
 mod state;
 mod title;

@@ -67,6 +67,14 @@ pub const MOVING_MODE_REALISTIC: i32 = 3;
 /// `MODE_COSTS` de `src/marketplace.rs`).
 pub const MOVING_MODE_COUNT: i32 = 4;
 
+/// Nombre maximal d'emplacements d'armes du catalogue (`VAISSEAU_WEAPONS` de
+/// `src/marketplace.rs`) : taille des tableaux d'état par arme de
+/// `Resources` (`weapon_owned` / `weapon_ammo`, voir `src/scenario.rs`). Les
+/// armes au-delà de ce nombre (catalogue plus long exporté par l'outil) sont
+/// ignorées par l'économie. Le slot 0 sert aussi de « canon classique »
+/// (repli quand le catalogue est vide).
+pub const WEAPON_SLOTS: usize = 8;
+
 /// Ordre d'affichage des modes dans le magasin de la station (bouton
 /// SHOP de la boîte DOCK STATION) : REALISTIC est le mode de départ de
 /// PROGRESSION, puis INERTIAL, 4 WAYS et DIRECTIONAL. Les noms, descriptions

@@ -41,7 +41,13 @@
     letter-spacing: 0.5px;
   }
   h1 .starbar { color: var(--accent); }
-  .subtitle { color: var(--muted); margin: 0 0 10px; max-width: 900px; }
+  .subtitle {
+    color: var(--muted);
+    margin: 0 0 14px;
+    max-width: 112ch;
+    line-height: 1.65;
+    text-wrap: pretty;
+  }
   .badges { display: flex; gap: 8px; flex-wrap: wrap; }
   .badge {
     font-size: 12px;
@@ -172,22 +178,46 @@
     border-radius: 4px;
     margin-left: auto;
   }
-  .card .desc { color: var(--muted); font-size: 12.5px; margin: 0; }
+  .card .desc {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.65;
+    max-width: 120ch;
+    margin: 0;
+    text-wrap: pretty;
+  }
+  .card .hint {
+    line-height: 1.6;
+    max-width: 130ch;
+    text-wrap: pretty;
+  }
 
   .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
-  .field { display: flex; flex-direction: column; gap: 3px; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .field.full { grid-column: 1 / -1; }
-  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
-  input[type=text], input[type=number] {
+  .field label {
+    font-size: 11px;
+    line-height: 1.2;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.55px;
+    min-height: 1.2em;
+  }
+  /* Tous les champs visibles partagent le même socle : hauteur, fond,
+     bordure et rayon. Les variantes compactes des tableaux ne changent que
+     la taille, pas l'identité visuelle du champ. */
+  input[type=text], input[type=number], .field select {
+    box-sizing: border-box;
     font: inherit;
     color: var(--text);
     background: var(--panel-2);
     border: 1px solid var(--border);
     border-radius: 5px;
+    min-height: 31px;
     padding: 5px 8px;
     width: 100%;
   }
-  input:focus { outline: none; border-color: var(--accent); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
   input[type=number] { width: 100%; }
   .hint { font-size: 11.5px; color: var(--muted); }
 
@@ -218,6 +248,7 @@
   }
   .ship-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
   .ship-fields .field { margin: 0; }
+  .ship-fields .mesh-transform-fields { margin-top: 2px; gap: 8px; }
   /* le sélecteur d'asset principal (en-tête vaisseau/cosmonaute) vit dans la
      colonne étroite à côté de l'aperçu (280 px fixes) : il se réduit à la
      largeur disponible au lieu de déborder (scrolling horizontal) */
@@ -235,17 +266,21 @@
   }
 
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  thead { background: var(--panel-2); }
   th {
     text-align: left;
     font-size: 10.5px;
     text-transform: uppercase;
     letter-spacing: 0.7px;
     color: var(--muted);
-    font-weight: 500;
-    padding: 3px 6px;
-    border-bottom: 1px solid var(--border-soft);
+    font-weight: 600;
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
   }
-  td { padding: 4px 6px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+  tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.018); }
+  tbody tr:hover { background: rgba(57, 255, 136, 0.045); }
   tr:last-child td { border-bottom: none; }
   td.num, th.num { text-align: right; }
   td .grow { display: flex; gap: 4px; }
@@ -268,16 +303,56 @@
   .eff { color: var(--orange); font-size: 12px; }
   .warn { color: var(--gold); }
 
-  .card-section { margin-top: 16px; }
-  .card-section table { margin-top: 8px; }
+  .card-section { margin-top: 18px; }
+  .card-section > .desc,
+  .card-section > .hint {
+    max-width: 124ch;
+    margin-top: 4px;
+    margin-bottom: 8px;
+  }
+  .card-section > .desc {
+    padding: 9px 12px;
+    border-left: 3px solid var(--border);
+    background: rgba(255, 255, 255, 0.018);
+    border-radius: 0 6px 6px 0;
+  }
+  .card-section table { margin-top: 10px; }
+  .card-section .plane-cell {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 250px;
+  }
+  .card-section .plane-thumb {
+    display: block;
+    position: relative;
+    flex: none;
+    width: 86px;
+    height: 60px;
+    background: #0a0d14;
+    border: 1px solid var(--border-soft);
+    border-radius: 5px;
+    cursor: zoom-in;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  }
+  /* Zoom visuel en overlay : transform ne modifie pas la taille de la cellule,
+     donc le tableau ne saute pas quand le pointeur entre dans la vignette. */
+  .card-section .plane-thumb:hover {
+    z-index: 30;
+    transform: scale(3.5);
+    transform-origin: center center;
+    border-color: var(--accent);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.75), 0 0 0 2px rgba(57, 255, 136, 0.22);
+  }
   .card-section .plane-name { font-weight: 600; margin-right: 8px; }
   .card-section .plane-meta { font-size: 11px; color: var(--muted); }
   .card-section select {
     background: var(--panel-2);
     color: var(--text);
-    border: 1px solid var(--border-soft);
-    border-radius: 4px;
-    padding: 3px 6px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    min-height: 31px;
+    padding: 5px 8px;
     font-size: 13px;
   }
   /* sélecteur d'asset (mesh) : liste des fichiers JSON de assets/ — même
@@ -286,8 +361,9 @@
   select.asset-select {
     background: var(--panel-2);
     color: var(--text);
-    border: 1px solid var(--border-soft);
-    border-radius: 4px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    min-height: 31px;
     padding: 5px 8px;
     font-size: 13px;
     max-width: 260px;
@@ -297,21 +373,105 @@
   .asset-picker input {
     width: 100%;
   }
-  .asset-picker { display: inline-block; min-width: 200px; }
+  .asset-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 200px;
+  }
+  /* Aperçu compact du mesh actuellement sélectionné dans chaque sélecteur
+     (vaisseau, arme, munition et propulseur). L'aperçu principal reste
+     disponible à gauche ; cette vignette confirme immédiatement quel fichier
+     est effectivement choisi. */
+  .mesh-asset-thumb {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+    width: 92px;
+    height: 66px;
+    padding: 2px;
+    background: #0a0d14;
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+  }
+  .mesh-asset-thumb canvas {
+    display: block;
+    width: 86px;
+    height: 60px;
+  }
+  .mesh-asset-thumb.unavailable canvas { opacity: 0.65; }
+  .spawn-row.weapon-row .mesh-asset-thumb { margin-top: 1px; }
+  .card-section .asset-picker { max-width: 100%; }
+  .card-section .asset-picker select.asset-select,
+  .card-section .asset-picker input { min-width: 0; flex: 1 1 auto; }
   .card-section td .grow input { width: 64px; }
-  .spawns-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .spawns-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
   .spawn-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
   .spawn-row .field { flex: 0 0 auto; }
   .spawn-row .field input { width: 64px; }
   .spawn-idx { color: var(--muted); font-size: 12px; width: 26px; }
+  /* Les catalogues arme/propulseur sont des formulaires très larges. Une
+     grille responsive leur donne une lecture de tableau : les libellés restent
+     au-dessus de leur cellule, les meshes disposent de deux colonnes et les
+     champs numériques restent regroupés sans défilement horizontal forcé. */
+  .spawn-row.weapon-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    align-items: end;
+    gap: 10px;
+    padding: 12px;
+    background: var(--panel-2);
+    border: 1px solid var(--border-soft);
+    border-left: 3px solid #ff6b9d;
+    border-radius: 8px;
+  }
+  .spawn-row.weapon-row .spawn-idx {
+    width: auto;
+    align-self: center;
+    justify-self: start;
+    font-weight: 700;
+  }
+  /* Touches directionnelles des propulseurs : badge volontairement plus grand
+     que l'index W1/W2 des armes, pour rester lisible comme une vraie touche. */
+  .spawn-row.weapon-row.thrust-row .spawn-idx {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    min-width: 42px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid currentColor;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.055);
+    font-size: 25px;
+    line-height: 1;
+    font-family: Arial, sans-serif;
+    text-shadow: 0 0 8px currentColor;
+  }
+  .spawn-row.weapon-row .field {
+    flex: none;
+    min-width: 0;
+    width: auto;
+  }
+  .spawn-row.weapon-row .field:has(.asset-picker) { grid-column: span 2; }
+  .spawn-row.weapon-row .field input,
+  .spawn-row.weapon-row .field select { width: 100%; }
+  .spawn-row.weapon-row .field .asset-picker { width: 100%; min-width: 0; }
+  .spawn-row.weapon-row .field:has(input[type=number]) input { width: 100%; }
+  .spawn-row.weapon-row > .mini { width: 100%; align-self: end; }
+  .spawn-row.weapon-row .thrust-label {
+    grid-column: 1 / -1;
+    justify-self: start;
+    padding-top: 1px;
+  }
+  .spawn-row.weapon-row:nth-child(even) { border-left-color: #c58bff; }
+  .spawn-row.weapon-row.thrust-row { border-left-color: #ffa020; }
+  .spawn-row.weapon-row.thrust-row:nth-child(even) { border-left-color: #40a0ff; }
   /* libellé de la ligne « Éjection des gaz » (définition de la touche) */
   .thrust-label { color: var(--muted); font-size: 12px; align-self: center; }
-  /* ligne du catalogue d'armes : beaucoup de champs (8 par arme) — les champs
-     se partagent la largeur disponible et passent à la ligne au lieu de
-     déborder (scrolling horizontal) */
-  .spawn-row.weapon-row .field { flex: 1 1 auto; min-width: 150px; }
-  .spawn-row.weapon-row .field input, .spawn-row.weapon-row .field select { width: 100%; }
-  .spawn-row.weapon-row .field .asset-picker { width: 100%; min-width: 0; }
+  /* Les champs de ces cartes prennent toute la largeur de leur cellule ; les
+     règles compactes précédentes sont remplacées par la grille ci-dessus. */
 
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 10px; }
   .summary .kv .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
@@ -330,17 +490,33 @@
     gap: 8px;
   }
   .eco-group h4 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 600; }
-  .eco-group .hint { margin: 0; }
+  .eco-group .hint {
+    margin: 0;
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
 
   footer {
     max-width: 1080px;
-    margin: 24px auto 0;
+    margin: 28px auto 0;
     color: var(--muted);
     font-size: 12.5px;
+    line-height: 1.65;
     border-top: 1px solid var(--border-soft);
-    padding-top: 12px;
+    padding-top: 16px;
   }
-  footer code { font-family: var(--mono); color: var(--text); font-size: 12px; }
+  footer p {
+    max-width: 124ch;
+    margin: 0 0 16px;
+    text-wrap: pretty;
+  }
+  footer p:last-child { margin-bottom: 0; }
+  footer code {
+    font-family: var(--mono);
+    color: var(--text);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
   .toast {
     position: fixed;
     bottom: 18px;
@@ -408,6 +584,39 @@
     color: var(--muted);
   }
   body.has-console { padding-bottom: 320px; }
+
+  /* Repli lisible sur tablette et mobile : la navigation passe en bandeau,
+     l'aperçu se place au-dessus des réglages et les cellules de catalogue
+     reviennent à une ou deux colonnes. */
+  @media (max-width: 1100px) {
+    body { padding-left: 12px; padding-right: 12px; }
+    .layout { display: block; }
+    .sidebar {
+      width: 100%;
+      position: static;
+      margin-bottom: 14px;
+    }
+    #card-nav { flex-direction: row; flex-wrap: wrap; }
+    .nav-item { flex: 1 1 180px; }
+    .ship-preview-wrap { flex-wrap: wrap; }
+    .ship-fields { flex: 1 1 320px; }
+  }
+  @media (max-width: 700px) {
+    body { padding: 12px 8px 48px; font-size: 13px; }
+    h1 { font-size: 20px; }
+    .field-grid { grid-template-columns: 1fr; }
+    .field.full { grid-column: auto; }
+    .ship-preview-wrap { display: block; }
+    .ship-preview { display: block; width: 100%; max-width: 420px; height: auto; aspect-ratio: 3 / 2; }
+    .ship-fields { margin-top: 10px; }
+    .spawn-row.weapon-row { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 10px; }
+    .spawn-row.weapon-row .field:has(.asset-picker) { grid-column: 1 / -1; }
+    .mesh-asset-thumb { width: 92px; }
+    .card-section { overflow-x: auto; }
+    .card-section > table { min-width: 560px; }
+    .cargo-console { max-height: 50vh; }
+    body.has-console { padding-bottom: 260px; }
+  }
 </style>
 </head>
 <body>
@@ -482,8 +691,12 @@
     <b>catalogue d'armes</b> <code>VAISSEAU_WEAPONS</code> : chaque arme est un mesh posé sur le
     vaisseau à un emplacement de tir (<code>spawn_index</code> dans
     <code>VAISSEAU_BULLET_SPAWNS</code> — liste contrainte) et tire sa propre munition (mesh) ;
-    toutes les armes tirent ensemble, catalogue vide = tir classique — lus par
-    <code>src/vaisseau.rs</code> et <code>src/generate.rs</code>) et le cosmonaute EVA
+    chaque arme porte son <b>coût d'achat</b> au magasin (0 = arme de base) et le prix/taille de
+    son <b>paquet de munitions</b> (<code>ammo_price</code>/<code>ammo_pack</code> — le
+    magasin facture par paquet, par arme) ; toutes les armes possédées tirent ensemble,
+    catalogue vide = tir classique — lus par
+    <code>src/vaisseau.rs</code>, <code>src/generate.rs</code> et <code>src/scenario.rs</code>
+    (économie)) et le cosmonaute EVA
     (<code>COSMONAUTE_JSON</code>, <code>COSMONAUTE_EVA_SCALE</code>,
     <code>COSMONAUTE_ORIENTATION_DEGREES</code>, <code>COSMONAUTE_CENTER_X/Y_PERCENT</code> — lus par
     <code>src/cosmonaut.rs</code>) de
@@ -654,7 +867,11 @@ const DEFAULT_DATA = {
     // catalogue d'armes : chaque arme est un mesh posé sur le vaisseau à un
     // emplacement de tir (`spawnIndex` dans bulletSpawns — liste contrainte,
     // la position de l'arme sur le vaisseau) et tire sa propre munition
-    // (mesh de la munition). Toutes les armes tirent ensemble au Shift.
+    // (mesh de la munition). Chaque arme porte son **coût d'achat** au magasin
+    // (minerais ; 0 = arme de base, toujours équipée) et le prix/taille de
+    // son **paquet de munitions** (magasin : `ammoPrice` minerais par
+    // paquet de `ammoPack` munitions, par arme). Toutes les armes possédées
+    // tirent ensemble au Shift, chacune tant que son stock n'est pas vide.
     // Vide = tir classique (une balle rouge par emplacement, repli).
     weapons: [
       // {
@@ -666,6 +883,9 @@ const DEFAULT_DATA = {
       //   ammoAsset: "assets/laser.json", // mesh de la munition
       //   ammoScalePercent: 100,
       //   ammoOrientationDeg: 0,
+      //   cost: 30, // minerais d'achat au magasin (0 = arme de base)
+      //   ammoPrice: 2, // minerais par paquet de munitions
+      //   ammoPack: 5, // munitions par paquet
       // },
     ],
     // composition des plans du mesh (indices de file.planes) : règle par plan
@@ -1787,20 +2007,6 @@ function meshNumberInput(cfg, prefix, key, min, max) {
   return input;
 }
 
-// Champ de couleur du gaz d'éjection (`cfg.thrusters[i].color`, hex #rrggbb)
-// — exporté en ARGB (0xFFrrggbb) dans `VAISSEAU_THRUSTERS` et lu par le jeu
-// (`ejection_flow`, src/main.rs). Repli : couleur du marqueur de la touche.
-function thrusterColorInput(t, fallback) {
-  const input = document.createElement("input");
-  input.type = "color";
-  input.value = t && /^#([0-9a-fA-F]{6})$/.test(t.color) ? t.color : fallback;
-  input.addEventListener("input", () => {
-    t.color = input.value;
-    afterEdit();
-  });
-  return input;
-}
-
 // Cache de la liste des meshes assets/*.json (mode serveur) — `null` tant que
 // non chargée. Les sélecteurs d'asset (`meshAssetInput`) l'affichent en liste
 // déroulante : les fichiers JSON réels de l'emplacement assets/ du projet.
@@ -1880,7 +2086,192 @@ function meshAssetInput(cfg, prefix, datalistId, key) {
     afterEdit();
   });
   wrap.appendChild(select);
+  // Chaque mesh choisi est aussi visible dans une vignette, y compris les
+  // meshes d'armes et de munitions qui ne sont pas tous superposés au
+  // vaisseau. En mode fichier, le mesh principal chargé localement est
+  // réutilisé quand il correspond à la sélection.
+  const scaleKey = k === "ammoAsset" ? "ammoScalePercent" : "scalePercent";
+  const orientationKey = k === "ammoAsset" ? "ammoOrientationDeg" : "orientationDeg";
+  const thumb = createSelectedMeshThumbnail(
+    current,
+    Number.isFinite(cfg[scaleKey]) ? cfg[scaleKey] : 100,
+    Number.isFinite(cfg[orientationKey]) ? cfg[orientationKey] : 0,
+    k === "asset" ? currentMeshFor(cfg) : null,
+  );
+  wrap.appendChild(thumb);
   return wrap;
+}
+
+// Dessine un mesh sélectionné dans une vignette autonome. Cette vue affiche
+// toujours l'intégralité du fichier choisi (sans appliquer la composition des
+// plans du vaisseau) afin que l'utilisateur puisse vérifier l'asset de l'arme,
+// de la munition ou du propulseur avant de régler sa position.
+function drawSelectedMeshThumbnail(canvas, mesh, scalePercent, orientationDeg) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#0a0d14";
+  ctx.fillRect(0, 0, W, H);
+  if (!mesh || !Array.isArray(mesh.tris) || mesh.tris.length === 0) {
+    ctx.fillStyle = "#8b93a7";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("mesh indisponible", W / 2, H / 2 + 3);
+    return false;
+  }
+  const view = meshTransform({
+    scalePercent: Number.isFinite(scalePercent) ? scalePercent : 100,
+    orientationDeg: Number.isFinite(orientationDeg) ? orientationDeg : 0,
+    centerXPercent: 50,
+    centerYPercent: 50,
+  }, mesh.tris);
+  let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
+  for (const t of mesh.tris) {
+    for (const v of [t.a, t.b, t.c]) {
+      const p = view.tf(v);
+      bx1 = Math.min(bx1, p[0]); by1 = Math.min(by1, p[1]);
+      bx2 = Math.max(bx2, p[0]); by2 = Math.max(by2, p[1]);
+    }
+  }
+  const pad = 5;
+  const w = bx2 - bx1 || 1, h = by2 - by1 || 1;
+  const s = Math.min((W - 2 * pad) / w, (H - 2 * pad) / h);
+  const ox = W / 2 - ((bx1 + bx2) / 2) * s;
+  const oy = H / 2 - ((by1 + by2) / 2) * s;
+  const px = p => [ox + p[0] * s, oy + p[1] * s];
+  for (const t of mesh.tris) {
+    const points = [t.a, t.b, t.c].map(v => px(view.tf(v)));
+    ctx.beginPath();
+    ctx.moveTo(points[0][0], points[0][1]);
+    ctx.lineTo(points[1][0], points[1][1]);
+    ctx.lineTo(points[2][0], points[2][1]);
+    ctx.closePath();
+    const c = t.color || [0.8, 0.8, 0.8, 1];
+    const a = Math.max(0, Math.min(1, c.length > 3 ? c[3] : 1));
+    ctx.fillStyle = "rgba(" + Math.round(c[0] * 255) + "," + Math.round(c[1] * 255) + "," +
+      Math.round(c[2] * 255) + "," + a + ")";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.lineWidth = 0.4;
+    ctx.stroke();
+  }
+  return true;
+}
+
+// Vignette synchrone d'un plan de composition : le mesh est déjà chargé quand
+// `compositionSection` construit son tableau, donc aucune requête n'est
+// nécessaire. La scène complète est visible : le plan courant est rempli,
+// les autres sont dessinés en filaire pour donner son contexte spatial.
+function planeThumbnail(planes, index) {
+  const pl = planes[index] || { name: "Plan " + index, tris: [] };
+  const canvas = document.createElement("canvas");
+  canvas.className = "plane-thumb";
+  // Résolution interne multipliée : l'affichage reste 86×60 CSS, mais le
+  // zoom overlay dispose de suffisamment de pixels pour rester net.
+  canvas.width = 516;
+  canvas.height = 360;
+  canvas.title = (pl.name || "Plan " + index) + " — plan " + index;
+  drawPlaneSceneThumbnail(canvas, planes, index);
+  return canvas;
+}
+
+function drawPlaneSceneThumbnail(canvas, planes, selectedIndex) {
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const unit = Math.max(W / 86, H / 60);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#0a0d14";
+  ctx.fillRect(0, 0, W, H);
+  const allTris = [];
+  for (const pl of planes || []) {
+    if (pl && Array.isArray(pl.tris)) allTris.push(...pl.tris);
+  }
+  if (allTris.length === 0) {
+    ctx.fillStyle = "#8b93a7";
+    ctx.font = (10 * unit) + "px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("plan vide", W / 2, H / 2 + 3);
+    return;
+  }
+  const view = meshTransform({
+    scalePercent: 100,
+    orientationDeg: 0,
+    centerXPercent: 50,
+    centerYPercent: 50,
+  }, allTris);
+  let bx1 = Infinity, by1 = Infinity, bx2 = -Infinity, by2 = -Infinity;
+  for (const t of allTris) {
+    for (const v of [t.a, t.b, t.c]) {
+      const p = view.tf(v);
+      bx1 = Math.min(bx1, p[0]); by1 = Math.min(by1, p[1]);
+      bx2 = Math.max(bx2, p[0]); by2 = Math.max(by2, p[1]);
+    }
+  }
+  const pad = 5 * unit;
+  const w = bx2 - bx1 || 1, h = by2 - by1 || 1;
+  const s = Math.min((W - 2 * pad) / w, (H - 2 * pad) / h);
+  const ox = W / 2 - ((bx1 + bx2) / 2) * s;
+  const oy = H / 2 - ((by1 + by2) / 2) * s;
+  const px = p => [ox + p[0] * s, oy + p[1] * s];
+  const drawFace = (t, selected) => {
+    const points = [t.a, t.b, t.c].map(v => px(view.tf(v)));
+    ctx.beginPath();
+    ctx.moveTo(points[0][0], points[0][1]);
+    ctx.lineTo(points[1][0], points[1][1]);
+    ctx.lineTo(points[2][0], points[2][1]);
+    ctx.closePath();
+    if (selected) {
+      const c = t.color || [0.8, 0.8, 0.8, 1];
+      const a = Math.max(0, Math.min(1, c.length > 3 ? c[3] : 1));
+      ctx.fillStyle = "rgba(" + Math.round(c[0] * 255) + "," + Math.round(c[1] * 255) + "," +
+        Math.round(c[2] * 255) + "," + a + ")";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.lineWidth = 0.55 * unit;
+    } else {
+      ctx.strokeStyle = "rgba(185,198,220,0.5)";
+      ctx.lineWidth = 0.55 * unit;
+    }
+    ctx.stroke();
+  };
+  // Le filaire est dessiné en premier pour rester derrière le plan sélectionné.
+  (planes || []).forEach((pl, i) => {
+    if (i !== selectedIndex && pl && Array.isArray(pl.tris)) {
+      pl.tris.forEach(t => drawFace(t, false));
+    }
+  });
+  const selected = planes && planes[selectedIndex];
+  if (selected && Array.isArray(selected.tris)) {
+    selected.tris.forEach(t => drawFace(t, true));
+  }
+}
+
+// Crée la vignette d'un mesh sélectionné et la remplit dès que l'asset est
+// chargé. Les anciennes vignettes sont détachées par `afterEdit`, donc une
+// réponse asynchrone tardive ne peut pas écraser la nouvelle sélection.
+function createSelectedMeshThumbnail(asset, scalePercent, orientationDeg, initialMesh) {
+  const box = el("span", "mesh-asset-thumb");
+  const canvas = document.createElement("canvas");
+  canvas.width = 86;
+  canvas.height = 60;
+  canvas.title = asset || "Mesh non sélectionné";
+  box.appendChild(canvas);
+  const paint = mesh => {
+    const visible = drawSelectedMeshThumbnail(canvas, mesh, scalePercent, orientationDeg);
+    box.classList.toggle("unavailable", !visible);
+  };
+  if (initialMesh) {
+    paint(initialMesh);
+  } else if (asset) {
+    ensureWeaponMesh(asset).then(mesh => {
+      // La vignette peut avoir été remplacée par une nouvelle sélection entre
+      // le fetch et son retour : on ne peint alors plus un élément détaché.
+      if (box.isConnected) paint(mesh);
+    });
+  } else {
+    paint(null);
+  }
+  return box;
 }
 
 // Mode fichier : charge un mesh JSON pour l'aperçu uniquement (l'export Rust
@@ -1948,7 +2339,11 @@ function compositionSection(cfg, mesh, opts) {
   const tbody = el("tbody");
   mesh.planes.forEach((pl, i) => {
     const tr = el("tr");
-    const tdPlan = el("td");
+    const tdPlan = el("td", "plane-cell");
+    // vignette du plan : les faces du plan sont dessinées seules, afin de
+    // distinguer visuellement les morceaux du mesh sans modifier l'aperçu
+    // principal ni la règle de visibilité
+    tdPlan.appendChild(planeThumbnail(mesh.planes, i));
     // nom du plan quand le mesh en porte un (ex. « Cargo Bay 1 » — les plans
     // sans nom restent « Plan N », l'indice sert de repli et de référence)
     const label = pl.name ? pl.name : "Plan " + i;
@@ -2073,19 +2468,22 @@ function meshCard(opts) {
   wrap.appendChild(canvas);
   const fields = el("div", "ship-fields");
   fields.appendChild(field("Asset (mesh JSON, chemin projet)", opts.prefix + "-asset", meshAssetInput(cfg, opts.prefix)));
-  const loadBtn = el("button", "mini", "📂 Charger un mesh (aperçu)");
-  loadBtn.title = "Lit un fichier mesh JSON pour l'aperçu uniquement — l'export Rust référence le chemin du champ Asset";
-  loadBtn.addEventListener("click", () => loadPreviewFile(cfg, opts.canvasId));
-  fields.appendChild(loadBtn);
-  wrap.appendChild(fields);
-  card.appendChild(wrap);
-
-  const grid = el("div", "field-grid");
+  // Les réglages qui définissent l'apparence du mesh restent dans le même
+  // panneau que l'asset et l'aperçu, immédiatement sous le sélecteur.
+  const grid = el("div", "field-grid mesh-transform-fields");
   grid.appendChild(field("Échelle (%)", opts.prefix + "-scalePercent", meshNumberInput(cfg, opts.prefix, "scalePercent", 1, 1000)));
   grid.appendChild(field("Orientation (°)", opts.prefix + "-orientationDeg", meshNumberInput(cfg, opts.prefix, "orientationDeg", -360, 360)));
   grid.appendChild(field("Centre de rotation X (%)", opts.prefix + "-centerXPercent", meshNumberInput(cfg, opts.prefix, "centerXPercent", 0, 100)));
   grid.appendChild(field("Centre de rotation Y (%)", opts.prefix + "-centerYPercent", meshNumberInput(cfg, opts.prefix, "centerYPercent", 0, 100)));
-  card.appendChild(grid);
+  fields.appendChild(grid);
+
+  const loadBtn = el("button", "mini", "📂 Charger un mesh (aperçu)");
+  loadBtn.title = "Lit un fichier mesh JSON pour l'aperçu uniquement — l'export Rust référence le chemin du champ Asset";
+  loadBtn.addEventListener("click", () => loadPreviewFile(cfg, opts.canvasId));
+  fields.appendChild(loadBtn);
+
+  wrap.appendChild(fields);
+  card.appendChild(wrap);
 
   // emplacements de départ des projectiles (vaisseau uniquement) : une balle
   // part de chaque emplacement au tir Shift, tournée avec le vaisseau
@@ -2181,15 +2579,15 @@ function thrustSection(cfg) {
   sec.appendChild(h);
   sec.appendChild(el("p", "desc",
     "Un **propulseur** par touche de contrôle — son mesh (JSON, la flamme du gaz) est affiché " +
-    "**seulement quand il tire** (scintillant, teinté de la couleur configurée, allongé le long " +
-    "de la direction d'éjection) — sinon il n'apparaît pas en jeu. Réglages : mesh, échelle, " +
+    "**seulement quand il tire** (scintillant, allongé le long de la direction d'éjection) — " +
+    "sinon il n'apparaît pas en jeu. Réglages : mesh, échelle, " +
     "orientation et position en % de la boîte englobante de la composition (50/50 = centre — " +
     "<b>valeurs libres</b> : négatives ou &gt; 100 % possibles, le propulseur sort alors du " +
-    "gabarit), tournés avec le vaisseau, plus la <b>couleur du gaz</b> et la <b>direction " +
-    "d'éjection</b> : <b>↑</b> poussée avant (gaz orange à l'arrière), <b>↓</b> frein/recul " +
+    "gabarit), tournés avec le vaisseau, plus la <b>direction d'éjection</b> : <b>↑</b> " +
+    "poussée avant (gaz orange à l'arrière), <b>↓</b> frein/recul " +
     "(bleu à l'avant), <b>←</b> et <b>→</b> jets latéraux des rotations. Sur l'aperçu, les " +
     "flammes sont dessinées en permanence pour le positionnement ; <b>glisser un propulseur le " +
-    "déplace</b> (gouttelettes = direction et couleur configurées)."));
+    "déplace</b> (gouttelettes = direction configurée)."));
 
   const list = el("div", "spawns-list");
   const render = () => {
@@ -2198,11 +2596,12 @@ function thrustSection(cfg) {
     THRUST_MARKERS.forEach((m, i) => {
       const t = cfg.thrusters[i];
       if (!t) return;
-      const row = el("div", "spawn-row weapon-row");
+      const row = el("div", "spawn-row weapon-row thrust-row");
       const sw = el("span", "spawn-idx", m.key, { style: "color:" + m.color });
       row.appendChild(sw);
       // nom du propulseur
       const name = el("input", "weapon-name");
+      name.type = "text";
       name.value = t.name || "";
       name.placeholder = "Nom";
       name.addEventListener("input", () => { t.name = name.value; afterEdit(); });
@@ -2215,11 +2614,9 @@ function thrustSection(cfg) {
         meshNumberInput(t, "ship-thrust-" + i, "scalePercent", 1, 1000)));
       row.appendChild(field("Orientation (°)", "ship-thrust-" + i + "-orient",
         meshNumberInput(t, "ship-thrust-" + i, "orientationDeg", -360, 360)));
-      // affichage du gaz dans le jeu : couleur et direction d'éjection
-      // (repère de l'éditeur, y vers le haut — 0 = avant, +90 = haut) —
-      // `ejection_flow` (src/main.rs)
-      row.appendChild(field("Couleur gaz", "ship-thrust-" + i + "-color",
-        thrusterColorInput(t, m.color)));
+      // direction d'éjection du gaz (repère de l'éditeur, y vers le haut —
+      // 0 = avant, +90 = haut) — `ejection_flow` (src/main.rs). La couleur
+      // reste une valeur interne par défaut du catalogue, non éditable ici.
       row.appendChild(field("Direction (°)", "ship-thrust-" + i + "-angle",
         meshNumberInput(t, "ship-thrust-" + i, "ejectionAngleDeg", -360, 360)));
       // position (X %, Y %) — glissable sur l'aperçu ; valeurs **libres** :
@@ -2265,6 +2662,7 @@ function weaponsSection(cfg, opts) {
       row.appendChild(el("span", "spawn-idx", "W" + (i + 1)));
       // nom de l'arme
       const name = el("input", "weapon-name");
+      name.type = "text";
       name.value = w.name || "";
       name.placeholder = "Nom de l'arme";
       name.addEventListener("input", () => { w.name = name.value; afterEdit(); });
@@ -2299,6 +2697,16 @@ function weaponsSection(cfg, opts) {
         meshNumberInput(w, opts.prefix + "-w" + i + "-ammo", "ammoScalePercent", 1, 1000)));
       row.appendChild(field("Munition Orientation (°)", opts.prefix + "-weapon-" + i + "-ammoorient",
         meshNumberInput(w, opts.prefix + "-w" + i + "-ammo", "ammoOrientationDeg", -360, 360)));
+      // économie : coût d'achat de l'arme (minerais, 0 = arme de base) et
+      // paquet de munitions (prix en minerais + taille en munitions) — lus
+      // par le jeu (magasin de la station, section RAVITAILLEMENT) ;
+      // libellés courts pour garder des champs compacts
+      row.appendChild(field("Coût d'achat", opts.prefix + "-weapon-" + i + "-cost",
+        meshNumberInput(w, opts.prefix + "-w" + i + "-eco", "cost", 0, 100000)));
+      row.appendChild(field("Prix / paquet", opts.prefix + "-weapon-" + i + "-ammoprice",
+        meshNumberInput(w, opts.prefix + "-w" + i + "-eco", "ammoPrice", 0, 100000)));
+      row.appendChild(field("Taille / paquet", opts.prefix + "-weapon-" + i + "-ammopack",
+        meshNumberInput(w, opts.prefix + "-w" + i + "-eco", "ammoPack", 1, 100000)));
       const del = el("button", "mini danger", "✕");
       del.title = "Retirer cette arme";
       del.addEventListener("click", () => {
@@ -2320,6 +2728,9 @@ function weaponsSection(cfg, opts) {
         ammoAsset: "assets/vaisseau.json",
         ammoScalePercent: 100,
         ammoOrientationDeg: 0,
+        cost: 0,
+        ammoPrice: 1,
+        ammoPack: 5,
       });
       afterEdit();
     });
@@ -2647,11 +3058,13 @@ function economyCard() {
   rGrid.appendChild(field("Munitions — prix (minerais)", "eco-ammo-price", economyNumber("eco-ammo-price", intSetter(eco, "ammoPrice"), eco.ammoPrice, 0, "1")));
   rGrid.appendChild(field("Munitions — pas (munitions)", "eco-ammo-step", economyNumber("eco-ammo-step", floatSetter(eco, "ammoStep"), eco.ammoStep, 1, "any")));
   refuel.appendChild(rGrid);
-  // coût d'un plein complet aux capacités maximales (mise au point)
+  // coût d'un plein complet aux capacités maximales (mise au point) — les
+  // valeurs munitions ne s'appliquent qu'au catalogue vide (canon classique) :
+  // dès qu'une arme a son paquet, c'est son ammoPrice/ammoPack qui compte
   const byId = Object.fromEntries(data.tracks.map(t => [t.id, t]));
   const fullFuel = Math.ceil(trackTotals(byId.fuel).max / eco.fuelStep) * eco.fuelPrice;
   const fullAmmo = Math.ceil(trackTotals(byId.ammo).max / eco.ammoStep) * eco.ammoPrice;
-  refuel.appendChild(el("p", "hint", "Plein complet (capacités max) : " + fullFuel + " + " + fullAmmo + " = " + (fullFuel + fullAmmo) + " minerais."));
+  refuel.appendChild(el("p", "hint", "Plein complet (capacités max, catalogue vide) : " + fullFuel + " + " + fullAmmo + " = " + (fullFuel + fullAmmo) + " minerais — carburant " + eco.fuelPrice + " m/" + eco.fuelStep + " u ; munitions " + eco.ammoPrice + " m/" + eco.ammoStep + " mun. (paquets par arme sinon)."));
   host.appendChild(refuel);
 
   // badge d'en-tête (monnaie et valeur des gemmes)
@@ -3024,10 +3437,15 @@ pub struct PlaneUpgradeLink {
 /// vaisseau** à un emplacement de tir (\`spawn_index\` dans
 /// \`VAISSEAU_BULLET_SPAWNS\` — la liste des emplacements possibles est
 /// contrainte) et munition tirée par l'arme (mesh de la munition, avec sa
-/// propre échelle et orientation). Toutes les armes du catalogue tirent
-/// ensemble au Shift. Générée par l'outil de gestion. Les champs ne sont lus
-/// que quand le catalogue est rempli (\`VAISSEAU_WEAPONS\` non vide) —
-/// \`dead_code\` quand la liste est vide.
+/// propre échelle et orientation). Toutes les armes **possédées** du
+/// catalogue tirent ensemble au Shift, chacune tant que son propre stock de
+/// munitions n'est pas vide. Chaque arme porte son **coût d'achat** au
+/// magasin (0 = arme de base, toujours équipée) et le prix/taille de son
+/// **paquet de munitions** (le magasin facture par paquet de
+/// \`ammo_pack\` munitions au prix \`ammo_price\`, par arme). Générée par
+/// l'outil de gestion. Les champs ne sont lus que quand le catalogue est
+/// rempli (\`VAISSEAU_WEAPONS\` non vide) — \`dead_code\` quand la liste est
+/// vide.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct VaisseauWeapon {
@@ -3050,6 +3468,14 @@ pub struct VaisseauWeapon {
     /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
     /// l'éditeur — la munition part nez en avant.
     pub ammo_orientation_degrees: f64,
+    /// Coût d'achat de l'arme au magasin de la station (minerais ; 0 = arme
+    /// de base, toujours équipée au départ en Progression).
+    pub cost: i32,
+    /// Prix (minerais) d'un **paquet** de munitions de l'arme (magasin,
+    /// section RAVITAILLEMENT).
+    pub ammo_price: i32,
+    /// Taille d'un paquet de munitions de l'arme (munitions par paquet).
+    pub ammo_pack: i32,
 }
 
 /// Une éjection de gaz du vaisseau (les 4 touches de contrôle de la
@@ -3148,6 +3574,9 @@ function weaponsConsts(cfg) {
       "        ammo_mesh: VAISSEAU_WEAPON_AMMO_MESH_" + i + ",",
       "        ammo_scale: " + fmtFloat(Math.max(1, Number(w.ammoScalePercent) || 100) / 100) + ",",
       "        ammo_orientation_degrees: " + fmtFloat((Number(w.ammoOrientationDeg) || 0)) + ",",
+      "        cost: " + int(w.cost) + ",",
+      "        ammo_price: " + int(w.ammoPrice) + ",",
+      "        ammo_pack: " + Math.max(1, int(w.ammoPack)) + ",",
       "    },",
     );
   });
@@ -3967,7 +4396,7 @@ function parseRust(text) {
   while ((am = amRe.exec(text)) !== null) ammoMeshes[am[1]] = am[2].replace(/^\.\.\//, "");
   const weaponsBlock = grab(/pub const VAISSEAU_WEAPONS: &\[VaisseauWeapon\] = &\[([\s\S]*?)\n\];/);
   if (weaponsBlock) {
-    const re = /VaisseauWeapon\s*\{\s*name:\s*"((?:[^"\\]|\\.)*)"\s*,\s*mesh:\s*VAISSEAU_WEAPON_MESH_(\d+)\s*,\s*scale:\s*([0-9.]+)\s*,\s*orientation_degrees:\s*(-?[0-9.]+)\s*,\s*spawn_index:\s*(\d+)\s*,\s*ammo_mesh:\s*VAISSEAU_WEAPON_AMMO_MESH_(\d+)\s*,\s*ammo_scale:\s*([0-9.]+)\s*,\s*ammo_orientation_degrees:\s*(-?[0-9.]+)\s*,?\s*\}/g;
+    const re = /VaisseauWeapon\s*\{\s*name:\s*"((?:[^"\\]|\\.)*)"\s*,\s*mesh:\s*VAISSEAU_WEAPON_MESH_(\d+)\s*,\s*scale:\s*([0-9.]+)\s*,\s*orientation_degrees:\s*(-?[0-9.]+)\s*,\s*spawn_index:\s*(\d+)\s*,\s*ammo_mesh:\s*VAISSEAU_WEAPON_AMMO_MESH_(\d+)\s*,\s*ammo_scale:\s*([0-9.]+)\s*,\s*ammo_orientation_degrees:\s*(-?[0-9.]+)\s*,\s*cost:\s*(\d+)\s*,\s*ammo_price:\s*(\d+)\s*,\s*ammo_pack:\s*(\d+)\s*,?\s*\}/g;
     const weapons = [];
     let m;
     while ((m = re.exec(weaponsBlock)) !== null) {
@@ -3980,6 +4409,9 @@ function parseRust(text) {
         ammoAsset: ammoMeshes[m[6]] || "assets/vaisseau.json",
         ammoScalePercent: Math.round(parseFloat(m[7]) * 100),
         ammoOrientationDeg: parseFloat(m[8]),
+        cost: parseInt(m[9], 10) || 0,
+        ammoPrice: parseInt(m[10], 10) || 0,
+        ammoPack: parseInt(m[11], 10) || 5,
       });
     }
     out.ship.weapons = weapons;
@@ -4247,6 +4679,11 @@ function normalize(parsed) {
           ? Math.max(1, Math.min(1000, Math.round(w.ammoScalePercent)))
           : 100,
         ammoOrientationDeg: Number.isFinite(w && w.ammoOrientationDeg) ? w.ammoOrientationDeg : 0,
+        // économie : coût d'achat (0 = arme de base) et paquet de munitions
+        // (prix en minerais, taille en munitions)
+        cost: int(w && w.cost),
+        ammoPrice: int(w && w.ammoPrice),
+        ammoPack: Math.max(1, int(w && w.ammoPack) || 5),
       }))
       .filter(w => typeof w === "object");
   }

@@ -139,13 +139,16 @@ Au démarrage, le vaisseau est à la station : éloignez-vous pour commencer à
 miner. Revenez dans la zone d'accostage en **ralentissant** : la mire au
 centre de la station passe du rouge au vert avec la vitesse (vert = prêt,
 `DOCK: IN RANGE` au HUD) pour ouvrir la boîte DOCK STATION
-(UNLOAD / REFUEL/REARM / SHOP / CLOSE) : UNLOAD décharge
-la soute, REFUEL/REARM achète carburant + munitions contre minerais,
-SHOP ouvre le **magasin de la station** (section « MOVING MODE » :
+(UNLOAD / SHOP / CLOSE) : UNLOAD décharge
+la soute, SHOP ouvre le **magasin de la station** (section « MOVING MODE » :
 choisir un mode de déplacement, ou le débloquer contre minerais en scénario
 à économie — dans tous les scénarios ; en Progression, s'y ajoutent les
-lignes d'extension de vaisseau), CLOSE ferme — la boîte reste ouverte après
-UNLOAD, REFUEL/REARM et les achats du magasin pour tout faire avant de
+lignes d'extension de vaisseau et le **ravitaillement** — carburant et
+munitions achetés indépendamment, **à la quantité** : chaque ligne porte un
+**curseur** (glisser ou molette) qui choisit combien de carburant (ou de
+munitions pour l'arme) acheter, le coût s'affiche à droite — clic sur la
+ligne pour acheter la quantité choisie), CLOSE ferme — la boîte reste
+ouverte après UNLOAD et les achats du magasin pour tout faire avant de
 partir.
 
 ## Scénarios
@@ -181,9 +184,21 @@ qu'appeler des fonctions testables sans macroquad :
     vaut selon son élément (or 5, fer 3, eau 2) ;
   - **carburant** et **munitions** sont payants : chaque poussée consomme du
     carburant (moteur éteint, plus de poussée — rotations libres), chaque tir
-    une munition ; les pleins s'achètent à la station (10 carburant = 1
-    minerai, 5 munitions = 1) via le bouton REFUEL/REARM de la boîte DOCK
-    STATION (plus d'achat automatique au déchargement) ;
+    une munition par arme ; ils s'achètent au magasin (section
+    RAVITAILLEMENT), **indépendamment** et **à la quantité** : un **curseur**
+    par ressource (glisser à la souris, molette = ± un paquet) choisit les
+    unités à acheter — tout achat paie au moins un paquet (10 carburant = 1
+    minerai ; les munitions par **paquet** propre à chaque arme, ex 1 minerai
+    pour 5 munitions, via une ligne AMMO par arme possédée) ; le curseur
+    part d'office sur le **maximum achetable** avec les minerais courants,
+    pour ne jamais rester bloqué faute d'un plein complet — plus d'achat
+    automatique au déchargement ;
+  - les **armes du catalogue** s'achètent au magasin (bouton SHOP) : une
+    arme payante (coût en minerais, 0 = arme de base toujours équipée) ne
+    tire et ne s'affiche sur le vaisseau qu'une fois achetée ; chaque arme a
+    son propre stock de munitions (un tir consomme 1 munition de chaque arme
+    qui tire ; une arme à court de munitions s'arrête, les autres
+    continuent) et son propre paquet de ravitaillement ;
   - **le magasin** (bouton SHOP de la boîte DOCK STATION — la place de
     marché/atelier) permet d'acheter contre minerais des extensions
     de vaisseau, persistées avec la progression : **réservoir** (100 de base,
@@ -218,7 +233,8 @@ automatiquement) : minerais, modes payés et réputation en Progression
 Survival** (`prog_lives`, `prog_shield` — bornés aux capacités du scénario,
 une sauvegarde à 0 vie repart au départ complet) ; chaque scénario n'écrit
 que ses propres clés, sans écraser la sauvegarde de l'autre. Le carburant et
-les munitions, eux, repartent pleins à chaque lancement.
+les munitions (par arme), eux, repartent pleins à chaque lancement ; les
+armes achetées, elles, sont persistées (`prog_weapons`).
 
 ## Outil de gestion : la place de marché
 
@@ -312,12 +328,16 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   Shift**, depuis leur emplacement ; catalogue vide = tir classique (une
   balle rouge par emplacement, repli) ; constantes `VAISSEAU_WEAPONS` (type
   `VaisseauWeapon` — `name`, `mesh`, `scale`, `orientation_degrees`,
-  `spawn_index`, `ammo_mesh`, `ammo_scale`, `ammo_orientation_degrees`) et
+  `spawn_index`, `ammo_mesh`, `ammo_scale`, `ammo_orientation_degrees`,
+  `cost` — coût d'achat au magasin (0 = arme de base) —, `ammo_price` /
+  `ammo_pack` — prix d'un paquet de munitions et sa taille) et
   meshes d'armes/munitions embarqués (`VAISSEAU_WEAPON_MESH_i` /
   `VAISSEAU_WEAPON_AMMO_MESH_i`, `include_str!`), lues par `src/vaisseau.rs`
-  (l'arme est construite avec le vaisseau, elle tourne avec lui) et
-  `src/generate.rs` (`fire_bullet`) ; les fichiers mesh doivent exister dans
-  le projet ;
+  (l'arme est construite avec le vaisseau, elle tourne avec lui — seules les
+  armes possédées sont dessinées), `src/generate.rs` (`fire_bullet` — une
+  arme ne tire que si elle est possédée et a des munitions) et
+  `src/scenario.rs` (achat au magasin, ravitaillement par paquets) ; les
+  fichiers mesh doivent exister dans le projet ;
 - **composer le mesh** (vaisseau et cosmonaute) : chaque **plan** du fichier
   (le mesh « meshes-designer » est une liste de plans) porte une règle —
   *toujours visible*, *exclu* (jamais construit) ou, pour le vaisseau
@@ -431,14 +451,32 @@ du serveur, y est masquée).
   minage, accostage, paramétrage, options graphiques, persistance, scénarios,
   atelier d'amélioration).
 
+
+### Application d'Édition de Scénarios et Objectifs (DAG)
+
+Une **application dédiée à la création de scénarios et d'enchaînements d'objectifs** (`tools/scenario-editor/index.html`) complète l'outillage du jeu :
+
+- **Édition visuelle en graphe DAG** : création, glisser-déplacer de nœuds d'objectifs et tracé interactif de liens de dépendances (flèches SVG Bézier) entre prérequis et étapes suivantes ;
+- **Détection automatique de cycles & validation** : vérification en temps réel de l'acyclicité du graphe (algorithme DFS), identification des nœuds orphelins et validation des identifiants ;
+- **Inspecteur d'objectifs complet** : paramétrage fin des conditions de réussite (*Détruire météores, Collecter minerais, Atteindre réputation, Accostages station, Amélioration atelier, Mode de vol, Survie chronométrée, Tir de précision*) et des récompenses associées (*Minerais, Réputation, Carburant, Munitions, Victoire*) ;
+- **Double vue** : vue Graphe DAG interactif + vue Séquence / Chronologie des étapes ;
+- **Export Rust autonome & Persistance JSON** : enregistrement des scénarios au format `.scenario.json` dans le dossier `scenarios/` et génération du module Rust `src/scenario_objectives.rs` compilé directement par `cargo test` / `cargo run` ;
+- **Lancement rapide** :
+  ```bash
+  tools/scenario-editor/launch-editor.sh
+  ```
+  Le serveur local (port 8124) s'exécute et ouvre automatiquement l'application dans le navigateur par défaut.
+
 ## Structure du projet
 
 ```
 rust-meteors-mining/
 ├── Cargo.toml              ← projet Rust (macroquad, rand, image)
 ├── assets/                 ← textures (.png/.jpg), sons (.ogg) et meshes (.json) intégrés au binaire
+├── scenarios/              ← fichiers de scénarios JSON (.scenario.json)
 ├── tools/
-│   └── marketplace-editor/ ← application de gestion de la place de marché (page unique, export Rust)
+│   ├── marketplace-editor/ ← application de gestion de la place de marché (page unique, export Rust)
+│   └── scenario-editor/    ← application d'édition de scénarios et objectifs DAG (graphe, export Rust)
 └── src/
     ├── main.rs             ← boucle principale (fenêtre 960×540, sans vsync)
     ├── config.rs           ← constantes (vue, monde torique, gameplay)
@@ -451,6 +489,7 @@ rust-meteors-mining/
     ├── game.rs             ← boucle de jeu (input, déplacement, collisions, pause)
     ├── render.rs           ← rendu (étoiles, triangles texturés, HUD, aide, debug)
     ├── scenario.rs         ← scénarios (règles économiques, modes, réputation, atelier d'amélioration)
+    ├── scenario_objectives.rs ← structures DAG, conditions, récompenses et validation des objectifs
     ├── title.rs            ← écran titre (bannière arc-en-ciel, étoiles, choix du scénario)
     ├── audio.rs            ← sons et musique (ambiance, moteur, explosions)
     ├── cosmonaut.rs        ← cosmonaute EVA (mesh `cosmonaute.json`, couleurs par face)

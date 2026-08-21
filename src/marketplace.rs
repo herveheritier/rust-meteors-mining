@@ -122,7 +122,7 @@ pub const VAISSEAU_CENTER_Y_PERCENT: f64 = 50.0;
 /// balle part de chaque emplacement, tourné avec le vaisseau. **Liste
 /// vide = un seul emplacement au centre de rotation** (repli :
 /// comportement d'origine). Générée par l'outil de gestion.
-pub const VAISSEAU_BULLET_SPAWNS: &[(f64, f64)] = &[(91.0, 50.0), (53.0, 74.0), (53.0, 26.0), (41.0, 96.0)];
+pub const VAISSEAU_BULLET_SPAWNS: &[(f64, f64)] = &[(90.0, 50.0), (43.0, 89.0), (53.0, 26.0), (41.0, 96.0)];
 
 /// Mesh du propulseur « ARRIÈRE » (VAISSEAU_THRUSTERS[0]) — embarqué au compile.
 pub const VAISSEAU_THRUSTER_MESH_0: &str = include_str!("../assets/propellerUp.json");
@@ -189,7 +189,7 @@ pub const VAISSEAU_WEAPON_AMMO_MESH_0: &str = include_str!("../assets/bullet.jso
 /// Mesh de l'arme « ARME 2 » (VAISSEAU_WEAPONS[1]) — embarqué au compile.
 pub const VAISSEAU_WEAPON_MESH_1: &str = include_str!("../assets/ballWeapon.json");
 /// Mesh de la munition de l'arme « ARME 2 » (VAISSEAU_WEAPONS[1]).
-pub const VAISSEAU_WEAPON_AMMO_MESH_1: &str = include_str!("../assets/bullet.json");
+pub const VAISSEAU_WEAPON_AMMO_MESH_1: &str = include_str!("../assets/duck-rocket.json");
 
 /// Catalogue d'armes du vaisseau joueur : chaque arme est un mesh posé
 /// **sur le vaisseau** à un emplacement de tir (`spawn_index` dans
@@ -208,16 +208,22 @@ pub const VAISSEAU_WEAPONS: &[VaisseauWeapon] = &[
         ammo_mesh: VAISSEAU_WEAPON_AMMO_MESH_0,
         ammo_scale: 2.0,
         ammo_orientation_degrees: 0.0,
+        cost: 0,
+        ammo_price: 1,
+        ammo_pack: 5,
     },
     VaisseauWeapon {
         name: "ARME 2",
         mesh: VAISSEAU_WEAPON_MESH_1,
-        scale: 0.65,
-        orientation_degrees: -16.0,
-        spawn_index: 3,
+        scale: 0.73,
+        orientation_degrees: -13.0,
+        spawn_index: 1,
         ammo_mesh: VAISSEAU_WEAPON_AMMO_MESH_1,
-        ammo_scale: 1.0,
-        ammo_orientation_degrees: -16.0,
+        ammo_scale: 0.3,
+        ammo_orientation_degrees: 0.0,
+        cost: 15,
+        ammo_price: 3,
+        ammo_pack: 10,
     },
 ];
 
@@ -363,10 +369,15 @@ pub struct PlaneUpgradeLink {
 /// vaisseau** à un emplacement de tir (`spawn_index` dans
 /// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est
 /// contrainte) et munition tirée par l'arme (mesh de la munition, avec sa
-/// propre échelle et orientation). Toutes les armes du catalogue tirent
-/// ensemble au Shift. Générée par l'outil de gestion. Les champs ne sont lus
-/// que quand le catalogue est rempli (`VAISSEAU_WEAPONS` non vide) —
-/// `dead_code` quand la liste est vide.
+/// propre échelle et orientation). Toutes les armes **possédées** du
+/// catalogue tirent ensemble au Shift, chacune tant que son propre stock de
+/// munitions n'est pas vide. Chaque arme porte son **coût d'achat** au
+/// magasin (0 = arme de base, toujours équipée) et le prix/taille de son
+/// **paquet de munitions** (le magasin facture par paquet de
+/// `ammo_pack` munitions au prix `ammo_price`, par arme). Générée par
+/// l'outil de gestion. Les champs ne sont lus que quand le catalogue est
+/// rempli (`VAISSEAU_WEAPONS` non vide) — `dead_code` quand la liste est
+/// vide.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct VaisseauWeapon {
@@ -389,6 +400,14 @@ pub struct VaisseauWeapon {
     /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
     /// l'éditeur — la munition part nez en avant.
     pub ammo_orientation_degrees: f64,
+    /// Coût d'achat de l'arme au magasin de la station (minerais ; 0 = arme
+    /// de base, toujours équipée au départ en Progression).
+    pub cost: i32,
+    /// Prix (minerais) d'un **paquet** de munitions de l'arme (magasin,
+    /// section RAVITAILLEMENT).
+    pub ammo_price: i32,
+    /// Taille d'un paquet de munitions de l'arme (munitions par paquet).
+    pub ammo_pack: i32,
 }
 
 /// Une éjection de gaz du vaisseau (les 4 touches de contrôle de la

@@ -21,11 +21,13 @@
 //! - `prog_modes`       — modes de déplacement débloqués (masque binaire,
 //!   Progression)
 //! - `prog_reputation`  — réputation × 10 (entier, au dixième près,
-//!   Progression)
-//! - `prog_up_fuel`     — extensions de réservoir achetées (Progression,
-//!   atelier de la station)
+//!   Progression)//! - `prog_up_fuel`     — extensions de réservoir achetées (Progression,
+//!                        atelier de la station)
 //! - `prog_up_ammo`     — extensions de chargeur achetées (Progression)
 //! - `prog_up_cargo`    — extensions de soute achetées (Progression)
+//! - `prog_weapons`     — armes du catalogue possédées (masque binaire,
+//!                        Progression — les munitions par arme repartent
+//!                        pleines à chaque lancement)
 //! - `prog_lives`       — vies restantes (Survival)
 //! - `prog_shield`      — bouclier restant × 10 (entier, Survival)
 //!

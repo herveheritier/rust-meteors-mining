@@ -185,13 +185,13 @@ pub fn update(
     }
 
     // Boîte de choix DOCK STATION ouverte : le monde est gelé — seuls les
-    // clics sur UNLOAD / REFUEL/REARM / SHOP / CLOSE sont traités (ex
-    // boucle bloquante de `windowUtils_choiceBox`). UNLOAD décharge la soute
-    // (minerais disponibles pour REFUEL/REARM juste après), REFUEL/REARM
-    // achète carburant + munitions (`scenario::purchase_supplies`) et SHOP
-    // ouvre le magasin de la station (modes de déplacement, et extensions en
-    // scénario à économie) ; la boîte ne se ferme qu'avec CLOSE, pour
-    // décharger puis se ravitailler dans le même accostage.
+    // clics sur UNLOAD / SHOP / CLOSE sont traités (ex boucle bloquante de
+    // `windowUtils_choiceBox`). UNLOAD décharge la soute (minerais
+    // disponibles pour le ravitaillement juste après) et SHOP ouvre le
+    // magasin de la station — le carburant et les munitions s'y achètent
+    // indépendamment (section RAVITAILLEMENT, plus de bouton REFUEL/REARM) ;
+    // la boîte ne se ferme qu'avec CLOSE, pour décharger puis se ravitailler
+    // dans le même accostage.
     if state.dock_box {
         match choice_box_click() {
             ChoiceClick::None => {}
@@ -209,20 +209,22 @@ pub fn update(
                 // la progression (minerais) est persistée au déchargement
                 let _ = scenario::save_progression(state);
             }
-            ChoiceClick::Refuel => {
-                // ravitaillement manuel (plus d'achat automatique au
-                // déchargement) : pleins si les minerais suffisent, sinon
-                // message « NOT ENOUGH MINERALS » ; les minerais dépensés
-                // sont persistés (sans quoi un ravitaillement suivi d'une
-                // sortie serait gratuit au lancement suivant)
-                scenario::purchase_supplies(state);
-                let _ = scenario::save_progression(state);
-            }
             ChoiceClick::Shop => {
                 // ouvre le magasin de la station (la boîte réapparaît en
-                // fermant le magasin — on reste accosté)
+                // fermant le magasin — on reste accosté) ; les curseurs du
+                // ravitaillement partent d'office sur le **maximum achetable**
+                // avec les minerais courants (on peut toujours s'en sortir
+                // même avec peu de minerais — la quantité se règle ensuite à
+                // la souris / la molette)
                 state.dock_box = false;
                 state.shop_box = true;
+                state.shop_drag = None;
+                state.shop_fuel_qty = scenario::affordable_fuel_qty(state);
+                for i in 0..scenario::weapon_slot_count() {
+                    if scenario::weapon_owned(state, i) {
+                        state.shop_ammo_qty[i] = scenario::affordable_ammo_qty(state, i) as f64;
+                    }
+                }
             }
             ChoiceClick::Close => {
                 // quitte l'accostage : les liens néon se rétractent
@@ -234,22 +236,37 @@ pub fn update(
     }
 
     // Magasin de la station ouvert (bouton SHOP de la boîte DOCK STATION) :
-    // le monde est gelé — les clics sur les lignes de mode de déplacement
-    // (sélection gratuite ou déblocage contre minerais, `scenario::try_select_mode`),
-    // les lignes d'extension (achat contre minerais, `scenario::buy_upgrade`)
-    // et sur CLOSE (retour à la boîte DOCK STATION, toujours accosté) sont
-    // traités.
+    // le monde est gelé — les curseurs du ravitaillement sont mis à jour à
+    // chaque frame (`shop_update` : glisser, molette, bornage aux minerais),
+    // puis les clics sur les lignes de mode de déplacement (sélection gratuite
+    // ou déblocage contre minerais, `scenario::try_select_mode`), les lignes
+    // d'extension (achat contre minerais, `scenario::buy_upgrade`), les
+    // lignes de ravitaillement (achat de la **quantité du curseur**) et sur
+    // CLOSE (retour à la boîte DOCK STATION, toujours accosté) sont traités.
     if state.shop_box {
+        shop_update(state);
         match shop_box_click(state) {
             ShopClick::None => {}
             ShopClick::Mode(mode) => select_mode_and_save(state, mode),
-            ShopClick::BuyFuel => {
+            ShopClick::Weapon(i) => buy_weapon_and_save(state, shapes, triangles, i),
+            // ravitaillement : carburant et munitions achetés indépendamment,
+            // à la quantité choisie sur le curseur de la ligne (minerais
+            // persistés)
+            ShopClick::Refuel => {
+                scenario::buy_fuel_qty(state, state.shop_fuel_qty);
+                let _ = scenario::save_progression(state);
+            }
+            ShopClick::Rearm(i) => {
+                scenario::buy_ammo_qty(state, i, state.shop_ammo_qty[i] as i32);
+                let _ = scenario::save_progression(state);
+            }
+            ShopClick::BuyFuelUpgrade => {
                 buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Fuel)
             }
-            ShopClick::BuyAmmo => {
+            ShopClick::BuyAmmoUpgrade => {
                 buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Ammo)
             }
-            ShopClick::BuyCargo => {
+            ShopClick::BuyCargoUpgrade => {
                 buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Cargo)
             }
             ShopClick::Close => {
@@ -1049,8 +1066,8 @@ fn advance_eva_crossfade(
 /// (`r%` non utilisé) — le cargo reste vidé de toute façon à l'accostage
 /// (au plus tard à la frame suivant la fermeture de la boîte ; le bouton
 /// UNLOAD de la boîte le vide immédiatement). Le ravitaillement (carburant +
-/// munitions), lui, n'est plus automatique : il s'achète via le bouton
-/// REFUEL/REARM de la boîte DOCK STATION.
+/// munitions), lui, n'est plus automatique : il s'achète indépendamment au
+/// magasin (section RAVITAILLEMENT).
 fn docking(
     state: &mut GameState,
     shapes: &mut [Shape],
@@ -1091,8 +1108,8 @@ fn docking(
             state.docking_guide = false;
         } else {
             // déchargement : la soute est convertie en minerais (scénario à
-            // économie) puis vidée — le ravitaillement s'achète via le
-            // bouton REFUEL/REARM de la boîte DOCK STATION
+            // économie) puis vidée — le ravitaillement s'achète au magasin
+            // (section RAVITAILLEMENT)
             let had_cargo = state.player.cargo_qty > 0;
             scenario::unload_cargo(state, elements);
             for e in elements.iter_mut() {
@@ -1154,7 +1171,7 @@ fn advance_dock_animation(
     if state.dock_anim <= 0.0 {
         state.dock_anim = 0.0;
         state.send_message("YOU ARE DOCKED AT THE STATION");
-        state.dock_box = true; // ouvre la boîte UNLOAD/REFUEL/CLOSE (jeu gelé)
+        state.dock_box = true; // ouvre la boîte DOCK STATION (jeu gelé)
     }
 }
 
@@ -1320,12 +1337,10 @@ fn delete_out_of_range_bullets(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChoiceClick {
     None,
-    /// Décharge la soute (minerais disponibles pour REFUEL/REARM).
+    /// Décharge la soute (minerais disponibles pour le ravitaillement).
     Unload,
-    /// Achète carburant + munitions contre minerais.
-    Refuel,
-    /// Ouvre le magasin de la station (modes de déplacement, et extensions
-    /// en scénario à économie).
+    /// Ouvre le magasin de la station (carburant, munitions, armes,
+    /// extensions et modes de déplacement en scénario à économie).
     Shop,
     /// Ferme la boîte.
     Close,
@@ -1333,9 +1348,9 @@ enum ChoiceClick {
 
 /// Détecte un clic sur la boîte de choix DOCK STATION (ex
 /// `windowUtils_choiceBox`) et renvoie le bouton cliqué (contrairement à
-/// l'original, le choix n'est plus ignoré : UNLOAD, REFUEL/REARM et SHOP
-/// agissent). SHOP ouvre le magasin de la station (modes de déplacement
-/// + extensions en scénario à économie).
+/// l'original, le choix n'est plus ignoré : UNLOAD et SHOP agissent). SHOP
+/// ouvre le magasin de la station (le carburant et les munitions s'y
+/// achètent indépendamment).
 fn choice_box_click() -> ChoiceClick {
     if !is_mouse_button_pressed(MouseButton::Left) {
         return ChoiceClick::None;
@@ -1344,8 +1359,6 @@ fn choice_box_click() -> ChoiceClick {
     let m = mouse_to_game();
     if l.unload.contains(m) {
         ChoiceClick::Unload
-    } else if l.refuel.contains(m) {
-        ChoiceClick::Refuel
     } else if l.shop.contains(m) {
         ChoiceClick::Shop
     } else if l.close.contains(m) {
@@ -1362,41 +1375,153 @@ enum ShopClick {
     None,
     /// Sélectionne / débloque un mode de déplacement (index `MOVING_MODE_*`).
     Mode(i32),
-    /// Achète l'extension de réservoir de carburant.
-    BuyFuel,
-    /// Achète l'extension de chargeur de munitions.
-    BuyAmmo,
-    /// Achète l'extension de soute.
-    BuyCargo,
+    /// Achète une arme du catalogue (index dans `VAISSEAU_WEAPONS`).
+    Weapon(usize),
+    /// Achète la quantité du curseur de carburant (ligne FUEL du
+    /// ravitaillement).
+    Refuel,
+    /// Achète la quantité du curseur de munitions de l'arme `i` (ligne AMMO
+    /// de l'arme — une par arme possédée).
+    Rearm(usize),
+    /// Achète l'extension de réservoir de carburant (atelier).
+    BuyFuelUpgrade,
+    /// Achète l'extension de chargeur de munitions (atelier).
+    BuyAmmoUpgrade,
+    /// Achète l'extension de soute (atelier).
+    BuyCargoUpgrade,
     /// Revient à la boîte DOCK STATION (toujours accosté).
     Close,
 }
 
-/// Détecte un clic sur le magasin de la station : une ligne de mode de
-/// déplacement (sélection/déblocage), une ligne d'extension (achat) ou le
-/// bouton CLOSE (retour à la boîte DOCK STATION).
+/// Détecte un clic sur le magasin de la station : une ligne d'arme
+/// (achat), une ligne de mode de déplacement (sélection/déblocage), une
+/// ligne d'extension (achat), une ligne de ravitaillement (achat de la
+/// **quantité du curseur**) ou le bouton CLOSE (retour à la boîte DOCK
+/// STATION). Une pression sur la piste d'un curseur n'achète rien : elle
+/// est saisie par `shop_update` (début de glisser).
 fn shop_box_click(state: &GameState) -> ShopClick {
     if !is_mouse_button_pressed(MouseButton::Left) {
         return ShopClick::None;
     }
-    let l = shop_box_layout(scenario::has_economy(state));
+    let l = shop_box_layout(state);
     let m = mouse_to_game();
+    // curseurs du ravitaillement : le clic sur une piste glisse la quantité
+    // (`shop_update`), il n'achète pas — pistes vides (hors économie,
+    // réservoir plein) ignorées
+    if (l.slider_fuel.w > 0.0 && l.slider_fuel.contains(m))
+        || l.slider_ammo.iter().any(|t| t.w > 0.0 && t.contains(m))
+    {
+        return ShopClick::None;
+    }
+    for (i, rect) in l.weapons.iter().enumerate() {
+        if rect.contains(m) {
+            return ShopClick::Weapon(i);
+        }
+    }
     for (i, rect) in l.modes.iter().enumerate() {
         if rect.contains(m) {
             return ShopClick::Mode(MOVING_MODE_ORDER[i]);
         }
     }
-    if l.fuel.contains(m) {
-        ShopClick::BuyFuel
+    // ravitaillement : carburant et munitions achetés indépendamment, à la
+    // quantité du curseur de la ligne (une ligne AMMO par arme possédée)
+    if l.supplies_fuel.contains(m) {
+        ShopClick::Refuel
+    } else if let Some(i) = l.supplies_ammo.iter().position(|r| r.contains(m)) {
+        ShopClick::Rearm(i)
+    } else if l.fuel.contains(m) {
+        ShopClick::BuyFuelUpgrade
     } else if l.ammo.contains(m) {
-        ShopClick::BuyAmmo
+        ShopClick::BuyAmmoUpgrade
     } else if l.cargo.contains(m) {
-        ShopClick::BuyCargo
+        ShopClick::BuyCargoUpgrade
     } else if l.close.contains(m) {
         ShopClick::Close
     } else {
         ShopClick::None
     }
+}
+
+/// Met à jour les curseurs du ravitaillement du magasin à chaque frame :
+/// pression sur une piste (début de glisser — la quantité saute au
+/// pointeur), glisser (bouton maintenu, la valeur suit le pointeur),
+/// molette sur une piste (± un paquet de la ressource : `fuel_step` pour le
+/// carburant, le paquet de l'arme pour les munitions) et bornage des
+/// quantités au manque des réservoirs et aux minerais disponibles
+/// (`scenario::clamp_shop_quantities`). Appelé avant `shop_box_click`.
+fn shop_update(state: &mut GameState) {
+    let l = shop_box_layout(state);
+    let m = mouse_to_game();
+    // début de glisser : une pression sur une piste saisit le curseur
+    if is_mouse_button_pressed(MouseButton::Left) {
+        if l.slider_fuel.w > 0.0 && l.slider_fuel.contains(m) {
+            state.shop_drag = Some(0);
+        } else {
+            for (i, track) in l.slider_ammo.iter().enumerate() {
+                if track.w > 0.0 && track.contains(m) && scenario::weapon_owned(state, i) {
+                    state.shop_drag = Some(1 + i);
+                    break;
+                }
+            }
+        }
+    }
+    // glisser : la valeur suit le pointeur tant que le bouton est maintenu
+    if let Some(target) = state.shop_drag {
+        if is_mouse_button_down(MouseButton::Left) {
+            if target == 0 {
+                let track = l.slider_fuel;
+                if track.w > 0.0 {
+                    let missing = (scenario::fuel_capacity(state) - state.resources.fuel).max(0.0);
+                    let frac = ((m.x - track.x) / track.w).clamp(0.0, 1.0) as f64;
+                    state.shop_fuel_qty = frac * missing;
+                }
+            } else if let Some(&track) = l.slider_ammo.get(target - 1) {
+                if track.w > 0.0 {
+                    let missing =
+                        (scenario::ammo_capacity(state) - state.resources.weapon_ammo[target - 1])
+                            .max(0) as f64;
+                    let frac = ((m.x - track.x) / track.w).clamp(0.0, 1.0) as f64;
+                    state.shop_ammo_qty[target - 1] = frac * missing;
+                }
+            }
+        } else {
+            state.shop_drag = None; // bouton relâché
+        }
+    }
+    // molette sur une piste : ± un paquet de la ressource (10 carburant,
+    // le paquet de l'arme pour les munitions)
+    let wheel = mouse_wheel().1;
+    if wheel != 0.0 {
+        if l.slider_fuel.w > 0.0 && l.slider_fuel.contains(m) {
+            let step = crate::scenario::scenario(state.scenario).fuel_step;
+            state.shop_fuel_qty += wheel as f64 * step;
+        } else {
+            for (i, track) in l.slider_ammo.iter().enumerate() {
+                if track.w > 0.0 && track.contains(m) && scenario::weapon_owned(state, i) {
+                    let step = scenario::weapon_spec(i).ammo_pack as f64;
+                    state.shop_ammo_qty[i] += wheel as f64 * step;
+                    break;
+                }
+            }
+        }
+    }
+    scenario::clamp_shop_quantities(state);
+}
+
+/// Achète une arme du catalogue au magasin (bouton SHOP de la boîte DOCK
+/// STATION) puis persiste la progression (minerais, armes possédées). Le
+/// mesh de l'arme achetée apparaît sur le vaisseau : reconstruction avec la
+/// nouvelle composition (`vaisseau::rebuild_player_vaisseau`).
+fn buy_weapon_and_save(
+    state: &mut GameState,
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    i: usize,
+) {
+    if matches!(scenario::buy_weapon(state, i), scenario::WeaponOutcome::Purchased(_)) {
+        crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+    }
+    let _ = scenario::save_progression(state);
 }
 
 /// Achète une extension du magasin (réservoir, chargeur ou soute) puis persiste
@@ -1897,14 +2022,19 @@ fn player_controls(
 
     // tir : Shift gauche/droit (ex `case 42, 54` des quatre modes) — le
     // cooldown `fire` (1/3 s) bloque les tirs suivants ; le scénario
-    // consomme des munitions et bloque le tir quand le chargeur est vide
-    if fire_pressed() && state.player.fire <= 0.0 && scenario::try_fire(state)
-    {
-        fire_bullet(shapes, triangles);
-        state.player.fire = PLAYER_FIRE_COOLDOWN;
-        state.bullets_fired += 1;
-        if let Some(sounds) = sounds {
-            sounds.play_bullet();
+    // consomme les munitions par arme (`try_fire` renvoie le masque des
+    // armes qui ont tiré) et bloque le tir quand plus aucune arme n'a de
+    // munitions (cooldown non réinitialisé — le tir part dès qu'une arme
+    // est armée)
+    if fire_pressed() && state.player.fire <= 0.0 {
+        let fired = scenario::try_fire(state);
+        if fired.iter().any(|&f| f) {
+            fire_bullet(shapes, triangles, &fired);
+            state.player.fire = PLAYER_FIRE_COOLDOWN;
+            state.bullets_fired += 1;
+            if let Some(sounds) = sounds {
+                sounds.play_bullet();
+            }
         }
     }
 }
@@ -2965,9 +3095,8 @@ mod tests {
     fn docking_converts_cargo_but_does_not_buy_supplies() {
         // scénario Progression : le déchargement à la station convertit la
         // soute en minerais (GOLD ×4 = 20) mais n'achète plus le
-        // ravitaillement — il se paie via le bouton REFUEL/REARM de la boîte
-        // DOCK STATION : réservoirs et minerais intacts, pas de message
-        // d'achat
+        // ravitaillement — il se paie au magasin (section RAVITAILLEMENT) :
+        // réservoirs et minerais intacts, pas de message d'achat
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
         crate::scenario::apply_start(&mut state);
@@ -2981,7 +3110,7 @@ mod tests {
         elements[1].count = 4;
         state.player.cargo_qty = 4;
         state.resources.fuel = 10.0;
-        state.resources.ammo = 5;
+        state.resources.weapon_ammo[0] = 5;
 
         docking(&mut state, &mut shapes, &mut triangles, &mut elements);
 
@@ -2989,30 +3118,45 @@ mod tests {
         assert_eq!(state.player.cargo_qty, 0);
         assert_eq!(state.resources.minerals, 20);
         assert_eq!(state.resources.fuel, 10.0);
-        assert_eq!(state.resources.ammo, 5);
+        assert_eq!(state.resources.weapon_ammo[0], 5);
         assert!(state.message_queue.contains("CARGO UNLOADED: +20 MINERALS"));
         assert!(!state.message_queue.contains("SUPPLIES PURCHASED"));
     }
 
     #[test]
-    fn refuel_button_purchases_supplies() {
-        // le bouton REFUEL/REARM de la boîte DOCK STATION appelle
-        // `purchase_supplies` : réservoirs pleins contre minerais (le clic
-        // lui-même est testé via le scénario — ici le paiement, pur)
+    fn shop_fuel_and_ammo_are_purchased_independently() {
+        // les lignes FUEL / AMMO du magasin (plus de bouton REFUEL/REARM
+        // dans la boîte DOCK STATION) remplissent chaque réservoir contre
+        // minerais, indépendamment : 9 pour le carburant (90/10), 5 pour les
+        // munitions (25/5) — le paiement est testé via le scénario, ici le
+        // couplage avec l'état de jeu
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
         crate::scenario::apply_start(&mut state);
         state.resources.minerals = 100;
         state.resources.fuel = 10.0;
-        state.resources.ammo = 5;
+        state.resources.weapon_ammo[0] = 5;
 
+        // carburant seul : les munitions restent intactes
         assert_eq!(
-            crate::scenario::purchase_supplies(&mut state),
-            crate::scenario::SupplyOutcome::Purchased(14)
+            crate::scenario::purchase_fuel(&mut state),
+            crate::scenario::SupplyOutcome::Purchased(9)
+        );
+        assert_eq!(state.resources.minerals, 91);
+        assert_eq!(state.resources.fuel, crate::scenario::fuel_capacity(&state)); // 100
+        assert_eq!(state.resources.weapon_ammo[0], 5);
+
+        // munitions seules : le carburant reste plein
+        assert_eq!(
+            crate::scenario::purchase_ammo(&mut state),
+            crate::scenario::SupplyOutcome::Purchased(5)
         );
         assert_eq!(state.resources.minerals, 86);
-        assert_eq!(state.resources.fuel, crate::scenario::fuel_capacity(&state)); // 100
-        assert_eq!(state.resources.ammo, crate::scenario::ammo_capacity(&state)); // 30
+        assert_eq!(
+            crate::scenario::total_ammo(&state),
+            crate::scenario::ammo_capacity(&state)
+        ); // 30
+        assert_eq!(state.resources.fuel, 100.0);
     }
 
     #[test]
