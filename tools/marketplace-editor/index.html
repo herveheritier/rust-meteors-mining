@@ -622,6 +622,16 @@
 <body>
 
 <header>
+  <div class="suite-launcher" style="display:flex; justify-content:space-between; align-items:center; background:var(--panel-2); padding:8px 16px; border-radius:8px; border:1px solid var(--border); margin-bottom:14px;">
+    <div style="display:flex; gap:10px; align-items:center;">
+      <span style="font-weight:600; color:var(--accent);">🛠️ Suite Meteors Mining :</span>
+      <a href="http://localhost:8123" class="btn btn-sm btn-accent" style="text-decoration:none; padding:4px 10px;">🛒 Éditeur Place de Marché (Port 8123)</a>
+      <a href="http://localhost:8124" class="btn btn-sm" style="text-decoration:none; color:var(--text); padding:4px 10px;" target="_blank">🌐 Éditeur de Scénarios DAG (Port 8124)</a>
+    </div>
+    <div id="economy-validation-badge" class="badge" style="background:rgba(57,255,136,0.12); color:var(--accent); border-color:rgba(57,255,136,0.3); font-size:12px; padding:4px 10px;">
+      ✓ Économie & Physique Valides
+    </div>
+  </div>
   <h1><span class="starbar">✦</span> Place de marché — éditeur <span class="starbar">✦</span></h1>
   <p class="subtitle">
     Application de gestion du jeu <b>Meteors Mining</b> : elle sert à la <b>mise au point des objets
@@ -1060,7 +1070,57 @@ function trackById(id) {
   return data.tracks[0];
 }
 
+function validateEconomy() {
+  const warnings = [];
+
+  if (data.reputation && data.reputation.ranks) {
+    const ranks = data.reputation.ranks;
+    for (let i = 1; i < ranks.length; i++) {
+      if (ranks[i].threshold <= ranks[i - 1].threshold) {
+        warnings.push(`Seuil de réputation du rang ${i + 1} (${ranks[i].name}) inférieur ou égal au rang précédent.`);
+      }
+      if (ranks[i].discountPercent < 0 || ranks[i].discountPercent > 100) {
+        warnings.push(`Remise du rang ${ranks[i].name} hors des bornes 0-100% (${ranks[i].discountPercent}%).`);
+      }
+    }
+  }
+
+  if (data.tracks) {
+    data.tracks.forEach(tr => {
+      for (let i = 1; i < tr.tiers.length; i++) {
+        if (tr.tiers[i].cost < tr.tiers[i - 1].cost) {
+          warnings.push(`Ext. #${i + 1} de '${tr.id}' coûte moins cher que l'extension précédente.`);
+        }
+      }
+    });
+  }
+
+  if (data.gameplay) {
+    if (data.gameplay.restitution < 0 || data.gameplay.restitution > 1.0) {
+      warnings.push(`Restitution rebond base (${data.gameplay.restitution}) hors de [0.0, 1.0].`);
+    }
+  }
+
+  const badge = document.getElementById("economy-validation-badge");
+  if (badge) {
+    if (warnings.length === 0) {
+      badge.style.background = "rgba(57,255,136,0.12)";
+      badge.style.color = "#39ff88";
+      badge.style.borderColor = "rgba(57,255,136,0.3)";
+      badge.textContent = "✓ Économie & Physique Valides";
+      badge.title = "Toutes les constantes et extensions sont cohérentes.";
+    } else {
+      badge.style.background = "rgba(255,92,92,0.15)";
+      badge.style.color = "#ff5c5c";
+      badge.style.borderColor = "rgba(255,92,92,0.3)";
+      badge.textContent = `⚠️ ${warnings.length} Avertissement(s)`;
+      badge.title = warnings.join("\n");
+    }
+  }
+}
+
 function render() {
+  validateEconomy();
   renderNav();
   renderCurrentCard();
   updateSaveButton();
