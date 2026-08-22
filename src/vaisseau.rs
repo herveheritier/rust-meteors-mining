@@ -1273,7 +1273,7 @@ mod tests {
         // réservée sans toucher aux cinématiques (position, orientation,
         // vitesse) ni au centre de rotation — les triangles vivants sont
         // ceux de la composition courante
-        let mut state = GameState::new();
+        let state = GameState::new();
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         create_player_vaisseau(&state, &mut shapes, &mut triangles);
@@ -1311,7 +1311,7 @@ mod tests {
         // d'emplacements est celui de la liste, et chaque point est dans la
         // boîte englobante du vaisseau (indépendant de l'échelle/orientation)
         let (pivot,) = {
-            let mut state = GameState::new();
+            let state = GameState::new();
             let mut shapes = Vec::new();
             let mut triangles = Vec::new();
             create_player_vaisseau(&state, &mut shapes, &mut triangles);

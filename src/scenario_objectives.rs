@@ -51,6 +51,7 @@ pub enum ObjectiveReward {
 
 /// Spécification d'un objectif individuel dans le graphe de dépendances.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub struct ObjectiveSpec {
     /// Identifiant unique (ex. "obj_mine_10_gold").
     pub id: &'static str,
@@ -68,6 +69,7 @@ pub struct ObjectiveSpec {
 
 /// Définition complète d'une chaîne de scénario avec objectifs interdépendants.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub struct ScenarioChain {
     /// Identifiant unique de la chaîne (ex. "campaign_mining").
     pub id: &'static str,
@@ -81,6 +83,7 @@ pub struct ScenarioChain {
     pub objectives: &'static [ObjectiveSpec],
 }
 
+#[allow(dead_code)]
 impl ScenarioChain {
     /// Vérifie la validité du DAG d'objectifs (absence de cycle, références valides).
     pub fn validate_dag(&self) -> Result<(), String> {
@@ -174,6 +177,7 @@ impl ScenarioChain {
 // Données générées pour la campagne d'apprentissage "Campagne de Prospection"
 // ============================================================================
 
+#[allow(dead_code)]
 pub const PROLOGUE_OBJECTIVES: &[ObjectiveSpec] = &[
     ObjectiveSpec {
         id: "step_first_dock",
@@ -217,6 +221,7 @@ pub const PROLOGUE_OBJECTIVES: &[ObjectiveSpec] = &[
     },
 ];
 
+#[allow(dead_code)]
 pub const CAMPAIGN_SCENARIO_CHAIN: ScenarioChain = ScenarioChain {
     id: "campaign_prospector",
     name: "CAMPAGNE DE PROSPECTION",

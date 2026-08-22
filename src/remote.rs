@@ -456,7 +456,7 @@ mod tests {
         let host_port = url.trim_end_matches('/').trim_start_matches("http://").to_string();
         // (en-têtes HTTP/1.1 + corps optionnel — `Connection: close` pour que
         // le test n'ait pas à gérer le keep-alive)
-        let mut conn = |req_head: &str, body: &str| -> String {
+        let conn = |req_head: &str, body: &str| -> String {
             let mut stream = std::net::TcpStream::connect(&host_port).expect("connexion");
             write!(
                 stream,

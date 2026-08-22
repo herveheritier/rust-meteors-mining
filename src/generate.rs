@@ -662,7 +662,7 @@ mod tests {
         let mut rng = seed();
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
-        let mut state = GameState::new();
+        let state = GameState::new();
         let elements = default_elements();
         let idx = create_shape(&state, &mut shapes, &mut triangles, Point::new(0.0, 0.0), &elements, &mut rng);
 
@@ -683,7 +683,7 @@ mod tests {
         for i in 0..3 {
             triangles.push(test_mineral_triangle(i as i32, 0, i as f64, 0.0));
         }
-        let mut elements = default_elements();
+        let elements = default_elements();
 
         release_meteor_minerals(&mut shapes, &mut triangles, &elements, 0, &mut rng);
 
@@ -704,7 +704,7 @@ mod tests {
         let mut rng = seed();
         let mut shapes = vec![test_meteor(0)];
         let mut triangles = Vec::new();
-        let mut elements = default_elements();
+        let elements = default_elements();
 
         release_meteor_minerals(&mut shapes, &mut triangles, &elements, 0, &mut rng);
 
@@ -863,7 +863,7 @@ mod tests {
         // une balle par emplacement de tir (`VAISSEAU_BULLET_SPAWNS` — la
         // liste générée fait foi, 1 seule balle quand elle est vide), tournée
         // avec l'orientation du vaisseau (catalogue d'armes vide : tir classique)
-        let mut state = GameState::new();
+        let state = GameState::new();
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
@@ -902,7 +902,7 @@ mod tests {
         // catalogue d'armes : une munition par arme, depuis l'emplacement de
         // l'arme (point local tourné avec le vaisseau) — mesh de la munition
         // à la place de la balle rouge
-        let mut state = GameState::new();
+        let state = GameState::new();
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
