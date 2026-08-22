@@ -54,7 +54,7 @@ pub const AMMO_STEP: i32 = 5;
 /// la composante tangentielle (glissement le long de l'anneau) est
 /// conservée. 1.0 = rebond parfait (l'explosion rend au météore la vitesse
 /// de l'impact) ; 0 = pas de réaction.
-pub const METEOR_STATION_RESTITUTION: f64 = 0.6;
+pub const METEOR_STATION_RESTITUTION: f64 = 0.2;
 
 /// Débris générés par triangle détruit (l'explosion d'un triangle de
 /// météore sur la base ou un autre météore).

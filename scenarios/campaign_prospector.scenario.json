@@ -4,13 +4,13 @@
   "description": "Séquence d'objectifs guidée pour devenir un prospecteur chevronné.",
   "rules_color": "0xFF39FF88",
   "initial_state": {
-    "start_fuel": 100.0,
+    "start_fuel": 100,
     "start_ammo": 30,
     "start_minerals": 0,
-    "start_reputation": 0.0,
+    "start_reputation": 0,
     "start_mode": 0,
     "lives": 0,
-    "shield_capacity": 0.0
+    "shield_capacity": 0
   },
   "objectives": [
     {
@@ -26,13 +26,18 @@
         "type": "Minerals",
         "amount": 5
       },
-      "position": { "x": 100, "y": 180 }
+      "position": {
+        "x": 100,
+        "y": 180
+      }
     },
     {
       "id": "step_mine_gems",
       "title": "Récolte Initiale",
       "description": "Détruisez des météores et collectez 10 minerais.",
-      "prerequisites": ["step_first_dock"],
+      "prerequisites": [
+        "step_first_dock"
+      ],
       "condition": {
         "type": "CollectMinerals",
         "required": 10
@@ -41,43 +46,58 @@
         "type": "Minerals",
         "amount": 10
       },
-      "position": { "x": 380, "y": 180 }
+      "position": {
+        "x": 380,
+        "y": 180
+      }
     },
     {
       "id": "step_reputation",
       "title": "Notoriété du Mineur",
       "description": "Atteignez 25 points de réputation auprès de la station.",
-      "prerequisites": ["step_mine_gems"],
+      "prerequisites": [
+        "step_mine_gems"
+      ],
       "condition": {
         "type": "ReachReputation",
-        "required": 25.0
+        "required": 25
       },
       "reward": {
         "type": "Reputation",
-        "amount": 10.0
+        "amount": 10
       },
-      "position": { "x": 660, "y": 180 }
+      "position": {
+        "x": 660,
+        "y": 180
+      }
     },
     {
       "id": "step_unlock_inertial",
       "title": "Nouveau Mode de Vol",
       "description": "Achetez le mode de déplacement Inerte au magasin.",
-      "prerequisites": ["step_reputation"],
+      "prerequisites": [
+        "step_reputation"
+      ],
       "condition": {
         "type": "UnlockMovementMode",
         "mode": 1
       },
       "reward": {
         "type": "Fuel",
-        "amount": 50.0
+        "amount": 50
       },
-      "position": { "x": 940, "y": 180 }
+      "position": {
+        "x": 940,
+        "y": 180
+      }
     },
     {
       "id": "step_master_pilot",
       "title": "Maître Pilote",
       "description": "Détruisez 50 météores avec le nouveau système de navigation.",
-      "prerequisites": ["step_unlock_inertial"],
+      "prerequisites": [
+        "step_unlock_inertial"
+      ],
       "condition": {
         "type": "DestroyAsteroids",
         "required": 50
@@ -85,7 +105,10 @@
       "reward": {
         "type": "Victory"
       },
-      "position": { "x": 1220, "y": 180 }
+      "position": {
+        "x": 1220,
+        "y": 180
+      }
     }
   ]
 }
