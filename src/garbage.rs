@@ -12,7 +12,7 @@ use crate::shape::Shape;
 
 /// Un débris (ex `garbage_type`).
 ///
-/// NB : `radius`, `orientation` et `angle` sont posés mais jamais lus — c'est
+/// NB : `radius`, `orientation` et `angle` sont posés mais jamais lus - c'est
 /// aussi le cas dans l'original (`garbage_type.bas`, le `circle` du rayon est
 /// commenté) ; conservés pour la fidélité du modèle de données.
 #[derive(Clone, Copy, Debug)]

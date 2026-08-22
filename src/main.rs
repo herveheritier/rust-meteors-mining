@@ -1,16 +1,16 @@
 //! Portage Rust de « Meteors Mining ».
 //!
 //! - **Phase 0** (faite) : fenêtre 960×540, boucle macroquad.
-//! - **Phase 1** (faite) : modèle de données — `config.rs` (constantes),
+//! - **Phase 1** (faite) : modèle de données - `config.rs` (constantes),
 //!   `geom.rs` (Point/World/Segment/Triangle), `shape.rs` (Shape + meshes),
 //!   `garbage.rs` (débris), `state.rs` (état du jeu), `generate.rs`
 //!   (génération procédurale + `prepare`).
-//! - **Phase 2** (faite) : rendu — `render.rs` (assets, étoiles
+//! - **Phase 2** (faite) : rendu - `render.rs` (assets, étoiles
 //!   précalculées, triangles texturés, formes, caméra centrée joueur, HUD,
 //!   messages). Plein écran = **zoom** : vue 960×540 rendue dans une texture
-//!   puis étirée (F → fenêtre 1920×1080, même contenu juste plus grand —
+//!   puis étirée (F → fenêtre 1920×1080, même contenu juste plus grand -
 //!   voir `docs/PORTAGE.md` §4.1).
-//! - **Phases 3-4** (jalons M2 à M5 faits) : boucle de jeu — `game.rs`
+//! - **Phases 3-4** (jalons M2 à M5 faits) : boucle de jeu - `game.rs`
 //!   (input, 4 modes de déplacement, pause, plein écran, météores : G + auto,
 //!   collisions SAT + élastique, débris, messages, tirs, gemmes, accostage,
 //!   aide S, debug D/I), `title.rs` (écran titre).
@@ -50,7 +50,7 @@ use std::time::Duration;
 
 fn window_conf() -> Conf {
     // options graphiques persistées (écran de paramétrage) : définition de
-    // la fenêtre (taille initiale en fenêtré) et anticrénelage MSAA — ce
+    // la fenêtre (taille initiale en fenêtré) et anticrénelage MSAA - ce
     // dernier est fixé à la **création** de la fenêtre (macroquad ne permet
     // pas de le changer à chaud) : il prend effet au lancement suivant
     let (win_w, win_h) = persist::load_window_size().unwrap_or((VIEWPORT_WIDTH as i32, VIEWPORT_HEIGHT as i32));
@@ -75,7 +75,7 @@ fn window_conf() -> Conf {
 /// Relance l'exécutable courant (bouton RESTART de l'écran de paramétrage,
 /// ex après un changement d'anticrénelage) : le fichier de config contient
 /// déjà les réglages modifiés. Renvoie `false` si la relance a échoué (le jeu
-/// continue alors normalement — le réglage s'appliquera au lancement manuel).
+/// continue alors normalement - le réglage s'appliquera au lancement manuel).
 fn restart_process() -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
@@ -90,14 +90,14 @@ async fn main() {
     // L'état initial (monde torique, joueur, étoiles, station) est construit
     // par `prepare`, exactement comme le `prepare` du jeu QB64.
     let mut state = GameState::new();
-    // réglages persistés (fichier de config utilisateur, norme XDG — ex
+    // réglages persistés (fichier de config utilisateur, norme XDG - ex
     // `~/.config/meteors-mining/meteors_mining.cfg`) : le mode de
     // déplacement choisi au magasin de la station (bouton SHOP de la
     // boîte DOCK STATION) remplace le défaut au lancement (comme s'il venait
     // d'être sélectionné, sans message intempestif) ; volume et musique
     // s'appliquent aux sons ci-dessous. NB : la génération automatique des
     // météores
-    // (touche A) n'est **pas** persistée — elle repart toujours active au
+    // (touche A) n'est **pas** persistée - elle repart toujours active au
     // lancement (défaut de `GameState`), pour que le monde ne soit jamais
     // vide sans que le joueur l'ait demandé pour la session en cours.
     if let Some(mode) = persist::load_moving_mode() {
@@ -107,7 +107,7 @@ async fn main() {
     // rendu et anticrénelage (reflété par la case, l'effet étant appliqué
     // par `window_conf`). NB : le mode d'affichage (fenêtré / plein écran
     // zoomé / natif, touche F ou clic WINDOW de l'écran O) n'est **pas**
-    // persisté — le jeu démarre toujours fenêtré, pour que le cycle F soit
+    // persisté - le jeu démarre toujours fenêtré, pour que le cycle F soit
     // prévisible (3 pressions de F = cycle complet).
     if let Some(style) = persist::load_render_style() {
         state.render_style = match style {
@@ -125,7 +125,7 @@ async fn main() {
         state.antialias = aa;
     }
     // interface tactile (joystick + bouton de tir, case TOUCH UI de l'écran
-    // de paramétrage) : affichée par défaut — le réglage est persisté (clé
+    // de paramétrage) : affichée par défaut - le réglage est persisté (clé
     // `touch_ui`) et synchronise l'interrupteur de `touch.rs` (les contrôles
     // ne sont pris en compte que s'ils sont affichés)
     if let Some(on) = persist::get_bool("touch_ui") {
@@ -136,11 +136,11 @@ async fn main() {
     // même clé) : si `antialias` en diffère ensuite, un redémarrage est
     // nécessaire (bouton RESTART de l'écran de paramétrage)
     state.antialias_applied = state.antialias;
-    // scénario (choisi à l'écran titre, touche N — défaut : jeu libre) : le
-    // dernier scénario joué est persisté (`scenario`) — on le restaure avant
+    // scénario (choisi à l'écran titre, touche N - défaut : jeu libre) : le
+    // dernier scénario joué est persisté (`scenario`) - on le restaure avant
     // d'appliquer ses règles de départ (ressources initiales, modes débloqués
     // et, en PROGRESSION, le mode de déplacement imposé REALISTIC), puis la
-    // progression enregistrée (minerais, modes payés, réputation — clés
+    // progression enregistrée (minerais, modes payés, réputation - clés
     // `prog_*`) est surimposée sur ces valeurs de départ
     if let Some(id) = crate::scenario::load_scenario() {
         state.scenario = id;
@@ -153,7 +153,7 @@ async fn main() {
     let mut elements = Vec::new();
     let mut rng = ChaCha12Rng::from_entropy();
     generate::prepare(&mut state, &mut shapes, &mut triangles, &mut stars, &mut elements, &mut rng);
-    // cosmonaute EVA — le pilote contrôlé quand le vaisseau est détruit
+    // cosmonaute EVA - le pilote contrôlé quand le vaisseau est détruit
     // (`game.rs` : `activate_cosmonaut`/`rescue_cosmonaut`) : chargé depuis
     // `assets/cosmonaute.json` (couleurs par face), petit, garé hors écran en
     // bord de monde, téléporté au crash le moment venu (aucun cosmonaute
@@ -180,13 +180,13 @@ async fn main() {
 
     // ─── Audio (Phase 4, ex les `_sndopen` de `meteorsMining.bas`) ─────────
     // Sons chargés une fois ; l'ambiance démarre avec la partie (après
-    // l'écran titre), la musique dès le lancement si activée — comme
+    // l'écran titre), la musique dès le lancement si activée - comme
     // l'original (`mainLoop`) mais rendu cohérent avec l'écran de paramétrage
     // accessible depuis le titre.
     let mut sounds = audio::Sounds::load().await;
     // réglages audio persistés (clés `volume` et `music` du fichier de
     // config) : volume maître avant le démarrage des boucles ; la musique
-    // démarre dès l'écran titre si activée — l'écran de paramétrage (touche
+    // démarre dès l'écran titre si activée - l'écran de paramétrage (touche
     // O) y est accessible et sa case MUSIC doit refléter l'état réel
     if let Some(pct) = persist::get_i32("volume") {
         sounds.set_volume(pct as f32 / 100.0);
@@ -198,7 +198,7 @@ async fn main() {
     // ─── Zoom plein écran (touche F) ────────────────────────────────────────
     // La vue 960×540 est rendue dans une texture puis affichée étirée dans la
     // fenêtre (ex `letterbox.rs` de macroquad) : en fenêtré elle est affichée
-    // 1:1, en « plein écran » la fenêtre est agrandie et le contenu zoomé —
+    // 1:1, en « plein écran » la fenêtre est agrandie et le contenu zoomé -
     // même contenu, juste plus grand (le vrai plein écran EWMH n'est pas
     // fiable sur tous les affichages, voir `docs/PORTAGE.md` §7).
     let render_target = render_target(VIEWPORT_WIDTH as u32, VIEWPORT_HEIGHT as u32);
@@ -213,7 +213,7 @@ async fn main() {
     if title_progression_reset {
         // RESET PROGRESSION cliqué depuis l'écran de paramétrage du titre : la
         // progression a été remise à zéro, mais l'écran titre ne dessine pas
-        // le monde — le vaisseau est reconstruit ici pour retirer les plans
+        // le monde - le vaisseau est reconstruit ici pour retirer les plans
         // liés aux extensions désormais perdues
         vaisseau::rebuild_player_vaisseau(&state, &mut shapes, &mut triangles);
     }
@@ -231,13 +231,13 @@ async fn main() {
     // ─── Télécommande HTTP (piloter le jeu depuis un téléphone) ─────────────
     // Le serveur local démarre au lancement (`remote.rs`) : la page de
     // contrôle (joystick + FIRE + état en direct) est servie sur le réseau
-    // local — l'URL à ouvrir sur le téléphone est annoncée (message HUD +)
+    // local - l'URL à ouvrir sur le téléphone est annoncée (message HUD +)
     // et journalisée. En cas d'échec (port occupé…), le jeu continue sans
     // télécommande.
     match crate::remote::start() {
         Ok(url) => {
             info!("Remote control ready: {url}");
-            // NB : la file de messages du HUD découpe sur '/' (séparateur) —
+            // NB : la file de messages du HUD découpe sur '/' (séparateur) -
             // le message affiche l'adresse sans le schéma `http://` (l'URL
             // complète est visible dans l'écran de paramétrage, touche O)
             let host_port = url.trim_start_matches("http://").trim_end_matches('/');
@@ -262,7 +262,7 @@ async fn main() {
     // poussée, comptage des frames) et évite de chauffer le GPU inutilement.
     // macroquad 0.4 n'offre ni `set_target_fps` ni vsync → pacing manuel.
     // NB : le cap à 600 ne se déclenche jamais ici (FPS réel ~230 en fenêtré,
-    // ~65 en plein écran sur le GPU virtio) — c'est un filet anti-fuite comme
+    // ~65 en plein écran sur le GPU virtio) - c'est un filet anti-fuite comme
     // le `_limit 600` de l'original.
     const LIMIT_FPS: bool = true;
     let target_frame = 1.0 / ATTEMPT_FPS as f64;
@@ -279,14 +279,14 @@ async fn main() {
 
         // filet de sécurité : ré-applique le plein écran si le titre a
         // basculé (touche F) mais que la bascule n'a pas abouti avant le
-        // lancement (entrée propre — voir `render::enter_fullscreen`)
+        // lancement (entrée propre - voir `render::enter_fullscreen`)
         if pending_fullscreen {
             pending_fullscreen = false;
             render::enter_fullscreen();
         }
 
         // Input + physique + collisions (mouvement, météores, pause, modes
-        // d'affichage, musique) — M2/M3. La caméra est calculée par update
+        // d'affichage, musique) - M2/M3. La caméra est calculée par update
         // (comme l'original, après la résolution des collisions).
         let dt = get_frame_time() as f64;
         let (action, camera) = game::update(
@@ -309,8 +309,8 @@ async fn main() {
                 break;
             }
             // RESTART (écran de paramétrage, ex changement d'anticrénelage) :
-            // relance l'exécutable — les réglages sont déjà écrits dans le
-            // fichier de config — puis quitte (sans effet si la relance échoue)
+            // relance l'exécutable - les réglages sont déjà écrits dans le
+            // fichier de config - puis quitte (sans effet si la relance échoue)
             game::Action::Restart => {
                 if restart_process() {
                     break;
@@ -344,11 +344,11 @@ async fn main() {
         // Fenêtré : dessin direct 1:1 (fenêtre = viewport 960×540). Plein
         // écran zoomé : rendu dans la vue virtuelle 960×540 puis étirée (F,
         // 2e mode). Plein écran natif : rendu direct à la définition réelle
-        // de l'écran via une caméra zoomée — SANS render target (F, 3e mode).
+        // de l'écran via une caméra zoomée - SANS render target (F, 3e mode).
         match state.view_mode {
             // fenêtré : dessin direct 1:1 à la définition native (960×540),
             // sinon la vue est rendue dans la texture puis étirée (letterbox)
-            // — voir `render::window_scaled`
+            // - voir `render::window_scaled`
             ViewMode::Windowed => {
                 if render::window_scaled() {
                     set_camera(&render::virtual_camera(&render_target));
@@ -362,7 +362,7 @@ async fn main() {
         clear_background(BLACK);
         render::draw_stars(&assets, camera);
 
-        // formes (météores, station…) puis le vaisseau joueur par-dessus — le
+        // formes (météores, station…) puis le vaisseau joueur par-dessus - le
         // cosmonaute EVA est retiré de la boucle : il est dessiné **au premier
         // plan**, après le vaisseau (c'est le pilote quand le vaisseau est
         // détruit ; garé, il est cullé)
@@ -397,12 +397,12 @@ async fn main() {
             1.0
         };
         // mire d'accostage au centre de la station : dessinée **sous le
-        // vaisseau** (par-dessus l'anneau de la station, avant le joueur) —
+        // vaisseau** (par-dessus l'anneau de la station, avant le joueur) -
         // semi-transparente, rouge → vert selon la vitesse d'approche. Elle
         // **disparaît quand le vaisseau est tenu par les liens** (à quai,
         // animation d'accostage, accosté, rétraction) et **réapparaît quand
         // le vaisseau franchit la limite extérieure de la base** au retour
-        // (voir `render::docking_marker_visible`) — en mode cosmonaute EVA
+        // (voir `render::docking_marker_visible`) - en mode cosmonaute EVA
         // elle est toujours visible (il doit rejoindre la base)
         if render::docking_marker_visible(
             &state,
@@ -420,7 +420,7 @@ async fn main() {
             );
         }
         // traits d'accostage : pendant l'animation (3 s, avant la boîte) ils
-        // relient le bord intérieur de la station aux côtés du vaisseau — néon
+        // relient le bord intérieur de la station aux côtés du vaisseau - néon
         // vert, sous le vaisseau (après la mire) ; au départ (CLOSE), ils se
         // rétractent vers le bord (voir `render::draw_docking_line`). Pendant
         // le fondu enchaîné de la récupération EVA, ils apparaissent avec le
@@ -445,7 +445,7 @@ async fn main() {
         );
         // cosmonaute EVA au **premier plan** (par-dessus le vaisseau et tout
         // le reste du monde) : dessiné **uniquement quand il est éjecté**
-        // (`cosmonaut_active`) — jamais de cosmonaute supplémentaire dans le
+        // (`cosmonaut_active`) - jamais de cosmonaute supplémentaire dans le
         // monde quand le vaisseau est intact (garé, il n'est pas affiché).
         // Pendant sa récupération, le cordon orange est dessiné **sous lui**
         // (`draw_eva_recovery_cable`) ; pendant le fondu enchaîné, il s'efface
@@ -465,9 +465,9 @@ async fn main() {
         }
 
         // effet de poussée : les gaz sortent des propulseurs configurés
-        // (`VAISSEAU_THRUSTERS` — ↑ orange à l'arrière, ↓ bleu
+        // (`VAISSEAU_THRUSTERS` - ↑ orange à l'arrière, ↓ bleu
         // à l'avant, ← et → jets latéraux pendant les rotations) ; le
-        // cosmonaute EVA, lui, n'a qu'un **petit propulseur sur le dos** —
+        // cosmonaute EVA, lui, n'a qu'un **petit propulseur sur le dos** -
         // une flamme animée, et pas de marche arrière ni de jets latéraux
         // (voir `render::draw_cosmonaut_thruster`)
         if state.player.thrusted != 0 || state.player.revert_thrusted != 0
@@ -479,7 +479,7 @@ async fn main() {
                 }
             } else {
                 // gaz d'éjection : le mesh configuré de chaque propulseur
-                // (`VAISSEAU_THRUSTERS` — ↑, ↓, ←, →) est affiché **scintillant**
+                // (`VAISSEAU_THRUSTERS` - ↑, ↓, ←, →) est affiché **scintillant**
                 // seulement quand il tire, sinon rien n'est affiché. Les jets
                 // latéraux sont **croisés** : touche ← = propulseur DROITE,
                 // touche → = propulseur GAUCHE (la flamme sort du propulseur
@@ -491,7 +491,7 @@ async fn main() {
                     [0xFFFFA000, 0xFF00A0FF, 0xFFFF5AC8, 0xFF39FF88];
                 let at = |i: usize| match jets.get(i) {
                     Some((t, p)) => {
-                        // le propulseur tire : son mesh (la flamme) scintille —
+                        // le propulseur tire : son mesh (la flamme) scintille -
                         // teinté de la couleur configurée et allongé le long de
                         // la direction d'éjection (repère éditeur → jeu)
                         let tris = crate::vaisseau::thruster_mesh_triangles(t, *p);
@@ -536,7 +536,7 @@ async fn main() {
 
         render::draw_cargo(&state, &elements);
         // HUD en haut de l'écran : stats + ressources sur une ligne, puis le
-        // statut d'accostage à la suite (même ligne — `draw_hud` renvoie la
+        // statut d'accostage à la suite (même ligne - `draw_hud` renvoie la
         // fin de ligne). La distance affichée est celle du pilote (le
         // cosmonaute EVA quand le vaisseau est détruit)
         let hud_end_x = render::draw_hud(&state);
@@ -556,7 +556,7 @@ async fn main() {
 
         // interface tactile (joystick virtuel bas-gauche + bouton de tir
         // bas-droite, `touch.rs`) : affichée pendant le jeu quand le réglage
-        // TOUCH UI est coché — masquée quand une boîte (accostage, magasin,
+        // TOUCH UI est coché - masquée quand une boîte (accostage, magasin,
         // aide, paramétrage) recouvre l'écran ou en fin de partie (le monde
         // est gelé, les contrôles ne servent plus)
         if state.touch_ui
@@ -586,7 +586,7 @@ async fn main() {
         }
 
         // la vue virtuelle est étirée dans la fenêtre en plein écran zoomé
-        // et en fenêtré agrandi (définition choisie) — fenêtré natif : dessin
+        // et en fenêtré agrandi (définition choisie) - fenêtré natif : dessin
         // direct ; natif : rendu direct, rien à blitter
         if state.view_mode == ViewMode::Zoomed
             || (state.view_mode == ViewMode::Windowed && render::window_scaled())

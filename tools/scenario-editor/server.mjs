@@ -165,7 +165,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("404 — " + pathname);
+    res.end("404 - " + pathname);
   } catch (err) {
     res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Erreur serveur : " + err.message);

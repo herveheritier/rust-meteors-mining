@@ -1,8 +1,8 @@
-//! Boucle de jeu — portage de `mainLoop.bas`.
+//! Boucle de jeu - portage de `mainLoop.bas`.
 //!
 //! Jalon M2 : input (déplacement du vaisseau, 4 modes), physique, monde
 //! torique (via `moving_shape`), pause, plein écran.
-//! Jalon M3 : météores — génération en jeu (touche G + automatique), détection
+//! Jalon M3 : météores - génération en jeu (touche G + automatique), détection
 //! de collisions (SAT) avec choc élastique, résolution (destruction de
 //! triangles, débris, messages, centres). Les balles (M4), l'accostage (M5)
 //! et les sons (M4+) viendront ensuite.
@@ -48,10 +48,10 @@ pub enum Action {
 /// Front montant de la touche F (mode d'affichage) : vrai une seule fois par
 /// pression physique. Plus robuste que `is_key_pressed` seul : quand le
 /// serveur X marque un KeyDown comme **répétition** (relâchement perdu
-/// pendant la bascule plein écran — `XUnmapWindow/XMapWindow` de miniquad,
+/// pendant la bascule plein écran - `XUnmapWindow/XMapWindow` de miniquad,
 /// voir `render::enter_fullscreen`), macroquad n'ajoute pas la touche à
 /// `keys_pressed` (il avale la pression) mais `is_key_down` passe quand même
-/// à vrai — le front montant rattrape la pression. `state.f_was_down` porte
+/// à vrai - le front montant rattrape la pression. `state.f_was_down` porte
 /// l'état de la frame précédente.
 pub fn f_pressed(state: &mut GameState) -> bool {
     let down = is_key_down(KeyCode::F);
@@ -61,7 +61,7 @@ pub fn f_pressed(state: &mut GameState) -> bool {
 }
 
 /// Index de la forme **contrôlée** par le joueur : le vaisseau normalement,
-/// le cosmonaute EVA quand le vaisseau est détruit (`cosmonaut_active`) — la
+/// le cosmonaute EVA quand le vaisseau est détruit (`cosmonaut_active`) - la
 /// caméra, la mire et le HUD d'accostage suivent ce pilote (voir `main.rs`).
 pub fn pilot_index(state: &GameState) -> usize {
     if state.cosmonaut_active {
@@ -77,7 +77,7 @@ pub fn pilot_index(state: &GameState) -> usize {
 ///
 /// Ordre fidèle à `mainLoop` : input → contrôles → compteurs de poussée →
 /// remise à zéro des indicateurs de collision → déplacements (formes gelées
-/// en pause, débris toujours actifs — comportement de l'original) →
+/// en pause, débris toujours actifs - comportement de l'original) →
 /// collisions → caméra → génération automatique.
 pub fn update(
     state: &mut GameState,
@@ -86,14 +86,14 @@ pub fn update(
     garbages: &mut Vec<Garbage>,
     elements: &mut [Element],
     rng: &mut impl Rng,
-    // Sons du jeu — `None` (tests) pour un `update` silencieux.
+    // Sons du jeu - `None` (tests) pour un `update` silencieux.
     mut sounds: Option<&mut Sounds>,
     dt: f64,
 ) -> (Action, Point) {
     // FPS mesurés (affichés au HUD, utilisés par les messages en Phase 4)
     state.fps = get_fps();
 
-    // Caméra de la frame précédente — utilisée par la touche G comme
+    // Caméra de la frame précédente - utilisée par la touche G comme
     // l'original (qui lit `camera` calculée à l'itération précédente). Elle
     // suit le pilote : le vaisseau, ou le cosmonaute EVA quand le vaisseau
     // est détruit.
@@ -119,7 +119,7 @@ pub fn update(
     }
 
     // Game over (scénario Survival, dernière vie perdue) : le monde est gelé
-    // — seules les touches de quitter (ESC, ci-dessus) restent actives ; le
+    // - seules les touches de quitter (ESC, ci-dessus) restent actives ; le
     // HUD affiche GAME OVER.
     if state.game_over {
         return (Action::Continue, camera);
@@ -142,7 +142,7 @@ pub fn update(
     }
 
     // Animation d'accostage (3 s, avant la boîte DOCK STATION) : le monde est
-    // gelé — le vaisseau pivote vers la droite (orientation 0) tout en se
+    // gelé - le vaisseau pivote vers la droite (orientation 0) tout en se
     // recentrant au centre de la station (voir `advance_dock_animation` et
     // `render::draw_docking_line`).
     if state.dock_anim > 0.0 {
@@ -151,11 +151,11 @@ pub fn update(
     }
 
     // Récupération du cosmonaute EVA (vaisseau détruit, il a rejoint la base) :
-    // le monde est gelé — un cordon jaillit de l'anneau jusqu'à lui puis le
+    // le monde est gelé - un cordon jaillit de l'anneau jusqu'à lui puis le
     // ramène sur l'anneau (`advance_eva_recovery`, cordon dessiné par
     // `render::draw_eva_recovery_cable`), puis le **fondu enchaîné** fait
     // apparaître le vaisseau reconstruit au centre, liens attachés
-    // (`advance_eva_crossfade` — la caméra glisse de l'anneau vers le centre).
+    // (`advance_eva_crossfade` - la caméra glisse de l'anneau vers le centre).
     if state.eva_recovery > 0.0 {
         advance_eva_recovery(state, shapes, triangles, dt);
         return (Action::Continue, camera);
@@ -166,7 +166,7 @@ pub fn update(
     }
 
     // Le vaisseau démarre de la base (lancement ou respawn : liens attachés à
-    // quai, mire cachée — voir `state.dock_links`) : dès que le joueur donne
+    // quai, mire cachée - voir `state.dock_links`) : dès que le joueur donne
     // une commande de déplacement (flèches, tous modes), les liens se
     // rétractent (même animation qu'au départ après CLOSE), puis le vaisseau
     // est libre.
@@ -175,7 +175,7 @@ pub fn update(
     }
 
     // Rétraction des liens d'accostage au départ (CLOSE de la boîte ou
-    // démarrage de la base) : le monde est gelé — le vaisseau reste au centre,
+    // démarrage de la base) : le monde est gelé - le vaisseau reste au centre,
     // les 4 traits néon se rétractent vers le bord intérieur de l'anneau
     // (voir `advance_dock_retract` et `render::draw_docking_line`), puis le
     // vaisseau est libre.
@@ -184,11 +184,11 @@ pub fn update(
         return (Action::Continue, camera);
     }
 
-    // Boîte de choix DOCK STATION ouverte : le monde est gelé — seuls les
+    // Boîte de choix DOCK STATION ouverte : le monde est gelé - seuls les
     // clics sur UNLOAD / SHOP / CLOSE sont traités (ex boucle bloquante de
     // `windowUtils_choiceBox`). UNLOAD décharge la soute (minerais
     // disponibles pour le ravitaillement juste après) et SHOP ouvre le
-    // magasin de la station — le carburant et les munitions s'y achètent
+    // magasin de la station - le carburant et les munitions s'y achètent
     // indépendamment (section RAVITAILLEMENT, plus de bouton REFUEL/REARM) ;
     // la boîte ne se ferme qu'avec CLOSE, pour décharger puis se ravitailler
     // dans le même accostage.
@@ -196,7 +196,7 @@ pub fn update(
         match choice_box_click() {
             ChoiceClick::None => {}
             ChoiceClick::Unload => {
-                // déchargement immédiat — NB : l'original ignore le choix
+                // déchargement immédiat - NB : l'original ignore le choix
                 // (`r%` non utilisé) et vide la soute de toute façon à
                 // l'accostage (branche « else » de `docking`, frame
                 // suivante) ; ici il est anticipé pour financer le
@@ -211,10 +211,10 @@ pub fn update(
             }
             ChoiceClick::Shop => {
                 // ouvre le magasin de la station (la boîte réapparaît en
-                // fermant le magasin — on reste accosté) ; les curseurs du
+                // fermant le magasin - on reste accosté) ; les curseurs du
                 // ravitaillement partent d'office sur le **maximum achetable**
                 // avec les minerais courants (on peut toujours s'en sortir
-                // même avec peu de minerais — la quantité se règle ensuite à
+                // même avec peu de minerais - la quantité se règle ensuite à
                 // la souris / la molette)
                 state.dock_box = false;
                 state.shop_box = true;
@@ -236,7 +236,7 @@ pub fn update(
     }
 
     // Magasin de la station ouvert (bouton SHOP de la boîte DOCK STATION) :
-    // le monde est gelé — les curseurs du ravitaillement sont mis à jour à
+    // le monde est gelé - les curseurs du ravitaillement sont mis à jour à
     // chaque frame (`shop_update` : glisser, molette, bornage aux minerais),
     // puis les clics sur les lignes de mode de déplacement (sélection gratuite
     // ou déblocage contre minerais, `scenario::try_select_mode`), les lignes
@@ -277,11 +277,11 @@ pub fn update(
         return (Action::Continue, camera);
     }
 
-    // F : cycle des modes d'affichage — fenêtré → plein écran zoomé (render
+    // F : cycle des modes d'affichage - fenêtré → plein écran zoomé (render
     // target étirée) → plein écran natif (définition réelle, sans buffer) →
     // fenêtré (le HUD annonce le mode activé à chaque pression). Détection
     // robuste (`f_pressed`) : une pression avalée par le filtre de répétition
-    // de macroquad après une bascule plein écran reste comptée — sans quoi il
+    // de macroquad après une bascule plein écran reste comptée - sans quoi il
     // faut presser F deux fois pour changer de mode.
     if f_pressed(state) {
         cycle_view_mode(state);
@@ -292,7 +292,7 @@ pub fn update(
         });
     }
 
-    // M : bascule la musique (ex `M : mute music` de mainLoop) — persistée
+    // M : bascule la musique (ex `M : mute music` de mainLoop) - persistée
     if is_key_pressed(KeyCode::M) {
         if let Some(sounds) = sounds.as_deref_mut() {
             sounds.toggle_music();
@@ -306,9 +306,9 @@ pub fn update(
         state.paused = !state.paused;
     }
 
-    // A : génération automatique des météores (ex `autoGenerateShape%`) —
+    // A : génération automatique des météores (ex `autoGenerateShape%`) -
     // pour la session en cours uniquement (repart active au lancement, voir
-    // `main.rs` — non persistée)
+    // `main.rs` - non persistée)
     if is_key_pressed(KeyCode::A) {
         state.auto_generate = !state.auto_generate;
     }
@@ -332,7 +332,7 @@ pub fn update(
         state.help_box = true;
     }
 
-    // O : écran de paramétrage (options audio et graphiques — le mode de
+    // O : écran de paramétrage (options audio et graphiques - le mode de
     // déplacement se choisit au magasin de la station, bouton SHOP)
     if is_key_pressed(KeyCode::O) {
         state.settings_box = true;
@@ -354,7 +354,7 @@ pub fn update(
     }
 
     // invulnérabilité post-respawn (scénario Survival) : décompte à chaque
-    // frame (comme le cooldown de tir) — à 0, le vaisseau redevient vulnérable
+    // frame (comme le cooldown de tir) - à 0, le vaisseau redevient vulnérable
     if state.invulnerable > 0.0 {
         state.invulnerable = (state.invulnerable - dt).max(0.0);
     }
@@ -362,7 +362,7 @@ pub fn update(
     // contrôles joueur selon le mode de déplacement (inclut le tir + son)
     player_controls(state, shapes, triangles, sounds.as_deref_mut(), dt);
 
-    // compteurs de poussée : -5 à la pression, +1 par frame jusqu'à 0 —
+    // compteurs de poussée : -5 à la pression, +1 par frame jusqu'à 0 -
     // la flamme (et le son, Phase 4) persiste ~5 frames après relâchement.
     if state.player.thrusted != 0 {
         state.player.thrusted += 1;
@@ -380,7 +380,7 @@ pub fn update(
 
     // animation des membres du cosmonaute EVA : bras et jambes qui **s'agitent
     // pendant la poussée** puis retombent au repos (`cosmonaut::animate_eva_cosmonaut`)
-    // — avant la physique : `moving_shape` recalcule les positions réelles des
+    // - avant la physique : `moving_shape` recalcule les positions réelles des
     // triangles animés dans la foulée. Garé (vaisseau intact), il revient au repos.
     if state.eva_cosmonaut >= 0 {
         let eva = state.eva_cosmonaut as usize;
@@ -389,9 +389,9 @@ pub fn update(
     }
 
     // scénario à économie : le carburant est consommé tant que le moteur
-    // est allumé (flamme avant/arrière) — annonce OUT OF FUEL à la rupture.
+    // est allumé (flamme avant/arrière) - annonce OUT OF FUEL à la rupture.
     // Pas en mode cosmonaute EVA (le vaisseau est détruit, le carburant ne
-    // sert plus — la combinaison ne brûle pas le réservoir)
+    // sert plus - la combinaison ne brûle pas le réservoir)
     if !state.cosmonaut_active {
         scenario::consume_fuel(state, dt);
     }
@@ -400,7 +400,7 @@ pub fn update(
     collisions(state, shapes, triangles, garbages, elements, rng, sounds, dt);
 
     // guide d'accostage : la mire ne s'affiche que lors du RETOUR à la base
-    // (voir `update_docking_guide`) — avant `docking`, qui peut déclencher
+    // (voir `update_docking_guide`) - avant `docking`, qui peut déclencher
     // l'animation d'accostage (et couper le guide). Le pilote suit le
     // cosmonaute EVA quand le vaisseau est détruit.
     let pilot = pilot_index(state);
@@ -411,7 +411,7 @@ pub fn update(
         shapes[STATION_INDEX].radius,
     );
 
-    // accostage à la station (ex « detect return to the base ») — peut ouvrir
+    // accostage à la station (ex « detect return to the base ») - peut ouvrir
     // la boîte UNLOAD/CLOSE, auquel cas le reste de la frame est gelé. Quand
     // le vaisseau est détruit, c'est le retour du cosmonaute EVA qui est
     // détecté (secours : vaisseau reconstruit, voir `rescue_cosmonaut`)
@@ -430,7 +430,7 @@ pub fn update(
     let alive_shapes = count_alive_shapes(shapes, triangles);
 
     // génération automatique : 5 % de chance par frame tant que la limite
-    // n'est pas atteinte (ex `mainLoop`) — non gelée par la pause, comme
+    // n'est pas atteinte (ex `mainLoop`) - non gelée par la pause, comme
     // l'original.
     if state.auto_generate && alive_shapes < state.max_meteor_shapes && rng.gen::<f64>() > 0.95 {
         create_shape(state, shapes, triangles, camera, elements, rng);
@@ -539,7 +539,7 @@ fn collisions(
             && who == WHOIAM_GEM
             && state.player.cargo_qty < state.player.cargo_size
         {
-            // ramassage d'une gemme (M4 — nécessite les balles pour créer des
+            // ramassage d'une gemme (M4 - nécessite les balles pour créer des
             // gemmes) : détruite, son élément est compté dans la soute
             shapes[shape_index].life = 0;
             triangles[i].life = 0;
@@ -563,7 +563,7 @@ fn collisions(
         } else if who == WHOIAM_PLAYER && scenario::has_survival(state) {
             // scénario Survival : le bouclier encaisse les impacts (le
             // triangle du vaisseau n'est pas tué) ; s'il est percé, le
-            // vaisseau est détruit — une vie est perdue et il respawne à la
+            // vaisseau est détruit - une vie est perdue et il respawne à la
             // station (bouclier rechargé par le scénario), ou la partie est
             // terminée en dernière vie (le monde se gèle, HUD GAME OVER)
             let shield_before = state.resources.shield;
@@ -573,12 +573,12 @@ fn collisions(
                 scenario::PlayerHit::Destroyed(_) => {
                     // les minerais collectés sont rejetés autour du crash
                     // avant le respawn (la position du vaisseau est encore
-                    // celle du crash) — à récupérer en revenant sur place
+                    // celle du crash) - à récupérer en revenant sur place
                     eject_cargo_gems(state, shapes, triangles, elements, rng);
                     respawn_player(state, shapes, triangles);
                 }
                 scenario::PlayerHit::GameOver => {
-                    // dernière vie perdue : le vaisseau reste détruit — son
+                    // dernière vie perdue : le vaisseau reste détruit - son
                     // chargement est rejeté autour du crash comme ailleurs
                     triangles[i].life = 0;
                     shapes[PLAYER_INDEX].life = 0;
@@ -592,7 +592,7 @@ fn collisions(
                 let _ = scenario::save_progression(state);
             }
         } else if collid_by == WHOIAM_METEOR && who == WHOIAM_GEM {
-            // un météore percute une gemme : il l'absorbe — la gemme
+            // un météore percute une gemme : il l'absorbe - la gemme
             // disparaît entièrement et la quantité de minerai du météore
             // augmente (`minerals`, libérée si le météore est lui-même
             // détruit par un autre météore). Le météore le plus proche de la
@@ -600,7 +600,7 @@ fn collisions(
             // type, pas l'index). Une seule fois par gemme (toute la gemme
             // est tuée au premier triangle). NB : une gemme **rejetée de la
             // soute** du vaisseau détruit (`ejected_cargo`) n'est PAS absorbée
-            // — elle doit rester ramassable par le cosmonaute EVA (ou le
+            // - elle doit rester ramassable par le cosmonaute EVA (ou le
             // vaisseau ressuscité en Survival), le minerai n'est pas perdu
             // avec le crash ; sans choc élastique (météore/gemme), elle
             // traverse simplement le météore.
@@ -621,7 +621,7 @@ fn collisions(
         } else if who == WHOIAM_PLAYER {
             // vaisseau joueur : mesh multi-triangles (35 faces) mais toujours
             // « 1 impact = détruit » (l'ancien triangle unique valait 1 vie)
-            // — tous les triangles meurent en même temps, le vaisseau ne
+            // - tous les triangles meurent en même temps, le vaisseau ne
             // s'effrite pas impact après impact (une seule fois : `life`
             // passe à 0, les autres triangles en collision de la même frame
             // ne refont rien)
@@ -632,9 +632,9 @@ fn collisions(
                 }
                 state.send_message("YOUR SPACESHIP IS DAMAGED, THE STATION CAN CARRY OUT REPAIRS");
                 state.send_message("REPAIRS ARE NOT FREE OF CHARGE");
-                // vaisseau détruit (jeu libre/Progression — le Survival a son
+                // vaisseau détruit (jeu libre/Progression - le Survival a son
                 // propre respawn) : le cosmonaute est éjecté à la position du
-                // crash — le joueur le contrôle pour rejoindre la base (une
+                // crash - le joueur le contrôle pour rejoindre la base (une
                 // seule fois : `cosmonaut_active`)
                 if !state.cosmonaut_active {
                     activate_cosmonaut(state, shapes, triangles);
@@ -644,7 +644,7 @@ fn collisions(
                 // le cosmonaute pourra ramasser pour les ramener à la station
                 eject_cargo_gems(state, shapes, triangles, elements, rng);
                 // débris du crash + son d'impact (comme pour toute forme
-                // détruite — voir la branche générique ci-dessous)
+                // détruite - voir la branche générique ci-dessous)
                 if let Some(sounds) = sounds.as_mut() {
                     let dx = shapes[shape_index].position.x - shapes[PLAYER_INDEX].position.x;
                     let dy = shapes[shape_index].position.y - shapes[PLAYER_INDEX].position.y;
@@ -660,7 +660,7 @@ fn collisions(
             // un météore qui percute la **station** (base indestructible)
             // subit une force de réaction : le triangle explose (débris +
             // son ci-dessous) et sa composante de vitesse vers la base est
-            // réfléchie — l'explosion repousse le météore, la composante
+            // réfléchie - l'explosion repousse le météore, la composante
             // tangentielle (glissement le long de l'anneau) est conservée.
             // Une seule fois par météore par frame : le premier triangle en
             // collision renverse la composante radiale, les suivants voient
@@ -670,7 +670,7 @@ fn collisions(
                 && shapes[shape_index].life > 0
             {
                 // normale du choc : du centre de la base vers le point
-                // d'impact — le centre réel du triangle qui explose
+                // d'impact - le centre réel du triangle qui explose
                 let dx = triangles[i].real_center.x - shapes[STATION_INDEX].position.x;
                 let dy = triangles[i].real_center.y - shapes[STATION_INDEX].position.y;
                 let norm = dx.hypot(dy);
@@ -697,7 +697,7 @@ fn collisions(
                 state.send_message("YOU CANNOT TAKE ANY ADDITIONAL RESOURCES, UNLOAD AT THE STATION");
             }
             // si le joueur détruit un météore, la limite de météores augmente
-            // (ex mainLoop : compteur + « R+1 » affiché — le bonus flottant
+            // (ex mainLoop : compteur + « R+1 » affiché - le bonus flottant
             // et les sons arrivent en M4) et la réputation du scénario
             // augmente (d'autant plus que la précision de tir est bonne)
             if collid_by == WHOIAM_BULLET
@@ -726,7 +726,7 @@ fn collisions(
             // un triangle minéralisé d'un MÉTÉORE détruit par un missile
             // libère son minerai : une gemme apparaît (le minerai n'est pas
             // détruit avec le météore). Un missile qui touche directement
-            // une gemme, elle, la détruit — pas de nouvelle gemme : c'est le
+            // une gemme, elle, la détruit - pas de nouvelle gemme : c'est le
             // seul cas de destruction de minerai (`who == WHOIAM_GEM` n'entre
             // pas ici).
             if triangles[i].element > 0 && who == WHOIAM_METEOR {
@@ -739,8 +739,8 @@ fn collisions(
                 }
             }
             // le météore est détruit (par un autre météore ou par un missile
-            // du vaisseau) : ses minerais restants — absorbés de gemmes
-            // mangées — sont libérés en gemmes à sa position, jamais détruits
+            // du vaisseau) : ses minerais restants - absorbés de gemmes
+            // mangées - sont libérés en gemmes à sa position, jamais détruits
             // avec lui. Une seule fois : `minerals` passe à 0 dans
             // `release_meteor_minerals`, les triangles suivants du même
             // météore ne relibèrent rien.
@@ -763,7 +763,7 @@ fn collisions(
     }
 
     // ramassage des gemmes par le **cosmonaute EVA** (vaisseau détruit) : il
-    // les ramasse par proximité (non-collider — les gemmes le traversent) et
+    // les ramasse par proximité (non-collider - les gemmes le traversent) et
     // les **rapporte à la station** : la soute est déchargée à l'accostage
     // après le secours (`docking`/`rescue_cosmonaut`), comme pour le vaisseau
     eva_collect_gems(state, shapes, triangles, elements, sounds);
@@ -771,7 +771,7 @@ fn collisions(
 
 /// Ramassage des gemmes par le **cosmonaute EVA** : chaque gemme dont le
 /// centre entre dans le rayon `EVA_PICKUP_RADIUS` du cosmonaute est ramassée
-/// — détruite, son élément est compté dans la **même soute que le vaisseau**
+/// - détruite, son élément est compté dans la **même soute que le vaisseau**
 /// (déchargée en minerais à la station après le secours). Soute pleine, plus
 /// de ramassage. Sans effet quand le vaisseau est intact (`cosmonaut_active`
 /// faux) : le cosmonaute garé ne ramasse rien.
@@ -822,9 +822,9 @@ fn eva_collect_gems(
     }
 }
 
-/// Météore vivant le plus proche d'une position donnée — utilisé par
+/// Météore vivant le plus proche d'une position donnée - utilisé par
 /// l'absorption d'une gemme : `collid_by` ne porte que le type
-/// (`WHOIAM_METEOR`), pas l'index de la forme qui a percuté la gemme — on
+/// (`WHOIAM_METEOR`), pas l'index de la forme qui a percuté la gemme - on
 /// attribue donc l'absorption au météore le plus proche de la gemme (celui
 /// qui vient de la percuter).
 fn nearest_meteor(shapes: &[Shape], pos: Point) -> Option<usize> {
@@ -866,8 +866,8 @@ fn count_alive_shapes(shapes: &mut [Shape], triangles: &[Triangle]) -> i32 {
 }
 
 /// Restaure le vaisseau à la station après une destruction (scénario
-/// Survival — `scenario::PlayerHit::Destroyed`) : position, rotation et
-/// vitesse remises à zéro (comme au départ), coque et triangles réparés — le
+/// Survival - `scenario::PlayerHit::Destroyed`) : position, rotation et
+/// vitesse remises à zéro (comme au départ), coque et triangles réparés - le
 /// bouclier est déjà rechargé par `scenario::player_hit`. Le vaisseau se
 /// retrouve à quai, dans l'état « déjà docké » du lancement (pas de boîte
 /// DOCK STATION).
@@ -880,7 +880,7 @@ fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [
     p.rotation = 0.0;
     // le vaisseau est un mesh multi-triangles reconstruit avec la composition
     // courante (les plans liés aux upgrades apparaissent selon les niveaux
-    // d'atelier — `vaisseau::rebuild_player_vaisseau`, qui recale aussi les
+    // d'atelier - `vaisseau::rebuild_player_vaisseau`, qui recale aussi les
     // positions réelles sur les cinématiques posées ci-dessus)
     crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
     // flamme et cooldown de tir coupés (le moteur ne brûle plus au respawn)
@@ -897,7 +897,7 @@ fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [
 }
 
 /// Le vaisseau est détruit (jeu libre/Progression) : le joueur devient le
-/// **cosmonaute éjecté** — il apparaît à la position du crash (le vaisseau
+/// **cosmonaute éjecté** - il apparaît à la position du crash (le vaisseau
 /// détruit reste invisible sur place, ses triangles sont morts) et doit
 /// rejoindre la base (voir `rescue_cosmonaut`). La caméra, la mire et le HUD
 /// suivent le cosmonaute (`pilot_index`).
@@ -918,10 +918,10 @@ fn activate_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &m
     }
     state.cosmonaut_active = true;
     state.docking_guide = true; // la mire guide le retour
-    state.send_message("SHIP DESTROYED — RETURN TO THE STATION");
+    state.send_message("SHIP DESTROYED - RETURN TO THE STATION");
 }
 
-/// Le cosmonaute EVA a rejoint la base : il est **secouru** — le vaisseau est
+/// Le cosmonaute EVA a rejoint la base : il est **secouru** - le vaisseau est
 /// reconstruit à la station (même état qu'au lancement, `respawn_player`), le
 /// cosmonaute retourne à son poste (garé hors écran en bord de monde) et le
 /// contrôle revient au vaisseau (qui démarre à quai, liens attachés).
@@ -938,11 +938,11 @@ fn rescue_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &mut
         compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
     }
     state.cosmonaut_active = false;
-    state.send_message("RESCUED — THE STATION REBUILT YOUR SHIP");
+    state.send_message("RESCUED - THE STATION REBUILT YOUR SHIP");
 }
 
 /// Le cosmonaute EVA a atteint la zone d'accostage (vaisseau détruit) : la
-/// station le **récupère** — un cordon va jaillir de l'anneau jusqu'à lui et
+/// station le **récupère** - un cordon va jaillir de l'anneau jusqu'à lui et
 /// le ramener sur l'anneau (voir `advance_eva_recovery` et
 /// `render::draw_eva_recovery_cable`). Le monde sera gelé : `docking` est
 /// appelée dans la frame, la suite est traitée en tête de `update` (les
@@ -981,11 +981,11 @@ fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &m
     state.player.revert_thrusted = 0;
     state.player.rotate_left_thrusted = 0; // ni de jets latéraux
     state.player.rotate_right_thrusted = 0;
-    state.send_message("STATION RECOVERY — HOLD ON");
+    state.send_message("STATION RECOVERY - HOLD ON");
 }
 
 /// Fait avancer la **récupération** du cosmonaute EVA d'une frame : le cordon
-/// (jailli de l'anneau vers lui) le **ramène sur l'anneau** — sa position est
+/// (jailli de l'anneau vers lui) le **ramène sur l'anneau** - sa position est
 /// interpolée (smoothstep) de `eva_recovery_from_pos` vers `eva_recovery_to_pos`
 /// pendant `EVA_RECOVERY_DURATION`, vitesse nulle, le monde est gelé. À la
 /// fin, le **fondu enchaîné** démarre : le vaisseau est reconstruit au centre
@@ -1015,7 +1015,7 @@ fn advance_eva_recovery(
     if state.eva_recovery <= 0.0 {
         state.eva_recovery = 0.0;
         // le cosmonaute est sur l'anneau : le vaisseau est reconstruit au
-        // centre de la station (liens attachés) — le fondu enchaîné le fait
+        // centre de la station (liens attachés) - le fondu enchaîné le fait
         // apparaître pendant que le cosmonaute s'efface
         respawn_player(state, shapes, triangles);
         state.eva_crossfade = EVA_CROSSFADE_DURATION;
@@ -1025,7 +1025,7 @@ fn advance_eva_recovery(
 /// Fait avancer le **fondu enchaîné** de la récupération d'une frame : le
 /// cosmonaute ramené sur l'anneau s'efface (alpha décroissant, rendu par
 /// `main.rs`) pendant que le vaisseau reconstruit apparaît au centre de la
-/// station, liens attachés (alpha croissant) — la caméra glisse de l'anneau
+/// station, liens attachés (alpha croissant) - la caméra glisse de l'anneau
 /// vers le centre (renvoyée à `update`). À la fin, le secours est terminé :
 /// le cosmonaute retourne à son poste et le contrôle revient au vaisseau
 /// (`rescue_cosmonaut`).
@@ -1037,7 +1037,7 @@ fn advance_eva_crossfade(
 ) -> Point {
     state.eva_crossfade = (state.eva_crossfade - dt).max(0.0);
     // caméra : glisse du cosmonaute (sur l'anneau) vers le centre de la
-    // station où le vaisseau apparaît — interpolée (smoothstep) sur la durée
+    // station où le vaisseau apparaît - interpolée (smoothstep) sur la durée
     let idx = state.eva_cosmonaut as usize;
     let pos = shapes[idx].position;
     let t = (1.0 - state.eva_crossfade / EVA_CROSSFADE_DURATION).clamp(0.0, 1.0);
@@ -1056,14 +1056,14 @@ fn advance_eva_crossfade(
 
 /// Détecte le retour à la base (ex « detect return to the base » de
 /// `mainLoop`) : le vaisseau est docké quand son centre entre dans la zone
-/// d'accostage — le cercle de rayon `STATION_DOCK_DISTANCE` autour du centre
+/// d'accostage - le cercle de rayon `STATION_DOCK_DISTANCE` autour du centre
 /// de la station (vérification circulaire, comme la mire affichée à l'écran)
 /// **et** qu'il est presque immobile (`STATION_DOCK_SPEED`) : il faut ralentir
 /// pour terminer l'accostage (la mire passe du rouge au vert avec la qualité
 /// de l'approche).
 ///
 /// NB : comme l'original, le choix UNLOAD/CLOSE de la boîte était ignoré
-/// (`r%` non utilisé) — le cargo reste vidé de toute façon à l'accostage
+/// (`r%` non utilisé) - le cargo reste vidé de toute façon à l'accostage
 /// (au plus tard à la frame suivant la fermeture de la boîte ; le bouton
 /// UNLOAD de la boîte le vide immédiatement). Le ravitaillement (carburant +
 /// munitions), lui, n'est plus automatique : il s'achète indépendamment au
@@ -1074,11 +1074,11 @@ fn docking(
     triangles: &mut [Triangle],
     elements: &mut [Element],
 ) {
-    // vaisseau détruit : le cosmonaute EVA rejoint la base — dès qu'il atteint
+    // vaisseau détruit : le cosmonaute EVA rejoint la base - dès qu'il atteint
     // la zone d'accostage (cercle de rayon `STATION_DOCK_DISTANCE` au centre,
     // la station est en (0,0)), la **récupération** démarre : un cordon
     // jaillit de l'anneau et le ramène sur l'anneau, puis le fondu enchaîné
-    // fait apparaître le vaisseau reconstruit (le monde est gelé — la suite
+    // fait apparaître le vaisseau reconstruit (le monde est gelé - la suite
     // est traitée en tête de `update` : `advance_eva_recovery` puis
     // `advance_eva_crossfade`, qui termine par `rescue_cosmonaut`)
     if state.cosmonaut_active {
@@ -1098,17 +1098,17 @@ fn docking(
             state.player_enter_station = -1;
             shapes[PLAYER_INDEX].velocity = 0.0;
             // animation d'accostage (3 s) avant la boîte DOCK STATION : le
-            // vaisseau pivote vers la droite et se recentre au centre — la
+            // vaisseau pivote vers la droite et se recentre au centre - la
             // boîte s'ouvre à la fin (`advance_dock_animation`)
             state.dock_anim = DOCK_ANIMATION_DURATION;
             state.dock_anim_from_pos = shapes[PLAYER_INDEX].position;
             state.dock_anim_from_orient = shapes[PLAYER_INDEX].orientation;
-            // l'accostage démarre : le guide est coupé — il ne réapparaîtra
+            // l'accostage démarre : le guide est coupé - il ne réapparaîtra
             // qu'à un prochain retour (et pas pendant qu'on quitte l'accostage)
             state.docking_guide = false;
         } else {
             // déchargement : la soute est convertie en minerais (scénario à
-            // économie) puis vidée — le ravitaillement s'achète au magasin
+            // économie) puis vidée - le ravitaillement s'achète au magasin
             // (section RAVITAILLEMENT)
             let had_cargo = state.player.cargo_qty > 0;
             scenario::unload_cargo(state, elements);
@@ -1119,7 +1119,7 @@ fn docking(
             state.player_enter_station = 0;
             state.player_at_station = -1;
             // la progression (minerais) n'est persistée que s'il y avait du
-            // cargo (cette branche tourne à chaque frame à quai — pas
+            // cargo (cette branche tourne à chaque frame à quai - pas
             // d'écriture du fichier de config à chaque frame)
             if had_cargo {
                 let _ = scenario::save_progression(state);
@@ -1183,7 +1183,7 @@ fn undock(state: &mut GameState) {
 }
 
 /// Libère le vaisseau : détache les liens (s'ils étaient attachés à quai,
-/// lancement/respawn) et démarre la **rétraction des liens** — le vaisseau
+/// lancement/respawn) et démarre la **rétraction des liens** - le vaisseau
 /// reste au centre de la station, les 4 traits néon se rétractent vers le
 /// bord intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` (monde gelé,
 /// voir `advance_dock_retract`), puis il est libre. En quittant la base, le
@@ -1196,7 +1196,7 @@ fn release_links(state: &mut GameState) {
 }
 
 /// Met à jour le **guide d'accostage** (la mire au centre de la station) :
-/// il ne s'affiche **que lors du retour à la base** — le vaisseau doit avoir
+/// il ne s'affiche **que lors du retour à la base** - le vaisseau doit avoir
 /// quitté la base (franchi la limite extérieure en sortant, `dock_was_outside`
 /// repassé à vrai) puis la **recroiser en entrant** (front montant : la
 /// distance passe de ≥ au rayon à < au rayon). Il ne s'affiche donc jamais
@@ -1208,7 +1208,7 @@ fn update_docking_guide(
     station_position: Point,
     station_radius: f64,
 ) {
-    // vaisseau détruit : le cosmonaute éjecté doit TOUJOURS voir la mire —
+    // vaisseau détruit : le cosmonaute éjecté doit TOUJOURS voir la mire -
     // elle le guide vers la base (le « retour » classique ne s'applique pas)
     if state.cosmonaut_active {
         state.docking_guide = true;
@@ -1221,7 +1221,7 @@ fn update_docking_guide(
         state.docking_guide = false;
     } else if state.dock_was_outside {
         // vient de franchir la limite extérieure de la base en entrant :
-        // c'est le retour — le guide s'affiche
+        // c'est le retour - le guide s'affiche
         state.docking_guide = true;
     }
     state.dock_was_outside = outside;
@@ -1235,7 +1235,7 @@ fn player_moving_input() -> bool {
 }
 
 /// Commandes de déplacement : touche clavier, joystick tactile (`touch.rs`,
-/// bas-gauche) OU télécommande (`remote.rs`, téléphone sur le réseau local) —
+/// bas-gauche) OU télécommande (`remote.rs`, téléphone sur le réseau local) -
 /// les trois pilotent comme les flèches.
 fn up_pressed() -> bool {
     is_key_down(KeyCode::Up) || crate::touch::up() || crate::remote::up()
@@ -1264,7 +1264,7 @@ fn fire_pressed() -> bool {
 
 /// Fait avancer la rétraction des liens d'accostage d'une frame : le vaisseau
 /// reste immobilisé exactement au centre de la station (position 0,0,
-/// orientation 0) pendant `DOCK_RETRACT_DURATION` — les liens se rétractent
+/// orientation 0) pendant `DOCK_RETRACT_DURATION` - les liens se rétractent
 /// visuellement (voir `render::draw_docking_line`). À la fin, le vaisseau est
 /// libre (le monde se dégèle, `docking` peut le faire repartir).
 ///
@@ -1381,7 +1381,7 @@ enum ShopClick {
     /// ravitaillement).
     Refuel,
     /// Achète la quantité du curseur de munitions de l'arme `i` (ligne AMMO
-    /// de l'arme — une par arme possédée).
+    /// de l'arme - une par arme possédée).
     Rearm(usize),
     /// Achète l'extension de réservoir de carburant (atelier).
     BuyFuelUpgrade,
@@ -1406,7 +1406,7 @@ fn shop_box_click(state: &GameState) -> ShopClick {
     let l = shop_box_layout(state);
     let m = mouse_to_game();
     // curseurs du ravitaillement : le clic sur une piste glisse la quantité
-    // (`shop_update`), il n'achète pas — pistes vides (hors économie,
+    // (`shop_update`), il n'achète pas - pistes vides (hors économie,
     // réservoir plein) ignorées
     if (l.slider_fuel.w > 0.0 && l.slider_fuel.contains(m))
         || l.slider_ammo.iter().any(|t| t.w > 0.0 && t.contains(m))
@@ -1443,7 +1443,7 @@ fn shop_box_click(state: &GameState) -> ShopClick {
 }
 
 /// Met à jour les curseurs du ravitaillement du magasin à chaque frame :
-/// pression sur une piste (début de glisser — la quantité saute au
+/// pression sur une piste (début de glisser - la quantité saute au
 /// pointeur), glisser (bouton maintenu, la valeur suit le pointeur),
 /// molette sur une piste (± un paquet de la ressource : `fuel_step` pour le
 /// carburant, le paquet de l'arme pour les munitions) et bornage des
@@ -1525,7 +1525,7 @@ fn buy_weapon_and_save(
 }
 
 /// Achète une extension du magasin (réservoir, chargeur ou soute) puis persiste
-/// la progression (minerais, niveaux d'extension) — les réservoirs montent à
+/// la progression (minerais, niveaux d'extension) - les réservoirs montent à
 /// la nouvelle capacité et la soute s'agrandit dans `buy_upgrade`. Un plan du
 /// vaisseau lié à la ligne achetée peut apparaître : le mesh est reconstruit
 /// avec la nouvelle composition (`vaisseau::rebuild_player_vaisseau`).
@@ -1543,7 +1543,7 @@ fn buy_upgrade_and_save(
 
 /// Sélectionne un mode de déplacement dans le magasin (bouton SHOP de la
 /// boîte DOCK STATION) : la sélection passe par le scénario (un mode
-/// verrouillé est payé en minerais, refusé si insuffisant — messages HUD) ;
+/// verrouillé est payé en minerais, refusé si insuffisant - messages HUD) ;
 /// le mode devenu courant est annoncé au HUD, et le mode + la progression
 /// (minerais, modes débloqués) sont persistés immédiatement.
 fn select_mode_and_save(state: &mut GameState, mode: i32) {
@@ -1644,7 +1644,7 @@ pub struct SettingsResult {
     /// Le bouton RESTART a été cliqué (le jeu doit se relancer).
     pub restart: bool,
     /// Le bouton RESET PROGRESSION a été cliqué (la progression du scénario a
-    /// été remise à zéro — la boucle de jeu doit reconstruire le vaisseau
+    /// été remise à zéro - la boucle de jeu doit reconstruire le vaisseau
     /// pour retirer les plans liés aux extensions désormais perdues).
     pub progression_reset: bool,
 }
@@ -1675,7 +1675,7 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             let _ = persist::save_render_style(state.render_style as i32);
         }
         SettingsClick::WindowMode => {
-            // même cycle que la touche F (fenêtré → zoomé → natif) — pour la
+            // même cycle que la touche F (fenêtré → zoomé → natif) - pour la
             // session en cours uniquement (non persisté : le jeu démarre
             // toujours fenêtré, cycle F prévisible)
             cycle_view_mode(state);
@@ -1733,7 +1733,7 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
 }
 
 /// Ferme l'écran de paramétrage. (Le mode de déplacement se choisit au
-/// magasin de la station et y est persisté à la sélection — rien à
+/// magasin de la station et y est persisté à la sélection - rien à
 /// réenregistrer ici.)
 fn close_settings(state: &mut GameState) {
     state.settings_box = false;
@@ -1746,10 +1746,10 @@ fn close_and_persist(state: &mut GameState) {
 
 /// Remet les réglages par défaut (bouton RESET) : musique en marche,
 /// génération automatique active, volume 100 %, rendu texturé, fenêtré à
-/// 960×540, anticrénelage éteint — les valeurs par défaut ne sont
+/// 960×540, anticrénelage éteint - les valeurs par défaut ne sont
 /// réenregistrées à la fermeture que si elles ont été modifiées pendant
 /// l'écran. NB : le mode de déplacement n'est plus un réglage (il se choisit
-/// au magasin de la station) — le RESET ne le touche pas.
+/// au magasin de la station) - le RESET ne le touche pas.
 fn reset_settings_fields(state: &mut GameState) {
     state.auto_generate = true;
     state.render_style = RenderStyle::Textured;
@@ -1760,10 +1760,10 @@ fn reset_settings_fields(state: &mut GameState) {
 
 /// Remet les réglages par défaut (bouton RESET) : champs par défaut
 /// (`reset_settings_fields`), retour fenêtré à 960×540, musique en marche,
-/// volume 100 %, et clés de réglage du fichier de config supprimées — les
+/// volume 100 %, et clés de réglage du fichier de config supprimées - les
 /// valeurs par défaut ne sont réenregistrées à la fermeture que si elles ont
 /// été modifiées pendant l'écran. NB : la progression d'un scénario à
-/// économie (scénario choisi, minerais, modes payés, réputation — clés
+/// économie (scénario choisi, minerais, modes payés, réputation - clés
 /// `scenario`/`prog_*`) n'est pas supprimée : seuls les réglages repartent
 /// aux défauts.
 fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
@@ -1778,7 +1778,7 @@ fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
             sounds.toggle_music();
         }
     }
-    // seules les clés de réglage sont supprimées — le scénario et sa
+    // seules les clés de réglage sont supprimées - le scénario et sa
     // progression (`scenario`, `prog_*` : minerais, modes payés, réputation,
     // mode de déplacement choisi) survivent au RESET
     for key in [
@@ -1818,7 +1818,7 @@ fn window_size_dims(index: i32) -> (f32, f32) {
 
 /// Bascule vers un mode d'affichage donné (bouton RESET) : entre dans le
 /// plein écran EWMH si la cible est zoomé/natif, en sort (ClientMessage
-/// REMOVE via libX11) sinon — voir `cycle_view_mode`.
+/// REMOVE via libX11) sinon - voir `cycle_view_mode`.
 fn apply_view_mode(state: &mut GameState, target: ViewMode) {
     if state.view_mode == target {
         return;
@@ -1826,7 +1826,7 @@ fn apply_view_mode(state: &mut GameState, target: ViewMode) {
     match (state.view_mode, target) {
         // fenêtré → plein écran : le chemin de rendu (zoomé ou natif) ne
         // change que la caméra, la bascule EWMH est la même (entrée propre,
-        // sans l'unmap/remap de miniquad — voir `render::enter_fullscreen`)
+        // sans l'unmap/remap de miniquad - voir `render::enter_fullscreen`)
         (ViewMode::Windowed, _) => enter_fullscreen(),
         // déjà en plein écran : seul le chemin de rendu change
         (ViewMode::Zoomed, ViewMode::Native) | (ViewMode::Native, ViewMode::Zoomed) => {}
@@ -1874,7 +1874,7 @@ fn player_controls(
     dt: f64,
 ) {
     // vaisseau détruit : le joueur contrôle le cosmonaute EVA éjecté (seul
-    // objectif : rejoindre la base) — pas de tir ni de carburant
+    // objectif : rejoindre la base) - pas de tir ni de carburant
     if state.cosmonaut_active {
         cosmonaut_controls(state, shapes, dt);
         return;
@@ -1882,7 +1882,7 @@ fn player_controls(
     state.player.thrust = 0.0;
 
     // carburant (scénarios à économie) : les poussées avant/arrière sont
-    // bloquées quand le réservoir est vide — les rotations restent libres
+    // bloquées quand le réservoir est vide - les rotations restent libres
     let fuel_ok = scenario::fuel_available(state);
 
     // (portée dédiée : l'emprunt mutable de `shapes[PLAYER_INDEX]` doit se
@@ -2020,11 +2020,11 @@ fn player_controls(
     }
     }
 
-    // tir : Shift gauche/droit (ex `case 42, 54` des quatre modes) — le
+    // tir : Shift gauche/droit (ex `case 42, 54` des quatre modes) - le
     // cooldown `fire` (1/3 s) bloque les tirs suivants ; le scénario
     // consomme les munitions par arme (`try_fire` renvoie le masque des
     // armes qui ont tiré) et bloque le tir quand plus aucune arme n'a de
-    // munitions (cooldown non réinitialisé — le tir part dès qu'une arme
+    // munitions (cooldown non réinitialisé - le tir part dès qu'une arme
     // est armée)
     if fire_pressed() && state.player.fire <= 0.0 {
         let fired = scenario::try_fire(state);
@@ -2039,9 +2039,9 @@ fn player_controls(
     }
 }
 
-/// Contrôles du **cosmonaute EVA** (vaisseau détruit — voir
+/// Contrôles du **cosmonaute EVA** (vaisseau détruit - voir
 /// `activate_cosmonaut`) : la poussée est **vectorielle** (comme le mode
-/// INERTIAL du vaisseau) — ↑ exerce une poussée dans l'orientation qui
+/// INERTIAL du vaisseau) - ↑ exerce une poussée dans l'orientation qui
 /// **s'ajoute au vecteur de déplacement** (`thrust_vector`) ; pour changer de
 /// direction il faut d'abord **s'orienter** (←/→ font tourner la figure, sans
 /// modifier la trajectoire en cours) **puis pousser** : le mouvement dévie
@@ -2074,7 +2074,7 @@ fn cosmonaut_controls(state: &mut GameState, shapes: &mut [Shape], dt: f64) {
 
 /// Convertit un `KeyCode` macroquad en keycode QB64 (ex `inp(96)`) : codes
 /// ASCII pour les lettres, 72/75/77/80 pour les flèches, 42/54 pour les
-/// shifts — utilisé par l'affichage I.
+/// shifts - utilisé par l'affichage I.
 fn qb_keycode(k: KeyCode) -> i32 {
     match k {
         KeyCode::A => 65,
@@ -2307,7 +2307,7 @@ mod tests {
 
     #[test]
     fn meteor_absorbs_gem_increasing_its_minerals() {
-        // un météore percute une gemme : il l'absorbe — la gemme disparaît
+        // un météore percute une gemme : il l'absorbe - la gemme disparaît
         // et la quantité de minerai du météore augmente (sans endommager le
         // météore)
         let mut state = GameState::new();
@@ -2417,7 +2417,7 @@ mod tests {
         // un météore qui percute la base subit une **force de réaction** : le
         // triangle qui collisionne explose (débris) et la composante de sa
         // vitesse vers la station est réfléchie avec la restitution réglée
-        // dans l'outil — le météore rebondit le long de la normale du point
+        // dans l'outil - le météore rebondit le long de la normale du point
         // d'impact, la station reste intacte
         let mut state = GameState::new();
         // station (index 0) : triangle (0,0)-(10,0)-(0,10) à l'origine
@@ -2426,7 +2426,7 @@ mod tests {
             test_shape(WHOIAM_METEOR, 1, 2, 2.0, 2.0),
         ];
         shapes[0].velocity = 0.0;
-        // météore : 2 triangles — le premier (à (2,2), 10×10) chevauche la
+        // météore : 2 triangles - le premier (à (2,2), 10×10) chevauche la
         // station, le second (à (50,50)) est hors de portée
         let mut triangles = vec![
             test_triangle(0, 0, 0.0, 0.0),
@@ -2465,7 +2465,7 @@ mod tests {
         );
         // force de réaction : la vitesse est réfléchie le long de la normale
         // du point d'impact (diagonale (1,1)) avec la restitution réglée dans
-        // l'outil — on recalcule la réflexion attendue depuis la constante
+        // l'outil - on recalcule la réflexion attendue depuis la constante
         // (`METEOR_STATION_RESTITUTION` est un paramètre de mise au point :
         // le test ne doit pas dépendre de sa valeur exacte). Vitesse initiale
         // 1.0 vers -x : vx = -1, vy = 0 ; normale du choc (1/√2, 1/√2).
@@ -2506,7 +2506,7 @@ mod tests {
         // la force de réaction ne se limite pas à une frame : après le
         // rebond, le météore survivant **s'éloigne** de la base frame après
         // frame (au lieu de continuer à labourer l'anneau, triangle par
-        // triangle, jusqu'à sa destruction) — la station reste intacte
+        // triangle, jusqu'à sa destruction) - la station reste intacte
         let mut state = GameState::new();
         let mut shapes = vec![
             test_shape(WHOIAM_STATION, 0, 0, 0.0, 0.0),
@@ -2525,7 +2525,7 @@ mod tests {
         let mut elements = default_elements();
         let mut rng = seed();
 
-        // frame 1 : impact — le triangle qui chevauchait la base explose et
+        // frame 1 : impact - le triangle qui chevauchait la base explose et
         // le météore rebondit (composante radiale réfléchie), il survit
         collisions(
             &mut state,
@@ -2541,7 +2541,7 @@ mod tests {
         let pos = shapes[1].position;
         let dist0 = pos.x.hypot(pos.y);
 
-        // frame 2 : plus aucun triangle en collision — le météore continue de
+        // frame 2 : plus aucun triangle en collision - le météore continue de
         // s'éloigner (distance au centre croissante), ne perd plus de vie, la
         // station est intacte
         collisions(
@@ -2670,7 +2670,7 @@ mod tests {
     fn missile_destroying_meteor_releases_absorbed_minerals() {
         // un missile détruit un météore qui contient des minerais absorbés
         // (gemmes mangées, sans triangle minéralisé restant) : les minerais
-        // sont libérés en gemmes — pas détruits avec le météore
+        // sont libérés en gemmes - pas détruits avec le météore
         let mut state = GameState::new();
         let mut shapes = vec![
             test_shape(WHOIAM_BULLET, 0, 0, 0.0, 0.0),
@@ -2694,7 +2694,7 @@ mod tests {
     #[test]
     fn missile_hitting_gem_directly_destroys_it() {
         // un missile qui touche directement une gemme la DÉTRUIT : c'est le
-        // seul cas de destruction de minerai — aucune nouvelle gemme n'est
+        // seul cas de destruction de minerai - aucune nouvelle gemme n'est
         // créée (pas de « libération »)
         let mut state = GameState::new();
         let mut shapes = vec![
@@ -2743,7 +2743,7 @@ mod tests {
     #[test]
     fn survival_shield_absorbs_player_impact() {
         // scénario Survival : un impact météore sur le vaisseau est absorbé
-        // par le bouclier — le vaisseau et son triangle restent intacts
+        // par le bouclier - le vaisseau et son triangle restent intacts
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Survival;
         crate::scenario::apply_start(&mut state);
@@ -2766,13 +2766,13 @@ mod tests {
 
     #[test]
     fn survival_destroyed_ship_respawns_at_station() {
-        // bouclier déjà vide : l'impact détruit le vaisseau — une vie perdue,
+        // bouclier déjà vide : l'impact détruit le vaisseau - une vie perdue,
         // respawn à la station (position réinitialisée, bouclier rechargé)
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Survival;
         crate::scenario::apply_start(&mut state);
         state.resources.shield = 0.0;
-        // vaisseau mesh réel (plage allouée — le respawn le reconstruit)
+        // vaisseau mesh réel (plage allouée - le respawn le reconstruit)
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
@@ -2809,7 +2809,7 @@ mod tests {
         // vitesse, orientation, coque et flammes remises à zéro, état « à
         // quai » comme au lancement
         let mut state = GameState::new();
-        // vaisseau mesh réel (plage allouée — le respawn le reconstruit)
+        // vaisseau mesh réel (plage allouée - le respawn le reconstruit)
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
@@ -2921,7 +2921,7 @@ mod tests {
         assert_eq!(state.dock_retract, DOCK_RETRACT_DURATION);
 
         // à mi-rétraction : le vaisseau reste exactement au centre (0,0),
-        // orientation 0, immobilisé — les liens se rétractent encore
+        // orientation 0, immobilisé - les liens se rétractent encore
         advance_dock_retract(&mut state, &mut shapes, &mut triangles, DOCK_RETRACT_DURATION / 2.0);
         assert!(state.dock_retract > 0.0);
         assert_eq!(shapes[0].position.x, 0.0);
@@ -2936,7 +2936,7 @@ mod tests {
 
     #[test]
     fn release_links_detaches_and_starts_retraction() {
-        // au lancement, le vaisseau est à quai (liens attachés, mire cachée —
+        // au lancement, le vaisseau est à quai (liens attachés, mire cachée -
         // voir `state.dock_links`) ; dès qu'il démarre (commande de mouvement
         // ou CLOSE après un accostage), `release_links` détache les liens et
         // lance la rétraction (monde gelé pendant `DOCK_RETRACT_DURATION`)
@@ -2952,7 +2952,7 @@ mod tests {
     fn docking_guide_activates_only_on_return() {
         // la mire (guide d'accostage) ne s'affiche QUE lors du RETOUR à la
         // base : pas à quai, pas pendant qu'on quitte l'accostage, pas en
-        // vol — elle s'active quand le vaisseau franchit la limite extérieure
+        // vol - elle s'active quand le vaisseau franchit la limite extérieure
         // de la base EN ENTRANT (après l'avoir franchie en sortant)
         let mut state = GameState::new();
         state.dock_links = false;
@@ -2973,7 +2973,7 @@ mod tests {
         update_docking_guide(&mut state, Point::new(10.0, 0.0), station, radius);
         assert!(state.docking_guide);
         // l'accostage démarre : le guide est coupé (et le restera après le
-        // départ — il ne se réactive qu'à un nouveau franchissement en entrant)
+        // départ - il ne se réactive qu'à un nouveau franchissement en entrant)
         state.docking_guide = false;
         update_docking_guide(&mut state, Point::new(5.0, 0.0), station, radius);
         assert!(!state.docking_guide); // toujours dans le rayon : pas de réactivation
@@ -3023,8 +3023,8 @@ mod tests {
     fn docking_uses_circular_zone_matching_the_marker() {
         // la zone d'accostage est le cercle de rayon `STATION_DOCK_DISTANCE`
         // (comme la mire affichée au centre de la station) : un coin du carré
-        // circonscrit (12,12 — distance ≈ 17 > 15) n'accoste pas, une
-        // diagonale à distance < rayon (10,10 — ≈ 14,1 < 15) accoste
+        // circonscrit (12,12 - distance ≈ 17 > 15) n'accoste pas, une
+        // diagonale à distance < rayon (10,10 - ≈ 14,1 < 15) accoste
         let mut state = GameState::new();
         state.player_at_station = 0;
         let mut shapes = vec![
@@ -3095,7 +3095,7 @@ mod tests {
     fn docking_converts_cargo_but_does_not_buy_supplies() {
         // scénario Progression : le déchargement à la station convertit la
         // soute en minerais (GOLD ×4 = 20) mais n'achète plus le
-        // ravitaillement — il se paie au magasin (section RAVITAILLEMENT) :
+        // ravitaillement - il se paie au magasin (section RAVITAILLEMENT) :
         // réservoirs et minerais intacts, pas de message d'achat
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
@@ -3128,7 +3128,7 @@ mod tests {
         // les lignes FUEL / AMMO du magasin (plus de bouton REFUEL/REARM
         // dans la boîte DOCK STATION) remplissent chaque réservoir contre
         // minerais, indépendamment : 9 pour le carburant (90/10), 5 pour les
-        // munitions (25/5) — le paiement est testé via le scénario, ici le
+        // munitions (25/5) - le paiement est testé via le scénario, ici le
         // couplage avec l'état de jeu
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
@@ -3252,7 +3252,7 @@ mod tests {
     fn reset_settings_restores_defaults() {
         // bouton RESET : génération automatique active, rendu texturé,
         // fenêtre 960×540 et anticrénelage éteint (sons non testables hors
-        // jeu) — le mode de déplacement n'est pas un réglage : il n'est pas
+        // jeu) - le mode de déplacement n'est pas un réglage : il n'est pas
         // touché
         let mut state = GameState::new();
         state.moving_mode = MOVING_MODE_4_WAYS;
@@ -3289,7 +3289,7 @@ mod tests {
     }
 
     /// Ajoute une forme de test (un triangle, positionné à `(x, y)`) à la
-    /// suite des formes existantes — pour les scènes construites autour du
+    /// suite des formes existantes - pour les scènes construites autour du
     /// vaisseau mesh réel (il occupe l'index 0 avec sa plage de triangles
     /// allouée). Le triangle porte `t.position = (0,0)` : `moving_shape`
     /// calcule les positions réelles depuis la position de la forme (le
@@ -3309,7 +3309,7 @@ mod tests {
         idx
     }
 
-    /// Vaisseau joueur (mesh réel, plage allouée à la composition maximale —
+    /// Vaisseau joueur (mesh réel, plage allouée à la composition maximale -
     /// le respawn reconstruit le vaisseau) + cosmonaute EVA (non-collider) +
     /// météore qui chevauche le vaisseau : le décor du test d'éjection.
     fn ejection_scene() -> (GameState, Vec<Shape>, Vec<Triangle>) {
@@ -3355,7 +3355,7 @@ mod tests {
         // le cosmonaute EVA atteint la zone d'accostage (centre de la station)
         // → la RÉCUPÉRATION démarre : un cordon le ramène sur l'anneau
         // (`eva_recovery`), puis le fondu enchaîné fait apparaître le vaisseau
-        // reconstruit au centre (`eva_crossfade`) — à la fin, il est secouru :
+        // reconstruit au centre (`eva_crossfade`) - à la fin, il est secouru :
         // contrôle revenu au vaisseau, cosmonaute garé à son poste
         let (mut state, mut shapes, mut triangles) = ejection_scene();
         // le vaisseau est détruit et le cosmonaute éjecté au centre (la zone)
@@ -3384,13 +3384,13 @@ mod tests {
         assert!(state.eva_crossfade > 0.0);
         // vaisseau reconstruit : toutes ses faces **visibles** revivent
         // (`life` = nombre de triangles de la composition aux niveaux
-        // courants — les plans liés aux upgrades n'apparaissent qu'à partir
+        // courants - les plans liés aux upgrades n'apparaissent qu'à partir
         // de leur niveau)
         assert_eq!(shapes[PLAYER_INDEX].life, crate::vaisseau::vaisseau_visible_face_count(&state) as i32);
         assert!(state.dock_links); // démarre à quai, comme au lancement
         assert_eq!(shapes[eva].position, to); // sur l'anneau (cosmonaute éjecté au centre : vers la droite)
 
-        // fondu terminé : le secours est complet — contrôle revenu au
+        // fondu terminé : le secours est complet - contrôle revenu au
         // vaisseau, cosmonaute garé à son poste
         advance_eva_crossfade(&mut state, &mut shapes, &mut triangles, EVA_CROSSFADE_DURATION);
         assert!(!state.cosmonaut_active);
@@ -3498,7 +3498,7 @@ mod tests {
     fn ejected_cargo_gems_are_not_absorbed_by_meteors() {
         // REGRESSION : les minerais de la soute rejetés au crash étaient
         // absorbés par le météore du crash (encore vivant, posé sur le
-        // vaisseau détruit) AVANT que le cosmonaute ne puisse les ramasser —
+        // vaisseau détruit) AVANT que le cosmonaute ne puisse les ramasser -
         // le minerai était perdu. Une gemme de soute (`ejected_cargo`)
         // chevauchant un météore doit **survivre** à la collision, quand une
         // gemme normale (minerai libéré d'un météore détruit) est absorbée.

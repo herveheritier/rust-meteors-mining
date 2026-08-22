@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Éditeur Place de marché — Meteors Mining
+Name=Éditeur Place de marché - Meteors Mining
 GenericName=Éditeur de la place de marché
 Comment=Lance le serveur local de l'éditeur et ouvre l'outil dans le navigateur
 Exec=/home/herve/Documents/rust-projects/rust-meteors-mining/tools/marketplace-editor/launch-editor.sh

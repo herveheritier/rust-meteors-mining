@@ -1,16 +1,16 @@
-//! Télécommande HTTP : le jeu héberge un petit serveur web local — un
+//! Télécommande HTTP : le jeu héberge un petit serveur web local - un
 //! téléphone (ou tout appareil du réseau local) ouvre la page servie par le
 //! jeu et **pilote le vaisseau** (D-pad de boutons ▲▼◀▶ + bouton de tir, les
 //! mêmes commandes que les flèches/Shift) ; la page affiche aussi l'état du
 //! jeu en direct.
 //!
-//! - `GET /`      — page de contrôle (HTML/JS embarqué, sans fichier externe)
-//! - `POST /cmd`  — commandes `{"up":0|1,"down":..,"left":..,"right":..,"fire":..}`
-//! - `GET /state` — état du jeu en JSON (FPS, carburant, munitions, minerais,
+//! - `GET /`      - page de contrôle (HTML/JS embarqué, sans fichier externe)
+//! - `POST /cmd`  - commandes `{"up":0|1,"down":..,"left":..,"right":..,"fire":..}`
+//! - `GET /state` - état du jeu en JSON (FPS, carburant, munitions, minerais,
 //!                  réputation, vies/bouclier, pause…)
 //!
 //! Le serveur tourne dans un thread dédié (`start`, appelé au lancement par
-//! `main.rs`), sans authentification — réseau local uniquement. Les commandes
+//! `main.rs`), sans authentification - réseau local uniquement. Les commandes
 //! reçues sont lues par la boucle de jeu à chaque frame (`up()/down()/…`,
 //! combinées au clavier et au tactile dans `game.rs`) ; l'état y est publié à
 //! chaque frame (`publish_state`). La section critique (`STATE`) n'est jamais
@@ -57,12 +57,12 @@ pub struct RemoteState {
     pub rank: Option<&'static str>,
     pub lives: i32,
     pub shield: f64,
-    /// Compteur de météores détruits (jeu libre — le « score »).
+    /// Compteur de météores détruits (jeu libre - le « score »).
     pub score: i32,
 }
 
 impl RemoteState {
-    /// État initial — `const` : sert de valeur au `static STATE` (std ne
+    /// État initial - `const` : sert de valeur au `static STATE` (std ne
     /// permet que des expressions constantes dans les statiques).
     const fn new() -> Self {
         RemoteState {
@@ -97,10 +97,10 @@ impl Default for RemoteState {
     }
 }
 
-/// État partagé (std `Mutex` const — valable en `static`).
+/// État partagé (std `Mutex` const - valable en `static`).
 static STATE: Mutex<RemoteState> = Mutex::new(RemoteState::new());
 
-/// URL de la page de contrôle (remplie par `start`) — affichée par l'écran de
+/// URL de la page de contrôle (remplie par `start`) - affichée par l'écran de
 /// paramétrage (`render.rs`) pour que le joueur la retrouve à tout moment.
 static URL: Mutex<Option<String>> = Mutex::new(None);
 
@@ -137,10 +137,10 @@ pub fn fire() -> bool {
 
 /// Démarre le serveur de contrôle dans un thread dédié et renvoie l'URL à
 /// ouvrir sur le téléphone (ex `http://192.168.1.42:8642/`). Le serveur
-/// écoute sur toutes les interfaces (`0.0.0.0`) — joignable depuis le réseau
+/// écoute sur toutes les interfaces (`0.0.0.0`) - joignable depuis le réseau
 /// local ou un hotspot créé sur le PC.
 ///
-/// En cas d'échec (port occupé…), renvoie l'erreur — le jeu continue sans
+/// En cas d'échec (port occupé…), renvoie l'erreur - le jeu continue sans
 /// télécommande.
 pub fn start() -> Result<String, String> {
     let server = Server::http(format!("0.0.0.0:{}", REMOTE_PORT)).map_err(|e| e.to_string())?;
@@ -153,7 +153,7 @@ pub fn start() -> Result<String, String> {
 }
 
 /// Boucle du thread serveur : traite chaque requête HTTP (page, commandes,
-/// état). Le serveur vit aussi longtemps que le processus — aucune
+/// état). Le serveur vit aussi longtemps que le processus - aucune
 /// fermeture propre nécessaire à la sortie du jeu.
 fn serve(server: Server) {
     for mut request in server.incoming_requests() {
@@ -186,7 +186,7 @@ fn respond(request: tiny_http::Request, content_type: &str, body: &str) {
     let _ = request.respond(Response::from_string(body.to_string()).with_header(header));
 }
 
-/// Applique des commandes reçues (`POST /cmd`, JSON) à un état — un corps
+/// Applique des commandes reçues (`POST /cmd`, JSON) à un état - un corps
 /// illisible est ignoré (l'état reste inchangé). Pur (testable sans global).
 fn apply_cmd_to(s: &mut RemoteState, body: &str) {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
@@ -207,7 +207,7 @@ fn apply_cmd(body: &str) {
 
 /// Snapshot de l'état du jeu à publier (champs du HUD + ressources). Pur
 /// (testable sans global). NB : les commandes (`up/down/…`) ne sont **pas**
-/// touchées — seul le `POST /cmd` les modifie.
+/// touchées - seul le `POST /cmd` les modifie.
 fn snapshot(state: &GameState) -> RemoteState {
     let economy = crate::scenario::has_economy(state);
     let mut s = RemoteState::new();
@@ -279,7 +279,7 @@ fn state_json() -> String {
     state_json_from(&STATE.lock().unwrap())
 }
 
-/// Adresse IP locale (celle de la route par défaut) : astuce std — connecter
+/// Adresse IP locale (celle de la route par défaut) : astuce std - connecter
 /// une socket UDP ne **jamais** envoyée (bind local uniquement) renseigne
 /// l'adresse locale choisie pour joindre 8.8.8.8. `None` si indisponible.
 fn lan_ip() -> Option<String> {
@@ -291,7 +291,7 @@ fn lan_ip() -> Option<String> {
 
 
 /// Page de contrôle servie sur `GET /` : **bouton de tir bas-gauche** +
-/// **D-pad** à 4 boutons directionnels (▲▼◀▶, bas-droite — mêmes commandes
+/// **D-pad** à 4 boutons directionnels (▲▼◀▶, bas-droite - mêmes commandes
 /// que les flèches), et panneau d'état en direct (rafraîchi toutes les
 /// 250 ms).
 /// Événements Pointer (unifie doigt et souris, multi-touch : chaque bouton
@@ -302,7 +302,7 @@ const PAGE: &str = r##"<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Meteors Mining — Remote</title>
+<title>Meteors Mining - Remote</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; touch-action: none;
     user-select: none; -webkit-user-select: none; background: #0a0e1a;
@@ -454,7 +454,7 @@ mod tests {
 
         let url = start().expect("le serveur doit démarrer");
         let host_port = url.trim_end_matches('/').trim_start_matches("http://").to_string();
-        // (en-têtes HTTP/1.1 + corps optionnel — `Connection: close` pour que
+        // (en-têtes HTTP/1.1 + corps optionnel - `Connection: close` pour que
         // le test n'ait pas à gérer le keep-alive)
         let conn = |req_head: &str, body: &str| -> String {
             let mut stream = std::net::TcpStream::connect(&host_port).expect("connexion");

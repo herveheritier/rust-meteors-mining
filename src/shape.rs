@@ -26,7 +26,7 @@ use crate::geom::{
 /// `(p2,p3,p4)`, … (format `meshesToShape`).
 pub type Mesh = &'static [&'static [(f64, f64)]];
 
-/// Station — anneau lisse (1 pack de 66 points → 64 triangles).
+/// Station - anneau lisse (1 pack de 66 points → 64 triangles).
 ///
 /// Dérive volontaire de l'original (`reference/assets/station.bas`, anneau
 /// étoilé à 16 dents : 34 points → 32 triangles) : les bords intérieur
@@ -104,7 +104,7 @@ pub const STATION_MESH: Mesh = &[&[
     (110.0, 0.0),
 ]];
 
-/// Alien — `reference/assets/gripper-meshes.bas` (4 packs : 16+16+5+8 → 37 triangles).
+/// Alien - `reference/assets/gripper-meshes.bas` (4 packs : 16+16+5+8 → 37 triangles).
 pub const ALIEN_MESH: Mesh = &[
     &[
         (170.0, 50.0),
@@ -161,7 +161,7 @@ pub const ALIEN_MESH: Mesh = &[
     ],
 ];
 
-/// Gemme — `data 1,4` puis 4 points → 2 triangles (voir `createGem`).
+/// Gemme - `data 1,4` puis 4 points → 2 triangles (voir `createGem`).
 pub const GEM_MESH: Mesh = &[&[
     (2.0, -2.0),
     (-2.0, -2.0),
@@ -169,7 +169,7 @@ pub const GEM_MESH: Mesh = &[&[
     (2.0, 2.0),
 ]];
 
-/// Balle — `data 1,-2,-2, -2,2, 2,0` → 1 triangle (voir `fireBullet`).
+/// Balle - `data 1,-2,-2, -2,2, 2,0` → 1 triangle (voir `fireBullet`).
 pub const BULLET_POINTS: &[(f64, f64)] = &[(-2.0, -2.0), (-2.0, 2.0), (2.0, 0.0)];
 
 // ─── Shape ───────────────────────────────────────────────────────────────────
@@ -211,7 +211,7 @@ pub struct Shape {
     pub minerals: i32,
     /// Gemme **rejetée de la soute** du vaisseau détruit (`eject_cargo_gems`) :
     /// les météores ne l'absorbent **pas** (elle doit rester ramassable par le
-    /// cosmonaute EVA, ou le vaisseau ressuscité en Survival) — seule la
+    /// cosmonaute EVA, ou le vaisseau ressuscité en Survival) - seule la
     /// résolution de collision la ramasse (vaisseau) ou la proximité
     /// (cosmonaute). `false` pour les gemmes libérées par un météore détruit
     /// (`create_gem`), qui, elles, restent absorbables.
@@ -261,7 +261,7 @@ impl Default for Shape {
 
 /// Trouve une forme détruite avec exactement `nbr` triangles (ex `freeShape`).
 ///
-/// NB : la recherche démarre à l'index 1 comme l'original — le joueur
+/// NB : la recherche démarre à l'index 1 comme l'original - le joueur
 /// (`shapes[0]`) n'est jamais réutilisé.
 pub fn free_shape(shapes: &[Shape], nbr: usize) -> Option<usize> {
     if shapes.len() > 3 {
@@ -384,7 +384,7 @@ pub fn detect_collision(shape_a: &Shape, shape_b: &Shape, triangles: &mut [Trian
 /// Déplace et fait tourner une forme (ex `movingShape`).
 ///
 /// `dt` en secondes : la formule QB64 `60*valeur/fps` devient `valeur*60*dt`
-/// (équivalent à 60 FPS — voir `docs/PORTAGE.md` §6).
+/// (équivalent à 60 FPS - voir `docs/PORTAGE.md` §6).
 pub fn moving_shape(shape: &mut Shape, triangles: &mut [Triangle], world: &World, dt: f64) {
     shape.position.x += shape.direction.cos() * 60.0 * shape.velocity * dt;
     shape.position.y -= shape.direction.sin() * 60.0 * shape.velocity * dt;
@@ -487,7 +487,7 @@ pub fn compute_shape_center(shape: &mut Shape, triangles: &[Triangle]) {
 /// (ex `getBorderSegments`).
 ///
 /// NB : à appeler uniquement quand la forme change (l'original la recalcule à
-/// chaque frame dans `drawShape`, inutile — voir `docs/PORTAGE.md` §6).
+/// chaque frame dans `drawShape`, inutile - voir `docs/PORTAGE.md` §6).
 pub fn get_border_segments(shape: &Shape, triangles: &mut [Triangle]) {
     for i in shape.first_triangle..=shape.last_triangle {
         if triangles[i].life <= 0 {
@@ -540,7 +540,7 @@ pub fn get_border_segments(shape: &Shape, triangles: &mut [Triangle]) {
 /// Vérifie qu'un nouveau triangle peut être ajouté à la forme sans recouvrir
 /// un autre triangle (ex `isTriangleValid`).
 ///
-/// NB : comme l'original, aucun test de vie des triangles existants — seule
+/// NB : comme l'original, aucun test de vie des triangles existants - seule
 /// l'intersection des segments compte ; l'arête commune avec le parent
 /// renvoie `SharedVertex` et est donc acceptée.
 pub fn is_triangle_valid(shape: &Shape, triangles: &[Triangle], triangle: &Triangle) -> bool {
@@ -599,7 +599,7 @@ pub fn is_vertex_in_shape(shape: &Shape, triangles: &[Triangle], vertex: Point) 
 /// (ex `chooseBorderSegment`).
 ///
 /// NB : équivalent au balayage cyclique de la chaîne `pointsUsageIndicator`
-/// de l'original, mais sur un bitmask — voir `docs/PORTAGE.md` §4.
+/// de l'original, mais sur un bitmask - voir `docs/PORTAGE.md` §4.
 pub fn choose_border_segment(shape: &mut Shape, rng: &mut impl Rng) -> usize {
     let len = shape.border_len;
     let l = len + 1;
@@ -616,7 +616,7 @@ pub fn choose_border_segment(shape: &mut Shape, rng: &mut impl Rng) -> usize {
 /// Construit une forme à partir d'un mesh d'éventails (ex `meshesToShape`).
 ///
 /// NB : l'original alloue `points_qty` emplacements de triangles (somme des
-/// tailles des packs) alors qu'il n'en crée que `points_qty - 2×nbPacks` —
+/// tailles des packs) alors qu'il n'en crée que `points_qty - 2×nbPacks` -
 /// fidélité conservée (les emplacements restants restent morts, `life = 0`).
 pub fn meshes_to_shape(
     shape: &mut Shape,
@@ -652,7 +652,7 @@ pub fn meshes_to_shape(
         // triangles consécutifs (p1,p2,p3), (p2,p3,p4), … : les deux
         // premiers points glissent (`p1 = p2: p2 = p3` de l'original). NB :
         // un éventail fixe depuis `pack[0]` remplirait le trou des anneaux
-        // (la station) — l'original fait bien glisser `p1`.
+        // (la station) - l'original fait bien glisser `p1`.
         let mut p1 = Point::new(pack[0].0, pack[0].1);
         let mut p2 = Point::new(pack[1].0, pack[1].1);
         for point in &pack[2..] {
@@ -887,7 +887,7 @@ mod tests {
     fn mesh_triangles_slide_consecutively_like_the_original() {
         // L'original fait glisser p1 et p2 (`p1 = p2: p2 = p3`) : le triangle
         // k doit être (pack[k], pack[k+1], pack[k+2]). Un éventail fixe depuis
-        // pack[0] remplirait le trou de la station (anneau) — test de garde.
+        // pack[0] remplirait le trou de la station (anneau) - test de garde.
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         let mut shape = Shape::default();

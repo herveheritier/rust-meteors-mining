@@ -187,7 +187,7 @@ pub fn create_shape(
     shape.orientation = 0.0;
     shape.rotation = 0.01 - 0.02 * rng.gen::<f64>();
     shape.texture = TEXTURE_METEOR;
-    // minerais contenus : un par triangle minéralisé (or/fer/eau) — la
+    // minerais contenus : un par triangle minéralisé (or/fer/eau) - la
     // quantité libérée en gemmes si le météore est détruit par la collision
     // d'un autre météore (voir `release_meteor_minerals`)
     shape.minerals = (shape.first_triangle..=shape.last_triangle)
@@ -201,7 +201,7 @@ pub fn create_shape(
 /// Libère les minerais d'un météore détruit par la collision d'un autre
 /// météore : une gemme par unité de minerai, à la position du météore (ex
 /// `createGem` en boucle). Appelé par `game.rs` quand un météore meurt sous
-/// un autre météore — le minerai n'est alors pas perdu (les triangles
+/// un autre météore - le minerai n'est alors pas perdu (les triangles
 /// minéralisés détruits par collision ne donnent pas de gemme, contrairement
 /// à ceux détruits par une balle).
 pub fn release_meteor_minerals(
@@ -220,7 +220,7 @@ pub fn release_meteor_minerals(
     for _ in 0..minerals {
         // une gemme par unité de minerai, à la position du météore : on
         // fabrique un triangle source factice (élément aléatoire) pour
-        // réutiliser `create_gem` — `center = centre du météore` fait
+        // réutiliser `create_gem` - `center = centre du météore` fait
         // tomber la gemme sur la position du météore (rotation autour de
         // lui-même = lui-même)
         let mut source = Triangle::default();
@@ -270,7 +270,7 @@ pub fn create_station(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
     shapes[idx] = shape;
     // NB : l'original recalcule (par bug) le centre du joueur `shapes[0]` ici ;
     // l'intention est clairement de calculer celui de la station (résultat
-    // identique : la station est centrée sur (0,0)) — on le fait explicitement.
+    // identique : la station est centrée sur (0,0)) - on le fait explicitement.
     compute_shape_center(&mut shapes[idx], triangles);
     // NB dérive volontaire de l'original : celui-ci forçait `radius = 36`,
     // bien plus petit que l'anneau visible (r ≈ 110-162). Le pré-filtre de
@@ -297,7 +297,7 @@ pub fn create_gem(
     shape.is_collider = true;
     shape.element = source_triangle.element;
     // gemme libérée par un météore détruit : reste absorbable par un autre
-    // météore (rejette explicitement le drapeau — le slot peut être réutilisé)
+    // météore (rejette explicitement le drapeau - le slot peut être réutilisé)
     shape.ejected_cargo = false;
     if shape.element < 1 || shape.element as usize >= elements.len() {
         eprintln!("createGem: element hors limites: {}", shape.element);
@@ -325,7 +325,7 @@ pub fn create_gem(
 }
 
 /// Crée une gemme d'élément donné à une **position imposée** (ex éjection de
-/// la soute du vaisseau détruit — `eject_cargo_gems`) : même mesh, même
+/// la soute du vaisseau détruit - `eject_cargo_gems`) : même mesh, même
 /// élément et même couleur qu'`create_gem`, mais position, direction et
 /// vitesse données (au lieu d'être dérivées du triangle source).
 fn create_gem_at(
@@ -345,7 +345,7 @@ fn create_gem_at(
     shape.who_i_am = WHOIAM_GEM;
     shape.is_collider = true;
     shape.element = element;
-    // gemme de soute (rejetée au crash) : les météores ne l'absorbent pas —
+    // gemme de soute (rejetée au crash) : les météores ne l'absorbent pas -
     // elle doit rester ramassable par le cosmonaute / le vaisseau ressuscité
     shape.ejected_cargo = true;
     if element < 1 || element as usize >= elements.len() {
@@ -366,9 +366,9 @@ fn create_gem_at(
 }
 
 /// Le vaisseau vient d'être détruit : les minerais collectés dans la soute
-/// sont **rejetés autour** du crash — une gemme par minerai, éparpillée dans
+/// sont **rejetés autour** du crash - une gemme par minerai, éparpillée dans
 /// un cercle autour du vaisseau détruit (rayon `CARGO_EJECT_SPREAD`) avec une
-/// petite vitesse de dérive aléatoire — et la soute est vidée. Le cosmonaute
+/// petite vitesse de dérive aléatoire - et la soute est vidée. Le cosmonaute
 /// EVA (jeu libre/Progression) ou le vaisseau ressuscité (Survival) peuvent
 /// les ramasser à nouveau : le minerai n'est pas perdu avec le vaisseau.
 /// Sans effet quand la soute est vide. Appelé par `game.rs` quand le
@@ -384,7 +384,7 @@ pub fn eject_cargo_gems(
         return;
     }
     // position du crash : le vaisseau détruit reste sur place (triangles
-    // morts) — les gemmes jaillissent autour de lui
+    // morts) - les gemmes jaillissent autour de lui
     let crash = shapes[PLAYER_INDEX].position;
     for e in 1..elements.len() {
         let count = elements[e].count;
@@ -410,7 +410,7 @@ pub fn eject_cargo_gems(
     state.player.cargo_qty = 0;
 }
 
-/// Tire une balle par emplacement de tir (`VAISSEAU_BULLET_SPAWNS` — les
+/// Tire une balle par emplacement de tir (`VAISSEAU_BULLET_SPAWNS` - les
 /// positions en % de la boîte englobante sont converties en points locaux du
 /// vaisseau par `vaisseau::vaisseau_bullet_spawns`, puis tournées avec le
 /// vaisseau autour de son centre). Liste vide = un seul emplacement au centre
@@ -419,11 +419,11 @@ pub fn eject_cargo_gems(
 /// **Catalogue d'armes** (`VAISSEAU_WEAPONS`) : quand il est rempli, chaque
 /// arme **possédée et armée** tire sa propre munition (mesh embarqué, échelle
 /// et orientation) depuis son emplacement sur le vaisseau (`spawn_index` dans
-/// `VAISSEAU_BULLET_SPAWNS` — liste contrainte). Le masque `fired` (produit
+/// `VAISSEAU_BULLET_SPAWNS` - liste contrainte). Le masque `fired` (produit
 /// par `scenario::try_fire`, index du catalogue borné à `WEAPON_SLOTS`)
 /// sélectionne les armes qui tirent : une arme sans munitions (ou non
 /// possédée) ne tire pas, les autres continuent. Catalogue vide = tir
-/// classique (une balle rouge par emplacement, repli) — il n'a lieu que si le
+/// classique (une balle rouge par emplacement, repli) - il n'a lieu que si le
 /// slot 0 (le canon classique) a tiré.
 pub fn fire_bullet(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>, fired: &[bool; WEAPON_SLOTS]) {
     // cinématiques du vaisseau figées avant la boucle : `create_specific_shape`
@@ -486,7 +486,7 @@ pub fn fire_bullet(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>, fired
 
 /// Variante de `fire_bullet` pour le catalogue d'armes : une munition par
 /// arme, depuis le point local de son emplacement (le point est tourné ici
-/// autour de `(cx, cy)` de `orientation` — comme les sommets du mesh,
+/// autour de `(cx, cy)` de `orientation` - comme les sommets du mesh,
 /// `compute_real_positions`). Appelée par `fire_bullet` quand le catalogue
 /// est rempli (les tests l'utilisent aussi avec des armes factices).
 fn fire_bullet_with(
@@ -539,7 +539,7 @@ pub fn prepare(
     *elements = default_elements();
 
     // vaisseau joueur (shapes[0]) : mesh coloré de `assets/vaisseau.json`
-    // (remplace l'ancien triangle texturé `vaisseau.png` — 35 faces, couleur
+    // (remplace l'ancien triangle texturé `vaisseau.png` - 35 faces, couleur
     // par face, nez vers la droite = orientation 0 du départ à quai). La
     // progression chargée avant `prepare` (niveaux d'atelier) détermine la
     // composition des plans visibles (`create_player_vaisseau` lit l'état).
@@ -657,7 +657,7 @@ mod tests {
     #[test]
     fn meteor_creation_counts_mineral_triangles_as_minerals() {
         // un météore créé contient un minerai par triangle minéralisé (or,
-        // fer, eau — `element > 0`) : c'est la quantité libérée en gemmes
+        // fer, eau - `element > 0`) : c'est la quantité libérée en gemmes
         // quand deux météores se percutent et se détruisent
         let mut rng = seed();
         let mut shapes = Vec::new();
@@ -845,7 +845,7 @@ mod tests {
         assert_eq!(triangles.len(), crate::vaisseau::vaisseau_face_count() + 66);
         // le rayon de la station couvre l'anneau visible (r ≈ 110-162) : la
         // collision est décidée par la détection de triangles (SAT), pas par
-        // un petit rayon forcé (dérive volontaire — voir `create_station`).
+        // un petit rayon forcé (dérive volontaire - voir `create_station`).
         assert!(
             shapes[STATION_INDEX].radius >= 160.0,
             "rayon de la station {} trop petit pour couvrir l'anneau",
@@ -860,7 +860,7 @@ mod tests {
 
     #[test]
     fn fire_bullet_fires_one_bullet_per_spawn_rotated_with_ship() {
-        // une balle par emplacement de tir (`VAISSEAU_BULLET_SPAWNS` — la
+        // une balle par emplacement de tir (`VAISSEAU_BULLET_SPAWNS` - la
         // liste générée fait foi, 1 seule balle quand elle est vide), tournée
         // avec l'orientation du vaisseau (catalogue d'armes vide : tir classique)
         let state = GameState::new();
@@ -900,14 +900,14 @@ mod tests {
     #[test]
     fn fire_bullet_with_weapons_fires_one_ammo_per_weapon_at_its_spawn() {
         // catalogue d'armes : une munition par arme, depuis l'emplacement de
-        // l'arme (point local tourné avec le vaisseau) — mesh de la munition
+        // l'arme (point local tourné avec le vaisseau) - mesh de la munition
         // à la place de la balle rouge
         let state = GameState::new();
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
         // deux armes : une au nez (90 %, 50 % → +x) et une à l'arrière
-        // (10 %, 50 % → −x) — meshes de munition à 2 faces colorées
+        // (10 %, 50 % → −x) - meshes de munition à 2 faces colorées
         let ammo = crate::vaisseau::vaisseau_test_ammo_mesh();
         let mut weapons = crate::vaisseau::vaisseau_test_weapons();
         for w in weapons.iter_mut() {
@@ -938,7 +938,7 @@ mod tests {
             0.0,
         );
         // une munition par arme (2 armes → 2 formes), chacune à son
-        // emplacement tourné — et chaque munition porte ses faces colorées
+        // emplacement tourné - et chaque munition porte ses faces colorées
         let spawned: Vec<&Shape> = shapes[before..].iter().collect();
         assert_eq!(spawned.len(), 2);
         for (i, s) in spawned.iter().enumerate() {

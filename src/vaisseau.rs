@@ -1,9 +1,9 @@
-//! Vaisseau joueur — chargement du mesh choisi dans `src/marketplace.rs`.
+//! Vaisseau joueur - chargement du mesh choisi dans `src/marketplace.rs`.
 //!
 //! Le fichier mesh (format « meshes-designer », voir `cosmonaut.rs`) est
 //! embarqué au compile via `include_str!` : le **chemin** est la constante
 //! `VAISSEAU_JSON` de `src/marketplace.rs`, un fichier **généré** par l'outil
-//! de gestion `tools/marketplace-editor/index.html` — c'est lui qui choisit
+//! de gestion `tools/marketplace-editor/index.html` - c'est lui qui choisit
 //! l'asset (`assets/*.json`), l'échelle (`VAISSEAU_SCALE`), l'orientation
 //! (`VAISSEAU_ORIENTATION_DEGREES`) et le centre de rotation
 //! (`VAISSEAU_CENTER_X/Y_PERCENT`).
@@ -14,15 +14,15 @@
 //! travaille y vers le haut, le jeu y vers le bas), mise à l'échelle
 //! (`VAISSEAU_SCALE`) et rotation autour du centre de rotation choisi : le
 //! mesh est tourné de `−VAISSEAU_ORIENTATION_DEGREES` (angle du nez du mesh
-//! dans l'éditeur) pour ramener le nez sur +x — l'orientation 0 du jeu, celle
+//! dans l'éditeur) pour ramener le nez sur +x - l'orientation 0 du jeu, celle
 //! du départ à quai. Le **centre de rotation** (pivot, en % de la boîte
 //! englobante du mesh) devient le centre de la forme (`target_center`) : le
 //! vaisseau pivote autour de ce point dans le jeu.
-//! `create_player_vaisseau` est appelé par `generate::prepare` — `shapes`
+//! `create_player_vaisseau` est appelé par `generate::prepare` - `shapes`
 //! est vide, le vaisseau prend l'index 0 (`PLAYER_INDEX`).
 //!
 //! **Composition des plans** : le mesh peut être composé par l'outil de
-//! gestion — chaque plan du fichier est *toujours visible*
+//! gestion - chaque plan du fichier est *toujours visible*
 //! (`VAISSEAU_PLANES_ALWAYS`), *lié à une ligne d'atelier*
 //! (`VAISSEAU_PLANE_LINKS`, visible à partir de son niveau, Progression) ou
 //! *exclu* (jamais construit). Le vaisseau est construit avec les plans
@@ -30,7 +30,7 @@
 //! maximale** (toujours + liés) : les achats d'extensions ne font que
 //! révéler des plans déjà réservés (`rebuild_player_vaisseau`). Le pivot
 //! (centre de rotation) est calculé sur la composition maximale, quel que
-//! soit le niveau — acheter une extension ne décale jamais la rotation.
+//! soit le niveau - acheter une extension ne décale jamais la rotation.
 //! Listes vides = tous les plans (repli sûr).
 
 use serde::Deserialize;
@@ -48,11 +48,11 @@ use crate::state::GameState;
 
 /// Couleur par défaut d'une face **sans champ `color`** dans le fichier :
 /// l'éditeur « meshes-designer » n'exporte pas de couleur pour les faces
-/// non peintes — gris clair neutre, opaque (sinon `serde` refuserait le
+/// non peintes - gris clair neutre, opaque (sinon `serde` refuserait le
 /// fichier entier à la première face sans couleur).
 const DEFAULT_FACE_COLOR: [f32; 4] = [0.8, 0.8, 0.8, 1.0];
 
-/// Racine du fichier « meshes-designer » — seuls les plans portent le mesh.
+/// Racine du fichier « meshes-designer » - seuls les plans portent le mesh.
 #[derive(Deserialize)]
 struct VaisseauFile {
     planes: Vec<Plane>,
@@ -70,7 +70,7 @@ struct Plane {
 struct Face {
     /// Indices des 3 sommets de la face dans `verts`.
     v: [usize; 3],
-    /// Couleur RGBA de la face, flottants 0..1 — **optionnelle** : les faces
+    /// Couleur RGBA de la face, flottants 0..1 - **optionnelle** : les faces
     /// non peintes de l'éditeur n'en portent pas, `DEFAULT_FACE_COLOR` est
     /// alors utilisée (au lieu de faire échouer le chargement du fichier).
     #[serde(default = "default_face_color")]
@@ -83,7 +83,7 @@ fn default_face_color() -> [f32; 4] {
 }
 
 /// Nombre total de faces du **catalogue d'armes** (chaque arme est toujours
-/// visible, quel que soit le niveau d'atelier — ses faces s'ajoutent à celles
+/// visible, quel que soit le niveau d'atelier - ses faces s'ajoutent à celles
 /// du vaisseau : l'arme est dessinée sur le vaisseau à son emplacement).
 pub fn weapons_face_count() -> usize {
     VAISSEAU_WEAPONS
@@ -97,7 +97,7 @@ pub fn weapons_face_count() -> usize {
 
 /// Nombre de faces de la **composition maximale** du vaisseau (plans
 /// toujours visibles + plans liés aux upgrades, quel que soit le niveau) +
-/// faces du catalogue d'armes — la taille d'allocation du maillage : le
+/// faces du catalogue d'armes - la taille d'allocation du maillage : le
 /// vaisseau est construit dans une plage assez grande pour toutes les
 /// compositions possibles et toutes les armes, les achats d'extensions ne
 /// faisant que révéler des plans déjà réservés. Exposé pour les tests
@@ -119,7 +119,7 @@ pub fn vaisseau_face_count() -> usize {
 
 /// Nombre de faces **visibles aux niveaux d'atelier courants** (plans
 /// toujours visibles + plans liés dont la ligne a atteint le niveau) +
-/// faces du catalogue d'armes — la valeur de `life` du vaisseau construit
+/// faces du catalogue d'armes - la valeur de `life` du vaisseau construit
 /// avec cet état. Exposé pour les tests d'invariant : un plan lié
 /// (`VAISSEAU_PLANE_LINKS`) n'apparaît qu'à partir de son niveau, `life` ne
 /// vaut `vaisseau_face_count()` (la composition maximale) qu'une fois toutes
@@ -176,7 +176,7 @@ fn composition_mask(file: &VaisseauFile) -> Vec<bool> {
 /// Masque de visibilité par plan pour des niveaux d'atelier donnés : les
 /// plans toujours visibles, plus les plans liés dont la ligne a atteint le
 /// niveau minimal. Un indice de plan hors bornes est ignoré (repli sûr :
-/// jamais visible). Fonction pure (tests) — `plane_visibility` lit les
+/// jamais visible). Fonction pure (tests) - `plane_visibility` lit les
 /// niveaux de l'état courant.
 fn plane_visibility_with(
     always: &[usize],
@@ -210,7 +210,7 @@ fn plane_visibility_with(
 }
 
 /// Masque de visibilité des plans du vaisseau aux niveaux d'atelier courants
-/// (`state.resources.fuel_level` / `ammo_level` / `cargo_level` — Progression ;
+/// (`state.resources.fuel_level` / `ammo_level` / `cargo_level` - Progression ;
 /// 0 ailleurs, les plans liés restent alors cachés).
 fn plane_visibility(state: &GameState) -> Vec<bool> {
     plane_visibility_with(
@@ -224,12 +224,12 @@ fn plane_visibility(state: &GameState) -> Vec<bool> {
 }
 
 /// Emplacements de départ des projectiles (`VAISSEAU_BULLET_SPAWNS`) en
-/// **points locaux du vaisseau** (repère des sommets du mesh transformé —
+/// **points locaux du vaisseau** (repère des sommets du mesh transformé -
 /// l'axe x local = le nez du vaisseau à l'orientation 0) : chaque emplacement
 /// en % de la boîte englobante de la **composition maximale** est converti
 /// par la même transformation que les sommets (pivot en %, rotation
 /// `−orientation`, échelle, axe y retourné). Liste vide = un seul emplacement
-/// au pivot (le centre de rotation — comportement d'origine). `fire_bullet`
+/// au pivot (le centre de rotation - comportement d'origine). `fire_bullet`
 /// (generate.rs) part de ces points, tournés avec le vaisseau.
 pub fn vaisseau_bullet_spawns() -> Vec<Point> {
     vaisseau_bullet_spawns_with(
@@ -268,7 +268,7 @@ fn vaisseau_bullet_spawns_with(
 }
 
 /// Propulseurs des éjections de gaz (`VAISSEAU_THRUSTERS`) : chaque
-/// propulseur + son **point local** sur le vaisseau — sa `position` (en % de
+/// propulseur + son **point local** sur le vaisseau - sa `position` (en % de
 /// la boîte englobante de la composition) convertie par la même
 /// transformation que les sommets (pivot en %, rotation `−orientation`,
 /// échelle, axe y retourné). Les meshes sont écrits dans le maillage du
@@ -312,7 +312,7 @@ fn vaisseau_thrusters_with(
 }
 
 /// Catalogue d'armes du vaisseau : chaque arme (`VAISSEAU_WEAPONS`) et son
-/// **point local** sur le vaisseau — l'emplacement `spawn_index` de l'arme
+/// **point local** sur le vaisseau - l'emplacement `spawn_index` de l'arme
 /// (index dans `VAISSEAU_BULLET_SPAWNS`, liste contrainte) converti en point
 /// local comme les emplacements de tir. Liste vide = tir classique (une balle
 /// par emplacement, repli). `fire_bullet` (generate.rs) part de ces points
@@ -346,7 +346,7 @@ fn vaisseau_weapons_with(
     let (pivot, pt) =
         mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
     // points locaux des emplacements (même conversion que les emplacements de
-    // tir — une liste vide n'a qu'un emplacement : le pivot)
+    // tir - une liste vide n'a qu'un emplacement : le pivot)
     let spawn_locals: Vec<Point> = if spawns.is_empty() {
         vec![pivot]
     } else {
@@ -369,7 +369,7 @@ fn vaisseau_weapons_with(
 }
 
 /// Boîte englobante de la composition (repère de l'éditeur, y vers le haut) :
-/// `(minx, miny, maxx, maxy)` — sert à situer le centre de rotation et les
+/// `(minx, miny, maxx, maxy)` - sert à situer le centre de rotation et les
 /// emplacements de tir en pourcentage.
 fn composition_bbox(file: &VaisseauFile, comp: &[bool]) -> (f64, f64, f64, f64) {
     let mut minx = f64::MAX;
@@ -394,7 +394,7 @@ fn composition_bbox(file: &VaisseauFile, comp: &[bool]) -> (f64, f64, f64, f64) 
 /// `−orientation_degrees` autour du pivot (positionné en % de la boîte
 /// englobante de la **composition**, 50/50 = centre), mise à l'échelle
 /// `scale`, axe y retourné (éditeur y↑ → jeu y↓). Renvoie le pivot dans le
-/// repère du jeu (le centre de rotation de la forme — `target_center`).
+/// repère du jeu (le centre de rotation de la forme - `target_center`).
 fn mesh_transform(
     file: &VaisseauFile,
     comp: &[bool],
@@ -409,7 +409,7 @@ fn mesh_transform(
         miny + center_percent.y / 100.0 * (maxy - miny),
     );
     // orientation : angle du nez du mesh dans l'éditeur (degrés, sens
-    // trigonométrique : 0 = à droite, +90 = en haut) — le mesh est tourné de
+    // trigonométrique : 0 = à droite, +90 = en haut) - le mesh est tourné de
     // −orientation autour du pivot pour ramener le nez sur +x (l'orientation 0
     // du jeu, celle du départ à quai)
     let angle = -orientation_degrees.to_radians();
@@ -467,14 +467,14 @@ fn write_vaisseau(
     shapes[shape_index].life = k as i32;
 }
 
-/// Triangles (repère local du vaisseau) du mesh d'un **propulseur** — la
+/// Triangles (repère local du vaisseau) du mesh d'un **propulseur** - la
 /// flamme du gaz d'éjection, dessinée **seulement quand le propulseur tire**
 /// (src/main.rs + `render::draw_thruster_gas`). Même transformation que
 /// l'ancien `write_thruster` : échelle `thruster.scale`, rotation de
 /// `−thruster.orientation_degrees` autour du centre de sa boîte englobante,
 /// axe y retourné, puis pivot posé sur `spawn` (point local du vaisseau).
 /// Chaque sommet : `[x, y]` dans le repère local du vaisseau (la couleur
-/// appliquée est celle configurée — `thruster.color` — teinte par le rendu).
+/// appliquée est celle configurée - `thruster.color` - teinte par le rendu).
 pub fn thruster_mesh_triangles(
     thruster: &VaisseauThruster,
     spawn: Point,
@@ -585,7 +585,7 @@ pub fn create_ammo_shape(
     );
 
     // emplacement de la forme : réutilise un slot mort au même nombre de
-    // triangles, sinon alloue — même schéma que `build_vaisseau`
+    // triangles, sinon alloue - même schéma que `build_vaisseau`
     let shape_index = match free_shape(shapes, nbr) {
         Some(idx) => idx,
         None => {
@@ -649,7 +649,7 @@ pub fn create_ammo_shape(
 /// `VAISSEAU_SCALE`, orientation `VAISSEAU_ORIENTATION_DEGREES`, centre de
 /// rotation `VAISSEAU_CENTER_X/Y_PERCENT` et **composition des plans** aux
 /// niveaux d'atelier courants (les plans liés aux upgrades apparaissent à
-/// partir de leur niveau — 0 au lancement, la progression chargée avant
+/// partir de leur niveau - 0 au lancement, la progression chargée avant
 /// `prepare`). Voir `build_vaisseau`.
 pub fn create_player_vaisseau(
     state: &GameState,
@@ -668,7 +668,7 @@ pub fn create_player_vaisseau(
 }
 
 /// Armes du catalogue **possédées** (masque par index, `scenario::weapon_owned`
-/// — hors économie toutes les armes sont équipées ; en Progression seules
+/// - hors économie toutes les armes sont équipées ; en Progression seules
 /// celles achetées au magasin, les armes de base à coût nul étant équipées
 /// d'office). Le mesh d'une arme non possédée n'est pas construit sur le
 /// vaisseau (elle ne tire pas non plus).
@@ -683,17 +683,17 @@ fn weapons_mask(state: &GameState) -> Vec<bool> {
 /// l'échelle `scale`, tournée de `−orientation_degrees` autour du pivot
 /// `center_percent` (position en **pourcentage de la boîte englobante de la
 /// composition**, 50/50 = centre géométrique) et posée à l'origine (le
-/// vaisseau démarre au centre de la station, position 0,0 — le monde n'est
+/// vaisseau démarre au centre de la station, position 0,0 - le monde n'est
 /// pas encore initialisé). Seules les armes du catalogue dont le masque
-/// `weapons_mask` (index de `VAISSEAU_WEAPONS`) est `true` — les armes
-/// **possédées** — sont dessinées sur le vaisseau. La plage allouée couvre la
+/// `weapons_mask` (index de `VAISSEAU_WEAPONS`) est `true` - les armes
+/// **possédées** - sont dessinées sur le vaisseau. La plage allouée couvre la
 /// **composition maximale** (plans toujours visibles + liés, et **toutes**
 /// les armes du catalogue) : une reconstruction ultérieure
 /// (`rebuild_player_vaisseau`) ne révèle que des plans/armes déjà réservés.
 /// Le pivot devient le centre de la forme : le vaisseau pivote autour de lui
 /// dans le jeu (rotation des triangles autour de `shape.center`). Renvoie
 /// l'index de la forme créée (réutilise une forme détruite au même nombre de
-/// triangles quand c'est possible, comme `meshes_to_shape` — ici `shapes`
+/// triangles quand c'est possible, comme `meshes_to_shape` - ici `shapes`
 /// est vide, l'index est 0).
 fn build_vaisseau(
     shapes: &mut Vec<Shape>,
@@ -720,7 +720,7 @@ fn build_vaisseau(
     let (pivot, pt) =
         mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
     // seules les armes possédées sont dessinées (masque par index du
-    // catalogue — les armes à acheter n'apparaissent qu'après l'achat)
+    // catalogue - les armes à acheter n'apparaissent qu'après l'achat)
     let weapons: Vec<(VaisseauWeapon, Point)> =
         vaisseau_weapons_with(VAISSEAU_WEAPONS, VAISSEAU_BULLET_SPAWNS, scale, orientation_degrees, center_percent)
             .into_iter()
@@ -730,7 +730,7 @@ fn build_vaisseau(
             .collect();
 
     // emplacement de la forme : réutilise un slot mort au même nombre de
-    // triangles, sinon alloue — même schéma que `build_cosmonaut`
+    // triangles, sinon alloue - même schéma que `build_cosmonaut`
     let shape_index = match free_shape(shapes, max_faces) {
         Some(idx) => idx,
         None => {
@@ -770,8 +770,8 @@ fn build_vaisseau(
     let shape = &mut shapes[shape_index];
     compute_shape_center(shape, triangles);
     // centre de rotation : le pivot choisi (src/marketplace.rs), pas le
-    // centroïde des faces — le vaisseau pivote autour de ce point. `moving_shape`
-    // fait converger `center` vers `target_center` (÷100 par frame) — posés
+    // centroïde des faces - le vaisseau pivote autour de ce point. `moving_shape`
+    // fait converger `center` vers `target_center` (÷100 par frame) - posés
     // égaux, le vaisseau reste stable dès le départ (pas de dérive).
     shape.target_center = pivot;
     shape.center = pivot;
@@ -780,11 +780,11 @@ fn build_vaisseau(
 
 /// Reconstruit le vaisseau joueur **en place** avec la composition courante
 /// (niveaux d'atelier : les plans liés aux upgrades apparaissent à partir de
-/// leur niveau) — le maillage est réécrit dans la plage allouée au lancement
+/// leur niveau) - le maillage est réécrit dans la plage allouée au lancement
 /// (index `PLAYER_INDEX`, taille de la composition maximale) et les
 /// cinématiques (position, orientation, vitesse, centre de rotation) sont
 /// préservées : seuls les triangles changent. Appelé après un achat
-/// d'extension à l'atelier (Progression) et au respawn — le pivot est calculé
+/// d'extension à l'atelier (Progression) et au respawn - le pivot est calculé
 /// sur la composition maximale, il ne bouge donc jamais quand des plans
 /// apparaissent.
 pub fn rebuild_player_vaisseau(
@@ -803,7 +803,7 @@ pub fn rebuild_player_vaisseau(
         Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT),
     );
     // seules les armes possédées sont dessinées (une arme achetée apparaît
-    // à la reconstruction — `buy_weapon_and_save` côté jeu)
+    // à la reconstruction - `buy_weapon_and_save` côté jeu)
     let mask = weapons_mask(state);
     let weapons: Vec<(VaisseauWeapon, Point)> =
         vaisseau_weapons_with(VAISSEAU_WEAPONS, VAISSEAU_BULLET_SPAWNS, VAISSEAU_SCALE, VAISSEAU_ORIENTATION_DEGREES, Point::new(VAISSEAU_CENTER_X_PERCENT, VAISSEAU_CENTER_Y_PERCENT))
@@ -846,7 +846,7 @@ pub fn rebuild_player_vaisseau(
     }
 }
 
-/// Mesh de munition de test (2 faces colorées — pointe vers +x) pour les
+/// Mesh de munition de test (2 faces colorées - pointe vers +x) pour les
 /// tests du catalogue d'armes (`fire_bullet_with` de generate.rs).
 #[cfg(test)]
 pub fn vaisseau_test_ammo_mesh() -> &'static str {
@@ -857,7 +857,7 @@ pub fn vaisseau_test_ammo_mesh() -> &'static str {
 }
 
 /// Deux armes de test (catalogue factice) : une au nez (90 %, 50 %) et une à
-/// l'arrière (10 %, 50 %) — utilisées par `fire_bullet_with` de generate.rs.
+/// l'arrière (10 %, 50 %) - utilisées par `fire_bullet_with` de generate.rs.
 #[cfg(test)]
 pub fn vaisseau_test_weapons() -> Vec<VaisseauWeapon> {
     vec![
@@ -891,7 +891,7 @@ pub fn vaisseau_test_weapons() -> Vec<VaisseauWeapon> {
 }
 
 /// Points locaux des deux armes de test (emplacements 90/50 et 10/50 en % de
-/// la boîte englobante) — mêmes réglages que le vaisseau réel.
+/// la boîte englobante) - mêmes réglages que le vaisseau réel.
 #[cfg(test)]
 pub fn vaisseau_test_weapon_locals() -> Vec<Point> {
     vaisseau_weapons_with(
@@ -918,7 +918,7 @@ mod tests {
         let idx = create_player_vaisseau(&state, &mut shapes, &mut triangles);
 
         // une Triangle vivante par face **visible** du fichier, dans une
-        // seule forme — le compte est dérivé du fichier et de la composition
+        // seule forme - le compte est dérivé du fichier et de la composition
         // aux niveaux courants (les plans liés aux upgrades n'apparaissent
         // qu'à partir de leur niveau : au niveau 0, seuls les plans
         // « toujours visibles » sont construits). La plage allouée, elle,
@@ -957,7 +957,7 @@ mod tests {
         // le mesh généré depuis l'art ASCII `assets/asciiart-fr.txt`
         // (tools/ascii-art-to-mesh.py) est compatible avec le parseur du
         // catalogue : plans/sommets/faces valides, indices dans les bornes,
-        // couleurs portées — et, comme toute munition, le **nez** du missile
+        // couleurs portées - et, comme toute munition, le **nez** du missile
         // pointe vers +x (convention du catalogue : la munition est dessinée
         // nez en avant, `ammo_orientation_degrees = 0`)
         let json = include_str!("../assets/missileWeapon.json");
@@ -1099,7 +1099,7 @@ mod tests {
     #[test]
     fn vaisseau_orientation_rotates_the_mesh_around_the_pivot() {
         // orientation 90 = le nez du mesh est « vers le haut » dans l'éditeur :
-        // le mesh est tourné de −90° autour du centre de rotation — le nez du
+        // le mesh est tourné de −90° autour du centre de rotation - le nez du
         // mesh actuel (qui pointe à droite, orientation réelle 0) passe donc
         // vers le bas (dans le repère du jeu) et la boîte pivote de 90°
         let state = GameState::new();
@@ -1131,7 +1131,7 @@ mod tests {
     fn vaisseau_rotation_center_moves_with_the_bbox_percentage() {
         // centre de rotation 0 %/0 % = coin haut-gauche de la boîte englobante
         // (repère éditeur, y↑) : dans le jeu (y↓), le pivot est le coin
-        // bas-gauche de la boîte — le vaisseau s'étend à droite et vers le bas
+        // bas-gauche de la boîte - le vaisseau s'étend à droite et vers le bas
         let state = GameState::new();
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
@@ -1181,7 +1181,7 @@ mod tests {
     #[test]
     fn face_without_color_uses_default_color() {
         // une face sans champ `color` (non peinte dans l'éditeur) est
-        // acceptée et reçoit la couleur par défaut — plus d'erreur
+        // acceptée et reçoit la couleur par défaut - plus d'erreur
         // « missing field `color` » au chargement
         let file: VaisseauFile = serde_json::from_str(
             r#"{"planes":[{"verts":[[0.0,0.0],[10.0,0.0],[0.0,10.0]],"faces":[{"v":[0,1,2]}]}]}"#,
@@ -1212,7 +1212,7 @@ mod tests {
         // le fichier embarqué (ré-exporté de l'éditeur) contient des faces
         // sans couleur : il doit se charger sans erreur, toutes les faces
         // **visibles** portant une couleur (la leur ou la couleur par défaut)
-        // — un plan lié à une ligne d'atelier (`VAISSEAU_PLANE_LINKS`) n'est
+        // - un plan lié à une ligne d'atelier (`VAISSEAU_PLANE_LINKS`) n'est
         // pas construit aux niveaux 0 : seules les faces vivantes comptent
         let state = GameState::new();
         let mut shapes = Vec::new();
@@ -1233,7 +1233,7 @@ mod tests {
     #[test]
     fn plane_visibility_follows_upgrade_levels() {
         // 4 plans : 0-1 toujours visibles, 2 lié au réservoir (niveau 1),
-        // 3 lié à la soute (niveau 2) — les niveaux font apparaître les plans
+        // 3 lié à la soute (niveau 2) - les niveaux font apparaître les plans
         let links = [
             PlaneUpgradeLink {
                 plane_index: 2,
@@ -1271,7 +1271,7 @@ mod tests {
     fn rebuild_player_vaisseau_preserves_kinematics() {
         // la reconstruction en place réécrit le maillage dans la plage
         // réservée sans toucher aux cinématiques (position, orientation,
-        // vitesse) ni au centre de rotation — les triangles vivants sont
+        // vitesse) ni au centre de rotation - les triangles vivants sont
         // ceux de la composition courante
         let state = GameState::new();
         let mut shapes = Vec::new();
@@ -1319,7 +1319,7 @@ mod tests {
         };
         let spawns = vaisseau_bullet_spawns();
         if VAISSEAU_BULLET_SPAWNS.is_empty() {
-            // repli (liste vide) : un seul emplacement au pivot — le centre
+            // repli (liste vide) : un seul emplacement au pivot - le centre
             // de rotation, soit `target_center`
             assert_eq!(spawns.len(), 1);
             assert!(
@@ -1331,7 +1331,7 @@ mod tests {
         } else {
             assert_eq!(spawns.len(), VAISSEAU_BULLET_SPAWNS.len());
             // chaque emplacement reste dans la boîte englobante (aucun point
-            // ne s'échappe — la conversion % → point local est bornée)
+            // ne s'échappe - la conversion % → point local est bornée)
             let file = vaisseau_file();
             let comp = composition_mask(&file);
             let (minx, miny, maxx, maxy) = composition_bbox(&file, &comp);
@@ -1350,7 +1350,7 @@ mod tests {
         }
 
         // deux emplacements : (90, 50) = nez (+x local, à droite de la bbox)
-        // et (10, 50) = arrière (−x local) — le centre de rotation (50, 50)
+        // et (10, 50) = arrière (−x local) - le centre de rotation (50, 50)
         // est le pivot (l'origine du repère local). Propriétés indépendantes
         // de l'échelle/orientation réglées dans l'outil : même %y → même
         // ordonnée locale, et l'ordre gauche/droite est conservé.
@@ -1378,7 +1378,7 @@ mod tests {
     #[test]
     fn thrusters_follow_the_4_keys_order_and_sides() {
         // `VAISSEAU_THRUSTERS` : 4 propulseurs ordonnés ↑ (arrière, -x local),
-        // ↓ (avant, +x local), ← et → (flancs) — chaque `position` (en % de la
+        // ↓ (avant, +x local), ← et → (flancs) - chaque `position` (en % de la
         // boîte englobante, valeurs libres : négatives et > 100 % possibles)
         // convertie comme les emplacements de tir ; liste vide = repli
         // (aucun propulseur).
@@ -1422,7 +1422,7 @@ mod tests {
         // le mesh d'un propulseur (la flamme du gaz) est transformé dans le
         // repère local du vaisseau, pivot posé sur le point local du
         // propulseur : les sommets restent groupés autour de ce point (la
-        // flamme fait ~4,3 unités éditeur × son échelle) — prêts pour
+        // flamme fait ~4,3 unités éditeur × son échelle) - prêts pour
         // `draw_thruster_gas` (src/main.rs).
         let pts = vaisseau_thrusters_with(
             VAISSEAU_THRUSTERS,

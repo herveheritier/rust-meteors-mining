@@ -1,12 +1,12 @@
 //! Interface tactile (jeu sur écran tactile / mobile) : un **joystick
 //! virtuel** en bas à gauche pilote le vaisseau (↑/↓ = poussée avant/arrière,
-//! ←/→ = rotation — les mêmes commandes que les flèches) et un **bouton de
+//! ←/→ = rotation - les mêmes commandes que les flèches) et un **bouton de
 //! tir** en bas à droite déclenche les canons (comme Shift). Les deux
 //! fonctionnent au doigt (touches macroquad) et, à défaut de doigt actif, à
 //! la souris (clic maintenu) pour tester sur un poste de travail.
 //!
-//! Le jeu interroge l'état via `up()/down()/left()/right()/fire()` — combiné
-//! au clavier dans `game.rs` — et la boucle principale affiche les contrôles
+//! Le jeu interroge l'état via `up()/down()/left()/right()/fire()` - combiné
+//! au clavier dans `game.rs` - et la boucle principale affiche les contrôles
 //! avec `draw()` (`main.rs`), masqués quand une boîte recouvre l'écran.
 
 use macroquad::prelude::*;
@@ -15,9 +15,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::{VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
 
 /// Interface tactile active ? (case TOUCH UI de l'écran de paramétrage,
-/// persistée — clé `touch_ui`, voir `main.rs` et `handle_settings_input`).
+/// persistée - clé `touch_ui`, voir `main.rs` et `handle_settings_input`).
 /// Éteinte : les contrôles ne sont ni dessinés ni pris en compte (le jeu se
-/// pilote au clavier seul — sinon des zones invisibles resteraient cliquables
+/// pilote au clavier seul - sinon des zones invisibles resteraient cliquables
 /// à la souris). Synchronisée à partir de `GameState.touch_ui`.
 static ENABLED: AtomicBool = AtomicBool::new(true);
 
@@ -52,7 +52,7 @@ fn enabled() -> bool {
 }
 
 /// Points actifs (en coordonnées du jeu) : les doigts posés, ou la souris
-/// maintenue quand aucun doigt n'est actif (repli desktop — les touches
+/// maintenue quand aucun doigt n'est actif (repli desktop - les touches
 /// simulant la souris, on n'ajoute la souris que sans doigt pour ne pas
 /// compter deux fois le même contact). Vide quand l'interface tactile est
 /// désactivée (`set_enabled(false)`) : rien ne pilote ni ne tire.
@@ -143,7 +143,7 @@ fn rgba(r: f32, g: f32, b: f32, a: f32) -> Color {
     Color::new(r, g, b, a)
 }
 
-/// Petit triangle directionnel (▲/▼/◀/▶ — la police par défaut n'a pas ces
+/// Petit triangle directionnel (▲/▼/◀/▶ - la police par défaut n'a pas ces
 /// glyphes, ils sont dessinés) : pointe à `len` px de `center` le long de
 /// `dir` (vecteur unitaire), base 16 px en retrait, demi-largeur 6 px.
 fn draw_arrow(center: Vec2, dir: Vec2, len: f32, color: Color) {
@@ -153,7 +153,7 @@ fn draw_arrow(center: Vec2, dir: Vec2, len: f32, color: Color) {
     draw_triangle(tip, back + side, back - side, color);
 }
 
-/// Dessine le joystick (bas-gauche) et le bouton de tir (bas-droite) —
+/// Dessine le joystick (bas-gauche) et le bouton de tir (bas-droite) -
 /// semi-transparents, par-dessus le jeu. À appeler pendant le jeu seulement
 /// (boîtes fermées, voir `main.rs`).
 pub fn draw() {

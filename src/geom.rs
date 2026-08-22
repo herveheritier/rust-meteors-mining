@@ -3,7 +3,7 @@
 //! Portage de `point_type.bas`, `world_type.bas`, `segment_type.bas` et
 //! `triangle_type.bas`. Toute la géométrie est en double précision (comme
 //! QB64) et respecte la **convention écran : y croît vers le bas** (ne pas
-//! « corriger » — voir `docs/PORTAGE.md` §6).
+//! « corriger » - voir `docs/PORTAGE.md` §6).
 
 use rand::Rng;
 
@@ -57,7 +57,7 @@ impl Point {
 
     /// Variante pour les plans de parallaxe (ex `normalizePlanPosition`).
     /// NB : pas utilisée par le rendu actuel (les étoiles gèrent leur propre
-    /// parallaxe), mais couverte par un test unitaire — conservée pour la
+    /// parallaxe), mais couverte par un test unitaire - conservée pour la
     /// fidélité de l'API géométrique.
     #[allow(dead_code)]
     pub fn normalize_plan(&mut self, world: &World, plan: i32) {
@@ -160,7 +160,7 @@ pub enum SegmentIntersection {
 impl Segment {
     /// Teste l'intersection entre deux segments (ex `checkSegmentsIntersect`).
     ///
-    /// NB : un sommet partagé renvoie `SharedVertex` et **pas** `Crossing` —
+    /// NB : un sommet partagé renvoie `SharedVertex` et **pas** `Crossing` -
     /// c'est ce qui permet à `isTriangleValid` d'accepter l'arête commune entre
     /// un nouveau triangle et le triangle parent.
     pub fn intersects(&self, other: &Segment) -> SegmentIntersection {
@@ -199,7 +199,7 @@ impl Segment {
         if det.abs() < EPSILON {
             // parallèles ou colinéaires
             if ((other.a.x - self.a.x) * dy1 - (other.a.y - self.a.y) * dx1).abs() < EPSILON {
-                // colinéaires — test de chevauchement
+                // colinéaires - test de chevauchement
                 if (x1min <= x2max && x2min <= x1max) && (y1min <= y2max && y2min <= y1max) {
                     return SegmentIntersection::Crossing;
                 }
@@ -246,13 +246,13 @@ pub struct Triangle {
     pub life: i32,
     pub shape_index: i32,
     pub element: i32,
-    /// Couleur ARGB 32 bits (AARRGGBB) **par face** — 0 = couleur de la forme
+    /// Couleur ARGB 32 bits (AARRGGBB) **par face** - 0 = couleur de la forme
     /// (`shape.shape_color`) ou de l'élément. Posée par le cosmonaute
     /// (`cosmonaut.rs`, export « meshes-designer ») dont chaque face porte sa
     /// propre couleur ; inutilisée par les formes procédurales.
     pub color: u32,
     /// Membre animé du cosmonaute EVA : 0 = aucun (reste fixe), 1 = bras,
-    /// 2 = jambe — bascule autour de `pivot` pendant la poussée (voir
+    /// 2 = jambe - bascule autour de `pivot` pendant la poussée (voir
     /// `cosmonaut::animate_eva_cosmonaut`). 0 pour toutes les formes
     /// procédurales.
     pub limb: i32,
@@ -262,7 +262,7 @@ pub struct Triangle {
     pub a_shape_border: bool,
     pub b_shape_border: bool,
     pub c_shape_border: bool,
-    /// Position de base dans la texture (ex `textureBasePosition`) — posée
+    /// Position de base dans la texture (ex `textureBasePosition`) - posée
     /// mais non relue (le rendu texturé du port ne s'en sert pas).
     #[allow(dead_code)]
     pub texture_base_position: i32,
@@ -324,7 +324,7 @@ impl Triangle {
 
     /// Génère un nouveau triangle aléatoire (ex `generateTriangle`).
     ///
-    /// NB : `t.b.y = -sin(angle)*bas` — le signe moins fait partie de la
+    /// NB : `t.b.y = -sin(angle)*bas` - le signe moins fait partie de la
     /// convention d'écran de l'original, ne pas « corriger ».
     pub fn generate(
         &mut self,

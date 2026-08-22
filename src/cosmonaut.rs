@@ -1,8 +1,8 @@
-//! Cosmonaute — chargement de `assets/cosmonaute.json`.
+//! Cosmonaute - chargement de `assets/cosmonaute.json`.
 //!
 //! Ce fichier est une exportation de l'éditeur « meshes-designer » (le format
 //! de mesh du projet d'origine) : une liste de `planes`, chacun étant une
-//! région polygonale **déjà triangulée** — `verts` = sommets `[x, y]`,
+//! région polygonale **déjà triangulée** - `verts` = sommets `[x, y]`,
 //! `faces` = triangles avec leurs indices dans `verts` et une couleur RGBA
 //! (flottants 0..1) par face. Les autres champs du fichier (`zoom`, `cx`,
 //! `cy`, `grid`…) sont de l'état d'éditeur, ignorés.
@@ -11,7 +11,7 @@
 //! (`geom.rs`/`shape.rs`) : une `Triangle` par face via `Triangle::create`,
 //! couleur RGBA → ARGB 32 bits (`argb32`), axe y **retourné** (l'éditeur
 //! travaille y vers le haut, le jeu y vers le bas), mise à l'échelle et
-//! rotation autour du centre de rotation choisi — les constantes
+//! rotation autour du centre de rotation choisi - les constantes
 //! `COSMONAUTE_EVA_SCALE`, `COSMONAUTE_ORIENTATION_DEGREES` et
 //! `COSMONAUTE_CENTER_X/Y_PERCENT` de `src/marketplace.rs` (fichier généré
 //! par l'outil de gestion). `create_eva_cosmonaut` construit le **pilote
@@ -32,17 +32,17 @@ use crate::shape::{compute_shape_center, free_shape, Shape};
 
 /// Couleur par défaut d'une face **sans champ `color`** dans le fichier :
 /// l'éditeur « meshes-designer » n'exporte pas de couleur pour les faces
-/// non peintes — gris clair neutre, opaque (sinon `serde` refuserait le
+/// non peintes - gris clair neutre, opaque (sinon `serde` refuserait le
 /// fichier entier à la première face sans couleur).
 const DEFAULT_FACE_COLOR: [f32; 4] = [0.8, 0.8, 0.8, 1.0];
 
 /// Poste « garé » du cosmonaute EVA : en bord de monde (coin sud-ouest), loin
-/// de la caméra de départ — invisible tant que le vaisseau n'est pas détruit
+/// de la caméra de départ - invisible tant que le vaisseau n'est pas détruit
 /// (`game.rs` le téléporte au crash, puis le ramène ici après le secours).
 pub const COSMONAUTE_EVA_PARK: Point = Point::new(-1400.0, -1400.0);
 
 /// Amplitude (radians) du balancement des **bras** pendant la poussée
-/// (~26° de part et d'autre — un remuement énergique).
+/// (~26° de part et d'autre - un remuement énergique).
 const SWING_ARMS: f64 = 0.45;
 /// Amplitude relative des **jambes** : plus courte que les bras (elles
 /// s'agitent moins fort).
@@ -54,7 +54,7 @@ const SWING_OMEGA: f64 = 14.0;
 /// elle cesse.
 const SWING_CHASE: f64 = 14.0;
 
-/// Racine du fichier « meshes-designer » — seuls les plans portent le mesh.
+/// Racine du fichier « meshes-designer » - seuls les plans portent le mesh.
 #[derive(Deserialize)]
 struct CosmonautFile {
     planes: Vec<Plane>,
@@ -72,7 +72,7 @@ struct Plane {
 struct Face {
     /// Indices des 3 sommets de la face dans `verts`.
     v: [usize; 3],
-    /// Couleur RGBA de la face, flottants 0..1 — **optionnelle** : les faces
+    /// Couleur RGBA de la face, flottants 0..1 - **optionnelle** : les faces
     /// non peintes de l'éditeur n'en portent pas, `DEFAULT_FACE_COLOR` est
     /// alors utilisée (au lieu de faire échouer le chargement du fichier).
     #[serde(default = "default_face_color")]
@@ -104,7 +104,7 @@ fn cosmonaut_visible_mask(file: &CosmonautFile) -> Vec<bool> {
     }
 }
 
-/// Construit le cosmonaute EVA — le pilote contrôlé quand le vaisseau est
+/// Construit le cosmonaute EVA - le pilote contrôlé quand le vaisseau est
 /// détruit (`game.rs`) : petit, garé hors écran jusqu'à l'éjection. Garé, il
 /// est cullé (hors limites de dessin) ; une fois éjecté, la caméra le suit
 /// donc il est toujours affiché.
@@ -140,7 +140,7 @@ fn build_cosmonaut(
     let file: CosmonautFile =
         serde_json::from_str(COSMONAUTE_JSON).expect("assets/cosmonaute.json : JSON invalide");
     // composition des plans (`COSMONAUTE_PLANES`) : un plan exclu n'est ni
-    // construit ni animé — la boîte englobante (centre de rotation) et
+    // construit ni animé - la boîte englobante (centre de rotation) et
     // l'allocation ne portent que sur les plans retenus
     let visible = cosmonaut_visible_mask(&file);
     let nbr: usize = file
@@ -151,7 +151,7 @@ fn build_cosmonaut(
         .map(|(_, p)| p.faces.len())
         .sum();
 
-    // boîte englobante du mesh dans le repère de l'éditeur (y vers le haut) —
+    // boîte englobante du mesh dans le repère de l'éditeur (y vers le haut) -
     // sert à situer le centre de rotation en pourcentage (même schéma que
     // `build_vaisseau`)
     let mut minx = f64::MAX;
@@ -175,7 +175,7 @@ fn build_cosmonaut(
         miny + center_percent.y / 100.0 * (maxy - miny),
     );
     // orientation : angle de l'avant du mesh dans l'éditeur (degrés, sens
-    // trigonométrique : 0 = à droite, +90 = en haut) — le mesh est tourné de
+    // trigonométrique : 0 = à droite, +90 = en haut) - le mesh est tourné de
     // −orientation autour du pivot pour ramener l'avant sur +x (l'orientation
     // 0 du jeu, celle du départ)
     let angle = -orientation_degrees.to_radians();
@@ -194,7 +194,7 @@ fn build_cosmonaut(
     let pivot = Point::new(pivot_editor.x * scale, -pivot_editor.y * scale);
 
     // emplacement de la forme : réutilise un slot mort au même nombre de
-    // triangles, sinon alloue — même schéma que `meshes_to_shape`
+    // triangles, sinon alloue - même schéma que `meshes_to_shape`
     let shape_index = match free_shape(shapes, nbr) {
         Some(idx) => idx,
         None => {
@@ -223,7 +223,7 @@ fn build_cosmonaut(
 
     // classification des membres par plan (repère de l'éditeur, y vers le
     // haut) : les **bras** sont les plans extérieurs du haut (|x| grand, y > 0),
-    // les **jambes** les plans du bas (y < 0 — sous le buste) ; l'articulation
+    // les **jambes** les plans du bas (y < 0 - sous le buste) ; l'articulation
     // de chaque membre est son sommet le plus proche du centre du personnage
     // (l'épaule, la hanche). Servira à l'animation de la poussée
     // (`animate_eva_cosmonaut` : bras et jambes qui s'agitent).
@@ -309,9 +309,9 @@ fn build_cosmonaut(
 
     compute_shape_center(shape, triangles);
     // centre de rotation : le pivot choisi (src/marketplace.rs), pas le
-    // centroïde des faces — le cosmonaute pivote autour de ce point dans le
+    // centroïde des faces - le cosmonaute pivote autour de ce point dans le
     // jeu (tours pendant la poussée). `moving_shape` fait converger `center`
-    // vers `target_center` (÷100 par frame) — posés égaux, le cosmonaute
+    // vers `target_center` (÷100 par frame) - posés égaux, le cosmonaute
     // reste stable dès le départ (pas de dérive).
     shape.target_center = pivot;
     shape.center = pivot;
@@ -320,7 +320,7 @@ fn build_cosmonaut(
 
 /// Anime les membres du cosmonaute EVA : les **bras et les jambes s'agitent**
 /// (bascule de leurs triangles autour de leurs articulations, `Triangle.limb`/
-/// `pivot`) tant qu'il pousse, puis **retombent au repos** — l'angle cible
+/// `pivot`) tant qu'il pousse, puis **retombent au repos** - l'angle cible
 /// oscille pendant la poussée et vaut 0 sinon (`Shape.anim_angle` rattrape la
 /// cible : la pose s'installe à la montée, retombe doucement à l'arrêt).
 /// `time` est l'horloge (ex `get_time()`), `dt` le pas de la frame ; les
@@ -403,14 +403,14 @@ mod tests {
         // largeur ~13,2 unités éditeur × 1,5
         assert!(s.width > COSMONAUTE_EVA_SCALE * 12.0, "largeur {}", s.width);
         // NB : `target_center` est le centroïde des centres de triangles (pas
-        // le centre géométrique — comportement du jeu, `compute_shape_center`) :
+        // le centre géométrique - comportement du jeu, `compute_shape_center`) :
         // le cosmonaute se dessine autour de sa position, rotation nulle.
         assert!(s.target_center.x.abs() < 10.0, "centre x {}", s.target_center.x);
     }
 
     #[test]
     fn eva_cosmonaut_limbs_are_identified_with_their_pivot() {
-        // les plans extérieurs du haut sont des bras, ceux du bas des jambes —
+        // les plans extérieurs du haut sont des bras, ceux du bas des jambes -
         // chacun avec son articulation (le reste du corps est fixe) : 32 bras
         // (2×16) + 20 jambes (2×10) + 39 fixes (buste/casque/visière)
         let mut shapes = Vec::new();
@@ -509,7 +509,7 @@ mod tests {
     fn eva_cosmonaut_orientation_rotates_the_mesh_around_the_pivot() {
         // orientation 90 = l'avant du mesh est « vers le haut » dans
         // l'éditeur : le mesh est tourné de −90° autour du centre de rotation
-        // — le personnage (debout dans l'éditeur) se couche sur le côté et la
+        // - le personnage (debout dans l'éditeur) se couche sur le côté et la
         // boîte pivote de 90° (la largeur ≈ l'ancienne hauteur, ~17,1)
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
@@ -527,7 +527,7 @@ mod tests {
     fn eva_cosmonaut_rotation_center_moves_with_the_bbox_percentage() {
         // centre de rotation 0 %/0 % = coin haut-gauche de la boîte englobante
         // (repère éditeur, y↑) : dans le jeu (y↓), le pivot est le coin
-        // bas-gauche de la boîte — le cosmonaute s'étend à droite et vers le bas
+        // bas-gauche de la boîte - le cosmonaute s'étend à droite et vers le bas
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         build_cosmonaut(&mut shapes, &mut triangles, 1.0, 0.0, Point::new(0.0, 0.0), Point::default());
@@ -563,7 +563,7 @@ mod tests {
         let s = &shapes[idx];
 
         // garé en bord de monde (hors écran au lancement) : ni visible ni
-        // collidable — son seul objectif est de rejoindre la base une fois
+        // collidable - son seul objectif est de rejoindre la base une fois
         // éjecté
         assert_eq!(s.position, COSMONAUTE_EVA_PARK);
         assert!(!s.is_collider);

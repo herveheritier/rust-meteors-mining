@@ -41,7 +41,7 @@ else
   while ! curl -sf -o /dev/null "${URL}/"; do
     i=$((i + 1))
     if [ "${i}" -ge 20 ]; then
-      echo "Le serveur n'a pas démarré — voir ${LOG}" >&2
+      echo "Le serveur n'a pas démarré - voir ${LOG}" >&2
       exit 1
     fi
     sleep 0.5

@@ -5,35 +5,35 @@
 //! utilisateur (norme XDG : `$XDG_CONFIG_HOME`, ou `~/.config` à défaut).
 //!
 //! Clés actuelles :
-//! - `moving_mode`      — mode de déplacement (0..3, choisi au magasin de la
-//!                        station — bouton SHOP de la boîte DOCK STATION)
-//! - `music`            — musique en marche (0/1, touche M)
-//! - `volume`           — volume maître en pourcentage (0..100)
-//! - `render_style`     — style de rendu des triangles (0..2, écran O)
-//! - `window_size`      — index dans `WINDOW_SIZES` (0..3, écran O)
+//! - `moving_mode`      - mode de déplacement (0..3, choisi au magasin de la
+//!                        station - bouton SHOP de la boîte DOCK STATION)
+//! - `music`            - musique en marche (0/1, touche M)
+//! - `volume`           - volume maître en pourcentage (0..100)
+//! - `render_style`     - style de rendu des triangles (0..2, écran O)
+//! - `window_size`      - index dans `WINDOW_SIZES` (0..3, écran O)
 //!   (le mode d'affichage fenêtré / zoomé / natif n'est, lui, **pas**
 //!   persisté : le jeu démarre toujours fenêtré, cycle F prévisible)
-//! - `antialias`        — MSAA 4× (0/1, écran O ; appliqué au lancement)
-//! - `touch_ui`         — interface tactile affichée (0/1, écran O)
-//! - `scenario`         — scénario choisi (0 = jeu libre, 1 = Progression,
+//! - `antialias`        - MSAA 4× (0/1, écran O ; appliqué au lancement)
+//! - `touch_ui`         - interface tactile affichée (0/1, écran O)
+//! - `scenario`         - scénario choisi (0 = jeu libre, 1 = Progression,
 //!   2 = Survival, touche N de l'écran titre)
-//! - `prog_minerals`    — minerais en banque (Progression)
-//! - `prog_modes`       — modes de déplacement débloqués (masque binaire,
+//! - `prog_minerals`    - minerais en banque (Progression)
+//! - `prog_modes`       - modes de déplacement débloqués (masque binaire,
 //!   Progression)
-//! - `prog_reputation`  — réputation × 10 (entier, au dixième près,
-//!   Progression)//! - `prog_up_fuel`     — extensions de réservoir achetées (Progression,
+//! - `prog_reputation`  - réputation × 10 (entier, au dixième près,
+//!   Progression)//! - `prog_up_fuel`     - extensions de réservoir achetées (Progression,
 //!                        atelier de la station)
-//! - `prog_up_ammo`     — extensions de chargeur achetées (Progression)
-//! - `prog_up_cargo`    — extensions de soute achetées (Progression)
-//! - `prog_weapons`     — armes du catalogue possédées (masque binaire,
-//!                        Progression — les munitions par arme repartent
+//! - `prog_up_ammo`     - extensions de chargeur achetées (Progression)
+//! - `prog_up_cargo`    - extensions de soute achetées (Progression)
+//! - `prog_weapons`     - armes du catalogue possédées (masque binaire,
+//!                        Progression - les munitions par arme repartent
 //!                        pleines à chaque lancement)
-//! - `prog_lives`       — vies restantes (Survival)
-//! - `prog_shield`      — bouclier restant × 10 (entier, Survival)
+//! - `prog_lives`       - vies restantes (Survival)
+//! - `prog_shield`      - bouclier restant × 10 (entier, Survival)
 //!
 //! Le fichier est lu au lancement du jeu (les valeurs enregistrées remplacent
 //! les défauts) et réécrit à chaque modification d'un réglage ou de la
-//! progression d'un scénario. Aucune dépendance externe — simple `std::fs`,
+//! progression d'un scénario. Aucune dépendance externe - simple `std::fs`,
 //! dans l'esprit « binaire autonome » du port.
 
 use std::collections::HashMap;
@@ -48,7 +48,7 @@ use crate::config::{MOVING_MODE_COUNT, RENDER_STYLE_COUNT, WINDOW_SIZES};
 pub const CONFIG_FILE: &str = "meteors_mining.cfg";
 
 /// Chemin du fichier de configuration : `meteors-mining/meteors_mining.cfg`
-/// dans le dossier de configuration utilisateur (norme XDG — voir
+/// dans le dossier de configuration utilisateur (norme XDG - voir
 /// `config_dir`). En mode test, un répertoire temporaire jetable par
 /// processus : les tests (notamment les sauvegardes déclenchées par les
 /// collisions de `game.rs`) ne touchent jamais au vrai fichier de config.
@@ -235,7 +235,7 @@ pub fn save_moving_mode_to(path: &Path, mode: i32) -> io::Result<()> {
 // ─── suppression ────────────────────────────────────────────────────────────
 
 /// Supprime une clé du fichier de configuration (les autres clés sont
-/// conservées — le RESET de l'écran de paramétrage supprime ainsi les clés de
+/// conservées - le RESET de l'écran de paramétrage supprime ainsi les clés de
 /// réglage sans toucher à la progression du scénario, clés `scenario`/`prog_*`).
 /// Ne fait rien (OK) si la clé ou le fichier n'existe pas.
 pub fn delete_key(key: &str) -> io::Result<()> {
@@ -310,7 +310,7 @@ mod tests {
     #[test]
     fn delete_key_removes_one_key_and_preserves_others() {
         // suppression ciblée d'une clé (bouton RESET des réglages) : les
-        // autres clés — dont la progression du scénario — sont conservées
+        // autres clés - dont la progression du scénario - sont conservées
         let p = temp_path("deletekey.cfg");
         let _ = fs::remove_file(&p);
         set_i32_to(&p, "volume", 40).unwrap();

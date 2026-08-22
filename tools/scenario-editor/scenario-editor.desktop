@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Meteors Mining — Éditeur de Scénarios & DAG d'Objectifs
+Name=Meteors Mining - Éditeur de Scénarios & DAG d'Objectifs
 Comment=Création visuelle d'enchaînements d'objectifs avec dépendances pour Meteors Mining
 Exec=bash -c '"$(dirname "%k")/launch-editor.sh"'
 Icon=applications-games

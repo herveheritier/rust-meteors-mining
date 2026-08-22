@@ -1,13 +1,13 @@
-//! Audio — portage des sons de `meteorsMining.bas` (Phase 4).
+//! Audio - portage des sons de `meteorsMining.bas` (Phase 4).
 //!
 //! Correspondance avec l'original :
-//! - `sh1&`  = mis4.ogg     — tir de balle (`_sndplay` à chaque tir)
-//! - `sh5&`  = gem1.ogg     — ramassage d'une gemme (volume 0.05)
-//! - `shexp` = exp11..20.ogg — explosion d'un triangle, volume selon la
+//! - `sh1&`  = mis4.ogg     - tir de balle (`_sndplay` à chaque tir)
+//! - `sh5&`  = gem1.ogg     - ramassage d'une gemme (volume 0.05)
+//! - `shexp` = exp11..20.ogg - explosion d'un triangle, volume selon la
 //!   distance au vaisseau (`v! = (1 − dist/diag)^3`, un son au hasard)
-//! - `sh6&`  = bruitDeFond.ogg — ambiance en boucle (`_sndloop`)
-//! - `sh7&`  = music1.ogg   — musique en boucle (volume 0.1), bascule M
-//! - `sh8&`/`sh9&` = fffff.ogg (2 exemplaires) — boucle moteur avant / recul
+//! - `sh6&`  = bruitDeFond.ogg - ambiance en boucle (`_sndloop`)
+//! - `sh7&`  = music1.ogg   - musique en boucle (volume 0.1), bascule M
+//! - `sh8&`/`sh9&` = fffff.ogg (2 exemplaires) - boucle moteur avant / recul
 //!   (`_sndloop` tant que `thrusted`/`revertThrusted`, sinon `_sndpause`)
 //!
 //! Les boucles gardent leur état (`engine_on`…) pour ne pas relancer un son
@@ -36,7 +36,7 @@ pub struct Sounds {
 }
 
 impl Sounds {
-    /// Charge tous les sons depuis `assets/` (copie des `.ogg` de référence —
+    /// Charge tous les sons depuis `assets/` (copie des `.ogg` de référence -
     /// le backend quad-snd/miniaudio décode l'Ogg Vorbis).
     pub async fn load() -> Sounds {
         // Sons intégrés dans le binaire (`include_bytes!`) : l'exécutable est
@@ -44,7 +44,7 @@ impl Sounds {
         async fn load(bytes: &'static [u8], name: &str) -> Sound {
             audio::load_sound_from_bytes(bytes)
                 .await
-                .unwrap_or_else(|e| panic!("{name} illisible — {e}"))
+                .unwrap_or_else(|e| panic!("{name} illisible - {e}"))
         }
 
         let mut explosions = Vec::with_capacity(10);

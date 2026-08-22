@@ -2,10 +2,10 @@
 // Petit serveur local pour l'éditeur de la place de marché.
 //
 // Pourquoi : le navigateur intégré de VSCode (webview Electron) n'expose pas
-// l'API File System Access — la page ouverte en fichier local ne peut alors
+// l'API File System Access - la page ouverte en fichier local ne peut alors
 // ni charger ni enregistrer src/marketplace.rs directement. Servie par ce
 // serveur (http), elle charge et enregistre le fichier du projet via fetch
-// (GET/PUT) — cela fonctionne dans tous les navigateurs.
+// (GET/PUT) - cela fonctionne dans tous les navigateurs.
 //
 // Usage : node tools/marketplace-editor/server.mjs [--port 8123]
 // Puis ouvrir http://localhost:8123 dans le navigateur (ou dans le navigateur
@@ -33,7 +33,7 @@ const PORT = portIdx >= 0 && args[portIdx + 1] ? Number(args[portIdx + 1]) : 812
 const mime = { ".html": "text/html; charset=utf-8", ".rs": "text/plain; charset=utf-8", ".json": "application/json; charset=utf-8" };
 
 // Processus cargo en cours (console « cargo test / cargo run ») : une seule
-// commande à la fois — cargo verrouille target/ pendant la compilation.
+// commande à la fois - cargo verrouille target/ pendant la compilation.
 let cargoChild = null;
 
 const server = http.createServer(async (req, res) => {
@@ -54,23 +54,23 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ assets: files }));
       return;
     }
-    // contenu d'un mesh assets/*.json (aperçu du vaisseau dans l'éditeur) —
+    // contenu d'un mesh assets/*.json (aperçu du vaisseau dans l'éditeur) -
     // nom seul (basename), fichier .json du dossier assets/ du projet
     if (req.method === "GET" && pathname.startsWith("/assets/")) {
       const name = path.basename(pathname.slice("/assets/".length));
       if (!name.endsWith(".json")) {
         res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end("404 — asset non JSON");
+        res.end("404 - asset non JSON");
         return;
       }
       const file = path.join(ROOT, "assets", name);
       if (!fs.existsSync(file)) {
         res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end("404 — " + name);
+        res.end("404 - " + name);
         return;
       }
       // no-cache : le mesh peut être modifié dans l'éditeur « meshes-designer »
-      // pendant que la page est ouverte — le navigateur doit toujours
+      // pendant que la page est ouverte - le navigateur doit toujours
       // re-télécharger la version à jour (jamais la resservir du cache)
       res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" });
       res.end(fs.readFileSync(file, "utf8"));
@@ -96,7 +96,7 @@ const server = http.createServer(async (req, res) => {
     // projet et renvoie la sortie en flux (chunked, texte brut), terminée par
     // la ligne « [code de sortie: N] ». Une seule commande à la fois (cargo
     // verrouille target/) : 409 sinon. « cargo run » garde la connexion
-    // ouverte tant que le jeu tourne — la fermeture de la fenêtre du jeu
+    // ouverte tant que le jeu tourne - la fermeture de la fenêtre du jeu
     // termine la réponse ; si l'onglet se ferme, le jeu continue de tourner.
     if (req.method === "POST" && pathname === "/api/cargo") {
       let body = "";
@@ -148,7 +148,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    res.end("404 — " + pathname);
+    res.end("404 - " + pathname);
   } catch (err) {
     res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Erreur serveur : " + err.message);

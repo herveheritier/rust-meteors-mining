@@ -1,8 +1,8 @@
-//! Place de marché de la station — extensions de vaisseau et modes de
+//! Place de marché de la station - extensions de vaisseau et modes de
 //! déplacement (bouton SHOP de la boîte DOCK STATION), réglages du vaisseau
 //! joueur et économie (scénario Progression).
 //!
-//! Fichier **généré** par `tools/marketplace-editor/index.html` — ne pas
+//! Fichier **généré** par `tools/marketplace-editor/index.html` - ne pas
 //! éditer à la main : régénérez-le depuis l'outil de gestion, puis
 //! recompilez (`cargo build --release`). Les tests (`cargo test`) valident
 //! les nouvelles valeurs.
@@ -10,11 +10,11 @@
 use crate::config::{CARGO_SIZE, MOVING_MODE_COUNT};
 
 /// Valeur en minerais d'une gemme par élément (index 1..3 = GOLD, IRON,
-/// WATER — voir `default_elements` ; 0 = sans valeur).
+/// WATER - voir `default_elements` ; 0 = sans valeur).
 pub const ELEMENT_VALUES: [i32; 4] = [0, 5, 3, 2];
 
 /// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre
-/// historique — l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :
+/// historique - l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :
 /// nom et description affichés (magasin de la station, messages du scénario)
 /// et coût de déblocage en minerais (0 = déjà débloqué au départ). Générés
 /// par l'outil de gestion.
@@ -26,7 +26,7 @@ pub const MOVING_MODES: &[MovingMode] = &[
 ];
 
 /// Coût en minerais pour débloquer chaque mode de déplacement (index
-/// `MOVING_MODE_*` ; 0 = déjà débloqué) — dérivé de `MOVING_MODES`. Seuls
+/// `MOVING_MODE_*` ; 0 = déjà débloqué) - dérivé de `MOVING_MODES`. Seuls
 /// les modes à coût nul sont débloqués au départ en Progression (REALISTIC
 /// par défaut) ; les autres s'achètent au magasin.
 pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [15, 30, 45, 0];
@@ -43,13 +43,13 @@ pub const AMMO_PRICE: i32 = 1;
 /// Pas de ravitaillement en munitions.
 pub const AMMO_STEP: i32 = 5;
 
-/// Météores — collisions avec la station et génération (mise au point).
+/// Météores - collisions avec la station et génération (mise au point).
 /// Données générées par l'outil de gestion : lues par `src/game.rs`
 /// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et
 /// `src/state.rs` (génération et population).
 
 /// Force de réaction d'un météore qui percute la **station** : le triangle
-/// qui collisionne explose et le météore est repoussé — sa composante de
+/// qui collisionne explose et le météore est repoussé - sa composante de
 /// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,
 /// la composante tangentielle (glissement le long de l'anneau) est
 /// conservée. 1.0 = rebond parfait (l'explosion rend au météore la vitesse
@@ -79,7 +79,7 @@ pub const SHAPES_COUNT: i32 = 150;
 
 /// Poids de la **précision de tir** sur la remise de réputation : la remise
 /// du rang est multipliée par `1 + poids × précision` (précision en 0..1 =
-/// part de tirs non perdus) — 1.0 = 100 % de précision → remise doublée.
+/// part de tirs non perdus) - 1.0 = 100 % de précision → remise doublée.
 /// 0 = la précision n'influe pas sur les coûts.
 pub const DISCOUNT_PRECISION_WEIGHT: f64 = 1.0;
 
@@ -93,7 +93,7 @@ pub const PROGRESSION_RANKS: &[ReputationRank] = &[
     ReputationRank { threshold: 50.0, name: "ACE", discount_percent: 15 },
 ];
 
-/// Vaisseau joueur — mesh « meshes-designer » et réglages (échelle,
+/// Vaisseau joueur - mesh « meshes-designer » et réglages (échelle,
 /// orientation, centre de rotation). Données générées par l'outil de
 /// gestion : `src/vaisseau.rs` les lit pour construire le vaisseau.
 ///
@@ -124,22 +124,22 @@ pub const VAISSEAU_CENTER_Y_PERCENT: f64 = 50.0;
 /// comportement d'origine). Générée par l'outil de gestion.
 pub const VAISSEAU_BULLET_SPAWNS: &[(f64, f64)] = &[(90.0, 50.0), (43.0, 89.0), (53.0, 26.0), (41.0, 96.0)];
 
-/// Mesh du propulseur « ARRIÈRE » (VAISSEAU_THRUSTERS[0]) — embarqué au compile.
+/// Mesh du propulseur « ARRIÈRE » (VAISSEAU_THRUSTERS[0]) - embarqué au compile.
 pub const VAISSEAU_THRUSTER_MESH_0: &str = include_str!("../assets/propellerUp.json");
 
-/// Mesh du propulseur « AVANT » (VAISSEAU_THRUSTERS[1]) — embarqué au compile.
+/// Mesh du propulseur « AVANT » (VAISSEAU_THRUSTERS[1]) - embarqué au compile.
 pub const VAISSEAU_THRUSTER_MESH_1: &str = include_str!("../assets/propellerDown.json");
 
-/// Mesh du propulseur « GAUCHE » (VAISSEAU_THRUSTERS[2]) — embarqué au compile.
+/// Mesh du propulseur « GAUCHE » (VAISSEAU_THRUSTERS[2]) - embarqué au compile.
 pub const VAISSEAU_THRUSTER_MESH_2: &str = include_str!("../assets/propellerLeft.json");
 
-/// Mesh du propulseur « DROITE » (VAISSEAU_THRUSTERS[3]) — embarqué au compile.
+/// Mesh du propulseur « DROITE » (VAISSEAU_THRUSTERS[3]) - embarqué au compile.
 pub const VAISSEAU_THRUSTER_MESH_3: &str = include_str!("../assets/propellerRight.json");
 
-/// Éjections de gaz du vaisseau — 4 propulseurs, un par touche de contrôle
+/// Éjections de gaz du vaisseau - 4 propulseurs, un par touche de contrôle
 /// (ordre fixe : ↑ arrière, ↓ avant, ← flanc gauche, → flanc droit). Chaque
 /// propulseur est un mesh posé **sur le vaisseau** à sa position (le gaz sort
-/// de là, dans la direction d'éjection correspondante — src/main.rs).
+/// de là, dans la direction d'éjection correspondante - src/main.rs).
 /// **Liste vide = repli** : pas de propulseur, le gaz classique sort du
 /// centre de rotation (comportement d'origine). Générée par l'outil de gestion.
 pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[
@@ -181,19 +181,19 @@ pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[
     },
 ];
 
-/// Mesh de l'arme « ARME 1 » (VAISSEAU_WEAPONS[0]) — embarqué au compile.
+/// Mesh de l'arme « ARME 1 » (VAISSEAU_WEAPONS[0]) - embarqué au compile.
 pub const VAISSEAU_WEAPON_MESH_0: &str = include_str!("../assets/bulletWeapon.json");
 /// Mesh de la munition de l'arme « ARME 1 » (VAISSEAU_WEAPONS[0]).
 pub const VAISSEAU_WEAPON_AMMO_MESH_0: &str = include_str!("../assets/bullet.json");
 
-/// Mesh de l'arme « ARME 2 » (VAISSEAU_WEAPONS[1]) — embarqué au compile.
+/// Mesh de l'arme « ARME 2 » (VAISSEAU_WEAPONS[1]) - embarqué au compile.
 pub const VAISSEAU_WEAPON_MESH_1: &str = include_str!("../assets/ballWeapon.json");
 /// Mesh de la munition de l'arme « ARME 2 » (VAISSEAU_WEAPONS[1]).
 pub const VAISSEAU_WEAPON_AMMO_MESH_1: &str = include_str!("../assets/duck-rocket.json");
 
 /// Catalogue d'armes du vaisseau joueur : chaque arme est un mesh posé
 /// **sur le vaisseau** à un emplacement de tir (`spawn_index` dans
-/// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est
+/// `VAISSEAU_BULLET_SPAWNS` - la liste des emplacements possibles est
 /// contrainte) et tire sa propre munition (mesh de la munition). Toutes
 /// les armes du catalogue tirent ensemble au Shift. **Liste vide = tir
 /// classique** (une balle rouge par emplacement, repli : comportement
@@ -227,7 +227,7 @@ pub const VAISSEAU_WEAPONS: &[VaisseauWeapon] = &[
     },
 ];
 
-/// Plans du vaisseau **toujours visibles** (composition de base — indices
+/// Plans du vaisseau **toujours visibles** (composition de base - indices
 /// des plans du fichier mesh `VAISSEAU_JSON`). Un plan lié à une ligne
 /// d'atelier (`VAISSEAU_PLANE_LINKS`) n'est construit qu'à partir de son
 /// niveau ; un plan absent des deux listes n'est jamais construit.
@@ -242,7 +242,7 @@ pub const VAISSEAU_PLANE_LINKS: &[PlaneUpgradeLink] = &[
     PlaneUpgradeLink { plane_index: 14, track: PlaneUpgradeTrack::Cargo, min_level: 2 },
 ];
 
-/// Cosmonaute EVA (pilote éjecté, vaisseau détruit) — mesh « meshes-designer »
+/// Cosmonaute EVA (pilote éjecté, vaisseau détruit) - mesh « meshes-designer »
 /// et réglages (échelle, orientation, centre de rotation). Données générées
 /// par l'outil de gestion : `src/cosmonaut.rs` les lit pour construire le
 /// pilote contrôlé en mode EVA (scénarios Progression et Survival).
@@ -267,7 +267,7 @@ pub const COSMONAUTE_CENTER_X_PERCENT: f64 = 51.0;
 /// axe y.
 pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = 59.0;
 
-/// Plans du cosmonaute EVA construits (composition — indices des plans du
+/// Plans du cosmonaute EVA construits (composition - indices des plans du
 /// fichier mesh `COSMONAUTE_JSON`) : un plan absent n'est jamais construit
 /// (ni animé). **Liste vide = tous les plans** (repli : composition non
 /// définie). Générée par l'outil de gestion.
@@ -288,7 +288,7 @@ pub struct MovingMode {
 }
 
 /// Nom d'affichage d'un mode de déplacement (magasin de la station, messages
-/// du scénario) — lu dans `MOVING_MODES` (généré par l'outil de gestion).
+/// du scénario) - lu dans `MOVING_MODES` (généré par l'outil de gestion).
 pub fn mode_label(mode: i32) -> &'static str {
     MOVING_MODES
         .get(mode as usize)
@@ -310,7 +310,7 @@ pub struct ShipUpgrade {
 }
 
 /// Une ligne d'amélioration du vaisseau (atelier) : capacité de base et
-/// extensions successives achetées **dans l'ordre** — le niveau est le nombre
+/// extensions successives achetées **dans l'ordre** - le niveau est le nombre
 /// d'extensions possédées (`tiers[i]` s'achète au niveau `i+1`).
 #[derive(Clone, Copy, Debug)]
 pub struct UpgradeTrack {
@@ -337,9 +337,9 @@ pub struct ReputationRank {
 }
 
 /// Ligne d'atelier liée à un plan du vaisseau (composition des plans,
-/// scénario Progression) — la ligne dont le niveau révèle le plan.
+/// scénario Progression) - la ligne dont le niveau révèle le plan.
 /// Les variantes ne sont construites que quand l'outil exporte un lien
-/// (`VAISSEAU_PLANE_LINKS` non vide) — `dead_code` quand la liste est vide.
+/// (`VAISSEAU_PLANE_LINKS` non vide) - `dead_code` quand la liste est vide.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlaneUpgradeTrack {
@@ -367,7 +367,7 @@ pub struct PlaneUpgradeLink {
 
 /// Une arme du catalogue du vaisseau joueur : mesh de l'arme posé **sur le
 /// vaisseau** à un emplacement de tir (`spawn_index` dans
-/// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est
+/// `VAISSEAU_BULLET_SPAWNS` - la liste des emplacements possibles est
 /// contrainte) et munition tirée par l'arme (mesh de la munition, avec sa
 /// propre échelle et orientation). Toutes les armes **possédées** du
 /// catalogue tirent ensemble au Shift, chacune tant que son propre stock de
@@ -376,14 +376,14 @@ pub struct PlaneUpgradeLink {
 /// **paquet de munitions** (le magasin facture par paquet de
 /// `ammo_pack` munitions au prix `ammo_price`, par arme). Générée par
 /// l'outil de gestion. Les champs ne sont lus que quand le catalogue est
-/// rempli (`VAISSEAU_WEAPONS` non vide) — `dead_code` quand la liste est
+/// rempli (`VAISSEAU_WEAPONS` non vide) - `dead_code` quand la liste est
 /// vide.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct VaisseauWeapon {
     /// Nom de l'arme (tool, export).
     pub name: &'static str,
-    /// Mesh de l'arme — fichier « meshes-designer » embarqué au compile.
+    /// Mesh de l'arme - fichier « meshes-designer » embarqué au compile.
     pub mesh: &'static str,
     /// Échelle de l'arme (multiplicateur des sommets du mesh) : 1.0 = 100 %.
     pub scale: f64,
@@ -393,12 +393,12 @@ pub struct VaisseauWeapon {
     /// Emplacement de l'arme sur le vaisseau : index dans
     /// `VAISSEAU_BULLET_SPAWNS` (liste contrainte).
     pub spawn_index: usize,
-    /// Mesh de la munition tirée par l'arme — embarqué au compile.
+    /// Mesh de la munition tirée par l'arme - embarqué au compile.
     pub ammo_mesh: &'static str,
     /// Échelle de la munition (multiplicateur des sommets du mesh).
     pub ammo_scale: f64,
     /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
-    /// l'éditeur — la munition part nez en avant.
+    /// l'éditeur - la munition part nez en avant.
     pub ammo_orientation_degrees: f64,
     /// Coût d'achat de l'arme au magasin de la station (minerais ; 0 = arme
     /// de base, toujours équipée au départ en Progression).
@@ -415,32 +415,32 @@ pub struct VaisseauWeapon {
 /// une position (en **pourcentage de la boîte englobante de la composition**,
 /// 50/50 = centre, repère du mesh de l'éditeur, y vers le haut), avec sa
 /// propre échelle et orientation. Le gaz (flamme) sort de la position, dans
-/// la direction d'éjection correspondant à la touche — index 0 = **↑**
+/// la direction d'éjection correspondant à la touche - index 0 = **↑**
 /// (poussée avant, gaz orange à l'arrière), 1 = **↓** (frein/recul, gaz bleu
 /// à l'avant), 2 = **←** (rotation gauche), 3 = **→** (rotation droite).
 /// Générée par l'outil de gestion. Le champ `name` n'est lu que par les
-/// tests et l'outil — `dead_code` quand la liste est vide.
+/// tests et l'outil - `dead_code` quand la liste est vide.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct VaisseauThruster {
     /// Nom du propulseur (outil, export).
     pub name: &'static str,
-    /// Mesh du propulseur — fichier « meshes-designer » embarqué au compile.
+    /// Mesh du propulseur - fichier « meshes-designer » embarqué au compile.
     pub mesh: &'static str,
     /// Échelle du propulseur (multiplicateur des sommets du mesh) : 1.0 = 100 %.
     pub scale: f64,
     /// Orientation du propulseur (degrés) : angle de l'avant du mesh dans
-    /// l'éditeur (0 = avant vers la droite, +90 = vers le haut) — le mesh est
+    /// l'éditeur (0 = avant vers la droite, +90 = vers le haut) - le mesh est
     /// tourné de −orientation à la construction.
     pub orientation_degrees: f64,
     /// Position sur le vaisseau : en % de la boîte englobante de la
     /// composition (50/50 = centre), dans le repère de l'éditeur.
     pub position: (f64, f64),
     /// Direction d'éjection du gaz (degrés, repère de l'éditeur y vers le
-    /// haut : 0 = avant, +90 = haut) — convertie par le jeu pour
+    /// haut : 0 = avant, +90 = haut) - convertie par le jeu pour
     /// `ejection_flow` (src/main.rs).
     pub ejection_angle_degrees: f64,
-    /// Couleur du gaz d'éjection (ARGB, ex 0xFFFFA000) — `ejection_flow`
+    /// Couleur du gaz d'éjection (ARGB, ex 0xFFFFA000) - `ejection_flow`
     /// (src/main.rs).
     pub color: u32,
 }

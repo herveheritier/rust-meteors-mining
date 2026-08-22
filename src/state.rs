@@ -2,7 +2,7 @@
 //!
 //! Portage de `context_type.bas` (partie dynamique) et `player_type.bas` :
 //! les constantes de `context_type` sont devenues des `const` dans
-//! `src/config.rs` — seul l'état mutable reste ici.
+//! `src/config.rs` - seul l'état mutable reste ici.
 
 use crate::config::{
     ATTEMPT_FPS, CARGO_SIZE, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, PLAYER_INDEX, WEAPON_SLOTS,
@@ -14,14 +14,14 @@ use crate::geom::{Point, World};
 use crate::marketplace::INITIAL_MAX_METEOR_SHAPES;
 use crate::scenario::{Resources, ScenarioId};
 
-/// Mode d'affichage (touche F — cycle) : fenêtré → plein écran zoomé → plein
+/// Mode d'affichage (touche F - cycle) : fenêtré → plein écran zoomé → plein
 /// écran natif → fenêtré.
 ///
 /// - `Windowed` : fenêtre 960×540, rendu direct 1:1 (pas de render target).
 /// - `Zoomed` : plein écran EWMH, vue 960×540 rendue dans une texture puis
 ///   étirée (le mode historique du port).
 /// - `Native` : plein écran EWMH, rendu direct **à la définition réelle de
-///   l'écran** (caméra zoomée), sans passage par un render target — un seul
+///   l'écran** (caméra zoomée), sans passage par un render target - un seul
 ///   passage de rendu, image plus nette.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -31,9 +31,9 @@ pub enum ViewMode {
 }
 
 /// Style de rendu des triangles (écran de paramétrage, touche O) :
-/// - `Textured` — les textures (`_MapTriangle` de l'original) ;
-/// - `Colored` — remplissage uni avec la couleur de l'élément / de la forme ;
-/// - `Mesh` — fil de fer (arêtes seules).
+/// - `Textured` - les textures (`_MapTriangle` de l'original) ;
+/// - `Colored` - remplissage uni avec la couleur de l'élément / de la forme ;
+/// - `Mesh` - fil de fer (arêtes seules).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStyle {
     Textured,
@@ -55,7 +55,7 @@ pub struct Player {
     /// Idem pour la poussée arrière.
     pub revert_thrusted: i32,
     /// Compteur de frames du **jet latéral gauche** (touche ←, rotation) :
-    /// même principe que `thrusted` — le jet est dessiné tant qu'il est négatif.
+    /// même principe que `thrusted` - le jet est dessiné tant qu'il est négatif.
     pub rotate_left_thrusted: i32,
     /// Compteur de frames du **jet latéral droit** (touche →, rotation).
     pub rotate_right_thrusted: i32,
@@ -90,7 +90,7 @@ impl Default for Player {
 #[derive(Clone, Debug)]
 pub struct Element {
     /// NB : `id`/`name` ne sont jamais lus, ni dans le port ni dans
-    /// l'original (seuls `color` et `count` servent) — conservés pour la
+    /// l'original (seuls `color` et `count` servent) - conservés pour la
     /// fidélité à `element_type`.
     #[allow(dead_code)]
     pub id: i32,
@@ -144,10 +144,10 @@ pub struct GameState {
     pub bullets_fired: i32,
     pub bullets_lost: i32,
     pub moving_mode: i32,
-    /// Scénario actif (choisi à l'écran titre, touche N) — voir `scenario.rs`.
+    /// Scénario actif (choisi à l'écran titre, touche N) - voir `scenario.rs`.
     pub scenario: ScenarioId,
     /// Ressources économiques du scénario (carburant, munitions, minerais,
-    /// réputation) — ignorées en jeu libre (`has_economy` = false).
+    /// réputation) - ignorées en jeu libre (`has_economy` = false).
     pub resources: Resources,
     /// Modes de déplacement débloqués (index historique `MOVING_MODE_*`) : en
     /// Progression, seuls les modes dont le coût configuré (outil) est nul
@@ -163,16 +163,16 @@ pub struct GameState {
     /// `scenario::buy_ammo_qty`).
     pub supplies_shortage_cost: i32,
     /// Quantité de carburant sélectionnée sur le curseur du magasin (section
-    /// RAVITAILLEMENT, ligne FUEL) : achetée par clic sur la ligne — bornée
+    /// RAVITAILLEMENT, ligne FUEL) : achetée par clic sur la ligne - bornée
     /// au manque du réservoir et à ce que les minerais permettent
     /// (`scenario::clamp_shop_quantities`).
     pub shop_fuel_qty: f64,
     /// Quantités de munitions sélectionnées sur les curseurs du magasin (une
-    /// par arme du catalogue, ligne AMMO de l'arme possédée) — achetées par
+    /// par arme du catalogue, ligne AMMO de l'arme possédée) - achetées par
     /// clic sur la ligne, bornées comme `shop_fuel_qty`.
     pub shop_ammo_qty: [f64; WEAPON_SLOTS],
     /// Curseur du magasin en cours de glisser (`Some(0)` = carburant,
-    /// `Some(1 + i)` = munitions de l'arme `i`) — `None` = aucun. La valeur
+    /// `Some(1 + i)` = munitions de l'arme `i`) - `None` = aucun. La valeur
     /// suit le pointeur tant que le bouton est maintenu (`game.rs`).
     pub shop_drag: Option<usize>,
     /// Pause (touche P) : gèle déplacements et collisions, mais pas le rendu
@@ -183,30 +183,30 @@ pub struct GameState {
     /// active. Remis à faux par `scenario::apply_start` (nouvelle partie).
     pub game_over: bool,
     /// Invulnérabilité restante en secondes (scénario Survival, après un
-    /// respawn) : les impacts sont absorbés sans toucher au bouclier — le
+    /// respawn) : les impacts sont absorbés sans toucher au bouclier - le
     /// vaisseau clignote. Décrémentée à chaque frame (`game.rs`), remise à
     /// `respawn_invulnerability` par `scenario::player_hit`.
     pub invulnerable: f64,
-    /// Mode d'affichage (touche F, cycle) — local de `mainLoop` devenu champ
+    /// Mode d'affichage (touche F, cycle) - local de `mainLoop` devenu champ
     /// d'état : fenêtré → plein écran zoomé → plein écran natif (voir
     /// `ViewMode`).
     pub view_mode: ViewMode,
     /// Génération automatique des météores (touche A, ex `autoGenerateShape%`).
     pub auto_generate: bool,
-    /// Style de rendu des triangles (écran de paramétrage) — voir
+    /// Style de rendu des triangles (écran de paramétrage) - voir
     /// `RenderStyle`.
     pub render_style: RenderStyle,
     /// Index dans `WINDOW_SIZES` de la définition de fenêtre choisie (écran
     /// de paramétrage) : 0 = 960×540 (défaut), 1 = 1280×720, etc.
     pub window_size: i32,
     /// Anticrénelage MSAA 4× (écran de paramétrage) : appliqué à la **création
-    /// de la fenêtre** (macroquad ne permet pas de le changer à chaud) — la
+    /// de la fenêtre** (macroquad ne permet pas de le changer à chaud) - la
     /// valeur prend effet au prochain lancement.
     pub antialias: bool,
     /// Interface tactile affichée et active (case TOUCH UI de l'écran de
-    /// paramétrage, persistée — clé `touch_ui`) : joystick virtuel bas-gauche
+    /// paramétrage, persistée - clé `touch_ui`) : joystick virtuel bas-gauche
     /// + bouton de tir bas-droite (`touch.rs`). Masquée (et inopérante) quand
-    /// le réglage est éteint — le jeu se pilote alors au clavier seul.
+    /// le réglage est éteint - le jeu se pilote alors au clavier seul.
     pub touch_ui: bool,
     /// Valeur d'anticrénelage effectivement appliquée par la fenêtre au
     /// lancement (`Conf.sample_count`). Si `antialias` en diffère, un
@@ -218,7 +218,7 @@ pub struct GameState {
     /// Animation d'accostage en cours (secondes restantes, 0 = aucune) :
     /// avant d'ouvrir la boîte DOCK STATION, le vaisseau pivote vers la droite
     /// (orientation 0) tout en se recentrant au centre de la station, pendant
-    /// `DOCK_ANIMATION_DURATION` — le monde est gelé (voir
+    /// `DOCK_ANIMATION_DURATION` - le monde est gelé (voir
     /// `game::advance_dock_animation` et `render::draw_docking_line`).
     pub dock_anim: f64,
     /// Position du vaisseau au début de l'animation d'accostage (interpolée
@@ -230,19 +230,19 @@ pub struct GameState {
     /// Rétraction des liens d'accostage en cours (secondes restantes, 0 =
     /// aucune) : au départ (bouton CLOSE de la boîte DOCK STATION), le vaisseau
     /// reste au centre et les 4 traits néon se rétractent vers le bord
-    /// intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` — le monde est
+    /// intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` - le monde est
     /// gelé (voir `game::advance_dock_retract` et
     /// `render::draw_docking_line`).
     pub dock_retract: f64,
     /// Liens d'accostage **attachés à quai** : vrai au lancement et après un
-    /// respawn (le vaisseau démarre à la station) — les 4 traits néon sont
+    /// respawn (le vaisseau démarre à la station) - les 4 traits néon sont
     /// tendus jusqu'au vaisseau au centre, la mire est cachée. Dès que le
     /// joueur donne une commande de mouvement, `game::release_links` les
     /// rétracte (comme au départ après CLOSE) puis le vaisseau est libre.
     pub dock_links: bool,
     /// Guide d'accostage (la mire) **affiché lors du retour à la base** : vrai
     /// quand le vaisseau a quitté la base puis a **recroisé sa limite
-    /// extérieure en entrant** (voir `game::update_docking_guide`) — jamais
+    /// extérieure en entrant** (voir `game::update_docking_guide`) - jamais
     /// pendant qu'il quitte l'accostage ni à quai. Faux dès qu'il accoste
     /// (`game::docking`) ou quitte la base (`game::release_links`).
     pub docking_guide: bool,
@@ -259,7 +259,7 @@ pub struct GameState {
     /// n'est pas créée par `main.rs`).
     pub eva_cosmonaut: i32,
     /// Récupération du cosmonaute EVA en cours (secondes restantes, 0 =
-    /// aucune) : vaisseau détruit, il a rejoint la zone d'accostage — un
+    /// aucune) : vaisseau détruit, il a rejoint la zone d'accostage - un
     /// cordon jaillit de l'anneau jusqu'à lui et le ramène sur l'anneau
     /// pendant `EVA_RECOVERY_DURATION` (monde gelé, voir
     /// `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
@@ -268,14 +268,14 @@ pub struct GameState {
     /// `eva_recovery_to_pos`, le point de l'anneau où le cordon le ramène).
     pub eva_recovery_from_pos: Point,
     /// Point de l'anneau (rayon `STATION_INNER_RADIUS`) où le cordon ramène
-    /// le cosmonaute — dans sa direction au moment de la récupération.
+    /// le cosmonaute - dans sa direction au moment de la récupération.
     pub eva_recovery_to_pos: Point,
     /// Fondu enchaîné de la récupération en cours (secondes restantes, 0 =
     /// aucune) : le cosmonaute sur l'anneau s'efface pendant que le vaisseau
     /// reconstruit apparaît au centre de la station, liens attachés, pendant
     /// `EVA_CROSSFADE_DURATION` (voir `game::advance_eva_crossfade`).
     pub eva_crossfade: f64,
-    /// Boîte de choix DOCK STATION ouverte (accostage) — ex la boucle
+    /// Boîte de choix DOCK STATION ouverte (accostage) - ex la boucle
     /// bloquante de `windowUtils_choiceBox` : tant qu'elle est ouverte, le
     /// jeu est gelé et seuls les clics sur UNLOAD / SHOP / CLOSE sont traités
     /// (UNLOAD garde la boîte ouverte ; le carburant et les munitions
@@ -284,7 +284,7 @@ pub struct GameState {
     /// Magasin de la station ouvert (bouton SHOP de la boîte DOCK STATION) :
     /// choix des modes de déplacement (sélection gratuite ou déblocage contre
     /// minerais) et, en scénario à économie, achats d'extensions (réservoir,
-    /// chargeur, soute) — le jeu est gelé tant qu'il est affiché ; CLOSE
+    /// chargeur, soute) - le jeu est gelé tant qu'il est affiché ; CLOSE
     /// revient à la boîte DOCK STATION (toujours accosté).
     pub shop_box: bool,
     /// Fenêtre d'aide ouverte (touche S, ex `help` de windowUtils) : le jeu
@@ -292,7 +292,7 @@ pub struct GameState {
     pub help_box: bool,
     /// Écran de paramétrage ouvert (touche O) : options audio et graphiques.
     /// Le jeu est gelé tant qu'il est affiché. (Le mode de déplacement se
-    /// choisit désormais au magasin de la station — bouton SHOP de la boîte
+    /// choisit désormais au magasin de la station - bouton SHOP de la boîte
     /// DOCK STATION.)
     pub settings_box: bool,
     /// Affiche les données de debug des formes (touche D, ex `showData%`).
@@ -302,7 +302,7 @@ pub struct GameState {
     /// Dernier keycode pressé (affiché par le mode I, ex `keycode = inp(96)`).
     pub last_keycode: i32,
     /// État de la touche F à la frame précédente (front montant de
-    /// `is_key_down` — voir `game::f_pressed`) : détecte la pression même
+    /// `is_key_down` - voir `game::f_pressed`) : détecte la pression même
     /// quand macroquad l'a avalée comme « répétition » (relâchement perdu
     /// pendant la bascule plein écran).
     pub f_was_down: bool,

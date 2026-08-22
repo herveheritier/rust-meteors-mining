@@ -6,7 +6,7 @@
 //! cargo et du HUD.
 //!
 //! NB : macroquad 0.4 ne fournit pas de `draw_triangle_texture` (le plan
-//! `docs/PORTAGE.md` le supposait) — on l'implémente ici via
+//! `docs/PORTAGE.md` le supposait) - on l'implémente ici via
 //! `models::Mesh` + `draw_mesh`, qui utilisent la pipeline 2D et sa texture.
 
 use macroquad::models::{draw_mesh, Mesh, Vertex};
@@ -29,7 +29,7 @@ pub const STAR_TILE: u32 = 1024;
 // ─── Couleurs ────────────────────────────────────────────────────────────────
 
 /// Convertit une couleur ARGB 32 bits QB64 (AARRGGBB) en `Color` macroquad
-/// (RGBA). NB : l'ordre des octets change — voir `docs/PORTAGE.md` §6.
+/// (RGBA). NB : l'ordre des octets change - voir `docs/PORTAGE.md` §6.
 pub fn argb_to_color(argb: u32) -> Color {
     Color::new(
         ((argb >> 16) & 0xFF) as f32 / 255.0,
@@ -43,7 +43,7 @@ pub fn argb_to_color(argb: u32) -> Color {
 
 /// Une couche d'étoiles : positions (dans la tuile) + alpha de chaque étoile.
 ///
-/// NB : on ne garde PAS de texture par couche — dessiner 15 tuiles 1024² avec
+/// NB : on ne garde PAS de texture par couche - dessiner 15 tuiles 1024² avec
 /// blending coûtait ~60 % du temps de frame (fill rate du GPU) ; chaque étoile
 /// est dessinée individuellement en 1 px (quadrant blanc batché), comme les
 /// `pset` de l'original, pour un coût GPU négligeable (voir `draw_stars`).
@@ -66,8 +66,8 @@ pub struct Assets {
 
 impl Assets {
     /// Charge les 4 textures depuis `assets/` (intégrées au binaire via
-    /// `include_bytes!`). NB : la texture météore est embarquée en JPEG — c'est
-    /// l'asset d'origine (`reference/assets/meteor_surface_tile.jpg`) — d'où la
+    /// `include_bytes!`). NB : la texture météore est embarquée en JPEG - c'est
+    /// l'asset d'origine (`reference/assets/meteor_surface_tile.jpg`) - d'où la
     /// feature `jpeg` de la crate `image` dans `Cargo.toml`.
     pub async fn load() -> Assets {
         // Textures intégrées dans le binaire (`include_bytes!`) : l'exécutable
@@ -139,7 +139,7 @@ fn build_star_layers() -> Vec<StarLayer> {
 /// Dessine les étoiles : chaque couche est décalée de `camera × plan`
 /// (parallaxe), comme `pt = (star + camera) * plan` de l'original ; la
 /// périodicité de la tuile équivaut au rebouclage torique. Chaque étoile est
-/// un pixel 1×1 (quadrant blanc batché — un seul draw call pour toutes les
+/// un pixel 1×1 (quadrant blanc batché - un seul draw call pour toutes les
 /// étoiles d'une couche), au lieu de dessiner la tuile 1024² entière avec
 /// blending : le rendu des tuiles coûtait ~60 % du temps de frame (fill rate
 /// du GPU virtio) et plafonnait le FPS à ~95 (au lieu de ~220 sans étoiles).
@@ -147,7 +147,7 @@ fn build_star_layers() -> Vec<StarLayer> {
 /// tuile périodique (torique), ex `normalizePlanPosition` de l'original.
 /// Renvoie `None` si l'étoile est hors viewport.
 ///
-/// NB : la caméra recule quand le vaisseau avance (ex `W/2 - pos`) — le signe
+/// NB : la caméra recule quand le vaisseau avance (ex `W/2 - pos`) - le signe
 /// `+` fait donc défiler les étoiles en sens INVERSE du vaisseau (parallaxe
 /// correcte) ; un `-` les ferait défiler dans son sens (bug historique du
 /// port, voir `docs/PORTAGE.md` §6).
@@ -208,7 +208,7 @@ const BOX_PANEL_BORDER: u32 = 0x801AB2FF;
 const BOX_PADDING: f32 = 10.0;
 
 /// Largeur de la boîte DOCK STATION : assez pour le titre et les boutons
-/// (UNLOAD / SHOP / CLOSE) sans chevauchement — même formule pour la
+/// (UNLOAD / SHOP / CLOSE) sans chevauchement - même formule pour la
 /// géométrie (`choice_box_layout`) et le dessin (`draw_choice_box`).
 fn choice_box_width() -> f32 {
     let msg_w = measure_text("*** DOCK STATION ***", None, 16, 1.0).width + 2.0 * BOX_PADDING;
@@ -227,7 +227,7 @@ fn choice_box_width() -> f32 {
 /// munitions s'achètent au magasin (bouton SHOP).
 pub struct ChoiceBoxLayout {
     /// Bouton UNLOAD : décharge la soute (minerais disponibles pour le
-    /// ravitaillement au magasin juste après — la boîte reste ouverte).
+    /// ravitaillement au magasin juste après - la boîte reste ouverte).
     pub unload: Rect,
     /// Bouton SHOP : ouvre le magasin de la station (carburant, munitions,
     /// armes, extensions et modes de déplacement en scénario à économie).
@@ -288,39 +288,39 @@ pub fn draw_choice_box() {
 
 /// Géométrie du magasin de la station (bouton SHOP de la boîte DOCK
 /// STATION) : fenêtre centrée avec la section « ARMES » (une ligne par arme
-/// du catalogue — scénario à économie seulement), la section « MOVING MODE »
+/// du catalogue - scénario à économie seulement), la section « MOVING MODE »
 /// (une ligne cliquable par mode de déplacement, ordre `MOVING_MODE_ORDER`),
-/// les lignes d'extension (réservoir, chargeur, soute — scénario à économie
+/// les lignes d'extension (réservoir, chargeur, soute - scénario à économie
 /// seulement) et un bouton CLOSE (retour à la boîte DOCK STATION).
 pub struct ShopBoxLayout {
     /// Lignes des armes du catalogue (index dans `VAISSEAU_WEAPONS`, scénario
-    /// à économie seulement — clic = achat de l'arme contre minerais) ;
+    /// à économie seulement - clic = achat de l'arme contre minerais) ;
     /// rectangles vides hors économie ou catalogue vide.
     pub weapons: [Rect; WEAPON_SLOTS],
     /// Ligne « FUEL » du ravitaillement (clic = achat de la quantité du
-    /// curseur contre minerais, `scenario::buy_fuel_qty`) — rectangle vide
+    /// curseur contre minerais, `scenario::buy_fuel_qty`) - rectangle vide
     /// hors économie.
     pub supplies_fuel: Rect,
     /// Piste du curseur de carburant (glisser / molette = quantité à
-    /// acheter) — rectangle vide hors économie.
+    /// acheter) - rectangle vide hors économie.
     pub slider_fuel: Rect,
     /// Lignes « AMMO » du ravitaillement, **une par arme possédée** (index
-    /// catalogue — clic = achat de la quantité du curseur de l'arme,
+    /// catalogue - clic = achat de la quantité du curseur de l'arme,
     /// `scenario::buy_ammo_qty`) ; rectangles vides hors économie ou arme
     /// non possédée.
     pub supplies_ammo: [Rect; WEAPON_SLOTS],
     /// Pistes des curseurs de munitions par arme (glisser / molette).
     pub slider_ammo: [Rect; WEAPON_SLOTS],
     /// Ligne « réservoir de carburant » de l'atelier (clic = achat de
-    /// l'extension) — rectangle vide hors économie.
+    /// l'extension) - rectangle vide hors économie.
     pub fuel: Rect,
-    /// Ligne « chargeur de munitions » de l'atelier — rectangle vide hors
+    /// Ligne « chargeur de munitions » de l'atelier - rectangle vide hors
     /// économie.
     pub ammo: Rect,
-    /// Ligne « soute » de l'atelier — rectangle vide hors économie.
+    /// Ligne « soute » de l'atelier - rectangle vide hors économie.
     pub cargo: Rect,
     /// Lignes cliquables des modes de déplacement (ordre visuel
-    /// `MOVING_MODE_ORDER` — clic = sélection gratuite ou déblocage contre
+    /// `MOVING_MODE_ORDER` - clic = sélection gratuite ou déblocage contre
     /// minerais).
     pub modes: [Rect; 4],
     /// Bouton CLOSE : revient à la boîte DOCK STATION.
@@ -328,7 +328,7 @@ pub struct ShopBoxLayout {
 }
 
 /// Hauteur de la fenêtre du magasin (scénario à économie) : le contenu
-/// s'empile — titre, section ARMES (une ligne par arme du catalogue),
+/// s'empile - titre, section ARMES (une ligne par arme du catalogue),
 /// section RAVITAILLEMENT (carburant + une ligne AMMO **par arme possédée**),
 /// lignes d'atelier, section MOVING MODE, bouton CLOSE. Hors économie :
 /// hauteur fixe (modes seuls).
@@ -349,7 +349,7 @@ fn shop_box_height(show_upgrades: bool, weapons_n: usize, ammo_rows: usize) -> f
 
 pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
     // section « ARMES » (scénario à économie, catalogue non vide) : en-tête
-    // + une ligne (34 px) par arme — la hauteur de la fenêtre grandit avec le
+    // + une ligne (34 px) par arme - la hauteur de la fenêtre grandit avec le
     // catalogue (pensé pour quelques armes, comme les 2 exportées par défaut)
     let show_upgrades = scenario::has_economy(state);
     let weapons_n = if show_upgrades {
@@ -358,7 +358,7 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
         0
     };
     // lignes AMMO du ravitaillement : une par **arme possédée** (seule une
-    // arme possédée se recharge) — le canon classique de repli (catalogue
+    // arme possédée se recharge) - le canon classique de repli (catalogue
     // vide) compte pour une ; les armes payantes s'ajoutent à leur achat
     let slots = scenario::weapon_slot_count();
     let ammo_rows = (0..slots).filter(|&i| scenario::weapon_owned(state, i)).count();
@@ -370,7 +370,7 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
     let rows_top = top + 3.0 * BOX_PADDING + 22.0;
     // les lignes s'empilent : armes (en tête), ravitaillement (carburant et
     // munitions, indépendants), atelier (extensions), puis la section des
-    // modes en dessous — tout n'existe qu'en scénario à économie
+    // modes en dessous - tout n'existe qu'en scénario à économie
     let mut y = rows_top;
     let mut weapons = [Rect::new(0.0, 0.0, 0.0, 0.0); WEAPON_SLOTS];
     if weapons_n > 0 {
@@ -385,7 +385,7 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
         if show_upgrades {
             y += 14.0; // en-tête « RAVITAILLEMENT »
             // ligne FUEL : libellé à gauche, piste du curseur au centre,
-            // coût à droite — le clic hors piste achète la quantité choisie
+            // coût à droite - le clic hors piste achète la quantité choisie
             let sf = Rect::new(left + BOX_PADDING, y, row_w, 34.0);
             let sfu = Rect::new(left + 184.0, y + 10.0, row_w - 184.0 - 132.0, 14.0);
             y += 36.0;
@@ -439,9 +439,9 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
 }
 
 /// Dessine le magasin de la station : la section « MOVING MODE » (une ligne
-/// par mode de déplacement, ordre `MOVING_MODE_ORDER` — nom + description +
+/// par mode de déplacement, ordre `MOVING_MODE_ORDER` - nom + description +
 /// état SELECTED / coût de déblocage / FREE, clic = sélection ou achat), les
-/// lignes d'extension (réservoir, chargeur, soute — scénario à économie) et
+/// lignes d'extension (réservoir, chargeur, soute - scénario à économie) et
 /// le bouton CLOSE.
 pub fn draw_shop_box(state: &GameState) {
     let show_upgrades = scenario::has_economy(state);
@@ -480,9 +480,9 @@ pub fn draw_shop_box(state: &GameState) {
     let m = mouse_to_game();
 
     // section « ARMES » (scénario à économie, catalogue non vide) : une ligne
-    // par arme — nom (16 px) + état à droite (OWNED / prix d'achat, comme les
+    // par arme - nom (16 px) + état à droite (OWNED / prix d'achat, comme les
     // modes : « base → prix remisé (RANG) » quand la réputation réduit le
-    // coût) et prix/taille du paquet de munitions en dessous (12 px, sombre) —
+    // coût) et prix/taille du paquet de munitions en dessous (12 px, sombre) -
     // survol blanc (clic = achat ; une arme possédée n'est pas cliquable)
     if show_upgrades && weapons_n > 0 {
         let header = l.weapons[0].y - 12.0;
@@ -526,7 +526,7 @@ pub fn draw_shop_box(state: &GameState) {
 
     // section « RAVITAILLEMENT » (scénario à économie) : le carburant et les
     // munitions s'achètent **indépendamment** (plus de bouton REFUEL/REARM
-    // dans la boîte DOCK STATION), **à la quantité** — une ligne par
+    // dans la boîte DOCK STATION), **à la quantité** - une ligne par
     // ressource (FUEL, puis AMMO par arme possédée) : état courant à gauche,
     // curseur au centre (glisser / molette, même style que la barre de
     // volume des réglages), coût de la quantité choisie à droite ; survol =
@@ -561,7 +561,7 @@ pub fn draw_shop_box(state: &GameState) {
             if fuel_missing <= 0.0 {
                 "PLEIN".to_string()
             } else if fuel_qty <= 0.0 {
-                "—".to_string()
+                "-".to_string()
             } else {
                 format!("+{:.0} → {} MIN", fuel_qty, scenario::fuel_qty_cost(state, fuel_qty))
             },
@@ -569,7 +569,7 @@ pub fn draw_shop_box(state: &GameState) {
             fuel_color,
         );
 
-        // AMMO : une ligne par arme possédée — chargeur courant + curseur
+        // AMMO : une ligne par arme possédée - chargeur courant + curseur
         // (manque de l'arme, paquet propre à l'arme) + coût
         let ammo_cap = scenario::ammo_capacity(state);
         for (i, rect) in l.supplies_ammo.iter().enumerate() {
@@ -596,7 +596,7 @@ pub fn draw_shop_box(state: &GameState) {
                 if missing <= 0 {
                     "PLEIN".to_string()
                 } else if qty <= 0 {
-                    "—".to_string()
+                    "-".to_string()
                 } else {
                     format!("+{} → {} MIN", qty, scenario::ammo_qty_cost(state, i, qty))
                 },
@@ -607,7 +607,7 @@ pub fn draw_shop_box(state: &GameState) {
     }
 
     // lignes d'extension (scénario à économie) : libellé, capacité,
-    // prochaine extension (+bonus, coût) ou MAX — survol = blanc (clic =
+    // prochaine extension (+bonus, coût) ou MAX - survol = blanc (clic =
     // achat)
     if show_upgrades {
         for (rect, track) in [
@@ -619,7 +619,7 @@ pub fn draw_shop_box(state: &GameState) {
             let color = argb_to_color(if rect.contains(m) { BOX_HOVER } else { BOX_FG });
             let text = match line.next {
                 Some(u) => format!(
-                    "{}: {} → {} (+{}) — {} MIN",
+                    "{}: {} → {} (+{}) - {} MIN",
                     line.label, line.capacity, u.name, u.bonus, u.cost
                 ),
                 None => format!("{}: {} (MAX)", line.label, line.capacity),
@@ -629,10 +629,10 @@ pub fn draw_shop_box(state: &GameState) {
     }
 
     // section « MOVING MODE » : une ligne par mode (ordre visuel
-    // `MOVING_MODE_ORDER`) — nom (16 px) + description (12 px, sombre) à
+    // `MOVING_MODE_ORDER`) - nom (16 px) + description (12 px, sombre) à
     // gauche, état à droite (SELECTED pour le mode courant, prix de
-    // déblocage pour un mode verrouillé — « base → prix remisé (RANG) »
-    // quand la réputation du rang courant réduit le coût, FREE sinon) —
+    // déblocage pour un mode verrouillé - « base → prix remisé (RANG) »
+    // quand la réputation du rang courant réduit le coût, FREE sinon) -
     // survol blanc (clic = sélection gratuite ou déblocage contre minerais)
     let modes_header = l.modes[0].y - 12.0;
     draw_text("MOVING MODE", left + BOX_PADDING + 4.0, modes_header, 12.0, argb_to_color(BOX_FG));
@@ -671,7 +671,7 @@ pub fn draw_shop_box(state: &GameState) {
 /// la ligne) : « +30 → 5 MIN » (quantité sélectionnée sur le curseur et son
 /// montant) en couleur de la ligne (hover blanc), et le **nombre de
 /// paquets** en dessous (« (3 paquets) », 12 px discret). « PLEIN » quand
-/// rien ne manque, « — » quand rien n'est sélectionné (aucun minerai).
+/// rien ne manque, « - » quand rien n'est sélectionné (aucun minerai).
 fn draw_supply_cost(rect: Rect, txt: String, packs: Option<String>, color: Color) {
     let w = measure_text(&txt, None, 16, 1.0).width;
     draw_text(&txt, rect.x + rect.w - 4.0 - w, rect.y + 22.0, 16.0, color);
@@ -683,7 +683,7 @@ fn draw_supply_cost(rect: Rect, txt: String, packs: Option<String>, color: Color
 
 /// Dessine un **curseur de quantité** du ravitaillement du magasin (même
 /// style que la barre de volume des réglages) : piste sombre, portion
-/// remplie selon `value` sur un maximum `max` et pouce vertical — survol
+/// remplie selon `value` sur un maximum `max` et pouce vertical - survol
 /// blanc (glisser / molette = quantité à acheter, `game.rs`).
 fn draw_supply_slider(track: Rect, max: f64, value: f64, m: Vec2) {
     if max <= 0.0 || track.w <= 0.0 {
@@ -742,7 +742,7 @@ pub fn draw_help_box() {
     draw_rectangle_lines(left, top, w, h, 2.0, argb_to_color(BOX_BORDER));
 
     // libellés des touches (ex windowUtils_createLabel, à 10 px de gauche,
-    // 16 px d'écart) — la touche T est listée mais non implémentée dans
+    // 16 px d'écart) - la touche T est listée mais non implémentée dans
     // l'original (bloc commenté), on la conserve telle quelle
     let labels = [
         "P : pause",
@@ -777,13 +777,13 @@ pub fn draw_help_box() {
 // ─── Écran de paramétrage (touche O) ────────────────────────────────────────
 
 /// Géométrie des contrôles de l'écran de paramétrage : fenêtre 560×280
-/// centrée en deux colonnes — à gauche les cases MUSIC, AUTO GENERATE et
+/// centrée en deux colonnes - à gauche les cases MUSIC, AUTO GENERATE et
 /// TOUCH UI, la barre horizontale du volume (ascenseur) et le bouton RESET
 /// PROGRESSION (pleine largeur de la colonne) ; à droite le panneau
 /// « GRAPHICS » (style de rendu, mode d'affichage fenêtré/plein écran,
 /// définition de fenêtre, anticrénelage) ; les boutons RESET et CLOSE côte
 /// à côte en bas. (Le mode de déplacement se choisit désormais au magasin de
-/// la station — bouton SHOP de la boîte DOCK STATION.)
+/// la station - bouton SHOP de la boîte DOCK STATION.)
 pub struct SettingsLayout {
     /// Ligne cliquable de la case MUSIC.
     pub music: Rect,
@@ -804,7 +804,7 @@ pub struct SettingsLayout {
     pub window_size: Rect,
     /// Ligne cliquable de la case ANTIALIAS (MSAA, appliquée au lancement).
     pub antialias: Rect,
-    /// Bouton RESET PROGRESSION (remet à zéro la progression du scénario —
+    /// Bouton RESET PROGRESSION (remet à zéro la progression du scénario -
     /// minerais, modes payés, réputation, extensions, vies/bouclier ; visible
     /// seulement en scénario à économie ou à survie).
     pub reset_progress: Rect,
@@ -813,7 +813,7 @@ pub struct SettingsLayout {
     pub touch_ui: Rect,
     /// Bouton RESET (réglages par défaut).
     pub reset: Rect,
-    /// Bouton RESTART (relance le jeu — affiché uniquement quand un réglage
+    /// Bouton RESTART (relance le jeu - affiché uniquement quand un réglage
     /// modifié exige un redémarrage, ex l'anticrénelage).
     pub restart: Rect,
     /// Bouton CLOSE (ferme l'écran).
@@ -853,7 +853,7 @@ pub fn settings_box_layout() -> SettingsLayout {
 
     // boutons en bas : RESET à gauche, CLOSE à droite (ex
     // `windowUtils_choiceBox` : 1er sur la moitié gauche, 2e sur la moitié
-    // droite) et RESTART au centre — affiché seulement si un redémarrage est
+    // droite) et RESTART au centre - affiché seulement si un redémarrage est
     // nécessaire
     let btn_w = |label: &str| (measure_text(label, None, 16, 1.0).width + 2.0 * BOX_PADDING).max(60.0);
     let btn_h = 26.0;
@@ -910,7 +910,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     draw_checkbox(layout.music, sounds.music_on, "MUSIC", m);
     draw_checkbox(layout.auto_generate, state.auto_generate, "AUTO GENERATE", m);
 
-    // volume : barre horizontale (ascenseur) — piste, remplissage selon le
+    // volume : barre horizontale (ascenseur) - piste, remplissage selon le
     // volume et curseur vertical ; valeur en % centrée sous la barre (hover
     // blanc sur toute la zone)
     let track = layout.volume_track;
@@ -961,7 +961,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     }
 
     // RESET PROGRESSION : remet à zéro la progression du scénario courant
-    // (minerais, modes payés, réputation, extensions, vies/bouclier) — affiché
+    // (minerais, modes payés, réputation, extensions, vies/bouclier) - affiché
     // seulement quand il y a une progression à remettre (scénario à économie
     // ou à survie) ; en jeu libre, rien à réinitialiser
     if scenario::has_economy(state) || scenario::has_survival(state) {
@@ -969,7 +969,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     }
     draw_checkbox(layout.touch_ui, state.touch_ui, "TOUCH UI", m);
     // télécommande : rappel de l'URL de la page de contrôle (le téléphone
-    // pilote le vaisseau sur le réseau local — voir `remote.rs`), en bas de
+    // pilote le vaisseau sur le réseau local - voir `remote.rs`), en bas de
     // la colonne gauche, au-dessus des boutons RESET / CLOSE
     if let Some(url) = crate::remote::url() {
         draw_text(
@@ -1042,13 +1042,13 @@ pub fn zoom_rect() -> Rect {
 /// La fenêtre est-elle plus grande que la vue 960×540 ? (définition choisie
 /// dans l'écran de paramétrage, ou plein écran). En fenêtré, la vue est alors
 /// rendue dans la texture virtuelle puis étirée (letterbox), comme en plein
-/// écran zoomé — sinon elle est dessinée 1:1. `screen_width/height` renvoie
+/// écran zoomé - sinon elle est dessinée 1:1. `screen_width/height` renvoie
 /// des pixels logiques (dpi divisé), la comparaison est donc directe.
 pub fn window_scaled() -> bool {
     screen_width() != VIEWPORT_WIDTH as f32 || screen_height() != VIEWPORT_HEIGHT as f32
 }
 
-/// Position écran (px fenêtre) convertie en coordonnées du jeu (960×540) —
+/// Position écran (px fenêtre) convertie en coordonnées du jeu (960×540) -
 /// même mapping letterbox que `mouse_to_game` : utilisé par les touches de
 /// l'interface tactile (`touch.rs`), dont les positions sont aussi en px.
 pub fn screen_to_game(pos: Vec2) -> Vec2 {
@@ -1078,17 +1078,17 @@ pub fn virtual_camera(rt: &RenderTarget) -> Camera2D {
 
 /// Caméra de rendu direct du plein écran **natif** (touche F, 3e mode) : la
 /// vue 960×540 est affichée à la définition réelle de l'écran SANS passer par
-/// un render target — un seul passage de rendu à la résolution native (plus
+/// un render target - un seul passage de rendu à la résolution native (plus
 /// net, moins de fill que le double passage rendu + étirement).
 ///
 /// La rect monde visible = écran/scale (`scale = min(W/960, H/540)`, uniforme
 /// avec letterbox) : sur un écran 16:9 c'est exactement 960×540 ; sinon la
 /// vue reste au centre avec des bandes noires, comme en mode `Zoomed`.
 ///
-/// NB — signe de `zoom.y` : le rendu direct à l'écran (render target = None)
+/// NB - signe de `zoom.y` : le rendu direct à l'écran (render target = None)
 /// inverse l'axe y (`invert_y = -1` dans `camera.rs`), contrairement au rendu
 /// dans un render target (`invert_y = +1`, ex `virtual_camera`). Pour un écran
-/// (y=0 en haut), `zoom.y` doit donc être POSITIF — un `-` (copié de
+/// (y=0 en haut), `zoom.y` doit donc être POSITIF - un `-` (copié de
 /// `from_display_rect`) retourne la scène verticalement.
 pub fn native_camera() -> Camera2D {
     let scale = zoom_scale();
@@ -1103,9 +1103,9 @@ pub fn native_camera() -> Camera2D {
     }
 }
 
-/// Sort du plein écran EWMH : ClientMessage REMOVE via libX11 — miniquad
+/// Sort du plein écran EWMH : ClientMessage REMOVE via libX11 - miniquad
 /// 0.4.11 ne sait PAS sortir du plein écran sur X11 (`set_fullscreen(false)`
-/// envoie un ADD avec un atome vide, sans effet — TODO de miniquad, toujours
+/// envoie un ADD avec un atome vide, sans effet - TODO de miniquad, toujours
 /// présent en master) → on envoie nous-mêmes le REMOVE EWMH
 /// (`crate::x11::set_fullscreen(false)`), sans outil externe (`wmctrl`). Sans
 /// WM EWMH, repli sur un simple redimensionnement à la définition de la vue
@@ -1122,11 +1122,11 @@ fn exit_fullscreen() {
 }
 
 /// Entre en plein écran EWMH **proprement** : ClientMessage `_NET_WM_STATE`
-/// ADD via libX11 (`crate::x11::set_fullscreen(true)`), sans unmap/remap —
+/// ADD via libX11 (`crate::x11::set_fullscreen(true)`), sans unmap/remap -
 /// celui de miniquad (`set_fullscreen(true)`) fait `XUnmapWindow`/
 /// `XMapWindow` + `XSync` : la fenêtre vacille (le focus peut quitter le jeu
 /// le temps de la bascule) et la touche F relâchée pendant cette fenêtre est
-/// perdue — la pression suivante est alors avalée par le filtre de répétition
+/// perdue - la pression suivante est alors avalée par le filtre de répétition
 /// de macroquad (il faut presser F deux fois pour changer de mode). Repli sur
 /// miniquad si l'X11 direct n'est pas joignable (hors Linux, display absent).
 pub fn enter_fullscreen() {
@@ -1138,7 +1138,7 @@ pub fn enter_fullscreen() {
 /// Fait cycler le mode d'affichage (touche F) : fenêtré → plein écran zoomé
 /// (EWMH, render target étirée) → plein écran natif (EWMH, définition réelle
 /// de l'écran, sans buffer) → fenêtré. NB : la bascule zoomé → natif ne
-/// change rien de visible (deux pleins écrans, même image) — le HUD annonce
+/// change rien de visible (deux pleins écrans, même image) - le HUD annonce
 /// le mode (« FULLSCREEN (ZOOMED) » / « FULLSCREEN (NATIVE) »).
 ///
 /// Entrée dans les pleins écrans : `enter_fullscreen` (ClientMessage EWMH
@@ -1221,7 +1221,7 @@ pub fn draw_triangle_texture(
 }
 
 /// Ligne en pointillés (approximation du motif `&B1010101010101010` de QB64
-/// pour les triangles morts — un pixel sur deux).
+/// pour les triangles morts - un pixel sur deux).
 fn draw_dashed_line(a: Vec2, b: Vec2, color: Color) {
     let d = b - a;
     let len = d.length();
@@ -1241,9 +1241,9 @@ fn draw_dashed_line(a: Vec2, b: Vec2, color: Color) {
 /// (texturés ou non) (ex `drawShape`).
 ///
 /// NB : l'original recalcule `getBorderSegments` à chaque frame (inutile :
-/// les bords ne servent qu'à la génération et au debug) — on ne le fait pas.
+/// les bords ne servent qu'à la génération et au debug) - on ne le fait pas.
 ///
-/// `fade` (0..1) est l'opacité globale de la forme — utilisée par le fondu
+/// `fade` (0..1) est l'opacité globale de la forme - utilisée par le fondu
 /// enchaîné de la récupération EVA : le cosmonaute s'efface pendant que le
 /// vaisseau reconstruit apparaît (`main.rs`). 1.0 pour toutes les autres
 /// formes.
@@ -1271,7 +1271,7 @@ pub fn draw_shape(
 
     // mode D (ex options = "D" de drawShape) : les indicateurs de bord des
     // triangles sont recalculés (comme l'original qui appelle
-    // getBorderSegments à chaque frame — on ne le fait que si affiché)
+    // getBorderSegments à chaque frame - on ne le fait que si affiché)
     if show_data {
         get_border_segments(shape, triangles);
     }
@@ -1510,7 +1510,7 @@ fn draw_colored_triangle(
         draw_dead_triangle(a, b, c, t, shape);
         return;
     }
-    // NB : chemin complet — `draw_triangle` (macroquad) est masqué par la
+    // NB : chemin complet - `draw_triangle` (macroquad) est masqué par la
     // fonction locale du même nom (triangles non texturés de l'original)
     macroquad::shapes::draw_triangle(a, b, c, fade_color(triangle_color(t, shape, elements), fade));
     draw_element_dot(t, camera, elements, world);
@@ -1538,7 +1538,7 @@ fn draw_mesh_triangle(
     draw_element_dot(t, camera, elements, world);
 }
 
-/// Applique un facteur d'opacité (0..1) à une couleur — utilisé par le fondu
+/// Applique un facteur d'opacité (0..1) à une couleur - utilisé par le fondu
 /// enchaîné de la récupération EVA (`draw_shape`, paramètre `fade`) : le
 /// cosmonaute s'efface pendant que le vaisseau reconstruit apparaît.
 fn fade_color(color: Color, fade: f32) -> Color {
@@ -1587,7 +1587,7 @@ fn draw_element_dot(t: &Triangle, camera: Point, elements: &[Element], world: &W
 
 // ─── Poussée, débris, cargo, HUD ─────────────────────────────────────────────
 
-/// Effet de poussée **de repli** (liste `VAISSEAU_THRUSTERS` vide — sinon le
+/// Effet de poussée **de repli** (liste `VAISSEAU_THRUSTERS` vide - sinon le
 /// jeu dessine le mesh configuré de chaque propulseur, `draw_thruster_gas`) :
 /// 3 cercles dégradés le long de `orientation + angle` (ex `ejectionFlow`),
 /// partant du **point local** (au centre de rotation en repli) tourné avec le
@@ -1632,7 +1632,7 @@ pub fn ejection_flow(
 }
 
 /// Gaz d'éjection d'un propulseur : son **mesh configuré** (la flamme du
-/// propulseur, ex propellerUp.json) dessiné **scintillant** — le mesh
+/// propulseur, ex propellerUp.json) dessiné **scintillant** - le mesh
 /// n'apparaît que quand le propulseur tire, sinon il n'est pas affiché
 /// (remplace l'ancien `ejection_flow`, cercles calculés). Les triangles
 /// (`vaisseau::thruster_mesh_triangles`, repère local du vaisseau) sont
@@ -1677,7 +1677,7 @@ pub fn draw_thruster_gas(
     col.a = alpha as f32;
     for (a, b, c) in tris {
         // puis rotation avec le vaisseau et translation monde (comme les
-        // sommets du mesh — `compute_real_positions`)
+        // sommets du mesh - `compute_real_positions`)
         let mut pa = scal(a);
         let mut pb = scal(b);
         let mut pc = scal(c);
@@ -1697,14 +1697,14 @@ pub fn draw_thruster_gas(
 }
 
 /// Petit **propulseur de la combinaison EVA** : une flamme animée sur le dos
-/// du cosmonaute (dans l'axe `orientation + π`, comme la flamme du vaisseau —
+/// du cosmonaute (dans l'axe `orientation + π`, comme la flamme du vaisseau -
 /// le dos est opposé au déplacement), dessinée quand il pousse (`thrusted`).
-/// Le cosmonaute n'a qu'**un seul propulseur** (pas de marche arrière — voir
+/// Le cosmonaute n'a qu'**un seul propulseur** (pas de marche arrière - voir
 /// `game::cosmonaut_controls`) : une flamme extérieure orange semi-transparente
 /// et un cœur jaune, dont la longueur et la largeur **vacillent** (sinus
 /// rapide + bruit) pour un effet de combustion animé.
 pub fn draw_cosmonaut_thruster(shape: &Shape, camera: Point, world: &World) {
-    // dos du cosmonaute : opposé à l'orientation (déplacement inverse) — la
+    // dos du cosmonaute : opposé à l'orientation (déplacement inverse) - la
     // flamme tourne avec la figure, toujours dans son dos
     let back = shape.orientation + TAU / 2.0;
     let (dx, dy) = (back.cos(), back.sin());
@@ -1729,7 +1729,7 @@ pub fn draw_cosmonaut_thruster(shape: &Shape, camera: Point, world: &World) {
     let tip = Point::new(x + dx * (nozzle + len), y + dy * (nozzle + len));
     let l1 = Point::new(base.x + px * half, base.y + py * half);
     let l2 = Point::new(base.x - px * half, base.y - py * half);
-    // flamme extérieure orange (semi-transparente) — chemin complet : la
+    // flamme extérieure orange (semi-transparente) - chemin complet : la
     // fonction locale `draw_triangle` (triangles non texturés) masque celle de
     // macroquad
     macroquad::shapes::draw_triangle(
@@ -1771,7 +1771,7 @@ pub fn draw_cargo(state: &GameState, elements: &[Element]) {
     let e3 = e2 + elements[3].count;
     // soute presque pleine : les baies occupées clignotent (elles alternent
     // leur couleur ↔ rouge tant que le cargo reste à `HUD_FULL_CARGO_RATIO`
-    // de sa capacité — les emplacements vides gardent leur contour gris)
+    // de sa capacité - les emplacements vides gardent leur contour gris)
     let almost_full = state.player.cargo_size > 0
         && state.player.cargo_qty as f64 / state.player.cargo_size as f64 >= HUD_FULL_CARGO_RATIO;
     let blink_on = almost_full && (get_time() * HUD_BLINK_HZ) as i64 % 2 == 0;
@@ -1798,7 +1798,7 @@ pub fn draw_cargo(state: &GameState, elements: &[Element]) {
 // ─── Accostage : mire au centre de la station + HUD d'approche ──────────────
 
 /// Transparence (octet alpha ARGB) de la mire d'accostage : discrète (canal
-/// alpha volontairement bas, comme les liens d'accostage) — l'anneau et la
+/// alpha volontairement bas, comme les liens d'accostage) - l'anneau et la
 /// croix sont plus légers que le point central (l'effet néon empile des
 /// halos dérivés de ces alphas, voir `neon_ring`/`neon_line`/`neon_dot`).
 const DOCK_MARKER_ALPHA: u32 = 0x66;
@@ -1806,7 +1806,7 @@ const DOCK_MARKER_DOT_ALPHA: u32 = 0x99;
 
 /// Qualité de l'approche pour la mire (0 = rouge, 1 = vert) : interpolée sur
 /// **tout le rayon de la base** (0 au bord du rayon, 1 au centre) et sur la
-/// vitesse (0 à `DOCK_APPROACH_FULL_RED_SPEED` ou plus, 1 à l'arrêt) — la
+/// vitesse (0 à `DOCK_APPROACH_FULL_RED_SPEED` ou plus, 1 à l'arrêt) - la
 /// mire réagit dès que le vaisseau entre dans le rayon de la station.
 fn docking_approach_quality(dist: f64, speed: f64, station_radius: f64) -> f64 {
     let dist_q = 1.0 - (dist / station_radius).clamp(0.0, 1.0);
@@ -1815,7 +1815,7 @@ fn docking_approach_quality(dist: f64, speed: f64, station_radius: f64) -> f64 {
 }
 
 /// Effet néon d'un anneau : halo (3 cercles concentriques d'alpha décroissant
-/// — macroquad n'a pas de flou, on empile) + anneau principal + cœur clair.
+/// - macroquad n'a pas de flou, on empile) + anneau principal + cœur clair.
 fn neon_ring(x: f32, y: f32, radius: f32, color: Color) {
     for i in 1..=3 {
         let mut halo = color;
@@ -1849,9 +1849,9 @@ fn neon_dot(x: f32, y: f32, radius: f32, color: Color) {
 }
 
 /// Mire d'accostage au centre de la station : la **zone d'accostage** (cercle
-/// de rayon `STATION_DOCK_DISTANCE`) est affichée — cercle + croix de visée +
+/// de rayon `STATION_DOCK_DISTANCE`) est affichée - cercle + croix de visée +
 /// point central, semi-transparents, légèrement pulsants et avec un **effet
-/// néon** (halo + cœur clair) — pour montrer où poser le vaisseau. La couleur
+/// néon** (halo + cœur clair) - pour montrer où poser le vaisseau. La couleur
 /// passe **progressivement du rouge au vert selon la qualité de l'approche**,
 /// interpolée sur **tout le rayon de la base** (`station_radius`) : rouge au
 /// bord du rayon de la station ou trop rapide, vert au centre et presque
@@ -1896,13 +1896,13 @@ pub fn draw_docking_marker(
 
 /// Transparence (octet alpha ARGB) des liens d'accostage : canal alpha bas
 /// (comme la mire) pour que les 4 liens simultanés restent discrets et
-/// laissent voir le vaisseau — l'effet néon empile des halos dérivés de cet
+/// laissent voir le vaisseau - l'effet néon empile des halos dérivés de cet
 /// alpha (voir `neon_line`).
 const DOCK_LINE_ALPHA: u32 = 0x66;
 
 /// Distance (unités monde, du centre du vaisseau) des points de branchement
 /// des liens d'accostage : les 4 liens se connectent en diagonale (NO, SO,
-/// SE, NE) sur un petit losange **proche du centre** — l'illusion qu'ils
+/// SE, NE) sur un petit losange **proche du centre** - l'illusion qu'ils
 /// touchent le vaisseau (ils sont dessinés dessous).
 const DOCK_LINE_SHIP_ANCHOR: f64 = 5.0;
 
@@ -1912,7 +1912,7 @@ const DOCK_LINE_SHIP_ANCHOR: f64 = 5.0;
 /// extérieure en entrant) : jamais pendant que le vaisseau quitte
 /// l'accostage, à quai, pendant l'animation d'accostage (il est tiré vers le
 /// centre), tant que la boîte DOCK STATION / l'atelier est ouvert (accosté)
-/// et pendant la rétraction des liens au départ — dans tous ces cas, le
+/// et pendant la rétraction des liens au départ - dans tous ces cas, le
 /// vaisseau est tenu par les liens ou le guide est coupé. En plus du guide,
 /// la distance au centre de la base doit être sous `station_radius` (le
 /// guide n'est actif que dans le rayon, garde défensive).
@@ -1942,7 +1942,7 @@ pub fn docking_marker_visible(
 /// une intensité d'ondulation `wave` (0 = câble tendu) à l'instant `time` :
 /// onde qui court vers le **vaisseau** (`toward_ship`, déploiement « en
 /// projection ») ou vers l'**anneau** (rétraction), enveloppe croissante
-/// vers l'extrémité mobile (`× t` — l'extrémité libre fouette).
+/// vers l'extrémité mobile (`× t` - l'extrémité libre fouette).
 fn cable_wave_offset(t: f32, wave: f32, time: f32, toward_ship: bool) -> f32 {
     let speed = if toward_ship { -18.0 } else { 18.0 };
     (t * 12.0 + time * speed).sin() * wave * t
@@ -1989,12 +1989,12 @@ fn draw_docking_cable(a: Vec2, b: Vec2, prog: f32, wave: f32, toward_ship: bool,
 }
 
 /// Traits d'accostage dessinés quand le vaisseau est **tenu par les liens** :
-/// à quai (`state.dock_links`, lancement/respawn — vaisseau au centre, liens
+/// à quai (`state.dock_links`, lancement/respawn - vaisseau au centre, liens
 /// tendus), **pendant l'animation d'accostage** (avant l'ouverture de la boîte
 /// DOCK STATION, `state.dock_anim > 0`) et **pendant la rétraction au
 /// départ** (`state.dock_retract > 0`, après CLOSE ou au démarrage) : **4
 /// liens néon verts simultanés** qui relient le bord intérieur de la station
-/// (rayon `STATION_INNER_RADIUS`) au vaisseau — un par **diagonale** (NO,
+/// (rayon `STATION_INNER_RADIUS`) au vaisseau - un par **diagonale** (NO,
 /// SO, SE, NE, angle ±π/4, plus crédible que les cardinaux), chacun partant
 /// de l'anneau de la station vers le point diagonal correspondant du
 /// vaisseau, **près de son centre** (`DOCK_LINE_SHIP_ANCHOR`, l'illusion
@@ -2023,7 +2023,7 @@ pub fn draw_docking_line(
         return;
     }
     // avancement de la rétraction 0..1 (lissé) : 0 = liens tendus jusqu'au
-    // vaisseau, 1 = rétractés sur le bord intérieur de l'anneau (disparus) —
+    // vaisseau, 1 = rétractés sur le bord intérieur de l'anneau (disparus) -
     // à quai (`docked`) : liens tendus, r = 0
     let r = if retracting {
         let t = (1.0 - state.dock_retract / DOCK_RETRACT_DURATION).clamp(0.0, 1.0);
@@ -2041,7 +2041,7 @@ pub fn draw_docking_line(
     } else {
         1.0
     };
-    // bord intérieur de la station aux 4 points DIAGONAUX (NO, SO, SE, NE —
+    // bord intérieur de la station aux 4 points DIAGONAUX (NO, SO, SE, NE -
     // angle ±π/4, plus crédible que les 4 points cardinaux), avant rotation
     let diag = std::f64::consts::FRAC_1_SQRT_2; // cos/sin de ±π/4 ≈ 0,7071
     let inner = [
@@ -2051,7 +2051,7 @@ pub fn draw_docking_line(
         Point::new(STATION_INNER_RADIUS * diag, -STATION_INNER_RADIUS * diag),  // NE
     ];
     // côté correspondant du vaisseau : mêmes diagonales mais **près du
-    // centre** (petit losange à ~`DOCK_LINE_SHIP_ANCHOR` du centre —
+    // centre** (petit losange à ~`DOCK_LINE_SHIP_ANCHOR` du centre -
     // l'illusion que les liens touchent le vaisseau, dessinés dessous)
     let anchor = DOCK_LINE_SHIP_ANCHOR * diag;
     let sides = [
@@ -2097,7 +2097,7 @@ pub fn draw_docking_line(
 /// Cordon de **récupération** du cosmonaute EVA (vaisseau détruit, il a
 /// rejoint la base) : pendant la récupération (`state.eva_recovery > 0`), un
 /// cordon **orange** jaillit de l'anneau jusqu'au cosmonaute (déploiement sur
-/// les ~30 % du début) puis, tendu, le **ramène sur l'anneau** — son
+/// les ~30 % du début) puis, tendu, le **ramène sur l'anneau** - son
 /// ondulation s'affaisse à mesure que la tension monte ; pendant le fondu
 /// enchaîné (`state.eva_crossfade > 0`), il reste tendu et **s'efface avec le
 /// cosmonaute**. Dessiné **sous le cosmonaute** (appelé avant son rendu).
@@ -2116,7 +2116,7 @@ pub fn draw_eva_recovery_cable(
         return; // cosmonaute au centre : le cordon n'a pas encore d'ancrage
     }
     // ancrage sur l'anneau, dans la direction du cosmonaute (il est ramené
-    // radialement — le cordon reste tendu le long du rayon)
+    // radialement - le cordon reste tendu le long du rayon)
     let anchor = Point::new(pos.x / r * STATION_INNER_RADIUS, pos.y / r * STATION_INNER_RADIUS);
     let a = screen_point(anchor, camera, world);
     let b = screen_point(pos, camera, world);
@@ -2128,7 +2128,7 @@ pub fn draw_eva_recovery_cable(
         draw_docking_cable(a, b, 1.0, 0.0, true, color); // tendu
     } else {
         // récupération : déploiement rapide vers le cosmonaute (les ~30 % du
-        // début), puis cordon tendu qui tire — ondulation forte tant que le
+        // début), puis cordon tendu qui tire - ondulation forte tant que le
         // câble est lâche, nulle une fois la tension installée
         let t = (1.0 - state.eva_recovery / EVA_RECOVERY_DURATION).clamp(0.0, 1.0) as f32;
         let deploy = (t / 0.3).clamp(0.0, 1.0);
@@ -2139,12 +2139,12 @@ pub fn draw_eva_recovery_cable(
 
 /// HUD d'accostage, affiché à la **suite des stats** (même ligne, en haut de
 /// l'écran) : distance du vaisseau au centre de la station (unités monde,
-/// sans unité affichée) et invite — « DOCK DIST: 123 » en approche,
+/// sans unité affichée) et invite - « DOCK DIST: 123 » en approche,
 /// « DOCK: SLOW DOWN » (rouge) dans la zone mais trop rapide pour accoster,
 /// « DOCK: IN RANGE » (vert) dans la zone et presque immobile, « DOCKED » à
 /// quai (liens attachés au lancement/respawn ou boîte ouverte). La zone
 /// elle-même est visible via la mire (`draw_docking_marker`). `x` est
-/// l'abscisse de départ — l'emplacement fixe du statut, renvoyé par
+/// l'abscisse de départ - l'emplacement fixe du statut, renvoyé par
 /// `draw_hud`. La distance occupe une largeur fixe de 4 chiffres (alignée à
 /// droite) : l'affichage ne tremble pas quand elle change.
 pub fn draw_docking_hud(
@@ -2186,12 +2186,12 @@ pub fn draw_docking_hud(
 /// Colonne de départ du FPS (champ fixe de 3 chiffres : boucle plafonnée à
 /// 600 fps).
 const HUD_FPS_COL: i32 = 1;
-/// Colonne de départ de la réputation (+ rang) — champ fixe de 4 chiffres.
+/// Colonne de départ de la réputation (+ rang) - champ fixe de 4 chiffres.
 const HUD_REPUTATION_COL: i32 = 15;
-/// Colonne de départ de la précision — champ fixe de 3 chiffres (max 100).
+/// Colonne de départ de la précision - champ fixe de 3 chiffres (max 100).
 const HUD_PRECISION_COL: i32 = 42;
 /// Colonne de départ des ressources du scénario (carburant, munitions,
-/// minerais — ou vies/bouclier).
+/// minerais - ou vies/bouclier).
 const HUD_RESOURCES_COL: i32 = 57;
 /// Largeur maximale (en caractères) du bloc de ressources en économie → le
 /// statut d'accostage démarre juste après (colonne 97).
@@ -2202,7 +2202,7 @@ const HUD_RESOURCES_SURVIVAL_COLS: i32 = 16;
 
 /// Fréquence (Hz) du **clignotement d'alerte** des ressources du HUD :
 /// carburant/munitions presque vides et baies de chargement presque pleines
-/// alternent leur couleur (blanc ↔ rouge, ~3 cycles/s — même principe que
+/// alternent leur couleur (blanc ↔ rouge, ~3 cycles/s - même principe que
 /// le flash des règles du menu titre, `title.rs`).
 const HUD_BLINK_HZ: f64 = 3.0;
 /// Couleur d'alerte (ARGB) du clignotement : rouge vif (même teinte que
@@ -2222,7 +2222,7 @@ fn hud_col_x(col: i32) -> f32 {
 }
 
 /// HUD : FPS, réputation (+ rang en scénario à économie), précision et
-/// ressources du scénario (carburant, munitions, minerais — ou vies/bouclier
+/// ressources du scénario (carburant, munitions, minerais - ou vies/bouclier
 /// en Survival) sur une **seule ligne** en haut de l'écran, à des colonnes
 /// fixes (anti-tremblement). Renvoie l'abscisse de l'emplacement fixe du
 /// statut d'accostage pour que `draw_docking_hud` l'affiche sur la même
@@ -2237,9 +2237,9 @@ pub fn draw_hud(state: &GameState) -> f32 {
         WHITE,
     );
     // réputation : compteur d'astéroïdes détruits (jeu libre) ou réputation
-    // du scénario (économie — croît avec les destructions et la précision) ;
+    // du scénario (économie - croît avec les destructions et la précision) ;
     // en économie, le rang courant (palier débloqué par la réputation, ex
-    // CADET → PILOT → ACE) est affiché à côté — champ fixe de 4 chiffres
+    // CADET → PILOT → ACE) est affiché à côté - champ fixe de 4 chiffres
     let economy = scenario::has_economy(state);
     let reputation = if economy {
         state.resources.reputation as i32
@@ -2263,8 +2263,8 @@ pub fn draw_hud(state: &GameState) -> f32 {
         );
     }
     // ressources du scénario, sur la même ligne : carburant/munitions/minerais
-    // (économie — les capacités montrent les extensions d'atelier achetées)
-    // ou vies + bouclier (Survival) — champs fixes : 3/3/2/2/5 chiffres
+    // (économie - les capacités montrent les extensions d'atelier achetées)
+    // ou vies + bouclier (Survival) - champs fixes : 3/3/2/2/5 chiffres
     let dock_col = if economy {
         // blocs dessinés séparément (mêmes champs fixes → même abscisse de
         // départ pour chacun, aucune dérive) pour pouvoir **clignoter** une
@@ -2273,7 +2273,7 @@ pub fn draw_hud(state: &GameState) -> f32 {
         // `HUD_LOW_RESERVE_RATIO` de leur capacité
         let fuel_cap = scenario::fuel_capacity(state);
         // munitions : totaux des armes possédées (chaque arme a son stock,
-        // le HUD en montre la somme — `scenario::total_ammo`)
+        // le HUD en montre la somme - `scenario::total_ammo`)
         let ammo_cap = scenario::total_ammo_capacity(state);
         let fuel_txt = format!("FUEL:{:>3.0}/{:>3}", state.resources.fuel, fuel_cap);
         let ammo_txt = format!(" AMMO:{:>2}/{:>2}", scenario::total_ammo(state), ammo_cap);
@@ -2303,7 +2303,7 @@ pub fn draw_hud(state: &GameState) -> f32 {
         );
         HUD_RESOURCES_COL + HUD_RESOURCES_SURVIVAL_COLS + 1
     } else {
-        // jeu libre : pas de ressources — l'accostage suit PRECISION
+        // jeu libre : pas de ressources - l'accostage suit PRECISION
         HUD_RESOURCES_COL
     };
     // fin de partie (Survival, dernière vie perdue) : GAME OVER au centre
@@ -2402,7 +2402,7 @@ pub fn draw_info(
         white,
     );
     // ligne 4, colonne 1 : minerais contenus dans les météores (somme des
-    // `minerals` — libérés en gemmes quand deux météores se détruisent)
+    // `minerals` - libérés en gemmes quand deux météores se détruisent)
     let meteor_minerals: i32 = shapes.iter().map(|s| s.minerals).sum();
     draw_text(
         &format!("meteor minerals:{}", meteor_minerals),
@@ -2487,7 +2487,7 @@ mod tests {
     }
 
     /// Rebouchage torique : une étoile qui sort par la droite (ou le bas) de la
-    /// tuile réapparaît à gauche (ou en haut) — ex `normalizePlanPosition`.
+    /// tuile réapparaît à gauche (ou en haut) - ex `normalizePlanPosition`.
     #[test]
     fn star_parallax_wraps_around_tile() {
         // étoile près du bord droit de la tuile, caméra qui recule
@@ -2518,7 +2518,7 @@ mod tests {
 
     /// La mire réagit dans TOUT le rayon de la base : la qualité est nulle
     /// (rouge) au bord du rayon de la station, pleine (vert) au centre à
-    /// l'arrêt, et interpolée entre les deux — plus seulement dans la zone
+    /// l'arrêt, et interpolée entre les deux - plus seulement dans la zone
     /// d'accostage de 15 px.
     #[test]
     fn docking_quality_spans_the_whole_station_radius() {
@@ -2610,7 +2610,7 @@ mod tests {
     /// la déformation est nulle à l'anneau (ancré, t = 0) et quand l'intensité
     /// est nulle (câble tendu) ; l'extrémité libre (t = 1) fouette (amplitude
     /// bornée par l'intensité, croissante vers l'extrémité libre × t) ; l'onde
-    /// court dans le temps — vers l'anneau en rétraction, vers le vaisseau en
+    /// court dans le temps - vers l'anneau en rétraction, vers le vaisseau en
     /// déploiement (sens opposés).
     #[test]
     fn docking_cable_undulates_in_both_directions() {

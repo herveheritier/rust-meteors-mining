@@ -13,11 +13,11 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
 - **Météores destructibles** : 6 à 16 triangles par météore, générés
   procéduralement, avec choc élastique entre eux et débris à chaque impact.
 - **Minage** : les triangles minéraux (or, fer…) laissent des gemmes à ramasser.
-- **Soute** : 5 éléments maximum — pleine, il faut décharger à la station.
+- **Soute** : 5 éléments maximum - pleine, il faut décharger à la station.
 - **Station** : au lancement (et après respawn) le vaisseau est **à quai**
   au centre de la base, **tenu par 4 liens néon** (mire cachée) ; dès qu'on
   démarre (une flèche), les **liens se rétractent** (1,5 s, monde gelé) et le
-  vaisseau est libre — hors de la base, ni lien ni cible, et **pas de mire
+  vaisseau est libre - hors de la base, ni lien ni cible, et **pas de mire
   tant qu'on quitte l'accostage** : la mire n'est affichée **que lors du
   retour**. Au **retour**, au moment où l'on **franchit la limite extérieure
   de la base en entrant** (après l'avoir franchie en sortant), la **mire**
@@ -26,7 +26,7 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   base** : sa couleur passe **progressivement du rouge au vert** selon la
   distance au centre ET la vitesse (rouge au bord du rayon ou trop rapide,
   vert au centre et presque immobile) ; la distance est au HUD
-  (`DOCK DIST: 123` — sans unité — / `DOCK: SLOW DOWN` / `DOCK: IN RANGE` /
+  (`DOCK DIST: 123` - sans unité - / `DOCK: SLOW DOWN` / `DOCK: IN RANGE` /
   `DOCKED`).
   L'accostage se termine seulement **presque immobile dans la zone** : la
   mire **disparaît** et une **animation de 3 s** (monde gelé) **projette**
@@ -37,39 +37,39 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   la boîte DOCK STATION s'ouvre (cargo déchargé, vaisseau réparé). Au départ
   (CLOSE), la **tension est relâchée** : les liens se **rétractent en
   ondulant** (une onde court du vaisseau vers l'anneau, l'extrémité libre
-  fouette puis retombe — comme un câble qui se rentre), puis le vaisseau est
+  fouette puis retombe - comme un câble qui se rentre), puis le vaisseau est
   libre.
 - **Météores en continu** : génération automatique (limite 150) ou à la demande.
 - **Minerais dans les météores** : chaque météore contient une quantité de
-  minerai (un par triangle minéralisé — or, fer, eau — au départ, plus un
+  minerai (un par triangle minéralisé - or, fer, eau - au départ, plus un
   par gemme absorbée). Le minerai n'est **jamais détruit** quand son météore
   l'est : qu'il soit détruit par un **autre météore** ou par un **missile du
   vaisseau**, ses minerais sont **libérés en gemmes** à sa position. Le seul
   cas de destruction de minerai : un **missile touche directement la gemme**
   (elle est détruite, sans nouvelle gemme). Si un **météor percute une
   gemme**, il l'**absorbe** (elle disparaît, sa quantité de minerai augmente)
-  sans être endommagé — les gemmes qu'il a mangées sont récupérables en le
+  sans être endommagé - les gemmes qu'il a mangées sont récupérables en le
   détruisant (missile ou collision).
 - **Cosmonaute de secours** : quand le vaisseau est détruit (jeu libre ou
-  Progression), le pilote est **éjecté** — un petit **cosmonaute EVA** (le
+  Progression), le pilote est **éjecté** - un petit **cosmonaute EVA** (le
   personnage de `assets/cosmonaute.json`, en couleurs par face) apparaît à la
   position du crash et devient le personnage contrôlé : il se dirige **comme
   le vaisseau** mais avec **un seul propulseur** : la poussée est
-  **vectorielle** (↑ ajoute la poussée au **vecteur de déplacement** — pour
+  **vectorielle** (↑ ajoute la poussée au **vecteur de déplacement** - pour
   changer de direction, d'abord **s'orienter** avec ←/→, puis pousser), pas
   de frein ni de marche arrière ; la caméra, la mire et le HUD le suivent),
-  dessiné **au premier plan** — uniquement pendant l'EVA (jamais de
-  cosmonaute supplémentaire dans le monde) — avec un **petit propulseur sur
+  dessiné **au premier plan** - uniquement pendant l'EVA (jamais de
+  cosmonaute supplémentaire dans le monde) - avec un **petit propulseur sur
   le dos**
   (flamme animée orange/jaune, vacillante, visible quand il pousse) et des
   **membres animés** : bras et jambes **s'agitent** (bascule autour des
   épaules/hanches) pendant la poussée puis retombent au repos. Il peut
-  **ramasser les gemmes** par proximité (même soute que le vaisseau —
+  **ramasser les gemmes** par proximité (même soute que le vaisseau -
   déchargée en minerais à la station). Au crash, les minerais collectés
   sont **rejetés autour** du vaisseau détruit (une gemme par minerai,
-  éparpillée à proximité, soute vidée) — le cosmonaute, ou le vaisseau
+  éparpillée à proximité, soute vidée) - le cosmonaute, ou le vaisseau
   ressuscité en Survival, peut les ramasser à nouveau. Son **seul
-  objectif** : **rejoindre la base** — dès qu'il atteint la zone d'accostage au centre de la
+  objectif** : **rejoindre la base** - dès qu'il atteint la zone d'accostage au centre de la
   station, la **récupération** s'anime : un **cordon orange** jaillit de
   l'anneau jusqu'à lui et le **ramène sur l'anneau** (~2,5 s, monde gelé,
   ondulation qui s'affaisse quand la tension monte), puis un **fondu
@@ -86,7 +86,7 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
 cargo run --release
 ```
 
-La fenêtre 960 × 540 s'ouvre sur l'écran titre — appuyez sur une touche
+La fenêtre 960 × 540 s'ouvre sur l'écran titre - appuyez sur une touche
 (autre que F/O/N) pour lancer la partie. **N** y change de scénario (jeu
 libre ou Progression, voir « Scénarios » ci-dessous).
 
@@ -106,9 +106,9 @@ autre machine (même OS) et le lancer directement, sans dossier `assets/` ni
 
 Optimisations de taille appliquées (profil `release` de `Cargo.toml`) :
 `lto = true`, `codegen-units = 1`, `strip = true` ; la texture météore est
-embarquée en **JPEG** (457 Ko au lieu de 3,1 Mo en PNG — feature `jpeg` de la
+embarquée en **JPEG** (457 Ko au lieu de 3,1 Mo en PNG - feature `jpeg` de la
 crate `image` activée). Compression finale facultative avec **UPX** (binaire
-statique sur GitHub) — à relancer après chaque `cargo build --release` :
+statique sur GitHub) - à relancer après chaque `cargo build --release` :
 
 ```bash
 upx --best --lzma target/release/rust-meteors-mining
@@ -124,7 +124,7 @@ upx --best --lzma target/release/rust-meteors-mining
 | Shift (gauche ou droit) | Tirer |
 | P | Pause |
 | S | Aide (liste des touches, fermeture au clic sur CLOSE) |
-| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS, volume (barre horizontale cliquable/glissable) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 — clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en Progression/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario — minerais, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi — puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
+| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS, volume (barre horizontale cliquable/glissable) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en Progression/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - minerais, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
 | G | Générer un météore près du vaisseau |
 | A | Activer/désactiver la génération automatique des météores |
 | C | Créer un alien |
@@ -142,56 +142,56 @@ centre de la station passe du rouge au vert avec la vitesse (vert = prêt,
 (UNLOAD / SHOP / CLOSE) : UNLOAD décharge
 la soute, SHOP ouvre le **magasin de la station** (section « MOVING MODE » :
 choisir un mode de déplacement, ou le débloquer contre minerais en scénario
-à économie — dans tous les scénarios ; en Progression, s'y ajoutent les
-lignes d'extension de vaisseau et le **ravitaillement** — carburant et
+à économie - dans tous les scénarios ; en Progression, s'y ajoutent les
+lignes d'extension de vaisseau et le **ravitaillement** - carburant et
 munitions achetés indépendamment, **à la quantité** : chaque ligne porte un
 **curseur** (glisser ou molette) qui choisit combien de carburant (ou de
-munitions pour l'arme) acheter, le coût s'affiche à droite — clic sur la
-ligne pour acheter la quantité choisie), CLOSE ferme — la boîte reste
+munitions pour l'arme) acheter, le coût s'affiche à droite - clic sur la
+ligne pour acheter la quantité choisie), CLOSE ferme - la boîte reste
 ouverte après UNLOAD et les achats du magasin pour tout faire avant de
 partir.
 
 ## Scénarios
 
-Les scénarios (choisis à l'écran titre, touches N/B ou 1-3 — l'écran titre
+Les scénarios (choisis à l'écran titre, touches N/B ou 1-3 - l'écran titre
 affiche leurs **règles** (`[ RULES : … ]`, dérivées des données par
 `scenario::scenario_rules`, avec les **valeurs chiffrées en surbrillance**
-dans la **couleur propre du scénario** — jaune pour Progression, cyan pour
-Survival (coûts, vies, bouclier, dégâts, rangs) — pour faire ressortir ce
+dans la **couleur propre du scénario** - jaune pour Progression, cyan pour
+Survival (coûts, vies, bouclier, dégâts, rangs) - pour faire ressortir ce
 qui change au basculement ; juste après un changement (N/B/1-3), toute la
 ligne **clignote dans cette couleur** ~1,2 s pour attirer l'œil) et la
 **progression enregistrée** du scénario (`[ SAVE : … ]`,
 minerais/modes/réputation ou vies/bouclier, avec les **valeurs en
-surbrillance** dans la couleur du scénario elles aussi —
+surbrillance** dans la couleur du scénario elles aussi -
 `scenario::save_summary_segments`)) encapsulent des règles de jeu en
 **données +
-points d'accroche purs** (`src/scenario.rs`) — la boucle (`game.rs`) ne fait
+points d'accroche purs** (`src/scenario.rs`) - la boucle (`game.rs`) ne fait
 qu'appeler des fonctions testables sans macroquad :
 
-- **FREE PLAY** (défaut) — le comportement historique : aucun coût, tous les
+- **FREE PLAY** (défaut) - le comportement historique : aucun coût, tous les
   modes de déplacement disponibles, carburant et munitions illimités.
-- **PROGRESSION** — l'exemple d'économie :
+- **PROGRESSION** - l'exemple d'économie :
   - le vaisseau démarre gratuitement en mode **REALISTIC**, identique à
     **INERTIAL** pour la poussée vectorielle ; ses propulseurs latéraux
     accélèrent progressivement la rotation, le relâchement la conserve et la
     poussée opposée permet de la compenser jusqu'à l'arrêt ; seuls les modes
     dont le coût configuré (outil) est nul sont débloqués au départ
-    (REALISTIC par défaut) ; les modes payants — **INERTIAL** (15 minerais),
-    **4 WAYS** (30) et **DIRECTIONAL** (45) — se débloquent dans le
+    (REALISTIC par défaut) ; les modes payants - **INERTIAL** (15 minerais),
+    **4 WAYS** (30) et **DIRECTIONAL** (45) - se débloquent dans le
     **magasin de la station** (bouton SHOP de la boîte DOCK STATION) en
     payant des minerais (coût affiché à côté du mode) ;
   - les minerais s'obtiennent en minant : chaque gemme déchargée à la station
     vaut selon son élément (or 5, fer 3, eau 2) ;
   - **carburant** et **munitions** sont payants : chaque poussée consomme du
-    carburant (moteur éteint, plus de poussée — rotations libres), chaque tir
+    carburant (moteur éteint, plus de poussée - rotations libres), chaque tir
     une munition par arme ; ils s'achètent au magasin (section
     RAVITAILLEMENT), **indépendamment** et **à la quantité** : un **curseur**
     par ressource (glisser à la souris, molette = ± un paquet) choisit les
-    unités à acheter — tout achat paie au moins un paquet (10 carburant = 1
+    unités à acheter - tout achat paie au moins un paquet (10 carburant = 1
     minerai ; les munitions par **paquet** propre à chaque arme, ex 1 minerai
     pour 5 munitions, via une ligne AMMO par arme possédée) ; le curseur
     part d'office sur le **maximum achetable** avec les minerais courants,
-    pour ne jamais rester bloqué faute d'un plein complet — plus d'achat
+    pour ne jamais rester bloqué faute d'un plein complet - plus d'achat
     automatique au déchargement ;
   - les **armes du catalogue** s'achètent au magasin (bouton SHOP) : une
     arme payante (coût en minerais, 0 = arme de base toujours équipée) ne
@@ -199,7 +199,7 @@ qu'appeler des fonctions testables sans macroquad :
     son propre stock de munitions (un tir consomme 1 munition de chaque arme
     qui tire ; une arme à court de munitions s'arrête, les autres
     continuent) et son propre paquet de ravitaillement ;
-  - **le magasin** (bouton SHOP de la boîte DOCK STATION — la place de
+  - **le magasin** (bouton SHOP de la boîte DOCK STATION - la place de
     marché/atelier) permet d'acheter contre minerais des extensions
     de vaisseau, persistées avec la progression : **réservoir** (100 de base,
     3 extensions de +50 → 250 max), **chargeur** (30 de base, 3 extensions
@@ -208,15 +208,15 @@ qu'appeler des fonctions testables sans macroquad :
     la soute s'agrandit immédiatement ; le HUD affiche les capacités courantes
     (`FUEL:50/150 AMMO:20/45`) ;
   - la **réputation** croît à chaque astéroïde détruit, d'autant plus que la
-    précision de tir est bonne (gain × (1 + 2 × précision)) — affichée au HUD
+    précision de tir est bonne (gain × (1 + 2 × précision)) - affichée au HUD
     avec FUEL / AMMO / MINERALS ; elle débloque des **rangs** (paliers
     affichés au HUD, ex `REPUTATION:37 (ACE)`) : CADET (0) → PILOT (10) →
     VETERAN (25) → ACE (50), chaque palier franchi est annoncé (« RANK UP:
     PILOT ») ;
-- **SURVIVAL** — preuve que le système s'étend hors de l'économie : ni
+- **SURVIVAL** - preuve que le système s'étend hors de l'économie : ni
   minerais ni verrous (tous les modes disponibles), mais le vaisseau a des
   **vies** (3) et un **bouclier** qui absorbe les impacts (3 points) ; quand
-  il est percé, l'impact suivant détruit le vaisseau — une vie est perdue et
+  il est percé, l'impact suivant détruit le vaisseau - une vie est perdue et
   il respawne à la station (bouclier rechargé + **2 s d'invulnérabilité**, le
   vaisseau clignote), la dernière vie perdue termine la partie (HUD « GAME
   OVER », seule la touche ESC quitte) ; le **multiplicateur de dégâts**
@@ -230,7 +230,7 @@ partie est **persistée** dans le fichier de config (clés `scenario` +
 `prog_*`) et restaurée au lancement suivant (le dernier scénario joué reprend
 automatiquement) : minerais, modes payés et réputation en Progression
 (`prog_minerals`, `prog_modes`, `prog_reputation`), **vies et bouclier en
-Survival** (`prog_lives`, `prog_shield` — bornés aux capacités du scénario,
+Survival** (`prog_lives`, `prog_shield` - bornés aux capacités du scénario,
 une sauvegarde à 0 vie repart au départ complet) ; chaque scénario n'écrit
 que ses propres clés, sans écraser la sauvegarde de l'autre. Le carburant et
 les munitions (par arme), eux, repartent pleins à chaque lancement ; les
@@ -240,12 +240,12 @@ armes achetées, elles, sont persistées (`prog_weapons`).
 
 Une **application de gestion dédiée** accompagne le jeu : son but est la
 **mise au point des objets vendus sur la place de marché** accessible depuis
-la base — les extensions de vaisseau et les modes de déplacement (bouton
+la base - les extensions de vaisseau et les modes de déplacement (bouton
 `SHOP` de la boîte DOCK STATION, scénario Progression).
 
 `tools/marketplace-editor/index.html` est une **page unique, autonome** (HTML
 + CSS + JS embarqués, aucune dépendance, fonctionne hors ligne en ouvrant le
-fichier dans un navigateur — comme l'éditeur « meshes-designer » pour les
+fichier dans un navigateur - comme l'éditeur « meshes-designer » pour les
 meshes) qui permet de : les cartes s'affichent **une à la fois** (navigation
 **◀/▶** en haut de page, **flèches ← / →** du clavier, ou clic direct dans
 la **liste des cartes** de l'encart de gauche, qui regroupe aussi les boutons
@@ -262,52 +262,52 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
 - **éditer l'économie de la station** : valeur des gemmes en minerais
   (`ELEMENT_VALUES` : or/fer/eau), modes de déplacement (`MOVING_MODES` :
   nom, description et coût de déblocage de chaque mode, vendus au magasin de
-  la station — `MODE_COSTS` en est dérivé ; seuls les modes à coût nul
+  la station - `MODE_COSTS` en est dérivé ; seuls les modes à coût nul
   (REALISTIC par défaut) sont débloqués au départ, les autres, INERTIAL
   compris, s'achètent au magasin) et prix du ravitaillement
   (`FUEL_PRICE`/`FUEL_STEP`, `AMMO_PRICE`/`AMMO_STEP`) ;
 - **régler les météores & collisions** : force de réaction d'un météore qui
-  percute la base (`METEOR_STATION_RESTITUTION` — le triangle qui collisionne
+  percute la base (`METEOR_STATION_RESTITUTION` - le triangle qui collisionne
   explose et le météore est repoussé : sa composante de vitesse vers la base
   est réfléchie, 1.0 = rebond parfait, 0 = pas de réaction), débris par
   explosion (`GARBAGE_PER_TRIANGLE`), vitesse maximale
   (`METEOR_VELOCITY_MAX`), génération procédurale (`TRIANGLES_IN_SHAPE_*`,
   `TRIANGLE_BASE_*`, `TRIANGLE_HEIGHT_*`) et population
-  (`INITIAL_MAX_METEOR_SHAPES`, `SHAPES_COUNT`) — constantes de
+  (`INITIAL_MAX_METEOR_SHAPES`, `SHAPES_COUNT`) - constantes de
   `src/marketplace.rs`, lues par `src/game.rs`, `src/garbage.rs`,
   `src/generate.rs` et `src/state.rs` ;
 - **régler la réputation** : rangs du scénario Progression (seuil de
   réputation, nom affiché au HUD et **remise en %** sur les coûts de la
-  station — `PROGRESSION_RANKS` de `src/marketplace.rs`, lus par
+  station - `PROGRESSION_RANKS` de `src/marketplace.rs`, lus par
   `src/scenario.rs`) avec ajout / suppression / réordonnancement des rangs ;
   la remise du rang atteint s'applique à **tous les coûts** : extensions
   d'atelier, ravitaillement (carburant, munitions) et déblocage des modes de
-  déplacement — la synthèse montre le coût pour tout maxer remisé à chaque
+  déplacement - la synthèse montre le coût pour tout maxer remisé à chaque
   rang ; la **précision de tir** amplifie la remise (poids
   `DISCOUNT_PRECISION_WEIGHT` : remise × `1 + poids × précision`, 1.0 =
-  100 % de précision → remise doublée — la synthèse montre aussi le coût à
+  100 % de précision → remise doublée - la synthèse montre aussi le coût à
   100 % de précision) ; le gain de réputation reste codé dans
   `src/scenario.rs` : astéroïdes détruits (bonus de précision) et minerais
-  déchargés à la station (`reputation_per_mineral` — le commerce est
+  déchargés à la station (`reputation_per_mineral` - le commerce est
   récompensé) ;
 - **régler le vaisseau joueur** : choix du mesh (`assets/*.json`, format
-  « meshes-designer », avec **aperçu en direct** sur la page — le vaisseau
+  « meshes-designer », avec **aperçu en direct** sur la page - le vaisseau
   tel qu'il volera, pivot marqué d'une croix), échelle en %, orientation en
   degrés (angle du nez du mesh dans l'éditeur : 0 = à droite, 90 = en haut),
   centre de rotation en % de la boîte englobante du mesh (50/50 = centre)
   et **emplacements de départ des projectiles** : positions en % de la même
   boîte englobante (marquées d'un losange doré sur l'aperçu), **une balle
-  part de chaque emplacement au tir** (Shift), tournée avec le vaisseau —
+  part de chaque emplacement au tir** (Shift), tournée avec le vaisseau -
   liste vide = un seul emplacement au centre de rotation ; et les
   **propulseurs des éjections de gaz** des 4 touches de contrôle (marqués
   d'un losange coloré + la touche, glissables sur l'aperçu) : **un mesh par
   propulseur** (choisi dans le catalogue `assets/*.json`, comme le vaisseau,
-  ex propellerUp.json — la flamme du gaz), affiché **seulement quand il
+  ex propellerUp.json - la flamme du gaz), affiché **seulement quand il
   tire** (scintillant, teinté de la couleur configurée, allongé le long de
-  la direction d'éjection) — sinon il n'apparaît pas en jeu — avec son
+  la direction d'éjection) - sinon il n'apparaît pas en jeu - avec son
   échelle, son orientation, sa position en % de la même boîte englobante
   (valeurs libres, négatives ou > 100 %), sa **couleur de gaz** et sa
-  **direction d'éjection** — ordre fixe ↑ (poussée avant, gaz orange à
+  **direction d'éjection** - ordre fixe ↑ (poussée avant, gaz orange à
   l'arrière), ↓ (frein/recul, bleu à l'avant), ← et → (jets latéraux des
   rotations) ; la flamme est tournée avec le vaisseau ; sur l'aperçu, la
   **molette** tourne le mesh (orientation), **Ctrl/Cmd + molette** zoome
@@ -320,44 +320,44 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   `src/main.rs` ; le mesh choisi est embarqué au compile (`include_str!`),
   il doit exister dans le projet ;
 - **gérer un catalogue d'armes** : chaque arme est un mesh posé **sur le
-  vaisseau** à un emplacement de tir (`spawnIndex` — liste **contrainte**
+  vaisseau** à un emplacement de tir (`spawnIndex` - liste **contrainte**
   aux emplacements de la section « Départ des projectiles ») et tire sa
   propre **munition** (mesh) ; l'arme est dessinée sur l'aperçu à son
   emplacement ; chaque arme a son échelle, son orientation, et sa munition
   sa propre échelle/orientation ; **toutes les armes tirent ensemble au
   Shift**, depuis leur emplacement ; catalogue vide = tir classique (une
   balle rouge par emplacement, repli) ; constantes `VAISSEAU_WEAPONS` (type
-  `VaisseauWeapon` — `name`, `mesh`, `scale`, `orientation_degrees`,
+  `VaisseauWeapon` - `name`, `mesh`, `scale`, `orientation_degrees`,
   `spawn_index`, `ammo_mesh`, `ammo_scale`, `ammo_orientation_degrees`,
-  `cost` — coût d'achat au magasin (0 = arme de base) —, `ammo_price` /
-  `ammo_pack` — prix d'un paquet de munitions et sa taille) et
+  `cost` - coût d'achat au magasin (0 = arme de base) -, `ammo_price` /
+  `ammo_pack` - prix d'un paquet de munitions et sa taille) et
   meshes d'armes/munitions embarqués (`VAISSEAU_WEAPON_MESH_i` /
   `VAISSEAU_WEAPON_AMMO_MESH_i`, `include_str!`), lues par `src/vaisseau.rs`
-  (l'arme est construite avec le vaisseau, elle tourne avec lui — seules les
-  armes possédées sont dessinées), `src/generate.rs` (`fire_bullet` — une
+  (l'arme est construite avec le vaisseau, elle tourne avec lui - seules les
+  armes possédées sont dessinées), `src/generate.rs` (`fire_bullet` - une
   arme ne tire que si elle est possédée et a des munitions) et
   `src/scenario.rs` (achat au magasin, ravitaillement par paquets) ; les
   fichiers mesh doivent exister dans le projet ;
 - **composer le mesh** (vaisseau et cosmonaute) : chaque **plan** du fichier
-  (le mesh « meshes-designer » est une liste de plans) porte une règle —
+  (le mesh « meshes-designer » est une liste de plans) porte une règle -
   *toujours visible*, *exclu* (jamais construit) ou, pour le vaisseau
   uniquement, **lié à une ligne d'atelier** (FUEL TANK / MAGAZINE /
   CARGO BAY + niveau minimal) ; l'aperçu (et le centre de rotation) ne
   montre que les plans retenus, avec actions « Tout visible / Tout exclure /
   Inverser » ; en jeu, un plan lié **n'apparaît qu'à partir du niveau
   indiqué** : l'achat d'une extension reconstruit le vaisseau
-  (`vaisseau::rebuild_player_vaisseau`) — le centre de rotation, calculé sur
+  (`vaisseau::rebuild_player_vaisseau`) - le centre de rotation, calculé sur
   la composition complète, reste stable à tous les niveaux ; un plan exclu
   du cosmonaute n'est pas animé (bras/jambes) ; constantes
   `VAISSEAU_PLANES_ALWAYS` + `VAISSEAU_PLANE_LINKS` (types
-  `PlaneUpgradeTrack` + `PlaneUpgradeLink`) et `COSMONAUTE_PLANES` —
+  `PlaneUpgradeTrack` + `PlaneUpgradeLink`) et `COSMONAUTE_PLANES` -
   **listes vides = tous les plans** (repli sûr) ;
 - **régler le cosmonaute EVA** (le pilote éjecté quand le vaisseau est
-  détruit) : même principe que le vaisseau — choix du mesh (`assets/*.json`,
+  détruit) : même principe que le vaisseau - choix du mesh (`assets/*.json`,
   aperçu en direct, pivot marqué d'une croix), échelle en % (150 % par
   défaut : ~17 unités éditeur → ~26 unités monde), orientation en degrés et
   centre de rotation en % de la boîte englobante (mêmes réglages souris :
-  molette = orientation, Ctrl/Cmd + molette = zoom, clic = centre) — constantes
+  molette = orientation, Ctrl/Cmd + molette = zoom, clic = centre) - constantes
   `COSMONAUTE_JSON`, `COSMONAUTE_EVA_SCALE`, `COSMONAUTE_ORIENTATION_DEGREES`,
   `COSMONAUTE_CENTER_X/Y_PERCENT` de `src/marketplace.rs`, lues par
   `src/cosmonaut.rs` (l'animation bras/jambes suit le mesh) ;
@@ -381,7 +381,7 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   `PlaneUpgradeLink` + `VaisseauWeapon` + `VaisseauThruster` et lignes
   `FUEL_UPGRADE_TRACK` … `CARGO_UPGRADE_TRACK`)
   dans le style exact du code du jeu ; on recompile ensuite
-  (`cargo build --release` — les tests `cargo test` valident les nouvelles
+  (`cargo build --release` - les tests `cargo test` valident les nouvelles
   valeurs) et `src/scenario.rs` n'a plus besoin d'être modifié : il importe
   déjà ces données depuis `src/marketplace.rs` ;
 - **sauvegarder / restaurer** ses réglages : enregistrement automatique dans
@@ -390,7 +390,7 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   est aussi mémorisée et **retrouvée au prochain lancement** de la page.
 
 La seule constante liée non éditée par l'outil est `CARGO_SIZE`
-(`src/config.rs`, capacité de base de la soute) — rappelée en pied de page.
+(`src/config.rs`, capacité de base de la soute) - rappelée en pied de page.
 
 **Serveur local** : pour charger et enregistrer `src/marketplace.rs` du projet
 directement (sans copier/coller ni API de navigateur), lancez
@@ -399,13 +399,13 @@ directement (sans copier/coller ni API de navigateur), lancez
 node tools/marketplace-editor/server.mjs
 ```
 
-puis ouvrez `http://localhost:8123` — le fichier `src/marketplace.rs` est
+puis ouvrez `http://localhost:8123` - le fichier `src/marketplace.rs` est
 **chargé automatiquement** à l'ouverture (aucune action nécessaire) et
 « 💾 Enregistrer le fichier » l'écrit directement (fetch GET/PUT). Le serveur
 expose aussi la **liste des meshes** (`GET /list-assets`,
 `GET /assets/<fichier>`) pour le choix de l'asset du vaisseau et son aperçu,
 ainsi qu'une **console cargo** (`POST /api/cargo` avec `{ "command": "test"
-| "run" }` — la sortie est renvoyée en flux, terminée par le code de sortie —
+| "run" }` - la sortie est renvoyée en flux, terminée par le code de sortie -
 et `POST /api/cargo-stop` pour arrêter) : la barre en bas de la page lance
 `cargo test` (vérifie les constantes exportées) ou `cargo run` (compile puis
 ouvre le jeu) et affiche la sortie en direct, avec « ■ Arrêter » pour couper.
@@ -420,7 +420,7 @@ du serveur, y est masquée).
 - Rust (édition 2021) + macroquad 0.4, sans vsync (boucle plafonnée, physique
   en `dt` indépendante du FPS).
 - 100 000 étoiles précalculées sur 15 couches de parallaxe.
-- Génération procédurale **déterministe** (PRNG ChaCha12 seedé) — parties
+- Génération procédurale **déterministe** (PRNG ChaCha12 seedé) - parties
   reproductibles.
 - Collisions par séparation de triangles (SAT) + choc élastique ; le centre
   des formes est recalculé après chaque impact.
@@ -429,13 +429,13 @@ du serveur, y est masquée).
   l'écran) ; la bascule EWMH passe par `src/x11.rs` (ClientMessage
   `_NET_WM_STATE` direct, sans outil externe).
 - Réglages persistants (`meteors_mining.cfg`, dossier de configuration
-  utilisateur — norme XDG, ex `~/.config/meteors-mining/meteors_mining.cfg`) :
+  utilisateur - norme XDG, ex `~/.config/meteors-mining/meteors_mining.cfg`) :
   mode de déplacement (choisi au magasin de la station, bouton SHOP de la
   boîte DOCK STATION), musique (touche M), volume, style de rendu, mode
-  d'affichage, définition de fenêtre et anticrénelage — modifiables dans
+  d'affichage, définition de fenêtre et anticrénelage - modifiables dans
   l'écran de paramétrage (touche O) ou par les touches M/A, rechargés au
   lancement suivant. NB : la génération automatique des météores (touche A ou
-  case AUTO GENERATE) n'est **pas** persistée — elle repart **toujours
+  case AUTO GENERATE) n'est **pas** persistée - elle repart **toujours
   active** à chaque lancement, pour que le monde ne soit jamais vide au
   démarrage. S'y ajoutent le scénario choisi et la progression d'une partie à
   économie (`scenario`, `prog_*`), sauvegardés à chaque changement
@@ -443,11 +443,11 @@ du serveur, y est masquée).
   détruit) et restaurés au lancement (une sauvegarde finale a aussi lieu à
   la sortie du jeu). Le
   RESET de l'écran de paramétrage ne supprime que les clés de réglage (le
-  mode de déplacement n'étant plus un réglage, il n'est pas touché) — la
+  mode de déplacement n'étant plus un réglage, il n'est pas touché) - la
   progression du scénario survit. En fenêtré, une définition plus grande que
   960×540 étire la vue (letterbox) ; l'anticrénelage MSAA est appliqué à la
   création de la fenêtre (effectif au lancement suivant).
-- Le jeu est testé : `cargo test` (103 tests unitaires — physique, collisions,
+- Le jeu est testé : `cargo test` (103 tests unitaires - physique, collisions,
   minage, accostage, paramétrage, options graphiques, persistance, scénarios,
   atelier d'amélioration).
 

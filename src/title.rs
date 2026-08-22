@@ -2,9 +2,9 @@
 //!
 //! Fond d'étoiles (caméra qui dérive), bannière « METEORS MINING » en
 //! couleurs arc-en-ciel rotatives, et cinq invites (la 2e détaille les règles
-//! du scénario courant — voir `scenario::scenario_rules`). Se termine sur une
+//! du scénario courant - voir `scenario::scenario_rules`). Se termine sur une
 //! touche (sauf F, qui bascule le plein écran ; O, qui ouvre l'écran de
-//! paramétrage ; et N/B/1-3, qui changent de scénario — la ligne des règles
+//! paramétrage ; et N/B/1-3, qui changent de scénario - la ligne des règles
 //! clignote alors brièvement dans la couleur du scénario pour attirer l'œil).
 
 use macroquad::prelude::*;
@@ -22,7 +22,7 @@ use crate::state::GameState;
 use std::time::Duration;
 
 /// Bannière « METEORS MINING » en ASCII art (8 lignes × 125 colonnes,
-/// extraite telle quelle de l'original — les caractères `[]`/`[I]` dessinent
+/// extraite telle quelle de l'original - les caractères `[]`/`[I]` dessinent
 /// les lettres en blocs).
 pub const BANNER: [&str; 8] = [
     "     []    []                                                    []    [] []            []                       ",
@@ -51,7 +51,7 @@ fn draw_centered_line(line: &str, y: f32) {
 
 /// Dessine une ligne de segments centrée (règles ou sauvegarde de l'écran
 /// titre, voir `scenario::scenario_rules` / `scenario::save_summary_segments`)
-/// : chaque segment dans sa couleur — `color: None` = blanc, `Some(argb)` =
+/// : chaque segment dans sa couleur - `color: None` = blanc, `Some(argb)` =
 /// couleur du scénario. `flash_color` (pendant le flash après un changement
 /// de scénario) remplace toutes les couleurs par celle du scénario.
 fn draw_segments_line(
@@ -93,12 +93,12 @@ fn rainbow(hue: f64) -> u32 {
 
 /// Écran titre : boucle jusqu'à une touche (autre que F, O ou N/B/1-3), ex
 /// `titleLoop`. `sounds` sert à l'écran de paramétrage (touche O), accessible
-/// depuis le titre — musique et volume y sont réglables ; N/B ou 1-3 changent
+/// depuis le titre - musique et volume y sont réglables ; N/B ou 1-3 changent
 /// de scénario (jeu libre ↔ Progression ↔ Survival). Renvoie `(restart,
 /// progression_reset)` : `restart` si le bouton RESTART de l'écran de
 /// paramétrage a été cliqué (le jeu doit se relancer), `progression_reset` si
 /// le bouton RESET PROGRESSION a été cliqué depuis le titre (le vaisseau doit
-/// être reconstruit au lancement de la partie — les plans liés aux extensions
+/// être reconstruit au lancement de la partie - les plans liés aux extensions
 /// remises à zéro ne sont pas visibles à l'écran titre, qui ne dessine pas le
 /// monde).
 pub async fn title_loop(
@@ -118,7 +118,7 @@ pub async fn title_loop(
     let mut banner_colors = vec![0u32; banner_cols];
     // RESET PROGRESSION cliqué depuis l'écran de paramétrage du titre : la
     // progression est remise à zéro mais le vaisseau n'est pas reconstruit ici
-    // (l'écran titre ne dessine pas le monde) — le drapeau est rendu à `main`
+    // (l'écran titre ne dessine pas le monde) - le drapeau est rendu à `main`
     // pour que le mesh soit reconstruit au lancement de la partie.
     let mut progression_reset = false;
 
@@ -176,11 +176,11 @@ pub async fn title_loop(
                 break;
             }
         }
-        // F : détection robuste (front montant de `is_key_down` — une pression
+        // F : détection robuste (front montant de `is_key_down` - une pression
         // avalée par le filtre de répétition de macroquad après une bascule
         // plein écran reste comptée, voir `game::f_pressed`)
         //
-        // NB : on ne fait PAS `continue` ici — `keys_pressed` n'est vidé qu'à
+        // NB : on ne fait PAS `continue` ici - `keys_pressed` n'est vidé qu'à
         // `end_frame`, atteint seulement quand la coroutine rend la main à
         // `next_frame` : un `continue` re-testerait F à l'infini (gel avec
         // cadre figé, boucle sans rendu). On cède une frame (le keypress est
@@ -195,7 +195,7 @@ pub async fn title_loop(
             if k == KeyCode::O {
                 // ouvre l'écran de paramétrage (mêmes initialisations que la
                 // touche O du jeu) ; sous-boucle d'input + rendu jusqu'à la
-                // fermeture (CLOSE ou ESC — consommé ici, ne quitte pas le
+                // fermeture (CLOSE ou ESC - consommé ici, ne quitte pas le
                 // jeu), puis retour à l'écran titre. Un clic sur RESTART
                 // (relance demandée) sort immédiatement du titre.
                 state.settings_box = true;
@@ -232,7 +232,7 @@ pub async fn title_loop(
             }
             // après toute sélection de scénario : règles de départ appliquées
             // (cycle/select), progression enregistrée restaurée puis nouveau
-            // scénario persisté, et flash de la ligne des règles (1,2 s —
+            // scénario persisté, et flash de la ligne des règles (1,2 s -
             // voir `draw_frame`) ; comme F, on cède une frame (keypress
             // consommé)
             let mut restore = |state: &mut GameState| {
@@ -271,7 +271,7 @@ pub async fn title_loop(
         }
 
         // caméra qui descend + rotation des couleurs (ex titleLoop : nouvelle
-        // couleur à droite, décalage de tout le tableau) — avant le rendu,
+        // couleur à droite, décalage de tout le tableau) - avant le rendu,
         // comme l'original qui dérive la caméra après les étoiles
         camera.y += 1.0;
         camera.normalize_world(&state.world);
@@ -351,21 +351,21 @@ fn draw_frame(
         }
     }
 
-    // invites (ex titleLoop) — la 1re ligne affiche le scénario courant, la
-    // 2e ses règles (valeurs en surbrillance — voir
+    // invites (ex titleLoop) - la 1re ligne affiche le scénario courant, la
+    // 2e ses règles (valeurs en surbrillance - voir
     // `scenario::scenario_rules`) et la 3e la progression enregistrée de ce
     // scénario, valeurs en surbrillance aussi (minerais, modes, réputation,
-    // rang, vies, bouclier — voir `scenario::save_summary_segments`)
+    // rang, vies, bouclier - voir `scenario::save_summary_segments`)
     let scenario = crate::scenario::scenario(state.scenario);
     let mut y = 10.0 * (8.0 + banner_rows as f64) + 20.0;
     draw_centered_line(
-        &format!("[ SCENARIO : {} — {} ]", scenario.name, scenario.description),
+        &format!("[ SCENARIO : {} - {} ]", scenario.name, scenario.description),
         y as f32,
     );
     y += 20.0;
 
     // ligne des règles : segments alignés, valeurs colorées (couleur du
-    // scénario — voir `scenario::scenario_rules`) — les coûts/vies/bouclier/
+    // scénario - voir `scenario::scenario_rules`) - les coûts/vies/bouclier/
     // dégâts/rangs sautent aux yeux quand on change de scénario (N/B/1-3).
     // Juste après un changement, tout le texte clignote dans la couleur du
     // scénario (flash) pour attirer l'œil sur ce qui vient de changer.
@@ -378,7 +378,7 @@ fn draw_frame(
         text: " ]".to_string(),
         color: None,
     });
-    // phase du clignotement (parité de l'horloge) : alternance ≈ 3 cycles/s —
+    // phase du clignotement (parité de l'horloge) : alternance ≈ 3 cycles/s -
     // pendant le flash, toute la ligne prend la couleur du scénario
     let blink_on = flash_rules && ((get_time() * RULES_FLASH_HZ) as i64 % 2 == 0);
     let flash_color = if blink_on {
@@ -390,7 +390,7 @@ fn draw_frame(
     y += 20.0;
 
     // ligne de la progression enregistrée : mêmes segments, valeurs (minerais,
-    // modes, réputation, rang, vies, bouclier) dans la couleur du scénario —
+    // modes, réputation, rang, vies, bouclier) dans la couleur du scénario -
     // voir `scenario::save_summary_segments`
     let mut save_segments = vec![crate::scenario::RuleSegment {
         text: "[ SAVE : ".to_string(),

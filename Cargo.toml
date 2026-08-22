@@ -2,7 +2,7 @@
 name = "rust-meteors-mining"
 version = "0.1.0"
 edition = "2021"
-description = "Portage en Rust de « Meteors Mining » (jeu QB64) — voir docs/PORTAGE.md"
+description = "Portage en Rust de « Meteors Mining » (jeu QB64) - voir docs/PORTAGE.md"
 
 [dependencies]
 macroquad = { version = "0.4", features = ["audio"] }  # audio = quad-snd (Phase 4)
@@ -11,9 +11,9 @@ rand_chacha = "0.3"    # générateur ChaCha12 (déterministe, testable)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Active le décodage JPEG dans la crate `image` (unifiée avec celle de macroquad,
-# qui ne compile que png/tga) : la texture météore est embarquée en JPEG — c'est
+# qui ne compile que png/tga) : la texture météore est embarquée en JPEG - c'est
 # l'asset d'origine (`reference/assets/meteor_surface_tile.jpg`, 457 Ko vs 3,1 Mo
-# en PNG) — pour réduire la taille du binaire autonome.
+# en PNG) - pour réduire la taille du binaire autonome.
 image = { version = "0.24", default-features = false, features = ["jpeg"] }
 # Serveur HTTP minimal (sans SSL) pour la télécommande : le téléphone pilote
 # le vaisseau depuis une page web servie par le jeu (voir src/remote.rs).

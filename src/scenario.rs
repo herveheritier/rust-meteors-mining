@@ -2,12 +2,12 @@
 //!
 //! Un scénario est un ensemble de règles (ressources économiques, verrous de
 //! gameplay, récompenses) appliquées par des points d'accroche purs dans la
-//! boucle de jeu — voir les appels à `crate::scenario` dans `game.rs`. Les
+//! boucle de jeu - voir les appels à `crate::scenario` dans `game.rs`. Les
 //! règles sont des **données** (`Scenario`) et les effets des **fonctions
 //! pures** testables sans macroquad.
 //!
 //! Trois scénarios :
-//! - `FreePlay` (défaut) : comportement historique du port — pas d'économie,
+//! - `FreePlay` (défaut) : comportement historique du port - pas d'économie,
 //!   tous les modes de déplacement disponibles, carburant et munitions
 //!   illimités.
 //! - `Progression` (l'exemple décrit) : le vaisseau démarre en mode REALISTIC
@@ -23,7 +23,7 @@
 //!   réservoir de carburant, chargeur de munitions et soute (capacités
 //!   augmentées, persistées comme la progression).
 //! - `Survival` (preuve que le système s'étend à d'autres mécaniques) : ni
-//!   économie ni verrous — le vaisseau a des **vies** et un **bouclier** qui
+//!   économie ni verrous - le vaisseau a des **vies** et un **bouclier** qui
 //!   absorbe les impacts ; quand il est percé, l'impact suivant détruit le
 //!   vaisseau : une vie est perdue et il respawne à la station (dernière vie
 //!   perdue = fin de partie). Le **multiplicateur de dégâts** aggrave les
@@ -32,7 +32,7 @@
 //! La progression d'un scénario est persistée dans le fichier de config
 //! (`persist.rs`, clés `scenario`, `prog_*`) et restaurée au lancement
 //! suivant : minerais/modes/réputation/niveaux d'atelier en Progression,
-//! vies/bouclier en Survival — chaque scénario n'écrit que ses propres clés.
+//! vies/bouclier en Survival - chaque scénario n'écrit que ses propres clés.
 //! Le carburant et les munitions, eux, repartent pleins à chaque lancement
 //! (à la capacité courante, extensions comprises).
 
@@ -51,7 +51,7 @@ pub enum ScenarioId {
     FreePlay,
     /// Économie : minerais, carburant/munitions payants, réputation.
     Progression,
-    /// Survie : vies, bouclier et multiplicateur de dégâts — sans économie.
+    /// Survie : vies, bouclier et multiplicateur de dégâts - sans économie.
     Survival,
 }
 
@@ -61,26 +61,26 @@ pub enum ScenarioId {
 pub struct Resources {
     /// Carburant en unités (0 = réservoir vide, plus de poussée).
     pub fuel: f64,
-    /// Minerais — la monnaie : déchargés à la station, dépensés pour les
+    /// Minerais - la monnaie : déchargés à la station, dépensés pour les
     /// modes de déplacement, les armes et le ravitaillement.
     pub minerals: i32,
-    /// Réputation — augmente avec les astéroïdes détruits et la précision.
+    /// Réputation - augmente avec les astéroïdes détruits et la précision.
     pub reputation: f64,
-    /// Vies restantes (scénario Survival) — 0 = partie terminée.
+    /// Vies restantes (scénario Survival) - 0 = partie terminée.
     pub lives: i32,
     /// Bouclier restant (scénario Survival) : absorbe les impacts avant la
     /// coque ; rechargé au respawn.
     pub shield: f64,
     /// Niveau du réservoir de carburant (atelier) : nombre d'extensions
-    /// achetées (0 = capacité de base) — Progression.
+    /// achetées (0 = capacité de base) - Progression.
     pub fuel_level: i32,
-    /// Niveau du chargeur de munitions (atelier) — Progression.
+    /// Niveau du chargeur de munitions (atelier) - Progression.
     pub ammo_level: i32,
-    /// Niveau de la soute (atelier) — Progression.
+    /// Niveau de la soute (atelier) - Progression.
     pub cargo_level: i32,
     /// Munitions par arme du catalogue (`VAISSEAU_WEAPONS`, index de l'arme ;
     /// catalogue vide = un seul emplacement pour le canon classique de
-    /// repli) : chaque arme tire tant que son propre stock n'est pas vide —
+    /// repli) : chaque arme tire tant que son propre stock n'est pas vide -
     /// 0 = plus de tirs pour cette arme (scénarios à économie ; ignorées en
     /// jeu libre, les munitions y sont illimitées).
     pub weapon_ammo: [i32; WEAPON_SLOTS],
@@ -91,13 +91,13 @@ pub struct Resources {
     pub weapon_owned: [bool; WEAPON_SLOTS],
 }
 
-/// Types et données de la place de marché — extensions de vaisseau de
+/// Types et données de la place de marché - extensions de vaisseau de
 /// l'atelier de la station, économie et rangs de réputation (scénario
 /// Progression, bouton SHOP de la boîte DOCK STATION). Définis dans
 /// `src/marketplace.rs`, un **fichier généré** par l'outil de gestion
 /// `tools/marketplace-editor/index.html` : pour ajuster les objets vendus, les
 /// prix ou les rangs (seuils, noms, remises), régénérez ce fichier depuis
-/// l'éditeur — rien à modifier ici. Réexportés pour l'API publique du module
+/// l'éditeur - rien à modifier ici. Réexportés pour l'API publique du module
 /// (types, rangs, trois lignes d'atelier et constantes économiques).
 pub use crate::marketplace::{
     ReputationRank, ShipUpgrade, UpgradeTrack, DISCOUNT_PRECISION_WEIGHT, PROGRESSION_RANKS,
@@ -134,7 +134,7 @@ pub struct Scenario {
     /// tous les modes débloqués (comportement historique).
     pub has_economy: bool,
     /// Rangs de réputation (paliers débloqués par la réputation, seuils
-    /// croissants) — vide en jeu libre (aucun rang).
+    /// croissants) - vide en jeu libre (aucun rang).
     pub ranks: &'static [ReputationRank],
     /// Carburant au départ (la capacité courante vient de `fuel_upgrades`,
     /// base + extensions d'atelier).
@@ -152,7 +152,7 @@ pub struct Scenario {
     pub reputation_per_asteroid: f64,
     /// Bonus de précision : gain × (1 + poids × précision), précision en 0..1.
     pub reputation_precision_weight: f64,
-    /// Réputation gagnée par minerai déchargé à la station (commerce — les
+    /// Réputation gagnée par minerai déchargé à la station (commerce - les
     /// astéroïdes détruits récompensent le tir, la cargaison le commerce).
     pub reputation_per_mineral: f64,
     /// Poids de la précision de tir sur la remise de réputation : la remise
@@ -166,22 +166,22 @@ pub struct Scenario {
     /// Nombre de vies (scénario Survival ; 0 = illimité/classique).
     pub lives: i32,
     /// Capacité du bouclier (points absorbés avant la coque, scénario
-    /// Survival) — 0 = pas de bouclier.
+    /// Survival) - 0 = pas de bouclier.
     pub shield_capacity: f64,
     /// Multiplicateur des dégâts subis (bouclier puis coque, scénario
-    /// Survival) — 1.0 en classique.
+    /// Survival) - 1.0 en classique.
     pub damage_multiplier: f64,
     /// Durée (secondes) d'invulnérabilité après un respawn (scénario
-    /// Survival) : les impacts sont absorbés sans toucher au bouclier —
+    /// Survival) : les impacts sont absorbés sans toucher au bouclier -
     /// 0.0 en classique.
     pub respawn_invulnerability: f64,
     /// Couleur ARGB des valeurs mises en évidence dans les lignes RULES / SAVE
-    /// de l'écran titre (coûts, vies, bouclier, rangs…) — propre à chaque
+    /// de l'écran titre (coûts, vies, bouclier, rangs…) - propre à chaque
     /// scénario, pour que le changement de stat saute aux yeux au basculement
     /// (N/B/1-3).
     pub rules_color: u32,
     /// Ligne « réservoir de carburant » de l'atelier de la station (scénario
-    /// Progression) — extensions achetées en minerais ; vide ailleurs (pas
+    /// Progression) - extensions achetées en minerais ; vide ailleurs (pas
     /// d'atelier). La capacité courante (`fuel_capacity`) est la base + les
     /// bonus des extensions possédées.
     pub fuel_upgrades: UpgradeTrack,
@@ -192,13 +192,13 @@ pub struct Scenario {
 }
 
 /// Couleurs ARGB d'accent de l'écran titre (valeurs des lignes RULES / SAVE,
-/// voir `Scenario::rules_color`) — une par scénario : jaune pour jeu libre /
+/// voir `Scenario::rules_color`) - une par scénario : jaune pour jeu libre /
 /// Progression, cyan pour Survival (le changement de couleur marque aussi le
 /// basculement).
 pub const RULES_COLOR_YELLOW: u32 = 0xFFFFFF00;
 pub const RULES_COLOR_CYAN: u32 = 0xFF00FFFF;
 
-/// Règles du jeu libre (défaut) — aucune économie.
+/// Règles du jeu libre (défaut) - aucune économie.
 pub const FREE_PLAY_SCENARIO: Scenario = Scenario {
     name: "FREE PLAY",
     description: "classique, sans économie",
@@ -238,8 +238,8 @@ pub const PROGRESSION_SCENARIO: Scenario = Scenario {
     reputation_per_asteroid: 1.0,
     reputation_precision_weight: 2.0, // 100 % de précision → ×3 par astéroïde
     reputation_per_mineral: 0.1, // 10 minerais déchargés → +1 de réputation
-    discount_precision_weight: DISCOUNT_PRECISION_WEIGHT, // précision sur la remise — src/marketplace.rs
-    fuel_price: FUEL_PRICE, // 1 minerai pour 10 unités — src/marketplace.rs
+    discount_precision_weight: DISCOUNT_PRECISION_WEIGHT, // précision sur la remise - src/marketplace.rs
+    fuel_price: FUEL_PRICE, // 1 minerai pour 10 unités - src/marketplace.rs
     fuel_step: FUEL_STEP,
     lives: 0,
     shield_capacity: 0.0,
@@ -251,7 +251,7 @@ pub const PROGRESSION_SCENARIO: Scenario = Scenario {
     cargo_upgrades: CARGO_UPGRADE_TRACK,
 };
 
-/// Règles du scénario « Survival » — vies, bouclier, dégâts (voir l'en-tête
+/// Règles du scénario « Survival » - vies, bouclier, dégâts (voir l'en-tête
 /// du module) : ni économie ni verrous de modes.
 pub const SURVIVAL_SCENARIO: Scenario = Scenario {
     name: "SURVIVAL",
@@ -294,7 +294,7 @@ pub fn has_economy(state: &GameState) -> bool {
     scenario(state.scenario).has_economy
 }
 
-/// Le scénario gère-t-il la survie (vies + bouclier) ? — déduit du nombre de
+/// Le scénario gère-t-il la survie (vies + bouclier) ? - déduit du nombre de
 /// vies : `lives > 0` (Survival), sinon classique (FreePlay/Progression).
 pub fn has_survival(state: &GameState) -> bool {
     scenario(state.scenario).lives > 0
@@ -304,7 +304,7 @@ pub fn has_survival(state: &GameState) -> bool {
 
 /// Segment de la ligne des règles (écran titre) : un libellé discret ou une
 /// valeur chiffrée mise en évidence (coût, vies, bouclier, dégâts, durée,
-/// rang) — colorée à l'affichage de la couleur du scénario (`color`) pour
+/// rang) - colorée à l'affichage de la couleur du scénario (`color`) pour
 /// faire ressortir ce qui change quand on bascule de scénario (N/B/1-3).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuleSegment {
@@ -317,7 +317,7 @@ pub struct RuleSegment {
 }
 
 /// Règles du scénario `id`, découpées en segments (voir `RuleSegment`) pour
-/// l'écran titre : dérivées des données du scénario — coûts des modes,
+/// l'écran titre : dérivées des données du scénario - coûts des modes,
 /// carburant/munitions, vies, bouclier, dégâts, invulnérabilité, rangs. Les
 /// valeurs portent `color = Some(couleur du scénario)`, les libellés `None`.
 /// Fonction pure (tests).
@@ -340,7 +340,7 @@ pub fn scenario_rules(id: ScenarioId) -> Vec<RuleSegment> {
     };
     match id {
         ScenarioId::FreePlay => {
-            label(&mut out, "aucun coût — carburant/munitions illimités, tous les modes débloqués");
+            label(&mut out, "aucun coût - carburant/munitions illimités, tous les modes débloqués");
         }
         ScenarioId::Progression => {
             label(&mut out, "modes payants : ");
@@ -377,7 +377,7 @@ pub fn scenario_rules(id: ScenarioId) -> Vec<RuleSegment> {
     out
 }
 
-/// Texte complet des règles (segments concaténés, sans coloration) — réservé
+/// Texte complet des règles (segments concaténés, sans coloration) - réservé
 /// aux tests (l'écran titre affiche les segments colorés).
 #[cfg(test)]
 pub fn scenario_rules_text(id: ScenarioId) -> String {
@@ -394,7 +394,7 @@ fn mode_costs_pairs(s: &Scenario) -> Vec<(&'static str, i32)> {
         .collect()
 }
 
-/// « 4 WAYS 30, DIRECTIONAL 45 minerais » — coûts des modes de déplacement
+/// « 4 WAYS 30, DIRECTIONAL 45 minerais » - coûts des modes de déplacement
 /// payants (coût 0 = mode déjà débloqué, omis). Réservé aux tests (les règles
 /// de l'écran titre sont découpées en segments par `scenario_rules`).
 #[cfg(test)]
@@ -414,7 +414,7 @@ fn mode_costs_text(s: &Scenario) -> String {
 
 /// Résumé segmenté de la progression **enregistrée** du scénario courant,
 /// affiché à l'écran titre sous les règles : `state.resources` contient déjà
-/// la sauvegarde restaurée (voir `load_progression`) — minerais, modes
+/// la sauvegarde restaurée (voir `load_progression`) - minerais, modes
 /// débloqués et réputation (+ rang) en Progression, vies et bouclier en
 /// Survival ; jeu libre : aucune sauvegarde. Découpé en segments comme
 /// `scenario_rules` : les valeurs (minerais, modes, réputation, rang, vies,
@@ -437,9 +437,9 @@ pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
             let mut out = vec![
                 label("minerais "),
                 value(state.resources.minerals.to_string()),
-                label(" — modes "),
+                label(" - modes "),
                 value(format!("{}/{}", unlocked, MOVING_MODE_COUNT)),
-                label(" — réputation "),
+                label(" - réputation "),
                 value((state.resources.reputation as i32).to_string()),
             ];
             if let Some(rank) = current_rank(state) {
@@ -450,9 +450,9 @@ pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
         ScenarioId::Survival => vec![
             value(state.resources.lives.to_string()),
             label(if state.resources.lives > 1 {
-                " vies — bouclier "
+                " vies - bouclier "
             } else {
-                " vie — bouclier "
+                " vie - bouclier "
             }),
             value(format!("{:.1}", state.resources.shield)),
         ],
@@ -460,7 +460,7 @@ pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
 }
 
 /// Texte complet du résumé de sauvegarde (segments concaténés, sans
-/// coloration) — réservé aux tests (l'écran titre affiche les segments
+/// coloration) - réservé aux tests (l'écran titre affiche les segments
 /// colorés, voir `save_summary_segments`).
 #[cfg(test)]
 pub fn save_summary(state: &GameState) -> String {
@@ -471,7 +471,7 @@ pub fn save_summary(state: &GameState) -> String {
 }
 
 /// Mode de déplacement de départ du scénario `id` : REALISTIC en Progression,
-/// DIRECTIONAL — le défaut historique — en jeu libre et en Survival. Utilisé
+/// DIRECTIONAL - le défaut historique - en jeu libre et en Survival. Utilisé
 /// par `apply_start` (et par le magasin, qui ne doit jamais débloquer un mode
 /// gratuitement : le RESET des réglages ne touche plus au mode).
 pub fn start_mode(id: ScenarioId) -> i32 {
@@ -490,8 +490,8 @@ pub fn select_scenario(state: &mut GameState, id: ScenarioId) {
     apply_start(state);
 }
 
-/// Bascule de scénario (écran titre, touche N) — jeu libre → Progression →
-/// Survival → jeu libre — et applique ses règles de départ.
+/// Bascule de scénario (écran titre, touche N) - jeu libre → Progression →
+/// Survival → jeu libre - et applique ses règles de départ.
 pub fn cycle_scenario(state: &mut GameState) {
     let next = match state.scenario {
         ScenarioId::FreePlay => ScenarioId::Progression,
@@ -501,7 +501,7 @@ pub fn cycle_scenario(state: &mut GameState) {
     select_scenario(state, next);
 }
 
-/// Bascule au scénario **précédent** (écran titre, touche B — inverse de N) :
+/// Bascule au scénario **précédent** (écran titre, touche B - inverse de N) :
 /// jeu libre → Survival → Progression → jeu libre.
 pub fn cycle_scenario_back(state: &mut GameState) {
     let prev = match state.scenario {
@@ -545,7 +545,7 @@ pub fn apply_start(state: &mut GameState) {
                 weapon_owned: [false; WEAPON_SLOTS],
             };
             // Armes équipées au départ : celles dont le coût configuré
-            // (outil) est nul (0 = arme de base) — chargées à la capacité
+            // (outil) est nul (0 = arme de base) - chargées à la capacité
             // courante. Les armes payantes s'achètent au magasin (bouton
             // SHOP de la boîte DOCK STATION).
             for i in 0..weapon_slot_count() {
@@ -555,7 +555,7 @@ pub fn apply_start(state: &mut GameState) {
                 }
             }
             // Modes débloqués au départ : ceux dont le coût configuré (outil)
-            // est nul (0 = déjà débloqué) — REALISTIC par défaut, INERTIAL
+            // est nul (0 = déjà débloqué) - REALISTIC par défaut, INERTIAL
             // seulement si l'outil le laisse gratuit. Le mode de départ
             // (REALISTIC) reste toujours débloqué.
             let start = start_mode(ScenarioId::Progression);
@@ -574,7 +574,7 @@ pub fn apply_start(state: &mut GameState) {
 // ─── Carburant et munitions ─────────────────────────────────────────────────
 
 /// Carburant disponible ? (toujours `true` en jeu libre.) Bloque la poussée
-/// quand le réservoir est vide — les rotations restent libres.
+/// quand le réservoir est vide - les rotations restent libres.
 pub fn fuel_available(state: &GameState) -> bool {
     !has_economy(state) || state.resources.fuel > 0.0
 }
@@ -603,7 +603,7 @@ pub fn consume_fuel(state: &mut GameState, dt: f64) {
 /// tire (ses munitions sont consommées) ; une arme à court de munitions ne
 /// tire pas, les autres continuent. Aucune arme ne peut tirer (toutes les
 /// munitions épuisées) → masque tout faux, le tir est bloqué (cooldown non
-/// réinitialisé — le tir part dès qu'une arme a des munitions ; aucun message
+/// réinitialisé - le tir part dès qu'une arme a des munitions ; aucun message
 /// répété). Hors économie : toutes les armes possédées tirent, sans
 /// consommation. Annonce « OUT OF AMMO » quand le dernier stock se vide.
 pub fn try_fire(state: &mut GameState) -> [bool; WEAPON_SLOTS] {
@@ -636,7 +636,7 @@ pub fn try_fire(state: &mut GameState) -> [bool; WEAPON_SLOTS] {
 /// ravitaillement (ligne AMMO du magasin). **Catalogue vide = un seul
 /// « canon classique »** (repli :
 /// coût 0, toujours équipé, paquets aux valeurs globales `AMMO_PRICE` /
-/// `AMMO_STEP`) — le comportement historique est préservé.
+/// `AMMO_STEP`) - le comportement historique est préservé.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WeaponSpec {
     /// Nom de l'arme (magasin, messages HUD).
@@ -669,7 +669,7 @@ pub fn weapon_spec(i: usize) -> WeaponSpec {
 }
 
 /// Nombre d'emplacements d'armes actifs : le nombre d'armes du catalogue
-/// (`VAISSEAU_WEAPONS`), borné à `WEAPON_SLOTS` — **au moins 1** (le canon
+/// (`VAISSEAU_WEAPONS`), borné à `WEAPON_SLOTS` - **au moins 1** (le canon
 /// classique de repli quand le catalogue est vide). Pure (tests).
 pub fn weapon_slot_count() -> usize {
     crate::marketplace::VAISSEAU_WEAPONS.len().clamp(1, WEAPON_SLOTS)
@@ -677,7 +677,7 @@ pub fn weapon_slot_count() -> usize {
 
 /// L'arme `i` est-elle **possédée** (équipée) ? Hors économie : toujours
 /// `true` (toutes les armes du catalogue). En économie : achetée au magasin
-/// (`weapon_owned`), ou coût 0 (arme de base — comme les modes de
+/// (`weapon_owned`), ou coût 0 (arme de base - comme les modes de
 /// déplacement gratuits). Le canon classique (hors catalogue) est toujours
 /// possédé. Pure (tests).
 pub fn weapon_owned(state: &GameState, i: usize) -> bool {
@@ -689,7 +689,7 @@ pub fn weapon_owned(state: &GameState, i: usize) -> bool {
 
 /// Tarifs d'achat d'une arme pas encore possédée : tarif de base (prix
 /// d'origine) et prix réellement payé (remise de réputation du rang courant
-/// appliquée) — `None` = déjà possédée, coût nul ou pas d'économie. Comme
+/// appliquée) - `None` = déjà possédée, coût nul ou pas d'économie. Comme
 /// `mode_unlock_prices` : affichés dans le magasin de la station.
 pub fn weapon_prices(state: &GameState, i: usize) -> Option<(i32, i32)> {
     if !has_economy(state) || weapon_owned(state, i) {
@@ -700,7 +700,7 @@ pub fn weapon_prices(state: &GameState, i: usize) -> Option<(i32, i32)> {
 }
 
 /// Coût en minerais d'une arme pas encore possédée (`None` = déjà possédée,
-/// coût nul ou pas d'économie) — le prix réellement payé (remisé).
+/// coût nul ou pas d'économie) - le prix réellement payé (remisé).
 pub fn weapon_cost(state: &GameState, i: usize) -> Option<i32> {
     weapon_prices(state, i).map(|(_, discounted)| discounted)
 }
@@ -710,15 +710,15 @@ pub fn weapon_cost(state: &GameState, i: usize) -> Option<i32> {
 pub enum WeaponOutcome {
     /// Arme déjà possédée (ou pas d'économie).
     Owned,
-    /// Arme achetée (coût en minerais déduit, équipée — livrée chargée).
+    /// Arme achetée (coût en minerais déduit, équipée - livrée chargée).
     Purchased(i32),
     /// Pas assez de minerais (coût nécessaire).
     Insufficient(i32),
 }
 
 /// Achète une arme du catalogue au magasin de la station : paie en minerais
-/// (remise de réputation appliquée), l'équipe — son mesh apparaît sur le
-/// vaisseau (`vaisseau::rebuild_player_vaisseau` côté jeu) — et la livre
+/// (remise de réputation appliquée), l'équipe - son mesh apparaît sur le
+/// vaisseau (`vaisseau::rebuild_player_vaisseau` côté jeu) - et la livre
 /// **chargée** à la capacité courante. Hors scénario à économie : sans effet
 /// (`Owned`). Appelé par le magasin (bouton SHOP de la boîte DOCK STATION).
 pub fn buy_weapon(state: &mut GameState, i: usize) -> WeaponOutcome {
@@ -750,7 +750,7 @@ pub fn buy_weapon(state: &mut GameState, i: usize) -> WeaponOutcome {
 }
 
 /// Total des munitions restantes des armes **possédées** (toutes armes
-/// confondues) — affiché au HUD (`AMMO:x/y`) et sur la télécommande.
+/// confondues) - affiché au HUD (`AMMO:x/y`) et sur la télécommande.
 /// Pure (tests).
 pub fn total_ammo(state: &GameState) -> i32 {
     (0..weapon_slot_count())
@@ -771,7 +771,7 @@ pub fn total_ammo_capacity(state: &GameState) -> i32 {
 
 // ─── Réputation et rangs ────────────────────────────────────────────────────
 
-/// Précision de tir du joueur (0..1) : part de tirs **non perdus** — 1 = aucun
+/// Précision de tir du joueur (0..1) : part de tirs **non perdus** - 1 = aucun
 /// tir perdu (tous les tirs ont touché un astéroïde). Sans tir : 0. Sert au
 /// gain de réputation (`on_meteor_destroyed`) et à la remise sur les coûts
 /// (`current_discount`).
@@ -784,7 +784,7 @@ pub fn shooting_precision(state: &GameState) -> f64 {
 }
 
 /// Réputation gagnée par un astéroïde détruit : le gain de base
-/// (`reputation_per_asteroid`) est multiplié par `1 + poids × précision` — la
+/// (`reputation_per_asteroid`) est multiplié par `1 + poids × précision` - la
 /// précision de tir (part de tirs non perdus) récompense donc les tirs
 /// efficaces. Appelé par `game.rs` quand un météore meurt sous une balle.
 pub fn on_meteor_destroyed(state: &mut GameState) {
@@ -805,7 +805,7 @@ pub fn on_meteor_destroyed(state: &mut GameState) {
 }
 
 /// Rang atteint pour une réputation donnée dans une table de rangs : le plus
-/// haut palier dont le seuil est franchi — `None` si la table est vide (jeu
+/// haut palier dont le seuil est franchi - `None` si la table est vide (jeu
 /// libre). Fonction pure (tests). La durée de vie du rang renvoyé est celle
 /// de la table passée (`PROGRESSION_RANKS` est `'static`).
 pub fn rank_at<'a>(ranks: &'a [ReputationRank], reputation: f64) -> Option<&'a ReputationRank> {
@@ -813,7 +813,7 @@ pub fn rank_at<'a>(ranks: &'a [ReputationRank], reputation: f64) -> Option<&'a R
 }
 
 /// Nom du rang de réputation courant du scénario (dernier palier dont le
-/// seuil est atteint), ou `None` si le scénario n'a pas de rangs — affiché au
+/// seuil est atteint), ou `None` si le scénario n'a pas de rangs - affiché au
 /// HUD à côté du compteur de réputation.
 pub fn current_rank(state: &GameState) -> Option<&'static str> {
     rank_at(scenario(state.scenario).ranks, state.resources.reputation).map(|r| r.name)
@@ -833,7 +833,7 @@ pub fn discounted_cost(cost: i32, discount_percent: i32) -> i32 {
 }
 
 /// Remise du scénario courant : la remise du rang atteint (`reputation_discount`),
-/// **amplifiée par la précision de tir** — la remise est multipliée par
+/// **amplifiée par la précision de tir** - la remise est multipliée par
 /// `1 + poids × précision` (voir `discount_precision_weight` de `Scenario`) et
 /// bornée à 100 %. Sans rang ou poids nul, la précision ne change rien.
 pub fn current_discount(state: &GameState) -> i32 {
@@ -856,20 +856,20 @@ pub enum PlayerHit {
     /// Le bouclier a encaissé l'impact : vaisseau intact.
     Absorbed,
     /// Bouclier percé, vaisseau détruit : une vie perdue, respawn (vies
-    /// restantes — `i32`).
+    /// restantes - `i32`).
     Destroyed(i32),
     /// Bouclier percé, dernière vie perdue : partie terminée (`game_over`).
     GameOver,
 }
 
 /// Le vaisseau subit un impact (scénario Survival) : le bouclier encaisse
-/// `dégâts × multiplicateur` ; s'il est percé, l'impact détruit le vaisseau —
+/// `dégâts × multiplicateur` ; s'il est percé, l'impact détruit le vaisseau -
 /// une vie est perdue et le bouclier est rechargé (respawn côté `game.rs`),
 /// ou la partie est terminée en dernière vie (`game_over`). Sans effet (et
 /// renvoie `Absorbed`) hors scénario de survie. Appelé par `game.rs` pour
 /// chaque triangle du vaisseau percuté.
 /// Dégâts effectifs d'un impact subi : `dégâts de base × multiplicateur` du
-/// scénario (fonction pure — testée avec des scénarios sur mesure).
+/// scénario (fonction pure - testée avec des scénarios sur mesure).
 pub fn scaled_impact(s: Scenario, damage: f64) -> f64 {
     damage * s.damage_multiplier
 }
@@ -902,7 +902,7 @@ pub fn player_hit(state: &mut GameState, damage: f64) -> PlayerHit {
         return PlayerHit::GameOver;
     }
     // respawn : bouclier rechargé et invulnérabilité temporaire (la position
-    // du vaisseau est restaurée par `game.rs` — `respawn_player`)
+    // du vaisseau est restaurée par `game.rs` - `respawn_player`)
     state.resources.shield = s.shield_capacity;
     state.invulnerable = s.respawn_invulnerability;
     state.send_message(&format!(
@@ -917,11 +917,11 @@ pub fn player_hit(state: &mut GameState, damage: f64) -> PlayerHit {
 
 /// Décharge la soute à la station : chaque gemme est convertie en minerais
 /// selon la valeur de son élément (`ELEMENT_VALUES`) et rapporte de la
-/// **réputation** (`reputation_per_mineral` — le commerce est récompensé,
+/// **réputation** (`reputation_per_mineral` - le commerce est récompensé,
 /// comme le tir l'est par les astéroïdes détruits). Appelé par `docking`
 /// (déchargement automatique de l'original, au plus tard à la frame suivant
 /// la fermeture de la boîte) et par le bouton UNLOAD de la boîte DOCK STATION
-/// (déchargement immédiat — les minerais financent le ravitaillement
+/// (déchargement immédiat - les minerais financent le ravitaillement
 /// carburant/munitions acheté au magasin du même accostage).
 pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
     let s = scenario(state.scenario);
@@ -937,7 +937,7 @@ pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
     state.resources.minerals += gained;
     if gained > 0 {
         state.send_message(&format!("CARGO UNLOADED: +{} MINERALS", gained));
-        // réputation gagnée par minerai déchargé — un palier franchi est
+        // réputation gagnée par minerai déchargé - un palier franchi est
         // annoncé comme pour les astéroïdes détruits
         let before = rank_at(s.ranks, state.resources.reputation);
         state.resources.reputation += gained as f64 * s.reputation_per_mineral;
@@ -964,7 +964,7 @@ pub enum SupplyOutcome {
 /// carburant** : le manque au réservoir courant est facturé au pas du
 /// scénario (`fuel_price` par `fuel_step` unités, arrondi au pas supérieur).
 /// Hors économie ou réservoir plein : 0. Équivalent à `fuel_qty_cost` sur
-/// tout le manque — le plein complet (extrémité haute du curseur FUEL).
+/// tout le manque - le plein complet (extrémité haute du curseur FUEL).
 /// Réservé aux tests (le magasin achète à la quantité du curseur).
 #[cfg(test)]
 pub fn fuel_refill_cost(state: &GameState) -> i32 {
@@ -980,7 +980,7 @@ pub fn fuel_refill_cost(state: &GameState) -> i32 {
 /// Coût (minerais, remise de réputation appliquée) du **rechargement des
 /// munitions** : chaque arme possédée est facturée au paquet de l'arme
 /// (`ammo_price` par paquet de `ammo_pack` munitions, arrondi au paquet
-/// supérieur) — les armes non possédées ne se rechargent pas. Hors économie
+/// supérieur) - les armes non possédées ne se rechargent pas. Hors économie
 /// ou toutes les armes pleines : 0. Réservé aux tests (le magasin achète à
 /// la quantité des curseurs AMMO, un par arme possédée).
 #[cfg(test)]
@@ -1002,7 +1002,7 @@ pub fn ammo_refill_cost(state: &GameState) -> i32 {
 }
 
 /// Nombre de **paquets facturés** pour `qty` unités de carburant au magasin
-/// (arrondi au paquet supérieur — tout achat paie au moins un paquet) ; 0 si
+/// (arrondi au paquet supérieur - tout achat paie au moins un paquet) ; 0 si
 /// la quantité est nulle ou hors économie. Affiche la ligne FUEL (« +30
 /// (3 paquets) »). Pure (tests).
 pub fn fuel_pack_count(state: &GameState, qty: f64) -> i32 {
@@ -1015,7 +1015,7 @@ pub fn fuel_pack_count(state: &GameState, qty: f64) -> i32 {
 
 /// Coût (minerais, remise de réputation appliquée) de l'achat de `qty`
 /// **unités** de carburant au magasin (ligne FUEL, curseur) : facturées au
-/// paquet du scénario (`fuel_price` par `fuel_step` — voir `fuel_pack_count`),
+/// paquet du scénario (`fuel_price` par `fuel_step` - voir `fuel_pack_count`),
 /// puis remise appliquée. `qty <= 0` ou hors économie : 0. Pure (tests).
 pub fn fuel_qty_cost(state: &GameState, qty: f64) -> i32 {
     discounted_cost(
@@ -1037,7 +1037,7 @@ pub fn ammo_pack_count(state: &GameState, i: usize, qty: i32) -> i32 {
 
 /// Coût (minerais, remise de réputation appliquée) de l'achat de `qty`
 /// **unités** de munitions pour l'arme `i` (ligne AMMO de l'arme, curseur) :
-/// facturées au paquet de l'arme (`ammo_price` par paquet de `ammo_pack` —
+/// facturées au paquet de l'arme (`ammo_price` par paquet de `ammo_pack` -
 /// voir `ammo_pack_count`), puis remise appliquée. `qty <= 0` ou hors
 /// économie : 0. Pure (tests).
 pub fn ammo_qty_cost(state: &GameState, i: usize, qty: i32) -> i32 {
@@ -1058,7 +1058,7 @@ pub fn purchase_fuel(state: &mut GameState) -> SupplyOutcome {
 }
 
 /// Achète `qty` unités de carburant à la station (ligne FUEL du magasin,
-/// curseur) : facturées au paquet (`fuel_qty_cost` — un paquet minimum pour
+/// curseur) : facturées au paquet (`fuel_qty_cost` - un paquet minimum pour
 /// tout achat) ; le réservoir reçoit exactement `qty` unités, bornées au
 /// manque de la capacité courante. Minerais insuffisants → `Insufficient`
 /// (message « NOT ENOUGH MINERALS FOR FUEL », non répété au même coût).
@@ -1077,7 +1077,7 @@ pub fn buy_fuel_qty(state: &mut GameState, qty: f64) -> SupplyOutcome {
     }
     if state.resources.minerals < cost {
         // le message n'est envoyé qu'au début du manque (pas à chaque clic
-        // répété — `supplies_shortage_cost`)
+        // répété - `supplies_shortage_cost`)
         if state.supplies_shortage_cost != cost {
             state.supplies_shortage_cost = cost;
             state.send_message(&format!("NOT ENOUGH MINERALS FOR FUEL ({} NEEDED)", cost));
@@ -1125,7 +1125,7 @@ pub fn purchase_ammo(state: &mut GameState) -> SupplyOutcome {
 }
 
 /// Achète `qty` unités de munitions pour l'arme `i` (ligne AMMO de l'arme,
-/// curseur) : facturées au paquet de l'arme (`ammo_qty_cost` — un paquet
+/// curseur) : facturées au paquet de l'arme (`ammo_qty_cost` - un paquet
 /// minimum pour tout achat) ; le chargeur reçoit exactement `qty` unités,
 /// bornées au manque de la capacité courante. Arme non possédée ou quantité
 /// nulle : sans effet (`Full`). Minerais insuffisants → `Insufficient`
@@ -1163,7 +1163,7 @@ pub fn buy_ammo_qty(state: &mut GameState, i: usize, qty: i32) -> SupplyOutcome 
 
 /// Quantité maximale de carburant **achetable** avec les minerais courants :
 /// le plus grand multiple du pas (`fuel_step`) dont le coût (remisé) ne
-/// dépasse pas les minerais, borné au manque du réservoir — 0 si même un
+/// dépasse pas les minerais, borné au manque du réservoir - 0 si même un
 /// paquet est hors de portée (ou hors économie). Positionne le curseur FUEL
 /// du magasin à l'ouverture. Pure (tests).
 pub fn affordable_fuel_qty(state: &GameState) -> f64 {
@@ -1183,7 +1183,7 @@ pub fn affordable_fuel_qty(state: &GameState) -> f64 {
 
 /// Quantité maximale de munitions **achetable** pour l'arme `i` avec les
 /// minerais courants : le plus grand multiple du paquet de l'arme dont le
-/// coût (remisé) ne dépasse pas les minerais, borné au manque du chargeur —
+/// coût (remisé) ne dépasse pas les minerais, borné au manque du chargeur -
 /// 0 si même un paquet est hors de portée (ou hors économie). Positionne le
 /// curseur AMMO de l'arme à l'ouverture du magasin. Pure (tests).
 pub fn affordable_ammo_qty(state: &GameState, i: usize) -> i32 {
@@ -1204,7 +1204,7 @@ pub fn affordable_ammo_qty(state: &GameState, i: usize) -> i32 {
 /// Borne les quantités des curseurs du magasin (carburant et munitions par
 /// arme possédée) à ce que les minerais permettent (`affordable_fuel_qty` /
 /// Aimanate une quantité de curseur au **multiple du paquet** le plus proche
-/// (pour ne jamais payer un paquet sans en prendre les unités) — sauf le
+/// (pour ne jamais payer un paquet sans en prendre les unités) - sauf le
 /// **maximum** (`max`, le plein du réservoir), qui reste atteignable même
 /// s'il ne tombe pas pile sur un multiple : le dernier paquet est alors pris
 /// en entier (aucune unité perdue). `qty` est arrondi au multiple le plus
@@ -1225,8 +1225,8 @@ pub fn snap_to_pack(qty: f64, pack: f64, max: f64) -> f64 {
 
 /// Borne les quantités des curseurs du magasin (carburant et munitions par
 /// arme possédée) à ce que les minerais permettent (`affordable_fuel_qty` /
-/// `affordable_ammo_qty` — déjà bornées au manque des réservoirs) : jamais
-/// une quantité dont le coût dépasserait les minerais disponibles — on ne
+/// `affordable_ammo_qty` - déjà bornées au manque des réservoirs) : jamais
+/// une quantité dont le coût dépasserait les minerais disponibles - on ne
 /// peut pas se retrouver avec un curseur hors de portée. Les quantités sont
 /// aussi **aimantées aux multiples du paquet** (`snap_to_pack`) pour ne
 /// jamais payer un paquet sans en prendre les unités en glissant à la
@@ -1264,7 +1264,7 @@ pub fn clamp_shop_quantities(state: &mut GameState) {
 
 /// Coûts de déblocage d'un mode pas encore débloqué : tarif de base (prix
 /// d'origine) et prix réellement payé (remise de réputation du rang courant
-/// appliquée) — `None` = débloqué, ou pas d'économie. Affichés dans le
+/// appliquée) - `None` = débloqué, ou pas d'économie. Affichés dans le
 /// magasin de la station (bouton SHOP de la boîte DOCK STATION).
 pub fn mode_unlock_prices(state: &GameState, mode: i32) -> Option<(i32, i32)> {
     if !has_economy(state) {
@@ -1279,7 +1279,7 @@ pub fn mode_unlock_prices(state: &GameState, mode: i32) -> Option<(i32, i32)> {
 }
 
 /// Coût en minerais d'un mode pas encore débloqué (`None` = débloqué, ou pas
-/// d'économie) — affiché dans le magasin de la station (bouton SHOP de la
+/// d'économie) - affiché dans le magasin de la station (bouton SHOP de la
 /// boîte DOCK STATION). C'est le prix réellement payé (remise de réputation
 /// du rang courant appliquée) ; voir `mode_unlock_prices` pour le tarif de
 /// base.
@@ -1351,14 +1351,14 @@ pub fn cargo_capacity(state: &GameState) -> i32 {
 }
 
 /// Ligne d'affichage d'une amélioration de l'atelier : libellé, capacité
-/// actuelle et prochaine extension (`None` = au max) — pour l'écran atelier
+/// actuelle et prochaine extension (`None` = au max) - pour l'écran atelier
 /// (`render::draw_shop_box`).
 pub struct UpgradeLine {
     /// Libellé de la ligne (ex « FUEL TANK »).
     pub label: &'static str,
     /// Capacité actuelle.
     pub capacity: i32,
-    /// Prochaine extension (nom, coût, bonus) — `None` = niveau max.
+    /// Prochaine extension (nom, coût, bonus) - `None` = niveau max.
     pub next: Option<ShipUpgrade>,
 }
 
@@ -1398,7 +1398,7 @@ pub enum UpgradeOutcome {
 }
 
 /// Achète la prochaine extension d'une ligne à l'atelier de la station : paie
-/// en minerais et fait passer la ligne au niveau suivant — les réservoirs
+/// en minerais et fait passer la ligne au niveau suivant - les réservoirs
 /// montent à la nouvelle capacité (plein inclus) et la soute s'agrandit
 /// immédiatement. Hors scénario à économie (pas d'atelier) ou ligne au max :
 /// sans effet (`Maxed`). Appelé par le magasin (bouton SHOP de la
@@ -1455,21 +1455,21 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
 // ─── Persistance de la progression ──────────────────────────────────────────
 
 /// Clés du fichier de config (voir `persist.rs`) portant la progression d'un
-/// scénario — le scénario choisi et sa sauvegarde :
-/// - `scenario`        — scénario choisi (0 = jeu libre, 1 = Progression,
+/// scénario - le scénario choisi et sa sauvegarde :
+/// - `scenario`        - scénario choisi (0 = jeu libre, 1 = Progression,
 ///   2 = Survival)
-/// - `prog_minerals`   — minerais en banque (Progression)
-/// - `prog_modes`      — modes de déplacement débloqués (masque binaire : bit
+/// - `prog_minerals`   - minerais en banque (Progression)
+/// - `prog_modes`      - modes de déplacement débloqués (masque binaire : bit
 ///   i = mode i débloqué, Progression)
-/// - `prog_reputation` — réputation × 10 (entier, au dixième près,
+/// - `prog_reputation` - réputation × 10 (entier, au dixième près,
 ///   Progression)
-/// - `prog_lives`      — vies restantes (Survival)
-/// - `prog_shield`     — bouclier restant × 10 (entier, au dixième près,
+/// - `prog_lives`      - vies restantes (Survival)
+/// - `prog_shield`     - bouclier restant × 10 (entier, au dixième près,
 ///   Survival)
-/// - `prog_up_fuel`    — extensions de réservoir achetées (Progression)
-/// - `prog_up_ammo`    — extensions de chargeur achetées (Progression)
-/// - `prog_up_cargo`   — extensions de soute achetées (Progression)
-/// - `prog_weapons`    — armes du catalogue possédées (masque binaire : bit
+/// - `prog_up_fuel`    - extensions de réservoir achetées (Progression)
+/// - `prog_up_ammo`    - extensions de chargeur achetées (Progression)
+/// - `prog_up_cargo`   - extensions de soute achetées (Progression)
+/// - `prog_weapons`    - armes du catalogue possédées (masque binaire : bit
 ///   i = arme i achetée, Progression ; les munitions par arme repartent
 ///   pleines à chaque lancement, non persistées)
 const SCENARIO_KEY: &str = "scenario";
@@ -1494,7 +1494,7 @@ fn unlocked_mask(state: &GameState) -> i32 {
     })
 }
 
-/// Masque binaire des armes possédées (bit i = arme i du catalogue — seules
+/// Masque binaire des armes possédées (bit i = arme i du catalogue - seules
 /// les armes du catalogue sont persistées, le canon classique de repli est
 /// toujours possédé).
 fn weapons_owned_mask(state: &GameState) -> i32 {
@@ -1508,7 +1508,7 @@ fn weapons_owned_mask(state: &GameState) -> i32 {
 }
 
 /// Enregistre la progression courante dans un fichier de config donné :
-/// toujours le scénario choisi, et les ressources du scénario — minerais,
+/// toujours le scénario choisi, et les ressources du scénario - minerais,
 /// modes débloqués, réputation, extensions d'atelier et **armes possédées**
 /// en Progression, vies et bouclier en Survival (les munitions par arme
 /// repartent pleines au lancement : non persistées). Chaque scénario n'écrit
@@ -1580,7 +1580,7 @@ pub fn load_scenario() -> Option<ScenarioId> {
 /// Survival, une sauvegarde à 0 vie (partie terminée) repart sur le départ
 /// complet. Le mode de déplacement enregistré (`moving_mode`) est restauré
 /// s'il est débloqué par la sauvegarde (sinon le mode de départ du scénario
-/// reste — jamais un mode non payé). Ne touche pas au scénario courant ; les
+/// reste - jamais un mode non payé). Ne touche pas au scénario courant ; les
 /// réservoirs repartent pleins à la **capacité courante** (extensions
 /// comprises) et la soute est agrandie selon le niveau restauré. Sans effet
 /// en jeu libre. Version chemin explicite (tests).
@@ -1758,7 +1758,7 @@ mod tests {
     #[test]
     fn scenario_rules_mark_values_with_scenario_color() {
         // les valeurs chiffrées (coûts, vies, bouclier, dégâts, rangs) portent
-        // `color = Some(...)` — la couleur propre du scénario — et les libellés
+        // `color = Some(...)` - la couleur propre du scénario - et les libellés
         // `None` : c'est ce qui fait ressortir le changement de stat au
         // basculement de scénario (et chaque scénario a sa couleur)
         let prog = scenario_rules(ScenarioId::Progression);
@@ -1821,7 +1821,7 @@ mod tests {
     fn save_summary_segments_highlight_values() {
         // les valeurs du résumé (minerais, modes, réputation, rang, vies,
         // bouclier) portent `color = Some(couleur du scénario)`, les libellés
-        // `None` — mêmes segments que `save_summary`, pour la coloration à
+        // `None` - mêmes segments que `save_summary`, pour la coloration à
         // l'écran titre
         let mut prog = progression_state();
         prog.resources.minerals = 42;
@@ -1924,7 +1924,7 @@ mod tests {
 
     #[test]
     fn cycle_scenario_back_goes_to_previous() {
-        // touche B : inverse de N — jeu libre → Survival → Progression
+        // touche B : inverse de N - jeu libre → Survival → Progression
         let mut s = GameState::new();
         cycle_scenario_back(&mut s);
         assert_eq!(s.scenario, ScenarioId::Survival);
@@ -1994,7 +1994,7 @@ mod tests {
     #[test]
     fn ammo_is_consumed_per_shot_and_blocks_when_empty() {
         // seules les armes possédées tirent : au départ seule l'arme de base
-        // (coût 0) est équipée — un tir consomme 1 munition de son stock, les
+        // (coût 0) est équipée - un tir consomme 1 munition de son stock, les
         // autres slots restent à 0 (armes non possédées)
         let mut s = progression_state();
         let mut only_base = [false; WEAPON_SLOTS];
@@ -2040,7 +2040,7 @@ mod tests {
     #[test]
     fn paid_weapon_is_bought_with_minerals_and_loaded() {
         // une arme payante (ex ARME 2, 30 minerais) : refusée sans assez de
-        // minerais, achetée ensuite — équipée, livrée chargée à la capacité
+        // minerais, achetée ensuite - équipée, livrée chargée à la capacité
         // courante, puis non rachetable
         let mut s = progression_state();
         let i = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
@@ -2087,7 +2087,7 @@ mod tests {
 
     #[test]
     fn supplies_charge_ammo_packs_per_weapon() {
-        // la recharge des munitions (magasin, ligne AMMO — indépendante du
+        // la recharge des munitions (magasin, ligne AMMO - indépendante du
         // carburant) facture **par arme possédée**, au paquet de l'arme :
         // 6 paquets × prix ARME 1 + 6 paquets × prix ARME 2 (30 munitions à
         // la capacité de base, paquets de 5) ; le carburant reste intact
@@ -2114,7 +2114,7 @@ mod tests {
     #[test]
     fn owned_weapons_persist_and_restore_loaded() {
         // les armes achetées sont enregistrées avec la progression
-        // (`prog_weapons`) et restaurées au lancement suivant — **chargées**
+        // (`prog_weapons`) et restaurées au lancement suivant - **chargées**
         // (les munitions par arme repartent pleines, non persistées) ; les
         // armes de base (coût 0) restent équipées même sans la clé (ancienne
         // sauvegarde)
@@ -2161,7 +2161,7 @@ mod tests {
     #[test]
     fn reputation_ranks_unlock_at_thresholds() {
         // les paliers de réputation sont débloqués aux seuils de la table :
-        // CADET 0, PILOT 10, VETERAN 25, ACE 50 — le rang courant est le plus
+        // CADET 0, PILOT 10, VETERAN 25, ACE 50 - le rang courant est le plus
         // haut palier franchi
         assert_eq!(rank_at(PROGRESSION_RANKS, 0.0).map(|r| r.name), Some("CADET"));
         assert_eq!(rank_at(PROGRESSION_RANKS, 9.9).map(|r| r.name), Some("CADET"));
@@ -2336,7 +2336,7 @@ mod tests {
     #[test]
     fn cargo_unload_grants_reputation_and_rank_up() {
         // le commerce est récompensé : chaque minerai déchargé rapporte de la
-        // réputation (0,1 en Progression) — 100 minerais → +10 → le seuil
+        // réputation (0,1 en Progression) - 100 minerais → +10 → le seuil
         // PILOT (10) est franchi, « RANK UP: PILOT » est annoncé
         let mut s = progression_state();
         let mut elements = default_elements();
@@ -2361,7 +2361,7 @@ mod tests {
         // carburant et munitions s'achètent **indépendamment** au magasin :
         // le plein de carburant (5 pas × 1 = 5) ne touche pas aux munitions,
         // et le rechargement des munitions (4 paquets × 1 = 4) pas au
-        // carburant — chacun est facturé à part
+        // carburant - chacun est facturé à part
         let mut s = progression_state();
         s.resources.minerals = 100;
         s.resources.fuel = 50.0;
@@ -2423,14 +2423,14 @@ mod tests {
     fn supplies_can_be_bought_by_unit() {
         // le ravitaillement s'achète **à la quantité** (ligne FUEL / AMMO du
         // magasin, curseur) : tout achat paie au moins un paquet de la
-        // ressource (10 carburant, le paquet de l'arme pour les munitions) —
+        // ressource (10 carburant, le paquet de l'arme pour les munitions) -
         // même avec peu de minerais, on peut toujours s'en sortir (ex 3
         // minerais → 30 carburant) sans devoir financer un plein complet
         let mut s = progression_state();
         s.resources.minerals = 3;
         s.resources.fuel = 0.0;
         s.resources.weapon_ammo[0] = 0;
-        // carburant : 1 minerai par paquet de 10 — 30 unités = 3 paquets,
+        // carburant : 1 minerai par paquet de 10 - 30 unités = 3 paquets,
         // 5 unités = 1 paquet (minimum), 0 = rien ; le nombre de paquets
         // affiché suit la facturation
         assert_eq!(fuel_pack_count(&s, 30.0), 3);
@@ -2442,7 +2442,7 @@ mod tests {
         assert_eq!(s.resources.fuel, 30.0);
         assert_eq!(s.resources.minerals, 0);
         assert!(s.message_queue.contains("FUEL PURCHASED"));
-        // munitions : paquets de 5 à 1 minerai (ARME 1) — 7 unités = 2
+        // munitions : paquets de 5 à 1 minerai (ARME 1) - 7 unités = 2
         // paquets, et le carburant acheté reste intact
         s.resources.minerals = 5;
         assert_eq!(ammo_pack_count(&s, 0, 7), 2);
@@ -2465,7 +2465,7 @@ mod tests {
     fn shop_sliders_clamp_to_affordable() {
         // les curseurs du magasin sont bornés au **manque** des réservoirs et
         // à ce que les minerais permettent : jamais une quantité dont le coût
-        // dépasserait les minerais — 4 minerais → 40 carburant (4 paquets de
+        // dépasserait les minerais - 4 minerais → 40 carburant (4 paquets de
         // 10), 3 minerais → 15 munitions (3 paquets de 5)
         let mut s = progression_state();
         s.resources.minerals = 4;
@@ -2504,7 +2504,7 @@ mod tests {
     fn shop_sliders_snap_to_packs() {
         // l'aimantation aux paquets : une quantité glissée entre deux paquets
         // retombe sur le multiple le plus proche (jamais un paquet payé sans
-        // ses unités) — sauf le plein du réservoir, qui reste atteignable en
+        // ses unités) - sauf le plein du réservoir, qui reste atteignable en
         // bout de piste même si le manque n'est pas multiple du paquet (le
         // dernier paquet est alors pris en entier, aucune unité perdue)
         assert_eq!(snap_to_pack(24.0, 10.0, 100.0), 20.0);
@@ -2522,7 +2522,7 @@ mod tests {
         clamp_shop_quantities(&mut s);
         assert_eq!(s.shop_fuel_qty, 30.0);
         // manque non multiple (85) : les paquets s'aimantent, le plein (85,
-        // 9 paquets — le dernier partiel pris en entier) reste atteignable
+        // 9 paquets - le dernier partiel pris en entier) reste atteignable
         s.resources.minerals = 1000;
         s.resources.fuel = 15.0;
         s.shop_fuel_qty = 84.0;
@@ -2539,7 +2539,7 @@ mod tests {
     #[test]
     fn progression_save_and_restore_round_trips() {
         // une partie Progression (minerais, modes payés, réputation) est
-        // enregistrée puis restaurée sur un départ neuf du scénario — les
+        // enregistrée puis restaurée sur un départ neuf du scénario - les
         // réservoirs, eux, repartent pleins (non persistés)
         let p = temp_path("roundtrip.cfg");
         let _ = std::fs::remove_file(&p);
@@ -2563,7 +2563,7 @@ mod tests {
     #[test]
     fn reset_progression_clears_saved_progression() {
         // RESET PROGRESSION : une progression (minerais, modes payés,
-        // réputation, extensions, mode choisi) est remise à zéro — les clés
+        // réputation, extensions, mode choisi) est remise à zéro - les clés
         // `prog_*` et `moving_mode` du fichier sont supprimées et l'état
         // repart sur les règles de départ du scénario (REALISTIC seul
         // débloqué, réservoirs pleins)
@@ -2608,7 +2608,7 @@ mod tests {
     fn refuel_spent_minerals_are_persisted() {
         // un ravitaillement (carburant + munitions achetés au magasin)
         // déduit des minerais : la sauvegarde doit conserver la valeur
-        // déduite — pas de ravitaillement gratuit au lancement suivant (le
+        // déduite - pas de ravitaillement gratuit au lancement suivant (le
         // jeu écrit la progression après chaque achat)
         let p = temp_path("refuel.cfg");
         let _ = std::fs::remove_file(&p);
@@ -2883,7 +2883,7 @@ mod tests {
     fn precision_boosts_the_reputation_discount() {
         // la remise du rang est multipliée par (1 + poids × précision) :
         // ACE (−15 %) avec poids 1.0 → 0 % de précision : 15 %, 50 % : ~22 %,
-        // 100 % : 30 % — sans tir, la précision vaut 0
+        // 100 % : 30 % - sans tir, la précision vaut 0
         let mut s = progression_state();
         s.resources.reputation = 50.0; // ACE
         assert_eq!(current_discount(&s), 15);
@@ -2916,7 +2916,7 @@ mod tests {
 
     #[test]
     fn discounted_cost_is_rounded_down_and_never_negative() {
-        // coût × (100 − remise) / 100, arrondi à l'entier inférieur — la
+        // coût × (100 − remise) / 100, arrondi à l'entier inférieur - la
         // remise est bornée 0..100
         assert_eq!(discounted_cost(10, 0), 10);
         assert_eq!(discounted_cost(10, 5), 9); // 9,5 → 9
@@ -2929,7 +2929,7 @@ mod tests {
     #[test]
     fn reputation_discounts_upgrade_supplies_and_mode_costs() {
         // rang ACE (−15 %) : la remise s'applique à tous les coûts de la
-        // station — atelier, ravitaillement et déblocage des modes
+        // station - atelier, ravitaillement et déblocage des modes
         let mut s = progression_state();
         s.resources.minerals = 1000;
         s.resources.reputation = 50.0;

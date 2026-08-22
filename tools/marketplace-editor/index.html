@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Place de marché — Meteors Mining (éditeur)</title>
+<title>Place de marché - Meteors Mining (éditeur)</title>
 <style>
   :root {
     --bg: #0b0e14;
@@ -223,7 +223,7 @@
 
   .ship-preview-wrap { display: flex; gap: 14px; align-items: flex-start; }
   /* carte vaisseau : l'aperçu reste **toujours visible** pendant le défilement
-     des réglages (sticky dans la carte, comme la barre latérale) — fond opaque
+     des réglages (sticky dans la carte, comme la barre latérale) - fond opaque
      + ombre pour se détacher des sections qui défilent dessous, l'utilisateur
      voit à la fois les paramètres et le vaisseau */
   .ship-preview-wrap.sticky-preview {
@@ -355,7 +355,7 @@
     padding: 5px 8px;
     font-size: 13px;
   }
-  /* sélecteur d'asset (mesh) : liste des fichiers JSON de assets/ — même
+  /* sélecteur d'asset (mesh) : liste des fichiers JSON de assets/ - même
      allure qu'un champ texte (fond, bordure, largeur), la flèche native du
      select signale la liste déroulante */
   select.asset-select {
@@ -580,7 +580,7 @@
     word-break: break-word;
   }
   .cargo-out:empty::before {
-    content: "Aucune commande lancée — cargo test / cargo run (mode serveur local requis).";
+    content: "Aucune commande lancée - cargo test / cargo run (mode serveur local requis).";
     color: var(--muted);
   }
   body.has-console { padding-bottom: 320px; }
@@ -632,10 +632,10 @@
       ✓ Économie & Physique Valides
     </div>
   </div>
-  <h1><span class="starbar">✦</span> Place de marché — éditeur <span class="starbar">✦</span></h1>
+  <h1><span class="starbar">✦</span> Place de marché - éditeur <span class="starbar">✦</span></h1>
   <p class="subtitle">
     Application de gestion du jeu <b>Meteors Mining</b> : elle sert à la <b>mise au point des objets
-    vendus sur la place de marché</b> accessible depuis la base — le magasin de la station
+    vendus sur la place de marché</b> accessible depuis la base - le magasin de la station
     (bouton <code>SHOP</code> de la boîte DOCK STATION : modes de déplacement et, en scénario
     Progression, l'atelier d'amélioration du vaisseau) et l'économie de la station. Chaque modification est enregistrée automatiquement : en mode serveur,
     <code>src/marketplace.rs</code> se charge à l'ouverture et « 💾 Enregistrer le fichier » l'écrit
@@ -653,7 +653,7 @@
     <h3 class="side-title">Fichier</h3>
     <div class="file-actions">
       <button id="btn-import-rs" title="Ouvrir src/marketplace.rs : lien direct (chargement + enregistrement) ou simple import (parse du Rust)">Ouvrir marketplace.rs</button>
-      <button id="btn-save-rs" class="primary" title="Enregistre l'export directement dans le fichier lié — sinon choisir src/marketplace.rs (ou téléchargement en repli)">Enregistrer le fichier</button>
+      <button id="btn-save-rs" class="primary" title="Enregistre l'export directement dans le fichier lié - sinon choisir src/marketplace.rs (ou téléchargement en repli)">Enregistrer le fichier</button>
       <button id="btn-download-json">JSON ↓</button>
       <button id="btn-import-json">JSON ↑</button>
       <span class="save-status" id="save-status"></span>
@@ -678,39 +678,39 @@
     <b>Dans le jeu</b> : les données ci-dessus sont les lignes d'atelier
     <code>FUEL_UPGRADE_TRACK</code>, <code>AMMO_UPGRADE_TRACK</code>, <code>CARGO_UPGRADE_TRACK</code>
     (avec leurs extensions),    l'économie de la station (<code>ELEMENT_VALUES</code>,
-    <code>MOVING_MODES</code> — noms, descriptions et coûts des modes de
+    <code>MOVING_MODES</code> - noms, descriptions et coûts des modes de
     déplacement vendus au magasin, bouton <code>SHOP</code> de la boîte
-    DOCK STATION — <code>MODE_COSTS</code> qui en est dérivé,
+    DOCK STATION - <code>MODE_COSTS</code> qui en est dérivé,
     <code>FUEL_PRICE</code>/<code>FUEL_STEP</code>,
     <code>AMMO_PRICE</code>/<code>AMMO_STEP</code>), les rangs de réputation
-    (<code>PROGRESSION_RANKS</code> : seuils, noms et remises — lus par <code>src/scenario.rs</code>),
+    (<code>PROGRESSION_RANKS</code> : seuils, noms et remises - lus par <code>src/scenario.rs</code>),
     les météores (force de réaction à la base <code>METEOR_STATION_RESTITUTION</code>,
     débris par explosion <code>GARBAGE_PER_TRIANGLE</code>, vitesse et génération
     <code>METEOR_VELOCITY_MAX</code>/<code>TRIANGLES_IN_SHAPE_*</code>/<code>TRIANGLE_*</code>,
-    population <code>INITIAL_MAX_METEOR_SHAPES</code>/<code>SHAPES_COUNT</code> — lus par
+    population <code>INITIAL_MAX_METEOR_SHAPES</code>/<code>SHAPES_COUNT</code> - lus par
     <code>src/game.rs</code>, <code>src/garbage.rs</code>, <code>src/generate.rs</code>,
     <code>src/state.rs</code>),
     le vaisseau joueur
     (<code>VAISSEAU_JSON</code>, <code>VAISSEAU_SCALE</code>, <code>VAISSEAU_ORIENTATION_DEGREES</code>,
-    <code>VAISSEAU_CENTER_X/Y_PERCENT</code>, <code>VAISSEAU_BULLET_SPAWNS</code> — emplacements de
+    <code>VAISSEAU_CENTER_X/Y_PERCENT</code>, <code>VAISSEAU_BULLET_SPAWNS</code> - emplacements de
     départ des projectiles, en % de la boîte englobante : une balle part de chaque emplacement au
-    tir, tournée avec le vaisseau ; vide = un seul emplacement au centre de rotation —
-    <code>VAISSEAU_THRUSTERS</code> — éjections de gaz des 4 touches de contrôle (↑ poussée,
+    tir, tournée avec le vaisseau ; vide = un seul emplacement au centre de rotation -
+    <code>VAISSEAU_THRUSTERS</code> - éjections de gaz des 4 touches de contrôle (↑ poussée,
     ↓ frein, ← → rotations) : mesh, échelle, orientation et position en % de la boîte englobante
-    par propulseur, utilisés par le jeu pour dessiner les propulseurs et la poussée (src/main.rs) — et le
+    par propulseur, utilisés par le jeu pour dessiner les propulseurs et la poussée (src/main.rs) - et le
     <b>catalogue d'armes</b> <code>VAISSEAU_WEAPONS</code> : chaque arme est un mesh posé sur le
     vaisseau à un emplacement de tir (<code>spawn_index</code> dans
-    <code>VAISSEAU_BULLET_SPAWNS</code> — liste contrainte) et tire sa propre munition (mesh) ;
+    <code>VAISSEAU_BULLET_SPAWNS</code> - liste contrainte) et tire sa propre munition (mesh) ;
     chaque arme porte son <b>coût d'achat</b> au magasin (0 = arme de base) et le prix/taille de
-    son <b>paquet de munitions</b> (<code>ammo_price</code>/<code>ammo_pack</code> — le
+    son <b>paquet de munitions</b> (<code>ammo_price</code>/<code>ammo_pack</code> - le
     magasin facture par paquet, par arme) ; toutes les armes possédées tirent ensemble,
-    catalogue vide = tir classique — lus par
+    catalogue vide = tir classique - lus par
     <code>src/vaisseau.rs</code>, <code>src/generate.rs</code> et <code>src/scenario.rs</code>
     (économie)) et le cosmonaute EVA
     (<code>COSMONAUTE_JSON</code>, <code>COSMONAUTE_EVA_SCALE</code>,
-    <code>COSMONAUTE_ORIENTATION_DEGREES</code>, <code>COSMONAUTE_CENTER_X/Y_PERCENT</code> — lus par
+    <code>COSMONAUTE_ORIENTATION_DEGREES</code>, <code>COSMONAUTE_CENTER_X/Y_PERCENT</code> - lus par
     <code>src/cosmonaut.rs</code>) de
-    <code>src/marketplace.rs</code> — un fichier <b>généré</b> par cet outil, importé par
+    <code>src/marketplace.rs</code> - un fichier <b>généré</b> par cet outil, importé par
     <code>src/scenario.rs</code>. Les extensions sont
     achetées au bouton <code>SHOP</code> de la boîte DOCK STATION (magasin « PLACE DE MARCHÉ »,
     scénario Progression), persistées avec la progression
@@ -722,14 +722,14 @@
   <p>
     <b>Serveur local (recommandé avec le navigateur intégré de VSCode)</b> : lancez
     <code>node tools/marketplace-editor/server.mjs</code> puis ouvrez <code>http://localhost:8123</code>
-    — <code>src/marketplace.rs</code> est <b>chargé automatiquement</b> à l'ouverture, et
+    - <code>src/marketplace.rs</code> est <b>chargé automatiquement</b> à l'ouverture, et
     « 💾 Enregistrer le fichier » l'écrit directement dans le projet, dans tous les navigateurs
     (sans sélecteur de fichiers ni API particulière).
   </p>
   <p>
     <b>Console cargo (serveur local uniquement)</b> : la barre en bas de page lance
     <code>cargo test</code> (vérifie les constantes exportées) ou <code>cargo run</code>
-    (compile puis ouvre le jeu — la console reste ouverte tant que le jeu tourne) et affiche
+    (compile puis ouvre le jeu - la console reste ouverte tant que le jeu tourne) et affiche
     la sortie en direct, avec un bouton <b>■ Arrêter</b> pour couper la commande. Enregistrez
     d'abord (💾) pour tester les valeurs affichées. En ouvrant la page en fichier local
     (<code>file://</code>), la console est masquée.
@@ -808,11 +808,11 @@ const DEFAULT_DATA = {
     // Modes de déplacement du vaisseau, dans l'**ordre d'affichage du
     // magasin** (même ordre que le jeu, MOVING_MODE_ORDER : REALISTIC en
     // tête, mode de départ de Progression). Chaque mode porte son `id`
-    // (index MOVING_MODE_* du jeu) — l'export écrit le catalogue dans
+    // (index MOVING_MODE_* du jeu) - l'export écrit le catalogue dans
     // l'ordre des id, car `MOVING_MODES` est indexé par MOVING_MODE_*. Nom
     // et description s'affichent au magasin de la station (bouton SHOP de la
     // boîte DOCK STATION), coût de déblocage en minerais (0 = déjà débloqué
-    // au départ — seul REALISTIC est gratuit par défaut ; les autres modes,
+    // au départ - seul REALISTIC est gratuit par défaut ; les autres modes,
     // INERTIAL compris, sont payants s'ils ont un coût).
     modes: [
       { id: 3, name: "REALISTIC", description: "INERTIAL + ROTATION DRIFT", cost: 0 },
@@ -827,8 +827,8 @@ const DEFAULT_DATA = {
   },
   gameplay: {
     // collisions météore / station
-    restitution: 1.0, // METEOR_STATION_RESTITUTION — force de réaction (rebond)
-    debrisPerTriangle: 12, // GARBAGE_PER_TRIANGLE — débris par triangle explosé
+    restitution: 1.0, // METEOR_STATION_RESTITUTION - force de réaction (rebond)
+    debrisPerTriangle: 12, // GARBAGE_PER_TRIANGLE - débris par triangle explosé
     // génération procédurale des météores
     meteorVelocityMax: 2.0, // METEOR_VELOCITY_MAX
     trianglesMin: 6, // TRIANGLES_IN_SHAPE_MIN
@@ -839,7 +839,7 @@ const DEFAULT_DATA = {
     heightMax: 22, // TRIANGLE_HEIGHT_MAX
     // population de météores
     initialMax: 15, // INITIAL_MAX_METEOR_SHAPES
-    shapesCount: 150, // SHAPES_COUNT — plafond dur
+    shapesCount: 150, // SHAPES_COUNT - plafond dur
   },
   reputation: {
     // rangs : seuil de réputation, nom affiché et remise (%) sur les coûts
@@ -851,7 +851,7 @@ const DEFAULT_DATA = {
       { threshold: 50, name: "ACE", discountPercent: 15 },
     ],
     // poids de la précision de tir : la remise du rang est multipliée par
-    // (1 + poids × précision) — 1.0 = 100 % de précision → remise doublée
+    // (1 + poids × précision) - 1.0 = 100 % de précision → remise doublée
     discountPrecisionWeight: 1.0,
   },
   ship: {
@@ -865,7 +865,7 @@ const DEFAULT_DATA = {
     // de chaque emplacement. Vide = un seul emplacement au centre de rotation.
     bulletSpawns: [], // [{ x, y }, …]
     // éjections de gaz (les 4 touches de contrôle) : un **propulseur** par
-    // touche — mesh (JSON), échelle, orientation et position en % de la boîte
+    // touche - mesh (JSON), échelle, orientation et position en % de la boîte
     // englobante, ordre fixe : ↑ arrière (gaz de poussée), ↓ avant (gaz de
     // frein), ← flanc gauche, → flanc droit. Vide = repli du jeu (gaz classique).
     thrusters: [
@@ -875,7 +875,7 @@ const DEFAULT_DATA = {
       { name: "DROITE", asset: "assets/propulseur.json", scalePercent: 100, orientationDeg: 0, x: 79, y: 31 },
     ],
     // catalogue d'armes : chaque arme est un mesh posé sur le vaisseau à un
-    // emplacement de tir (`spawnIndex` dans bulletSpawns — liste contrainte,
+    // emplacement de tir (`spawnIndex` dans bulletSpawns - liste contrainte,
     // la position de l'arme sur le vaisseau) et tire sa propre munition
     // (mesh de la munition). Chaque arme porte son **coût d'achat** au magasin
     // (minerais ; 0 = arme de base, toujours équipée) et le prix/taille de
@@ -899,7 +899,7 @@ const DEFAULT_DATA = {
       // },
     ],
     // composition des plans du mesh (indices de file.planes) : règle par plan
-    // — « always » (toujours visible), « excluded » (jamais construit) ou
+    // - « always » (toujours visible), « excluded » (jamais construit) ou
     // « upgrade » (lié à une ligne d'atelier, visible à partir de son niveau
     // minLevel). `null` = composition non définie (tous les plans visibles) ;
     // matérialisé au premier réglage, rattaché au mesh via `planesForAsset`.
@@ -918,8 +918,8 @@ const DEFAULT_DATA = {
 };
 
 const STORAGE_KEY = "meteors-mining-marketplace-editor.v1";
-const VIEW_KEY = "meteors-mining-marketplace-editor.view"; // carte ouverte (id) — retrouvée au prochain lancement
-const CARGO_SIZE = 5; // src/config.rs — capacité de base de la soute
+const VIEW_KEY = "meteors-mining-marketplace-editor.view"; // carte ouverte (id) - retrouvée au prochain lancement
+const CARGO_SIZE = 5; // src/config.rs - capacité de base de la soute
 
 // Ordre d'affichage des modes dans le magasin (même ordre que le jeu,
 // MOVING_MODE_ORDER de src/config.rs) : id MOVING_MODE_* dans l'ordre visuel
@@ -958,11 +958,11 @@ let data = load();
 
 // Poignée du fichier src/marketplace.rs lié (API File System Access) : une
 // fois ouvert avec « Ouvrir marketplace.rs », l'enregistrement s'y écrit
-// directement — sans copier/coller. `null` = aucun fichier lié.
+// directement - sans copier/coller. `null` = aucun fichier lié.
 let rustHandle = null;
 
 // Mode serveur local (server.mjs) : la page est servie en http et le fichier
-// du projet est accessible en fetch — chargement automatique à l'ouverture
+// du projet est accessible en fetch - chargement automatique à l'ouverture
 // et enregistrement direct (fonctionne dans tous les navigateurs).
 const SERVER_MODE = typeof location !== "undefined" && /^https?:$/.test(location.protocol);
 
@@ -987,8 +987,8 @@ function updateSaveButton() {
   btn.classList.toggle("save-dirty", dirty);
   btn.textContent = dirty ? "⚠ Enregistrer le fichier" : "Enregistrer le fichier";
   btn.title = dirty
-    ? "Des valeurs ont été modifiées — enregistre les changements dans src/marketplace.rs"
-    : "Aucune modification — rien à enregistrer";
+    ? "Des valeurs ont été modifiées - enregistre les changements dans src/marketplace.rs"
+    : "Aucune modification - rien à enregistrer";
 }
 
 function load() {
@@ -1045,7 +1045,7 @@ const VIEWS = [
   { id: "economy", label: "Économie de la station", build: economyCard },
   { id: "reputation", label: "Réputation", build: reputationCard },
   { id: "gameplay", label: "Météores & collisions", build: gameplayCard },
-  { id: "summary", label: "Vue de mise au point — synthèse", build: summaryCard },
+  { id: "summary", label: "Vue de mise au point - synthèse", build: summaryCard },
 ];
 
 // Carte affichée : index dans VIEWS (0 = vaisseau joueur). La carte ouverte
@@ -1227,7 +1227,7 @@ function trackCard(track) {
     tr.appendChild(numTd(tier, "bonus", "Bonus de capacité", track.id + "-tier-" + i + "-bonus"));
 
     const tdEff = el("td", "num");
-    const eff = tier.bonus > 0 ? (tier.cost / tier.bonus).toFixed(1) : "—";
+    const eff = tier.bonus > 0 ? (tier.cost / tier.bonus).toFixed(1) : "-";
     tdEff.appendChild(el("span", "eff", eff));
     tr.appendChild(tdEff);
 
@@ -1277,7 +1277,7 @@ function trackCard(track) {
   let row = el("tr");
   row.appendChild(el("td", "", "0"));
   row.appendChild(el("td", "num", String(track.base)));
-  row.appendChild(el("td", "", "— base —"));
+  row.appendChild(el("td", "", "- base -"));
   row.appendChild(el("td", "num", ""));
   row.appendChild(el("td", "num", "0"));
   pBody.appendChild(row);
@@ -1304,18 +1304,18 @@ function trackCard(track) {
 /* ─── Vaisseau joueur et cosmonaute EVA (asset, échelle, orientation, ────── */
 /* ─── centre de rotation) ─────────────────────────────────────────────────── */
 
-// Cache de l'aperçu : mesh JSON déjà chargé (par asset) — évite de re-fetch
+// Cache de l'aperçu : mesh JSON déjà chargé (par asset) - évite de re-fetch
 // à chaque frappe. `null` = à recharger (asset changé).
 let meshCache = null;
 
 // Pool des meshes du catalogue d'armes (asset → mesh) : le mesh du vaisseau
-// (carte affichée) vit dans `meshCache` — chaque arme et chaque munition ont
+// (carte affichée) vit dans `meshCache` - chaque arme et chaque munition ont
 // leur propre asset, chargé à la demande pour l'aperçu (dessin des armes sur
 // le vaisseau à leur emplacement) et la composition éventuelle.
 const weaponMeshPool = {}; // « assets/xxx.json » → mesh
 
 // Charge un mesh d'arme / munition dans le pool (mode serveur : fetch de
-// assets/ ; mode fichier : aucun asset supplémentaire n'est lisible — l'arme
+// assets/ ; mode fichier : aucun asset supplémentaire n'est lisible - l'arme
 // n'est alors pas dessinée, seule sa position est marquée).
 async function ensureWeaponMesh(asset) {
   const key = String(asset);
@@ -1338,7 +1338,7 @@ async function ensureWeaponMesh(asset) {
 
 // La carte de composition a-t-elle déjà été rendue avec le mesh courant ?
 // (`refreshMeshPreview` re-rend la carte une fois le mesh chargé en
-// asynchrone — le drapeau évite la boucle de re-rendu, le mesh revenant
+// asynchrone - le drapeau évite la boucle de re-rendu, le mesh revenant
 // ensuite immédiatement du cache.) Réinitialisé quand le mesh change.
 let compositionRenderedFor = null; // « ship » | « cosmonaut »
 
@@ -1355,7 +1355,7 @@ function parseMeshJson(text) {
     for (const f of pl.faces || []) {
       const [i, j, k] = f.v;
       if (verts[i] && verts[j] && verts[k]) {
-        // couleur RGBA (flottants 0..1) — canal alpha conservé (l'aperçu
+        // couleur RGBA (flottants 0..1) - canal alpha conservé (l'aperçu
         // l'applique, comme `rgba_to_argb` du jeu) ; faces non peintes :
         // gris opaque, comme `DEFAULT_FACE_COLOR` de src/vaisseau.rs
         const t = { a: verts[i], b: verts[j], c: verts[k], color: f.color || [0.8, 0.8, 0.8, 1.0] };
@@ -1391,7 +1391,7 @@ async function ensureMesh(asset) {
 
 // Composition des plans : règle par plan du mesh. `null` = non définie
 // (tous les plans visibles). La composition est rattachée au mesh (`asset`)
-// qui l'a vue naître : changer d'asset la rend inopérante sans l'effacer —
+// qui l'a vue naître : changer d'asset la rend inopérante sans l'effacer -
 // revenir au mesh d'origine la réactive.
 function planeRules(cfg) {
   if (Array.isArray(cfg.planes) && cfg.planesForAsset === cfg.asset) return cfg.planes;
@@ -1400,7 +1400,7 @@ function planeRules(cfg) {
 
 // Règles **effectives** alignées sur le mesh réel : la composition stockée,
 // étendue aux plans que le mesh a gagnés depuis (un mesh ré-exporté avec
-// plus de plans — les nouveaux sont « always », comme `ensurePlanes` les
+// plus de plans - les nouveaux sont « always », comme `ensurePlanes` les
 // matérialise au premier réglage) et tronquée aux plans disparus. `null` =
 // composition non définie (tous les plans visibles). Sert à l'aperçu et à
 // l'export : le mesh chargé fait foi, pas la longueur de la liste stockée.
@@ -1432,11 +1432,11 @@ function ensurePlanes(cfg, mesh) {
 }
 
 // Tris visibles dans l'aperçu : les plans « always » + les plans liés aux
-// upgrades (l'aperçu montre la composition complète — dans le jeu, un plan
+// upgrades (l'aperçu montre la composition complète - dans le jeu, un plan
 // lié n'apparaît qu'à partir de son niveau). Composition non définie : tout.
 // Les règles **effectives** sont alignées sur les plans réels du mesh : un
 // plan ajouté au mesh depuis la dernière composition (ex. « Cargo Bay 1 »)
-// est visible par défaut — l'aperçu suit le fichier, pas la liste stockée.
+// est visible par défaut - l'aperçu suit le fichier, pas la liste stockée.
 function compositionTris(cfg, mesh) {
   if (!mesh) return null;
   const rules = effectiveRules(cfg, mesh);
@@ -1451,7 +1451,7 @@ function compositionTris(cfg, mesh) {
 
 // L'aperçu reproduit la construction du jeu (src/vaisseau.rs / src/cosmonaut.rs) :
 // rotation du mesh de −orientation autour du pivot (repère éditeur y↑), échelle,
-// axe y retourné — le mesh tel qu'il apparaîtra en jeu (avant aligné sur +x).
+// axe y retourné - le mesh tel qu'il apparaîtra en jeu (avant aligné sur +x).
 function meshTransform(cfg, tris) {
   let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
   for (const t of tris) {
@@ -1480,7 +1480,7 @@ function meshTransform(cfg, tris) {
 }
 
 // Transforme un point de l'aperçu (pixels) en coordonnées mesh en % de la
-// boîte englobante — sert au clic « centre de rotation au point visé ».
+// boîte englobante - sert au clic « centre de rotation au point visé ».
 // Même échelle de dessin que drawMeshPreview (marge 12 px). La boîte
 // englobante est celle de la **composition** affichée (comme dans le jeu).
 function pixelToMeshPercent(canvas, mesh, cfg, px, py, clamp) {
@@ -1548,7 +1548,7 @@ function attachMeshInteractions(canvas, cfg) {
 
   // clic = centre de rotation au point visé, sauf quand le clic vient de
   // terminer un glisser-déposer d'emplacement de tir (le drag consomme le
-  // clic qui le suit — `suppressCenterClick` est propre à ce canvas)
+  // clic qui le suit - `suppressCenterClick` est propre à ce canvas)
   let suppressCenterClick = false;
   canvas.addEventListener("click", (e) => {
     if (suppressCenterClick) {
@@ -1568,7 +1568,7 @@ function attachMeshInteractions(canvas, cfg) {
     afterEdit();
   });
 
-  // glisser-déposer des emplacements (vaisseau uniquement — le cosmonaute
+  // glisser-déposer des emplacements (vaisseau uniquement - le cosmonaute
   // n'a ni `bulletSpawns` ni `thrusters`) : mousedown sur un losange =
   // début de drag (le losange suit la souris, X/Y % mis à jour en direct) ;
   // liste d'emplacements de tir vide = le losange de repli au pivot, glissé,
@@ -1614,7 +1614,7 @@ function attachMeshInteractions(canvas, cfg) {
 
 // Glisser-déposer des emplacements : état global partagé entre le mousedown
 // du canvas (attachMeshInteractions) et les écouteurs fenêtre ci-dessous
-// (attachés une seule fois — chaque rendu recrée le canvas, pas la fenêtre).
+// (attachés une seule fois - chaque rendu recrée le canvas, pas la fenêtre).
 // Le déplacement met à jour X/Y % en direct (aperçu redessiné sans re-render) ;
 // au lâcher, afterEdit() synchronise les champs.
 let activeSpawnDrag = null;
@@ -1649,7 +1649,7 @@ window.addEventListener("mouseup", () => {
   if (d.moved || d.created) afterEdit(); // synchronise champs + sauvegarde
 });
 
-// Éjections de gaz du vaisseau — un marqueur par touche de contrôle
+// Éjections de gaz du vaisseau - un marqueur par touche de contrôle
 // (↑ poussée avant, ↓ frein/recul, ← rotation gauche, → rotation droite) :
 // position **par défaut** en % de la boîte englobante de la composition (même
 // repère que les emplacements de tir, y vers le haut dans l'éditeur), couleur,
@@ -1658,7 +1658,7 @@ window.addEventListener("mouseup", () => {
 // l'avant → gaz vers l'avant, ← sur le flanc gauche → gaz vers la gauche, →
 // sur le flanc droit → gaz vers la droite). Positions, **couleur du gaz** et
 // **direction d'éjection** sont éditables (`cfg.thrusters`, exportées dans
-// `VAISSEAU_THRUSTERS`, un propulseur par touche — le jeu dessine la flamme
+// `VAISSEAU_THRUSTERS`, un propulseur par touche - le jeu dessine la flamme
 // avec ces réglages, src/main.rs).
 const THRUST_MARKERS = [
   { key: "↑", x: 6, y: 50, color: "#ffa020", angle: Math.PI, angleDeg: 180, label: "poussée avant" },
@@ -1677,12 +1677,12 @@ function drawMeshPreview(canvas, mesh, cfg) {
     ctx.textAlign = "center";
     ctx.fillText("Aperçu indisponible", W / 2, H / 2 - 6);
     ctx.fillText(
-      SERVER_MODE ? "— mesh introuvable dans assets/" : "— « Charger un mesh » pour l'aperçu",
+      SERVER_MODE ? "- mesh introuvable dans assets/" : "- « Charger un mesh » pour l'aperçu",
       W / 2, H / 2 + 10);
     return;
   }
   // la composition affichée : plans « always » + plans liés (l'aperçu montre
-  // la composition complète — le pivot et le clic-centre s'y réfèrent)
+  // la composition complète - le pivot et le clic-centre s'y réfèrent)
   const tris = compositionTris(cfg, mesh);
   const { tf, pivot, bounds } = meshTransform(cfg, tris);
   // boîte englobante transformée → échelle de dessin (avec marge)
@@ -1708,7 +1708,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
     ctx.beginPath();
     ctx.moveTo(ax, ay); ctx.lineTo(bxx, byy); ctx.lineTo(cx, cy); ctx.closePath();
     const c = t.color;
-    // canal alpha du fichier (0..1) — 1 = opaque ; les faces translucides
+    // canal alpha du fichier (0..1) - 1 = opaque ; les faces translucides
     // (verrière, ombrages…) laissent voir ce qui est derrière, comme dans le
     // jeu (rgba_to_argb)
     const a = Math.max(0, Math.min(1, c.length > 3 ? c[3] : 1));
@@ -1720,7 +1720,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
     ctx.stroke();
   }
   // centre de rotation : croix + anneau (le pivot autour duquel le vaisseau
-  // pivote dans le jeu — calculé sur la composition complète, il ne bouge
+  // pivote dans le jeu - calculé sur la composition complète, il ne bouge
   // pas quand des plans liés apparaissent)
   const [qx, qy] = px(pivot);
   ctx.strokeStyle = "#39ff88";
@@ -1734,7 +1734,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
   ctx.stroke();
 
   // emplacements de tir (vaisseau) : petits losanges dorés sur la position
-  // du départ des balles — même transformation que les sommets (rotation
+  // du départ des balles - même transformation que les sommets (rotation
   // autour du pivot, échelle, axe y retourné). Liste vide = emplacement de
   // repli au pivot (le centre de rotation, croix verte) : un losange doré
   // creux le marque quand même pour que le point de tir soit toujours visible.
@@ -1750,7 +1750,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
     };
     for (const p of spawnScreenPoints(canvas, mesh, cfg)) {
       if (p.fallback) {
-        // repli : un seul emplacement au pivot — losange creux (la croix verte
+        // repli : un seul emplacement au pivot - losange creux (la croix verte
         // du centre de rotation marque déjà le point)
         ctx.strokeStyle = "rgba(255,215,0,0.85)";
         ctx.lineWidth = 1.2;
@@ -1764,7 +1764,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
     }
   }
 
-  // éjections de gaz (vaisseau) : 4 propulseurs — où les gaz sortent du
+  // éjections de gaz (vaisseau) : 4 propulseurs - où les gaz sortent du
   // vaisseau pour chaque touche de contrôle (↑ poussée avant, ↓ frein/recul,
   // ← rotation gauche, → rotation droite). Chaque propulseur a son **mesh**
   // (dessiné à sa position, transformé avec sa propre échelle/orientation),
@@ -1782,7 +1782,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
       if (!sp) return;
       const sx = sp.sx, sy = sp.sy;
       const t = cfg.thrusters[i];
-      // mesh du propulseur à la position (si chargé) — sinon losange + touche
+      // mesh du propulseur à la position (si chargé) - sinon losange + touche
       const tm = t && weaponMeshPool[String(t.asset)];
       if (tm && tm.tris && tm.tris.length > 0) {
         const view = meshTransform(
@@ -1826,7 +1826,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
         ctx.fillText(m.key, sx, sy + 14);
       }
       // gouttelettes de gaz dans la direction d'éjection **configurée**
-      // (repère de l'éditeur, tournée avec le vaisseau par tf) — depuis la
+      // (repère de l'éditeur, tournée avec le vaisseau par tf) - depuis la
       // position du propulseur ; direction et couleur éditables dans la
       // section (repli : valeurs par défaut du marqueur)
       const tAngle = Number.isFinite(t && t.ejectionAngleDeg)
@@ -1849,7 +1849,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
   }
 
   // catalogue d'armes (vaisseau) : chaque arme est dessinée **sur le
-  // vaisseau** à son emplacement (spawn) — son mesh est transformé avec ses
+  // vaisseau** à son emplacement (spawn) - son mesh est transformé avec ses
   // propres réglages (échelle, orientation) puis translaté pour que son
   // pivot (centre de sa boîte englobante) soit posé sur l'emplacement. Un
   // losange rose marque l'emplacement quand le mesh n'est pas disponible.
@@ -1907,7 +1907,7 @@ function drawMeshPreview(canvas, mesh, cfg) {
   }
 }
 
-// Positions d'écran (pixels du canvas) des emplacements de tir du vaisseau —
+// Positions d'écran (pixels du canvas) des emplacements de tir du vaisseau -
 // la même géométrie que drawMeshPreview (boîte de la composition, échelle,
 // rotation, axe y retourné). Renvoie [{ x, y, sx, sy }] avec sx/sy les
 // coordonnées pixel du losange, et si la liste est vide un unique point
@@ -1956,7 +1956,7 @@ function spawnScreenPoints(canvas, mesh, cfg) {
 }
 
 // Positions d'écran (pixels du canvas) des **propulseurs** d'éjection de gaz
-// du vaisseau (`VAISSEAU_THRUSTERS`) — même géométrie que spawnScreenPoints.
+// du vaisseau (`VAISSEAU_THRUSTERS`) - même géométrie que spawnScreenPoints.
 // Toujours 4 points (un par touche ↑↓←→, ordre fixe) ; une position
 // manquante dans `cfg.thrusters` retombe sur la valeur par défaut de
 // THRUST_MARKERS. Sert au dessin et au glisser-déposer.
@@ -1995,7 +1995,7 @@ function thrustScreenPoints(canvas, mesh, cfg) {
   return out;
 }
 
-// Mesh de l'aperçu affiché pour cette carte (cache de `ensureMesh`) — la
+// Mesh de l'aperçu affiché pour cette carte (cache de `ensureMesh`) - la
 // composition des plans s'applique à ce mesh (un mesh chargé en local, ex
 // « Charger un mesh », compte aussi).
 function currentMeshFor(cfg) {
@@ -2067,7 +2067,7 @@ function meshNumberInput(cfg, prefix, key, min, max) {
   return input;
 }
 
-// Cache de la liste des meshes assets/*.json (mode serveur) — `null` tant que
+// Cache de la liste des meshes assets/*.json (mode serveur) - `null` tant que
 // non chargée. Les sélecteurs d'asset (`meshAssetInput`) l'affichent en liste
 // déroulante : les fichiers JSON réels de l'emplacement assets/ du projet.
 let assetList = null;
@@ -2089,7 +2089,7 @@ async function ensureAssetList() {
 // JSON de l'emplacement assets/** (mode serveur : les vrais meshes du projet,
 // via `/list-assets` ; mode fichier : suggestions par défaut + valeur
 // courante). L'option « ✏️ autre chemin… » bascule en saisie libre (un chemin
-// saisi n'a pas besoin d'exister dans assets/ pour l'export — il doit exister
+// saisi n'a pas besoin d'exister dans assets/ pour l'export - il doit exister
 // au compile pour l'include_str!).
 function meshAssetInput(cfg, prefix, datalistId, key) {
   const k = key || "asset";
@@ -2230,7 +2230,7 @@ function planeThumbnail(planes, index) {
   // zoom overlay dispose de suffisamment de pixels pour rester net.
   canvas.width = 516;
   canvas.height = 360;
-  canvas.title = (pl.name || "Plan " + index) + " — plan " + index;
+  canvas.title = (pl.name || "Plan " + index) + " - plan " + index;
   drawPlaneSceneThumbnail(canvas, planes, index);
   return canvas;
 }
@@ -2360,9 +2360,9 @@ function loadPreviewFile(cfg, canvasId) {
 }
 
 // Section « Composition des plans » d'une carte mesh : règle par plan du
-// fichier — toujours visible, exclu, ou lié à une ligne d'atelier (vaisseau
+// fichier - toujours visible, exclu, ou lié à une ligne d'atelier (vaisseau
 // uniquement, `opts.links`). L'aperçu (et le clic-centre) ne montre que les
-// plans retenus, comme dans le jeu ; un plan lié y figure — l'aperçu montre
+// plans retenus, comme dans le jeu ; un plan lié y figure - l'aperçu montre
 // la composition complète, en jeu il n'apparaît qu'à partir de son niveau.
 function compositionSection(cfg, mesh, opts) {
   const sec = el("div", "card-section");
@@ -2404,7 +2404,7 @@ function compositionSection(cfg, mesh, opts) {
     // distinguer visuellement les morceaux du mesh sans modifier l'aperçu
     // principal ni la règle de visibilité
     tdPlan.appendChild(planeThumbnail(mesh.planes, i));
-    // nom du plan quand le mesh en porte un (ex. « Cargo Bay 1 » — les plans
+    // nom du plan quand le mesh en porte un (ex. « Cargo Bay 1 » - les plans
     // sans nom restent « Plan N », l'indice sert de repli et de référence)
     const label = pl.name ? pl.name : "Plan " + i;
     tdPlan.appendChild(el("span", "plane-name", label));
@@ -2538,7 +2538,7 @@ function meshCard(opts) {
   fields.appendChild(grid);
 
   const loadBtn = el("button", "mini", "📂 Charger un mesh (aperçu)");
-  loadBtn.title = "Lit un fichier mesh JSON pour l'aperçu uniquement — l'export Rust référence le chemin du champ Asset";
+  loadBtn.title = "Lit un fichier mesh JSON pour l'aperçu uniquement - l'export Rust référence le chemin du champ Asset";
   loadBtn.addEventListener("click", () => loadPreviewFile(cfg, opts.canvasId));
   fields.appendChild(loadBtn);
 
@@ -2554,7 +2554,7 @@ function meshCard(opts) {
   if (opts.weapons) card.appendChild(weaponsSection(cfg, opts));
 
   // éjection des gaz (vaisseau uniquement) : 4 propulseurs (mesh, échelle,
-  // orientation, position), un par touche de contrôle (↑ ↓ ← →) — exportés
+  // orientation, position), un par touche de contrôle (↑ ↓ ← →) - exportés
   // dans `VAISSEAU_THRUSTERS`
   if (opts.thrust) card.appendChild(thrustSection(cfg));
 
@@ -2568,7 +2568,7 @@ function meshCard(opts) {
 }
 
 // Section « Emplacements de tir » du vaisseau : liste de points (X %, Y %) de
-// la boîte englobante de la composition — une balle part de chaque emplacement
+// la boîte englobante de la composition - une balle part de chaque emplacement
 // au tir (Shift), tournée avec le vaisseau. Vide = un seul emplacement au
 // centre de rotation (comportement d'origine). Réglage souris : sur l'aperçu,
 // glisser un losange doré le déplace (liste vide : le losange de repli au
@@ -2583,7 +2583,7 @@ function spawnsSection(cfg, opts) {
   sec.appendChild(h);
   sec.appendChild(el("p", "desc",
     "Une balle part de chaque emplacement au tir (Shift), tournée avec le vaisseau. " +
-    "Positions en % de la boîte englobante de la composition (50/50 = centre) — vide = un seul " +
+    "Positions en % de la boîte englobante de la composition (50/50 = centre) - vide = un seul " +
     "emplacement au centre de rotation. <b>Sur l'aperçu : glisser un losange doré le déplace</b> " +
     "(liste vide : le losange de repli au pivot crée le premier emplacement)."));
 
@@ -2622,7 +2622,7 @@ function spawnsSection(cfg, opts) {
 }
 
 // Section « Éjection des gaz » du vaisseau (4 touches de contrôle) : un point
-// par touche — où les gaz sortent du vaisseau, positions en % de la boîte
+// par touche - où les gaz sortent du vaisseau, positions en % de la boîte
 // englobante de la composition (50/50 = centre), tournées avec le vaisseau.
 // Ordre fixe : ↑ poussée avant (gaz orange à l'arrière), ↓ frein/recul (bleu
 // à l'avant), ← rotation gauche, → rotation droite (jets latéraux). Chaque
@@ -2638,10 +2638,10 @@ function thrustSection(cfg) {
   h.appendChild(el("span", "const", "VAISSEAU_THRUSTERS"));
   sec.appendChild(h);
   sec.appendChild(el("p", "desc",
-    "Un **propulseur** par touche de contrôle — son mesh (JSON, la flamme du gaz) est affiché " +
-    "**seulement quand il tire** (scintillant, allongé le long de la direction d'éjection) — " +
+    "Un **propulseur** par touche de contrôle - son mesh (JSON, la flamme du gaz) est affiché " +
+    "**seulement quand il tire** (scintillant, allongé le long de la direction d'éjection) - " +
     "sinon il n'apparaît pas en jeu. Réglages : mesh, échelle, " +
-    "orientation et position en % de la boîte englobante de la composition (50/50 = centre — " +
+    "orientation et position en % de la boîte englobante de la composition (50/50 = centre - " +
     "<b>valeurs libres</b> : négatives ou &gt; 100 % possibles, le propulseur sort alors du " +
     "gabarit), tournés avec le vaisseau, plus la <b>direction d'éjection</b> : <b>↑</b> " +
     "poussée avant (gaz orange à l'arrière), <b>↓</b> frein/recul " +
@@ -2674,12 +2674,12 @@ function thrustSection(cfg) {
         meshNumberInput(t, "ship-thrust-" + i, "scalePercent", 1, 1000)));
       row.appendChild(field("Orientation (°)", "ship-thrust-" + i + "-orient",
         meshNumberInput(t, "ship-thrust-" + i, "orientationDeg", -360, 360)));
-      // direction d'éjection du gaz (repère de l'éditeur, y vers le haut —
-      // 0 = avant, +90 = haut) — `ejection_flow` (src/main.rs). La couleur
+      // direction d'éjection du gaz (repère de l'éditeur, y vers le haut -
+      // 0 = avant, +90 = haut) - `ejection_flow` (src/main.rs). La couleur
       // reste une valeur interne par défaut du catalogue, non éditable ici.
       row.appendChild(field("Direction (°)", "ship-thrust-" + i + "-angle",
         meshNumberInput(t, "ship-thrust-" + i, "ejectionAngleDeg", -360, 360)));
-      // position (X %, Y %) — glissable sur l'aperçu ; valeurs **libres** :
+      // position (X %, Y %) - glissable sur l'aperçu ; valeurs **libres** :
       // négatives ou > 100 % possibles (le jeu les accepte, le propulseur
       // sort alors du gabarit du vaisseau)
       row.appendChild(field("X (%)", "ship-thrust-" + i + "-x",
@@ -2696,7 +2696,7 @@ function thrustSection(cfg) {
 }
 
 // Section « Catalogue d'armes » du vaisseau : chaque arme est un mesh posé
-// **sur le vaisseau** à un emplacement de tir (`spawnIndex` — liste
+// **sur le vaisseau** à un emplacement de tir (`spawnIndex` - liste
 // contrainte aux emplacements de la section « Départ des projectiles ») et
 // tire sa propre munition (mesh de la munition). Toutes les armes tirent
 // ensemble au Shift. Vide = tir classique (repli du jeu).
@@ -2758,7 +2758,7 @@ function weaponsSection(cfg, opts) {
       row.appendChild(field("Munition Orientation (°)", opts.prefix + "-weapon-" + i + "-ammoorient",
         meshNumberInput(w, opts.prefix + "-w" + i + "-ammo", "ammoOrientationDeg", -360, 360)));
       // économie : coût d'achat de l'arme (minerais, 0 = arme de base) et
-      // paquet de munitions (prix en minerais + taille en munitions) — lus
+      // paquet de munitions (prix en minerais + taille en munitions) - lus
       // par le jeu (magasin de la station, section RAVITAILLEMENT) ;
       // libellés courts pour garder des champs compacts
       row.appendChild(field("Coût d'achat", opts.prefix + "-weapon-" + i + "-cost",
@@ -2817,20 +2817,20 @@ function shipCard() {
     defaultTrack: "cargo",
     desc: "Mesh du vaisseau (format « meshes-designer », assets/*.json), échelle, orientation du nez, " +
       "centre de rotation, **emplacements de tir**, **éjections de gaz** (propulseurs) et " +
-      "**composition des plans** — constantes VAISSEAU_JSON / VAISSEAU_SCALE / " +
+      "**composition des plans** - constantes VAISSEAU_JSON / VAISSEAU_SCALE / " +
       "VAISSEAU_ORIENTATION_DEGREES / VAISSEAU_CENTER_X/Y_PERCENT / VAISSEAU_BULLET_SPAWNS / " +
       "VAISSEAU_THRUSTERS / VAISSEAU_PLANES_ALWAYS / VAISSEAU_PLANE_LINKS de src/marketplace.rs " +
       "(lues par src/vaisseau.rs, src/generate.rs et src/main.rs).",
     compositionHint: "Chaque plan du mesh est <b>toujours visible</b>, <b>exclu</b> (jamais construit) ou " +
       "<b>lié à une ligne d'atelier</b> (FUEL TANK / MAGAZINE / CARGO BAY) : un plan lié n'apparaît en " +
-      "jeu qu'à partir du niveau indiqué — l'achat d'une extension reconstruit le vaisseau. L'aperçu " +
+      "jeu qu'à partir du niveau indiqué - l'achat d'une extension reconstruit le vaisseau. L'aperçu " +
       "montre la composition complète ; le centre de rotation est calculé dessus, il reste donc stable " +
       "à tous les niveaux. Liste vides à l'export = tous les plans (repli).",
     hint: "L'aperçu montre le vaisseau tel qu'il volera (nez aligné sur l'avant, axe y du jeu), " +
       "agrandi pour suivre les réglages en direct. Les **propulseurs** des touches ↑ ↓ ← → sont " +
-      "dessinés sur le vaisseau (meshes, échelle et orientation éditables — VAISSEAU_THRUSTERS) ; " +
+      "dessinés sur le vaisseau (meshes, échelle et orientation éditables - VAISSEAU_THRUSTERS) ; " +
       "le jeu dessine la poussée à ces emplacements. Orientation = angle du nez du mesh dans " +
-      "l'éditeur : 0 = nez vers la droite, +90 = vers le haut — le jeu tourne le mesh pour le " +
+      "l'éditeur : 0 = nez vers la droite, +90 = vers le haut - le jeu tourne le mesh pour le " +
       "ramener nez à droite. Le centre de rotation est le pivot autour duquel le vaisseau pivote " +
       "(50/50 = centre de la boîte englobante de la composition). Sur l'aperçu : <b>glisser un " +
       "losange doré = déplacer un emplacement de tir</b>, <b>glisser un propulseur = déplacer " +
@@ -2850,16 +2850,16 @@ function cosmonautCard() {
     badge: "COSMONAUTE_*",
     links: false, // pas de lignes d'atelier : plans visibles ou exclus uniquement
     defaultTrack: "cargo",
-    desc: "Mesh du cosmonaute EVA (pilote éjecté, vaisseau détruit — format « meshes-designer », " +
+    desc: "Mesh du cosmonaute EVA (pilote éjecté, vaisseau détruit - format « meshes-designer », " +
       "assets/*.json), échelle, orientation de l'avant, centre de rotation et **composition des " +
-      "plans** — constantes COSMONAUTE_JSON / COSMONAUTE_EVA_SCALE / COSMONAUTE_ORIENTATION_DEGREES / " +
+      "plans** - constantes COSMONAUTE_JSON / COSMONAUTE_EVA_SCALE / COSMONAUTE_ORIENTATION_DEGREES / " +
       "COSMONAUTE_CENTER_X/Y_PERCENT / COSMONAUTE_PLANES de src/marketplace.rs (lues par " +
       "src/cosmonaut.rs).",
-    compositionHint: "Chaque plan du mesh est <b>visible</b> ou <b>exclu</b> (jamais construit ni animé — " +
+    compositionHint: "Chaque plan du mesh est <b>visible</b> ou <b>exclu</b> (jamais construit ni animé - " +
       "un bras exclu ne s'agite plus). L'aperçu et le centre de rotation ne portent que sur les plans " +
       "retenus. Liste vide à l'export = tous les plans (repli).",
     hint: "L'aperçu montre le cosmonaute tel qu'il apparaîtra en jeu (debout, axe y du jeu). " +
-      "Orientation = angle de l'avant du mesh dans l'éditeur : 0 = face à droite, +90 = vers le haut — " +
+      "Orientation = angle de l'avant du mesh dans l'éditeur : 0 = face à droite, +90 = vers le haut - " +
       "le jeu tourne le mesh pour ramener l'avant à droite. Le centre de rotation est le pivot autour " +
       "duquel le cosmonaute pivote (50/50 = centre de la boîte englobante de la composition). Sur " +
       "l'aperçu : <b>molette = rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), " +
@@ -2950,7 +2950,7 @@ function el(tag, cls, text, attrs) {
 
 function summaryCard() {
   const card = el("div", "card");
-  card.appendChild(el("h3", "section", "Vue de mise au point — synthèse"));
+  card.appendChild(el("h3", "section", "Vue de mise au point - synthèse"));
   const host = el("div", "summary-grid");
   const byId = Object.fromEntries(data.tracks.map(t => [t.id, t]));
   const fuel = trackTotals(byId.fuel);
@@ -2983,7 +2983,7 @@ function summaryCard() {
     { k: "Soute max", v: cargo.max + " emplacements", cls: "orange", sub: cargo.count + " extension" + (cargo.count > 1 ? "s" : "") + " · " + cargo.cost + " minerais" },
     { k: "Plein complet (max)", v: (fullFuel + fullAmmo) + " minerais", cls: "", sub: "carburant " + fullFuel + " + munitions " + fullAmmo + " · " + eco.fuelPrice + " m/" + eco.fuelStep + " u, " + eco.ammoPrice + " m/" + eco.ammoStep + " mun." },
   ];
-  // coût pour tout maxer avec la remise de réputation de chaque rang — la
+  // coût pour tout maxer avec la remise de réputation de chaque rang - la
   // précision de tir amplifie la remise (jusqu'à ×(1 + poids) à 100 %)
   const weight = data.reputation.discountPrecisionWeight;
   for (const r of data.reputation.ranks) {
@@ -3004,7 +3004,7 @@ function summaryCard() {
   // population (carte « Météores & collisions »)
   const gp = data.gameplay;
   items.push(
-    { k: "Force de réaction (base)", v: fmtFloat(gp.restitution), cls: "", sub: "restitution — le triangle qui collisionne explose et repousse le météore (1.0 = rebond parfait, 0 = sans réaction)" },
+    { k: "Force de réaction (base)", v: fmtFloat(gp.restitution), cls: "", sub: "restitution - le triangle qui collisionne explose et repousse le météore (1.0 = rebond parfait, 0 = sans réaction)" },
     { k: "Débris par explosion", v: String(int(gp.debrisPerTriangle)), cls: "", sub: "éclats générés par triangle détruit" },
     { k: "Météores en jeu", v: gp.initialMax + " → " + gp.shapesCount, cls: "", sub: "limite au départ → plafond dur · vitesse max " + fmtFloat(gp.meteorVelocityMax) + " · triangles " + gp.trianglesMin + "–" + gp.trianglesMax },
   );
@@ -3037,7 +3037,7 @@ function economyCard() {
   const card = el("div", "card");
   const h = el("h3", "section");
   h.appendChild(document.createTextNode("Économie de la station "));
-  h.appendChild(el("span", "hint", "— constantes du scénario (src/marketplace.rs)"));
+  h.appendChild(el("span", "hint", "- constantes du scénario (src/marketplace.rs)"));
   card.appendChild(h);
   const host = el("div", "eco-grid");
   const eco = data.economy;
@@ -3056,7 +3056,7 @@ function economyCard() {
   host.appendChild(gems);
 
   // modes de déplacement : comme les autres extensions de l'économie, chaque
-  // mode se paramètre (nom, description, coût) — la liste est fixe (les modes
+  // mode se paramètre (nom, description, coût) - la liste est fixe (les modes
   // sont des constantes du jeu, index MOVING_MODE_*) et vendue au magasin de
   // la station (bouton SHOP de la boîte DOCK STATION)
   const modes = el("div", "eco-group");
@@ -3098,7 +3098,7 @@ function economyCard() {
       mode.cost,
       0,
       "1",
-      "Coût de déblocage en minerais (0 = déjà débloqué au départ — seul REALISTIC est gratuit par défaut ; les autres modes, INERTIAL compris, sont payants s'ils ont un coût)."
+      "Coût de déblocage en minerais (0 = déjà débloqué au départ - seul REALISTIC est gratuit par défaut ; les autres modes, INERTIAL compris, sont payants s'ils ont un coût)."
     ));
     tr.appendChild(tdCost);
     mBody.appendChild(tr);
@@ -3106,25 +3106,25 @@ function economyCard() {
   mTable.appendChild(mBody);
   modes.appendChild(mTable);
   modes.appendChild(el("p", "hint",
-    "Ordre d'affichage du magasin (MOVING_MODE_ORDER du jeu) : REALISTIC en tête, puis INERTIAL, 4 WAYS et DIRECTIONAL — l'export écrit le catalogue dans l'ordre des id (index MOVING_MODE_*). Coût 0 = mode débloqué au départ (seul REALISTIC l'est par défaut)."));
+    "Ordre d'affichage du magasin (MOVING_MODE_ORDER du jeu) : REALISTIC en tête, puis INERTIAL, 4 WAYS et DIRECTIONAL - l'export écrit le catalogue dans l'ordre des id (index MOVING_MODE_*). Coût 0 = mode débloqué au départ (seul REALISTIC l'est par défaut)."));
   host.appendChild(modes);
 
   // ravitaillement à la station
   const refuel = el("div", "eco-group");
   refuel.appendChild(el("h4", "", "Ravitaillement à la station"));
   const rGrid = el("div", "field-grid");
-  rGrid.appendChild(field("Carburant — prix (minerais)", "eco-fuel-price", economyNumber("eco-fuel-price", intSetter(eco, "fuelPrice"), eco.fuelPrice, 0, "1")));
-  rGrid.appendChild(field("Carburant — pas (unités)", "eco-fuel-step", economyNumber("eco-fuel-step", floatSetter(eco, "fuelStep"), eco.fuelStep, 1, "any")));
-  rGrid.appendChild(field("Munitions — prix (minerais)", "eco-ammo-price", economyNumber("eco-ammo-price", intSetter(eco, "ammoPrice"), eco.ammoPrice, 0, "1")));
-  rGrid.appendChild(field("Munitions — pas (munitions)", "eco-ammo-step", economyNumber("eco-ammo-step", floatSetter(eco, "ammoStep"), eco.ammoStep, 1, "any")));
+  rGrid.appendChild(field("Carburant - prix (minerais)", "eco-fuel-price", economyNumber("eco-fuel-price", intSetter(eco, "fuelPrice"), eco.fuelPrice, 0, "1")));
+  rGrid.appendChild(field("Carburant - pas (unités)", "eco-fuel-step", economyNumber("eco-fuel-step", floatSetter(eco, "fuelStep"), eco.fuelStep, 1, "any")));
+  rGrid.appendChild(field("Munitions - prix (minerais)", "eco-ammo-price", economyNumber("eco-ammo-price", intSetter(eco, "ammoPrice"), eco.ammoPrice, 0, "1")));
+  rGrid.appendChild(field("Munitions - pas (munitions)", "eco-ammo-step", economyNumber("eco-ammo-step", floatSetter(eco, "ammoStep"), eco.ammoStep, 1, "any")));
   refuel.appendChild(rGrid);
-  // coût d'un plein complet aux capacités maximales (mise au point) — les
+  // coût d'un plein complet aux capacités maximales (mise au point) - les
   // valeurs munitions ne s'appliquent qu'au catalogue vide (canon classique) :
   // dès qu'une arme a son paquet, c'est son ammoPrice/ammoPack qui compte
   const byId = Object.fromEntries(data.tracks.map(t => [t.id, t]));
   const fullFuel = Math.ceil(trackTotals(byId.fuel).max / eco.fuelStep) * eco.fuelPrice;
   const fullAmmo = Math.ceil(trackTotals(byId.ammo).max / eco.ammoStep) * eco.ammoPrice;
-  refuel.appendChild(el("p", "hint", "Plein complet (capacités max, catalogue vide) : " + fullFuel + " + " + fullAmmo + " = " + (fullFuel + fullAmmo) + " minerais — carburant " + eco.fuelPrice + " m/" + eco.fuelStep + " u ; munitions " + eco.ammoPrice + " m/" + eco.ammoStep + " mun. (paquets par arme sinon)."));
+  refuel.appendChild(el("p", "hint", "Plein complet (capacités max, catalogue vide) : " + fullFuel + " + " + fullAmmo + " = " + (fullFuel + fullAmmo) + " minerais - carburant " + eco.fuelPrice + " m/" + eco.fuelStep + " u ; munitions " + eco.ammoPrice + " m/" + eco.ammoStep + " mun. (paquets par arme sinon)."));
   host.appendChild(refuel);
 
   // badge d'en-tête (monnaie et valeur des gemmes)
@@ -3142,7 +3142,7 @@ function gameplayCard() {
   const card = el("div", "card");
   const h = el("h3", "section");
   h.appendChild(document.createTextNode("Météores & collisions "));
-  h.appendChild(el("span", "hint", "— physique et génération des météores (src/marketplace.rs)"));
+  h.appendChild(el("span", "hint", "- physique et génération des météores (src/marketplace.rs)"));
   card.appendChild(h);
   const host = el("div", "eco-grid");
   const g = data.gameplay;
@@ -3165,7 +3165,7 @@ function gameplayCard() {
   collisions.appendChild(cGrid);
   collisions.appendChild(el("p", "hint",
     "La force de réaction est liée à l'explosion du triangle qui collisionne : le météore " +
-    "rebondit sur l'anneau au lieu de le labourer — constante METEOR_STATION_RESTITUTION, lue par " +
+    "rebondit sur l'anneau au lieu de le labourer - constante METEOR_STATION_RESTITUTION, lue par " +
     "src/game.rs. Les débris de l'explosion (GARBAGE_PER_TRIANGLE) sont lus par src/garbage.rs."));
   host.appendChild(collisions);
 
@@ -3175,24 +3175,24 @@ function gameplayCard() {
   const genGrid = el("div", "field-grid");
   genGrid.appendChild(field("Vitesse maximale", "gp-velocity",
     economyNumber("gp-velocity", floatSetter("meteorVelocityMax"), g.meteorVelocityMax, 0, "0.1",
-      "Vitesse maximale des météores (METEOR_VELOCITY_MAX) — la vitesse de chaque météore est tirée aléatoirement en dessous.")));
+      "Vitesse maximale des météores (METEOR_VELOCITY_MAX) - la vitesse de chaque météore est tirée aléatoirement en dessous.")));
   genGrid.appendChild(field("Triangles par météore (min)", "gp-tri-min",
     economyNumber("gp-tri-min", intSetter("trianglesMin"), g.trianglesMin, 1, "1", "TRIANGLES_IN_SHAPE_MIN")));
   genGrid.appendChild(field("Triangles par météore (max)", "gp-tri-max",
     economyNumber("gp-tri-max", intSetter("trianglesMax"), g.trianglesMax, 1, "1", "TRIANGLES_IN_SHAPE_MAX")));
-  genGrid.appendChild(field("Taille des triangles — base min", "gp-base-min",
+  genGrid.appendChild(field("Taille des triangles - base min", "gp-base-min",
     economyNumber("gp-base-min", intSetter("baseMin"), g.baseMin, 1, "1", "TRIANGLE_BASE_MIN")));
-  genGrid.appendChild(field("Taille des triangles — base max", "gp-base-max",
+  genGrid.appendChild(field("Taille des triangles - base max", "gp-base-max",
     economyNumber("gp-base-max", intSetter("baseMax"), g.baseMax, 1, "1", "TRIANGLE_BASE_MAX")));
-  genGrid.appendChild(field("Taille des triangles — hauteur min", "gp-height-min",
+  genGrid.appendChild(field("Taille des triangles - hauteur min", "gp-height-min",
     economyNumber("gp-height-min", intSetter("heightMin"), g.heightMin, 1, "1", "TRIANGLE_HEIGHT_MIN")));
-  genGrid.appendChild(field("Taille des triangles — hauteur max", "gp-height-max",
+  genGrid.appendChild(field("Taille des triangles - hauteur max", "gp-height-max",
     economyNumber("gp-height-max", intSetter("heightMax"), g.heightMax, 1, "1", "TRIANGLE_HEIGHT_MAX")));
   gen.appendChild(genGrid);
   gen.appendChild(el("p", "hint",
     "Métriques du météore moyen : " + Math.round((g.trianglesMin + g.trianglesMax) / 2) +
     " triangles, base " + Math.round((g.baseMin + g.baseMax) / 2) + " × hauteur " +
-    Math.round((g.heightMin + g.heightMax) / 2) + " — constantes TRIANGLES_IN_SHAPE_*, " +
+    Math.round((g.heightMin + g.heightMax) / 2) + " - constantes TRIANGLES_IN_SHAPE_*, " +
     "TRIANGLE_BASE_*, TRIANGLE_HEIGHT_*, lues par src/generate.rs."));
   host.appendChild(gen);
 
@@ -3205,7 +3205,7 @@ function gameplayCard() {
       "Limite de météores au lancement (INITIAL_MAX_METEOR_SHAPES), +1 par météore détruit.")));
   pGrid.appendChild(field("Plafond dur", "gp-count",
     economyNumber("gp-count", intSetter("shapesCount"), g.shapesCount, 1, "1",
-      "Plafond du nombre de météores (SHAPES_COUNT) — la limite ne dépasse jamais cette valeur.")));
+      "Plafond du nombre de météores (SHAPES_COUNT) - la limite ne dépasse jamais cette valeur.")));
   pop.appendChild(pGrid);
   pop.appendChild(el("p", "hint", "Lues par src/state.rs (départ) et src/game.rs (plafond)."));
   host.appendChild(pop);
@@ -3236,7 +3236,7 @@ function reputationCard() {
   const card = el("div", "card");
   const h = el("h3", "section");
   h.appendChild(document.createTextNode("Réputation "));
-  h.appendChild(el("span", "hint", "— rangs et remises sur les coûts de la station (src/marketplace.rs)"));
+  h.appendChild(el("span", "hint", "- rangs et remises sur les coûts de la station (src/marketplace.rs)"));
   card.appendChild(h);
   const host = el("div", "eco-grid");
   const group = el("div", "eco-group");
@@ -3244,7 +3244,7 @@ function reputationCard() {
   group.appendChild(el("p", "hint",
     "La remise du rang atteint s'applique à tous les coûts de la station : extensions d'atelier " +
     "(réservoir, chargeur, soute), ravitaillement (carburant, munitions) et déblocage des modes de " +
-    "déplacement — constantes PROGRESSION_RANKS et DISCOUNT_PRECISION_WEIGHT de " +
+    "déplacement - constantes PROGRESSION_RANKS et DISCOUNT_PRECISION_WEIGHT de " +
     "src/marketplace.rs (lues par src/scenario.rs). Le gain de réputation reste codé dans " +
     "src/scenario.rs : astéroïdes détruits (bonus de précision) et minerais déchargés (commerce)."));
 
@@ -3363,9 +3363,9 @@ function reputationCard() {
 
   // aperçu de la courbe de remise : coût remisé d'un achat à 100 minerais
   const curve = el("p", "hint");
-  curve.textContent = "Aperçu — coût remisé d'un achat à 100 minerais : " +
+  curve.textContent = "Aperçu - coût remisé d'un achat à 100 minerais : " +
     ranks.map(r => r.name + " " + r.threshold + " (" + r.discountPercent + " % → " +
-      discountedCost(100, r.discountPercent) + ")").join(" · ") || "—";
+      discountedCost(100, r.discountPercent) + ")").join(" · ") || "-";
   group.appendChild(curve);
 
   host.appendChild(group);
@@ -3387,12 +3387,12 @@ function moveRank(ranks, i, dir) {
 // En-tête du fichier généré src/marketplace.rs : documentation de module et
 // imports (CARGO_SIZE, MOVING_MODE_COUNT). L'économie (gemmes, modes,
 // ravitaillement) est produite par economyConsts, les types par RUST_TYPES
-// et les trois lignes d'atelier par tierConst/trackConst — voir exportRust.
-const RUST_HEADER = `//! Place de marché de la station — extensions de vaisseau et modes de
+// et les trois lignes d'atelier par tierConst/trackConst - voir exportRust.
+const RUST_HEADER = `//! Place de marché de la station - extensions de vaisseau et modes de
 //! déplacement (bouton SHOP de la boîte DOCK STATION), réglages du vaisseau
 //! joueur et économie (scénario Progression).
 //!
-//! Fichier **généré** par \`tools/marketplace-editor/index.html\` — ne pas
+//! Fichier **généré** par \`tools/marketplace-editor/index.html\` - ne pas
 //! éditer à la main : régénérez-le depuis l'outil de gestion, puis
 //! recompilez (\`cargo build --release\`). Les tests (\`cargo test\`) valident
 //! les nouvelles valeurs.
@@ -3416,7 +3416,7 @@ pub struct MovingMode {
 }
 
 /// Nom d'affichage d'un mode de déplacement (magasin de la station, messages
-/// du scénario) — lu dans \`MOVING_MODES\` (généré par l'outil de gestion).
+/// du scénario) - lu dans \`MOVING_MODES\` (généré par l'outil de gestion).
 pub fn mode_label(mode: i32) -> &'static str {
     MOVING_MODES
         .get(mode as usize)
@@ -3438,7 +3438,7 @@ pub struct ShipUpgrade {
 }
 
 /// Une ligne d'amélioration du vaisseau (atelier) : capacité de base et
-/// extensions successives achetées **dans l'ordre** — le niveau est le nombre
+/// extensions successives achetées **dans l'ordre** - le niveau est le nombre
 /// d'extensions possédées (\`tiers[i]\` s'achète au niveau \`i+1\`).
 #[derive(Clone, Copy, Debug)]
 pub struct UpgradeTrack {
@@ -3465,9 +3465,9 @@ pub struct ReputationRank {
 }
 
 /// Ligne d'atelier liée à un plan du vaisseau (composition des plans,
-/// scénario Progression) — la ligne dont le niveau révèle le plan.
+/// scénario Progression) - la ligne dont le niveau révèle le plan.
 /// Les variantes ne sont construites que quand l'outil exporte un lien
-/// (\`VAISSEAU_PLANE_LINKS\` non vide) — \`dead_code\` quand la liste est vide.
+/// (\`VAISSEAU_PLANE_LINKS\` non vide) - \`dead_code\` quand la liste est vide.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlaneUpgradeTrack {
@@ -3495,7 +3495,7 @@ pub struct PlaneUpgradeLink {
 
 /// Une arme du catalogue du vaisseau joueur : mesh de l'arme posé **sur le
 /// vaisseau** à un emplacement de tir (\`spawn_index\` dans
-/// \`VAISSEAU_BULLET_SPAWNS\` — la liste des emplacements possibles est
+/// \`VAISSEAU_BULLET_SPAWNS\` - la liste des emplacements possibles est
 /// contrainte) et munition tirée par l'arme (mesh de la munition, avec sa
 /// propre échelle et orientation). Toutes les armes **possédées** du
 /// catalogue tirent ensemble au Shift, chacune tant que son propre stock de
@@ -3504,14 +3504,14 @@ pub struct PlaneUpgradeLink {
 /// **paquet de munitions** (le magasin facture par paquet de
 /// \`ammo_pack\` munitions au prix \`ammo_price\`, par arme). Générée par
 /// l'outil de gestion. Les champs ne sont lus que quand le catalogue est
-/// rempli (\`VAISSEAU_WEAPONS\` non vide) — \`dead_code\` quand la liste est
+/// rempli (\`VAISSEAU_WEAPONS\` non vide) - \`dead_code\` quand la liste est
 /// vide.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct VaisseauWeapon {
     /// Nom de l'arme (tool, export).
     pub name: &'static str,
-    /// Mesh de l'arme — fichier « meshes-designer » embarqué au compile.
+    /// Mesh de l'arme - fichier « meshes-designer » embarqué au compile.
     pub mesh: &'static str,
     /// Échelle de l'arme (multiplicateur des sommets du mesh) : 1.0 = 100 %.
     pub scale: f64,
@@ -3521,12 +3521,12 @@ pub struct VaisseauWeapon {
     /// Emplacement de l'arme sur le vaisseau : index dans
     /// \`VAISSEAU_BULLET_SPAWNS\` (liste contrainte).
     pub spawn_index: usize,
-    /// Mesh de la munition tirée par l'arme — embarqué au compile.
+    /// Mesh de la munition tirée par l'arme - embarqué au compile.
     pub ammo_mesh: &'static str,
     /// Échelle de la munition (multiplicateur des sommets du mesh).
     pub ammo_scale: f64,
     /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
-    /// l'éditeur — la munition part nez en avant.
+    /// l'éditeur - la munition part nez en avant.
     pub ammo_orientation_degrees: f64,
     /// Coût d'achat de l'arme au magasin de la station (minerais ; 0 = arme
     /// de base, toujours équipée au départ en Progression).
@@ -3543,32 +3543,32 @@ pub struct VaisseauWeapon {
 /// une position (en **pourcentage de la boîte englobante de la composition**,
 /// 50/50 = centre, repère du mesh de l'éditeur, y vers le haut), avec sa
 /// propre échelle et orientation. Le gaz (flamme) sort de la position, dans
-/// la direction d'éjection correspondant à la touche — index 0 = **↑**
+/// la direction d'éjection correspondant à la touche - index 0 = **↑**
 /// (poussée avant, gaz orange à l'arrière), 1 = **↓** (frein/recul, gaz bleu
 /// à l'avant), 2 = **←** (rotation gauche), 3 = **→** (rotation droite).
 /// Générée par l'outil de gestion. Le champ \`name\` n'est lu que par les
-/// tests et l'outil — \`dead_code\` quand la liste est vide.
+/// tests et l'outil - \`dead_code\` quand la liste est vide.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub struct VaisseauThruster {
     /// Nom du propulseur (outil, export).
     pub name: &'static str,
-    /// Mesh du propulseur — fichier « meshes-designer » embarqué au compile.
+    /// Mesh du propulseur - fichier « meshes-designer » embarqué au compile.
     pub mesh: &'static str,
     /// Échelle du propulseur (multiplicateur des sommets du mesh) : 1.0 = 100 %.
     pub scale: f64,
     /// Orientation du propulseur (degrés) : angle de l'avant du mesh dans
-    /// l'éditeur (0 = avant vers la droite, +90 = vers le haut) — le mesh est
+    /// l'éditeur (0 = avant vers la droite, +90 = vers le haut) - le mesh est
     /// tourné de −orientation à la construction.
     pub orientation_degrees: f64,
     /// Position sur le vaisseau : en % de la boîte englobante de la
     /// composition (50/50 = centre), dans le repère de l'éditeur.
     pub position: (f64, f64),
     /// Direction d'éjection du gaz (degrés, repère de l'éditeur y vers le
-    /// haut : 0 = avant, +90 = haut) — convertie par le jeu pour
+    /// haut : 0 = avant, +90 = haut) - convertie par le jeu pour
     /// \`ejection_flow\` (src/main.rs).
     pub ejection_angle_degrees: f64,
-    /// Couleur du gaz d'éjection (ARGB, ex 0xFFFFA000) — \`ejection_flow\`
+    /// Couleur du gaz d'éjection (ARGB, ex 0xFFFFA000) - \`ejection_flow\`
     /// (src/main.rs).
     pub color: u32,
 }
@@ -3592,7 +3592,7 @@ function weaponsConsts(cfg) {
     return [
       "/// Catalogue d'armes du vaisseau joueur : chaque arme est un mesh posé",
       "/// **sur le vaisseau** à un emplacement de tir (`spawn_index` dans",
-      "/// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est",
+      "/// `VAISSEAU_BULLET_SPAWNS` - la liste des emplacements possibles est",
       "/// contrainte) et tire sa propre munition (mesh de la munition). Toutes",
       "/// les armes du catalogue tirent ensemble au Shift. **Liste vide = tir",
       "/// classique** (une balle rouge par emplacement, repli : comportement",
@@ -3606,7 +3606,7 @@ function weaponsConsts(cfg) {
     const meshPath = norm(w.asset || "assets/vaisseau.json");
     const ammoPath = norm(w.ammoAsset || "assets/vaisseau.json");
     lines.push(
-      "/// Mesh de l'arme « " + rustEscape(String(w.name || ("ARME " + (i + 1)))) + " » (VAISSEAU_WEAPONS[" + i + "]) — embarqué au compile.",
+      "/// Mesh de l'arme « " + rustEscape(String(w.name || ("ARME " + (i + 1)))) + " » (VAISSEAU_WEAPONS[" + i + "]) - embarqué au compile.",
       "pub const VAISSEAU_WEAPON_MESH_" + i + ": &str = include_str!(\"../" + meshPath + "\");",
       "/// Mesh de la munition de l'arme « " + rustEscape(String(w.name || ("ARME " + (i + 1)))) + " » (VAISSEAU_WEAPONS[" + i + "]).",
       "pub const VAISSEAU_WEAPON_AMMO_MESH_" + i + ": &str = include_str!(\"../" + ammoPath + "\");",
@@ -3616,7 +3616,7 @@ function weaponsConsts(cfg) {
   lines.push(
     "/// Catalogue d'armes du vaisseau joueur : chaque arme est un mesh posé",
     "/// **sur le vaisseau** à un emplacement de tir (`spawn_index` dans",
-    "/// `VAISSEAU_BULLET_SPAWNS` — la liste des emplacements possibles est",
+    "/// `VAISSEAU_BULLET_SPAWNS` - la liste des emplacements possibles est",
     "/// contrainte) et tire sa propre munition (mesh de la munition). Toutes",
     "/// les armes du catalogue tirent ensemble au Shift. **Liste vide = tir",
     "/// classique** (une balle rouge par emplacement, repli : comportement",
@@ -3645,7 +3645,7 @@ function weaponsConsts(cfg) {
 }
 
 // Export Rust des emplacements de tir (`VAISSEAU_BULLET_SPAWNS`) : couples
-// (x, y) en % de la boîte englobante — vide → « &[] » (repli du jeu : un
+// (x, y) en % de la boîte englobante - vide → « &[] » (repli du jeu : un
 // seul emplacement au centre de rotation).
 function spawnsExport(cfg) {
   const list = Array.isArray(cfg.bulletSpawns) ? cfg.bulletSpawns : [];
@@ -3665,7 +3665,7 @@ function thrustersConsts(cfg) {
   const thrusters = Array.isArray(cfg.thrusters) ? cfg.thrusters : [];
   if (thrusters.length === 0) {
     return [
-      "/// Éjections de gaz du vaisseau — 4 propulseurs, un par touche de contrôle",
+      "/// Éjections de gaz du vaisseau - 4 propulseurs, un par touche de contrôle",
       "/// (ordre fixe : ↑ arrière, ↓ avant, ← flanc gauche, → flanc droit). **Liste",
       "/// vide = repli** : pas de propulseur, le gaz classique sort du centre de",
       "/// rotation (comportement d'origine). Générée par l'outil de gestion.",
@@ -3677,16 +3677,16 @@ function thrustersConsts(cfg) {
   thrusters.forEach((t, i) => {
     const meshPath = norm(t.asset || "assets/propulseur.json");
     lines.push(
-      "/// Mesh du propulseur « " + rustEscape(String(t.name || ("PROPULSEUR " + (i + 1)))) + " » (VAISSEAU_THRUSTERS[" + i + "]) — embarqué au compile.",
+      "/// Mesh du propulseur « " + rustEscape(String(t.name || ("PROPULSEUR " + (i + 1)))) + " » (VAISSEAU_THRUSTERS[" + i + "]) - embarqué au compile.",
       "pub const VAISSEAU_THRUSTER_MESH_" + i + ": &str = include_str!(\"../" + meshPath + "\");",
       "",
     );
   });
   lines.push(
-    "/// Éjections de gaz du vaisseau — 4 propulseurs, un par touche de contrôle",
+    "/// Éjections de gaz du vaisseau - 4 propulseurs, un par touche de contrôle",
     "/// (ordre fixe : ↑ arrière, ↓ avant, ← flanc gauche, → flanc droit). Chaque",
     "/// propulseur est un mesh posé **sur le vaisseau** à sa position (le gaz sort",
-    "/// de là, dans la direction d'éjection correspondante — src/main.rs).",
+    "/// de là, dans la direction d'éjection correspondante - src/main.rs).",
     "/// **Liste vide = repli** : pas de propulseur, le gaz classique sort du",
     "/// centre de rotation (comportement d'origine). Générée par l'outil de gestion.",
     "pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[",
@@ -3711,14 +3711,14 @@ function thrustersConsts(cfg) {
 
 // Export Rust d'une liste d'indices de plans (composition) : les plans
 // « always » uniquement (les plans « upgrade » partent dans
-// `VAISSEAU_PLANE_LINKS`, les exclus dans aucune liste — le jeu ne les
+// `VAISSEAU_PLANE_LINKS`, les exclus dans aucune liste - le jeu ne les
 // construit jamais). Vide → « &[] » (repli du jeu : tous les plans). Une
 // composition non définie (jamais réglée, ou définie pour un autre asset)
 // exporte aussi la liste vide : le jeu montre alors tous les plans.
 function planesListExport(cfg) {
   if (!Array.isArray(cfg.planes) || cfg.planesForAsset !== cfg.asset) return "&[]";
   // le mesh chargé (aperçu) fait foi : un plan ajouté depuis la dernière
-  // composition est « always » par défaut — sinon il serait exclu de
+  // composition est « always » par défaut - sinon il serait exclu de
   // l'export (et jamais construit en jeu) sans que l'utilisateur l'ait vu
   const rules = effectiveRules(cfg, currentMeshFor(cfg));
   const idx = [];
@@ -3743,7 +3743,7 @@ function shipLinksExport() {
 }
 
 // Constantes du vaisseau joueur : mesh, échelle, orientation, centre de
-// rotation et composition des plans — lues par src/vaisseau.rs à la
+// rotation et composition des plans - lues par src/vaisseau.rs à la
 // construction du vaisseau. Le chemin du mesh est relatif à la racine du
 // projet ; l'include_str! est résolu depuis src/ (d'où le « ../ »).
 function shipConsts() {
@@ -3752,7 +3752,7 @@ function shipConsts() {
   const orient = ((s.orientationDeg % 360) + 360) % 360;
   const assetPath = String(s.asset).replace(/^(\.\.?\/)+/, "");
   return [
-    "/// Vaisseau joueur — mesh « meshes-designer » et réglages (échelle,",
+    "/// Vaisseau joueur - mesh « meshes-designer » et réglages (échelle,",
     "/// orientation, centre de rotation). Données générées par l'outil de",
     "/// gestion : `src/vaisseau.rs` les lit pour construire le vaisseau.",
     "///",
@@ -3787,7 +3787,7 @@ function shipConsts() {
     "",
     ...weaponsConsts(s),
     "",
-    "/// Plans du vaisseau **toujours visibles** (composition de base — indices",
+    "/// Plans du vaisseau **toujours visibles** (composition de base - indices",
     "/// des plans du fichier mesh `VAISSEAU_JSON`). Un plan lié à une ligne",
     "/// d'atelier (`VAISSEAU_PLANE_LINKS`) n'est construit qu'à partir de son",
     "/// niveau ; un plan absent des deux listes n'est jamais construit.",
@@ -3803,7 +3803,7 @@ function shipConsts() {
 }
 
 // Constantes du cosmonaute EVA : mesh, échelle, orientation et centre de
-// rotation — lues par src/cosmonaut.rs à la construction du pilote éjecté.
+// rotation - lues par src/cosmonaut.rs à la construction du pilote éjecté.
 // Même format que shipConsts (le chemin du mesh est relatif à la racine du
 // projet ; l'include_str! est résolu depuis src/, d'où le « ../ »).
 function cosmonautConsts() {
@@ -3812,7 +3812,7 @@ function cosmonautConsts() {
   const orient = ((c.orientationDeg % 360) + 360) % 360;
   const assetPath = String(c.asset).replace(/^(\.\.?\/)+/, "");
   return [
-    "/// Cosmonaute EVA (pilote éjecté, vaisseau détruit) — mesh « meshes-designer »",
+    "/// Cosmonaute EVA (pilote éjecté, vaisseau détruit) - mesh « meshes-designer »",
     "/// et réglages (échelle, orientation, centre de rotation). Données générées",
     "/// par l'outil de gestion : `src/cosmonaut.rs` les lit pour construire le",
     "/// pilote contrôlé en mode EVA (scénarios Progression et Survival).",
@@ -3837,7 +3837,7 @@ function cosmonautConsts() {
     "/// axe y.",
     "pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = " + fmtFloat(c.centerYPercent) + ";",
     "",
-    "/// Plans du cosmonaute EVA construits (composition — indices des plans du",
+    "/// Plans du cosmonaute EVA construits (composition - indices des plans du",
     "/// fichier mesh `COSMONAUTE_JSON`) : un plan absent n'est jamais construit",
     "/// (ni animé). **Liste vide = tous les plans** (repli : composition non",
     "/// définie). Générée par l'outil de gestion.",
@@ -3859,11 +3859,11 @@ function economyConsts() {
   const modeCosts = ordered.map(m => int(m.cost)).join(", ");
   return [
     "/// Valeur en minerais d'une gemme par élément (index 1..3 = GOLD, IRON,",
-    "/// WATER — voir `default_elements` ; 0 = sans valeur).",
+    "/// WATER - voir `default_elements` ; 0 = sans valeur).",
     "pub const ELEMENT_VALUES: [i32; 4] = [0, " + g.gold + ", " + g.iron + ", " + g.water + "];",
     "",
     "/// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre",
-    "/// historique — l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :",
+    "/// historique - l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :",
     "/// nom et description affichés (magasin de la station, messages du scénario)",
     "/// et coût de déblocage en minerais (0 = déjà débloqué au départ). Générés",
     "/// par l'outil de gestion.",
@@ -3872,7 +3872,7 @@ function economyConsts() {
     "];",
     "",
     "/// Coût en minerais pour débloquer chaque mode de déplacement (index",
-    "/// `MOVING_MODE_*` ; 0 = déjà débloqué) — dérivé de `MOVING_MODES`. Seuls",
+    "/// `MOVING_MODE_*` ; 0 = déjà débloqué) - dérivé de `MOVING_MODES`. Seuls",
     "/// les modes à coût nul sont débloqués au départ en Progression (REALISTIC",
     "/// par défaut) ; les autres s'achètent au magasin.",
     "pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [" + modeCosts + "];",
@@ -3893,20 +3893,20 @@ function economyConsts() {
 
 // Constantes de gameplay « météores & collisions » : force de réaction à la
 // base, débris par explosion, vitesse et génération des météores, population
-// — lues par src/game.rs (réaction), src/garbage.rs (débris),
+// - lues par src/game.rs (réaction), src/garbage.rs (débris),
 // src/generate.rs (génération) et src/state.rs (population).
 function gameplayConsts() {
   const g = data.gameplay;
   const flt = n => fmtFloat(Math.max(0, Number(n) || 0));
   const i32 = n => String(int(n));
   return [
-    "/// Météores — collisions avec la station et génération (mise au point).",
+    "/// Météores - collisions avec la station et génération (mise au point).",
     "/// Données générées par l'outil de gestion : lues par `src/game.rs`",
     "/// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et",
     "/// `src/state.rs` (génération et population).",
     "",
     "/// Force de réaction d'un météore qui percute la **station** : le triangle",
-    "/// qui collisionne explose et le météore est repoussé — sa composante de",
+    "/// qui collisionne explose et le météore est repoussé - sa composante de",
     "/// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,",
     "/// la composante tangentielle (glissement le long de l'anneau) est",
     "/// conservée. 1.0 = rebond parfait (l'explosion rend au météore la vitesse",
@@ -3937,7 +3937,7 @@ function gameplayConsts() {
 }
 
 // Rangs de réputation du scénario Progression : seuil, nom affiché (HUD,
-// « RANK UP ») et remise (%) sur les coûts de la station — lus par
+// « RANK UP ») et remise (%) sur les coûts de la station - lus par
 // src/scenario.rs (`rank_at`, `current_discount`), ainsi que le poids de la
 // précision de tir qui amplifie la remise (`DISCOUNT_PRECISION_WEIGHT`).
 function reputationConsts() {
@@ -3946,7 +3946,7 @@ function reputationConsts() {
   const lines = [
     "/// Poids de la **précision de tir** sur la remise de réputation : la remise",
     "/// du rang est multipliée par `1 + poids × précision` (précision en 0..1 =",
-    "/// part de tirs non perdus) — 1.0 = 100 % de précision → remise doublée.",
+    "/// part de tirs non perdus) - 1.0 = 100 % de précision → remise doublée.",
     "/// 0 = la précision n'influe pas sur les coûts.",
     "pub const DISCOUNT_PRECISION_WEIGHT: f64 = " + fmtFloat(rep.discountPrecisionWeight) + ";",
     "",
@@ -3998,7 +3998,7 @@ function tierConst(track, meta) {
   for (const t of track.tiers) caps.push(caps[caps.length - 1] + t.bonus);
   const prog = caps.join(" → ");
   const comment = track.tiers.length === 0
-    ? "/// " + track.subject + " (Progression) : aucune extension — " + track.base + " " + track.unit + "."
+    ? "/// " + track.subject + " (Progression) : aucune extension - " + track.base + " " + track.unit + "."
     : "/// " + track.subject + " (Progression) : " + prog + " " + track.unit + ".";
   const lines = [comment, "const " + meta.const + ": &[ShipUpgrade] = &["];
   for (const t of track.tiers) {
@@ -4076,7 +4076,7 @@ function importJson() {
 // Affiche l'état du fichier lié dans la barre d'outils.
 function setRustStatus(name) {
   const el = document.getElementById("rust-file-status");
-  if (el) el.textContent = name ? "Lié : " + name + " — enregistrement direct" : "";
+  if (el) el.textContent = name ? "Lié : " + name + " - enregistrement direct" : "";
 }
 
 // Charge src/marketplace.rs du projet (mode serveur) et l'applique à
@@ -4118,19 +4118,19 @@ async function importRust() {
       save();
       render();
       setRustStatus(name);
-      toast("Import Rust réussi ✓ (" + parsed.tracks.length + " lignes)" + (name ? " — fichier lié" : ""));
+      toast("Import Rust réussi ✓ (" + parsed.tracks.length + " lignes)" + (name ? " - fichier lié" : ""));
     } catch (err) {
       toast("Import refusé : " + err.message);
     }
   };
 
   // mode serveur local (server.mjs) : le fichier du projet est chargé
-  // directement, sans sélecteur — fonctionne dans tous les navigateurs, y
+  // directement, sans sélecteur - fonctionne dans tous les navigateurs, y
   // compris le navigateur intégré de VSCode (webview sans API File System
   // Access)
   if (SERVER_MODE) {
     const ok = await loadProjectFile();
-    if (!ok) toast("Chargement du projet impossible — valeurs du jeu affichées");
+    if (!ok) toast("Chargement du projet impossible - valeurs du jeu affichées");
     return;
   }
 
@@ -4149,7 +4149,7 @@ async function importRust() {
       if (err && err.name === "AbortError") return;
       // API présente mais inutilisable (ex : navigateur intégré de VSCode) :
       // on retombe sur le sélecteur de fichiers classique
-      toast("Sélecteur système indisponible (" + (err.name || "erreur") + ") — sélecteur de fichiers");
+      toast("Sélecteur système indisponible (" + (err.name || "erreur") + ") - sélecteur de fichiers");
     }
   }
 
@@ -4186,9 +4186,9 @@ async function saveRustFile() {
       setSnapshot();
       updateSaveButton();
       setRustStatus("src/marketplace.rs (projet)");
-      toast("Enregistré dans src/marketplace.rs ✓ — recompilez (cargo build --release)");
+      toast("Enregistré dans src/marketplace.rs ✓ - recompilez (cargo build --release)");
     } catch (err) {
-      toast("Enregistrement dans le projet impossible : " + err.message + " — fichier téléchargé à la place");
+      toast("Enregistrement dans le projet impossible : " + err.message + " - fichier téléchargé à la place");
       download("marketplace.rs", text);
     }
     return;
@@ -4216,7 +4216,7 @@ async function saveRustFile() {
       await write(rustHandle);
       setSnapshot();
       updateSaveButton();
-      toast("Enregistré dans " + rustHandle.name + " ✓ — recompilez (cargo build --release)");
+      toast("Enregistré dans " + rustHandle.name + " ✓ - recompilez (cargo build --release)");
       return;
     }
     if (window.showSaveFilePicker) {
@@ -4229,12 +4229,12 @@ async function saveRustFile() {
       await write(handle);
       setSnapshot();
       updateSaveButton();
-      toast("Enregistré dans " + handle.name + " ✓ — recompilez (cargo build --release)");
+      toast("Enregistré dans " + handle.name + " ✓ - recompilez (cargo build --release)");
       return;
     }
   } catch (err) {
     if (err && err.name === "AbortError") return; // dialogue annulé
-    toast("Enregistrement impossible (" + (err.message || err.name || "erreur") + ") — fichier téléchargé à la place");
+    toast("Enregistrement impossible (" + (err.message || err.name || "erreur") + ") - fichier téléchargé à la place");
     download("marketplace.rs", text);
     return;
   }
@@ -4249,7 +4249,7 @@ function rustUnescape(s) {
 }
 
 // Extrait l'unité de capacité d'un commentaire de génération, ex :
-// « 100 → 150 → 200 → 250 unités. » → « unités » ; « aucune extension — 5
+// « 100 → 150 → 200 → 250 unités. » → « unités » ; « aucune extension - 5
 // emplacements. » → « emplacements ».
 function unitFromComment(prog) {
   const tail = prog.split("→").pop().trim().replace(/\.$/, "");
@@ -4282,7 +4282,7 @@ function fillTrackFields(track, block) {
 }
 
 // Parse un fichier src/marketplace.rs (format généré par cet outil) et
-// renvoie un état partiel { tracks, economy } — les valeurs manquantes
+// renvoie un état partiel { tracks, economy } - les valeurs manquantes
 // retombent sur les valeurs du jeu via normalize().
 function parseRust(text) {
   const out = { tracks: [], economy: {}, gameplay: {}, reputation: {}, ship: {}, cosmonaut: {} };
@@ -4445,7 +4445,7 @@ function parseRust(text) {
     }
   }
   // catalogue d'armes : meshes (arme + munition, include_str!) et liste
-  // `VAISSEAU_WEAPONS` — chaque arme référence ses constantes par index
+  // `VAISSEAU_WEAPONS` - chaque arme référence ses constantes par index
   const weaponMeshes = {};
   const wmRe = /pub const VAISSEAU_WEAPON_MESH_(\d+): &str = include_str!\("([^"]+)"\)/g;
   let wm;
@@ -4493,7 +4493,7 @@ function parseRust(text) {
   // Listes vides = composition non définie → `null` (tous les plans, repli).
   const always = grab(/pub const VAISSEAU_PLANES_ALWAYS: &\[usize\] = &\[([^\]]*)\]/);
   // les liens ne contiennent aucun « ] » : la capture va jusqu'au « ] »
-  // fermant (vide = &[] — repli « tous les plans »)
+  // fermant (vide = &[] - repli « tous les plans »)
   const linksBlock = grab(/pub const VAISSEAU_PLANE_LINKS: &\[PlaneUpgradeLink\] = &\[([^\]]*)\]/);
   const alwaysIdx = always
     ? always.split(",").map(s => parseInt(s, 10)).filter(Number.isFinite)
@@ -4530,7 +4530,7 @@ function parseRust(text) {
     const tiersBlock = strict ? strict[3] : null;
     const trackBlock = strict ? strict[5] : null;
     if (!trackBlock) {
-      // repli : fichier édité à la main (commentaires modifiés/supprimés) — on
+      // repli : fichier édité à la main (commentaires modifiés/supprimés) - on
       // ne lit que les constantes, le reste reprend les valeurs du jeu
       const looseTrack = text.match(new RegExp(
         "pub const " + meta.trackConst + ": UpgradeTrack = UpgradeTrack \\{([^}]*)\\}"
@@ -4627,8 +4627,8 @@ function normalize(parsed) {
         return found ? toMode(found, id, defaultsById[id]) : { ...defaultsById[id] };
       });
     } else {
-      // ancien format : liste ordonnée par id (index MOVING_MODE_*) — sans
-      // id (objets) ou coûts numériques seuls — réordonnée pour l'affichage
+      // ancien format : liste ordonnée par id (index MOVING_MODE_*) - sans
+      // id (objets) ou coûts numériques seuls - réordonnée pour l'affichage
       out.economy.modes = MODE_DISPLAY_ORDER.map(id => toMode(eco.modes[id], id, defaultsById[id]));
     }
   }
@@ -4636,7 +4636,7 @@ function normalize(parsed) {
   if (Number.isFinite(eco.fuelStep) && eco.fuelStep > 0) out.economy.fuelStep = eco.fuelStep;
   if (Number.isFinite(eco.ammoPrice)) out.economy.ammoPrice = int(eco.ammoPrice);
   if (Number.isFinite(eco.ammoStep) && eco.ammoStep > 0) out.economy.ammoStep = Math.round(eco.ammoStep);
-  // gameplay — météores & collisions (valeurs manquantes → valeurs du jeu) :
+  // gameplay - météores & collisions (valeurs manquantes → valeurs du jeu) :
   // force de réaction à la base, débris par explosion, vitesse, bornes de
   // génération et population
   const gameplay = parsed.gameplay || {};
@@ -4693,7 +4693,7 @@ function normalize(parsed) {
       }))
       .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
   }
-  // éjections de gaz : toujours 4 propulseurs (ordre ↑↓←→) — les valeurs
+  // éjections de gaz : toujours 4 propulseurs (ordre ↑↓←→) - les valeurs
   // manquantes ou invalides retombent sur les défauts (mesh propulseur)
   out.ship.thrusters = THRUST_MARKERS.map((m, i) => {
     const p = Array.isArray(ship.thrusters) ? ship.thrusters[i] : null;
@@ -4705,11 +4705,11 @@ function normalize(parsed) {
         : 100,
       orientationDeg: Number.isFinite(p && p.orientationDeg) ? p.orientationDeg : 0,
       // positions libres : négatives et > 100 % sont acceptées (le jeu les
-      // interprète hors de la boîte englobante — propulseur sorti du gabarit)
+      // interprète hors de la boîte englobante - propulseur sorti du gabarit)
       x: Number.isFinite(p && p.x) ? p.x : m.x,
       y: Number.isFinite(p && p.y) ? p.y : m.y,
       // affichage du gaz : couleur (hex #rrggbb) et direction d'éjection en
-      // degrés (repère de l'éditeur, y vers le haut) — le jeu les utilise
+      // degrés (repère de l'éditeur, y vers le haut) - le jeu les utilise
       // pour dessiner la flamme (ejection_flow, src/main.rs)
       color: p && /^#([0-9a-fA-F]{6})$/.test(p.color) ? p.color : m.color,
       ejectionAngleDeg: Number.isFinite(p && p.ejectionAngleDeg)
@@ -4761,7 +4761,7 @@ function normalize(parsed) {
     out.cosmonaut.centerYPercent = Math.max(0, Math.min(100, cosmonaut.centerYPercent));
   }
   // composition des plans (vaisseau : « always » / « upgrade » / « excluded »
-  // + ligne et niveau ; cosmonaute : « always » / « excluded ») — rattachée
+  // + ligne et niveau ; cosmonaute : « always » / « excluded ») - rattachée
   // au mesh courant si l'import ne précise pas son asset d'origine
   if (Array.isArray(ship.planes)) {
     out.ship.planes = ship.planes.map(p => {
@@ -4834,7 +4834,7 @@ async function runCargo(command) {
       cargoAppend(dec.decode(value, { stream: true }));
     }
     cargoAppend(dec.decode());
-    // dernière ligne du serveur : « [code de sortie: N] » — la retire de la
+    // dernière ligne du serveur : « [code de sortie: N] » - la retire de la
     // sortie affichée pour ne la montrer que dans le statut
     const out = document.getElementById("cargo-out");
     const m = out.textContent.match(/\[code de sortie: (-?\d+)\]\s*$/);
@@ -4899,12 +4899,12 @@ document.addEventListener("keydown", (e) => {
 
 render();
 setSnapshot(); // état de départ : rien de modifié → bouton grisé
-// sélecteurs d'asset : liste des fichiers JSON de assets/ (mode serveur) —
+// sélecteurs d'asset : liste des fichiers JSON de assets/ (mode serveur) -
 // re-rend une fois la liste chargée pour la mettre dans les <select>
 refreshAssetPickers();
 
 // mode serveur local : le fichier du projet (src/marketplace.rs) est chargé
-// automatiquement dès l'ouverture — aucune action nécessaire ; la console
+// automatiquement dès l'ouverture - aucune action nécessaire ; la console
 // cargo (compiler/tester depuis l'outil) n'a de sens que servie par le
 // serveur local (les fetch api/cargo échoueraient en fichier local)
 if (SERVER_MODE) {

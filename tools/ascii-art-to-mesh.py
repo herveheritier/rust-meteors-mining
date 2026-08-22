@@ -3,18 +3,18 @@
 
 Le format cible est celui des fichiers mesh du catalogue d'armes
 (`src/vaisseau.rs` / `src/cosmonaut.rs` le parsent avec serde) : une racine
-`{"planes": [...]}` — chaque plan porte des `verts` (2D, y vers le haut,
+`{"planes": [...]}` - chaque plan porte des `verts` (2D, y vers le haut,
 convention de l'éditeur) et des `faces` triangulaires avec leur couleur RGBA.
 Les autres champs (`app`, `zoom`, …) ne servent qu'à l'éditeur de gestion.
 
 Le dessin (assets/asciiart-fr.txt) est une munition (missile) pointant vers
-le haut dans l'art : il est tourné de 90° pour que le **nez pointe vers +x** —
+le haut dans l'art : il est tourné de 90° pour que le **nez pointe vers +x** -
 la convention du catalogue (une munition est dessinée nez en avant,
 `ammo_orientation_degrees = 0`).
 
 Conversion : chaque cellule non-espace est un « pixel » ; le remplissage se
 fait par **barres verticales** (une colonne × une plage de rangées contiguës
-= 2 triangles), ce qui reproduit **exactement** le dessin — les vides (trou
+= 2 triangles), ce qui reproduit **exactement** le dessin - les vides (trou
 entre les bandes du corps, espace entre ailerons et corps) restent vides.
 Les barres adjacentes de même plage de rangées et de même couleur sont
 fusionnées horizontalement pour limiter le nombre de faces. Chaque barre est
@@ -30,10 +30,10 @@ import sys
 
 # ─── Zones du dessin (rangées de l'art) et couleurs RGBA 0..1 ───────────────
 # Le dessin alterne bandes denses (rangées pleines) et zones claires :
-# - le NEZ (cône, en haut) — rouge (ogive) ;
-# - les AILERONS (rangées 34-46 hors colonnes du corps) — orange ;
-# - les BANDES denses du corps — acier sombre ;
-# - le CORPS (et le cylindre central des ailerons) — acier clair.
+# - le NEZ (cône, en haut) - rouge (ogive) ;
+# - les AILERONS (rangées 34-46 hors colonnes du corps) - orange ;
+# - les BANDES denses du corps - acier sombre ;
+# - le CORPS (et le cylindre central des ailerons) - acier clair.
 NOSE_ROWS = range(6, 14)      # cône de nez
 FIN_ROWS = range(34, 47)      # ailerons (rangées)
 # colonnes du corps au milieu de la zone des ailerons (cylindre central)
@@ -98,7 +98,7 @@ def build_mesh(lines, scale=1.0):
     faces = []
 
     def quad(x1, x2, y1, y2, color):
-        # barre verticale : colonnes x1..x2, cellules y1..y2 incluses — en
+        # barre verticale : colonnes x1..x2, cellules y1..y2 incluses - en
         # coordonnées continues, cela couvre les rangées y1..y2+1 (le bas
         # d'une cellule y est y+1 dans l'art, y vers le bas)
         def vert_p(x, y):
@@ -137,7 +137,7 @@ def build_mesh(lines, scale=1.0):
 
     # fusionne horizontalement les barres de même plage de rangées et de même
     # classe (colonnes adjacentes) : une grande barre de 2 triangles au lieu
-    # d'une par colonne — le compte de faces reste raisonnable pour une
+    # d'une par colonne - le compte de faces reste raisonnable pour une
     # munition du jeu
     runs.sort(key=lambda r: (r[1], r[2], r[3], r[0]))
     i = 0
@@ -174,7 +174,7 @@ def point_in_triangle(p, a, b, c):
 def render_back(verts, faces, miny, nose_x, lines):
     """Reprojection du mesh sur la grille de l'art (vérification par
     aller-retour) : chaque cellule d'art dont le **centre** est couvert par
-    une face triangulaire est marquée — le rendu doit reproduire le dessin."""
+    une face triangulaire est marquée - le rendu doit reproduire le dessin."""
     grid = [[" "] * 100 for _ in lines]
     for face in faces:
         pts = [(nose_x - verts[i][1], miny + verts[i][0]) for i in face["v"]]

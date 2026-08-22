@@ -4,7 +4,7 @@
 //! `context_type`, ici elles deviennent des `const` Rust (elles sont fixes).
 //! Seul l'état dynamique reste dans `GameState` (voir `src/state.rs`).
 //!
-//! Valeurs identiques à l'original — voir `docs/ANALYSE.md` §6.
+//! Valeurs identiques à l'original - voir `docs/ANALYSE.md` §6.
 
 use std::f64::consts::TAU as TAU_F64;
 
@@ -13,7 +13,7 @@ pub const VIEWPORT_WIDTH: f64 = 960.0;
 pub const VIEWPORT_HEIGHT: f64 = 540.0;
 
 /// Titre de la fenêtre (utilisé par la fenêtre macroquad ET pour retrouver
-/// la fenêtre en X11 lors du plein écran EWMH — voir `src/x11.rs`).
+/// la fenêtre en X11 lors du plein écran EWMH - voir `src/x11.rs`).
 pub const WINDOW_TITLE: &str = "Meteors Mining (Rust port)";
 
 /// Marge autour de la vue = taille du monde hors écran.
@@ -156,7 +156,7 @@ pub const STATION_INDEX: usize = 1;
 
 /// Handles de texture (index dans la table des assets ; 0 = aucune).
 /// NB : `TEXTURE_ORANGE` (ex `txtr&`, `orange2.png`) n'est utilisée que dans
-/// un `_MapTriangle` commenté de l'original — conservée pour la fidélité.
+/// un `_MapTriangle` commenté de l'original - conservée pour la fidélité.
 pub const TEXTURE_NONE: i32 = 0;
 #[allow(dead_code)]
 pub const TEXTURE_ORANGE: i32 = 1;
@@ -181,12 +181,12 @@ pub const CARGO_SIZE: i32 = 5;
 /// Rayon (unités monde) de la zone d'accostage de la station : le vaisseau
 /// accoste quand son **centre** entre dans ce cercle (vérification circulaire
 /// dans `docking`). Élargie par rapport à l'original (5 px) pour dépasser le
-/// rayon du vaisseau (10) — la zone est affichée par la mire au centre de la
+/// rayon du vaisseau (10) - la zone est affichée par la mire au centre de la
 /// station (voir `render::draw_docking_marker`).
 pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 
 /// Rayon (unités monde) de ramassage des gemmes par le **cosmonaute EVA**
-/// (vaisseau détruit) : il est non-collider, les gemmes le traversent — il
+/// (vaisseau détruit) : il est non-collider, les gemmes le traversent - il
 /// les ramasse par proximité (voir `game::eva_collect_gems`) et les rapporte
 /// à la station. Rayon du cosmonaute (~13) + marge généreuse.
 pub const EVA_PICKUP_RADIUS: f64 = 20.0;
@@ -199,7 +199,7 @@ pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 
 /// Durée (secondes) de la **récupération** du cosmonaute EVA par la station
 /// (vaisseau détruit, il a rejoint la zone d'accostage) : un cordon jaillit
-/// de l'anneau jusqu'à lui puis le ramène sur l'anneau — le monde est gelé
+/// de l'anneau jusqu'à lui puis le ramène sur l'anneau - le monde est gelé
 /// (voir `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
 pub const EVA_RECOVERY_DURATION: f64 = 2.5;
 /// Durée (secondes) du **fondu enchaîné** après la récupération : le
@@ -234,13 +234,13 @@ pub const STATION_INNER_RADIUS: f64 = 110.0;
 
 /// Vitesse maximale (unités/s) du vaisseau pour que l'accostage se **termine**
 /// (la boîte DOCK STATION ne s'ouvre que si le vaisseau est presque immobile
-/// dans la zone — voir `docking`).
+/// dans la zone - voir `docking`).
 pub const STATION_DOCK_SPEED: f64 = 0.5;
 
 /// Vitesse à partir de laquelle l'approche est jugée « mauvaise » : la mire
 /// d'accostage est entièrement **rouge** (qualité 0) à cette vitesse ou au
 /// delà, et passe progressivement au **vert** (qualité 1) à mesure que le
-/// vaisseau ralentit — la qualité est interpolée sur **tout le rayon de la
+/// vaisseau ralentit - la qualité est interpolée sur **tout le rayon de la
 /// station** (distance au centre) et sur la vitesse, voir
 /// `render::draw_docking_marker` et `docking_approach_quality`.
 pub const DOCK_APPROACH_FULL_RED_SPEED: f64 = 3.0;

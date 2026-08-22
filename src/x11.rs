@@ -39,7 +39,7 @@ const SUBSTRUCTURE_NOTIFY_MASK: c_long = 1 << 19;
 const NET_WM_STATE_REMOVE: c_long = 0;
 const NET_WM_STATE_ADD: c_long = 1;
 
-/// `XClientMessageEvent` (ABI libX11, `xlib.h`) — ordre des champs identique
+/// `XClientMessageEvent` (ABI libX11, `xlib.h`) - ordre des champs identique
 /// à la déclaration de miniquad (`libx11.rs`).
 #[repr(C)]
 struct XClientMessageEvent {
