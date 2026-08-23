@@ -10,7 +10,7 @@
 use macroquad::prelude::*;
 
 use crate::audio::Sounds;
-use crate::config::{ATTEMPT_FPS, VIEWPORT_WIDTH};
+use crate::config::{ATTEMPT_FPS, VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
 use crate::game;
 use crate::geom::Point;
 use crate::render::{
@@ -260,12 +260,89 @@ pub async fn title_loop(
                 let id = match k {
                     KeyCode::Key1 => crate::scenario::ScenarioId::FreePlay,
                     KeyCode::Key2 => crate::scenario::ScenarioId::Progression,
+                    KeyCode::Key3 => crate::scenario::ScenarioId::Survival,
+                    KeyCode::Key4 => crate::scenario::scenario_id_from_index(3),
+                    KeyCode::Key5 => crate::scenario::scenario_id_from_index(4),
+                    KeyCode::Key6 => crate::scenario::scenario_id_from_index(5),
+                    KeyCode::Key7 => crate::scenario::scenario_id_from_index(6),
+                    KeyCode::Key8 => crate::scenario::scenario_id_from_index(7),
+                    KeyCode::Key9 => crate::scenario::scenario_id_from_index(8),
                     _ => crate::scenario::ScenarioId::Survival,
                 };
                 crate::scenario::select_scenario(state, id);
                 restore(state);
                 next_frame().await;
                 continue;
+            }
+            // lancement de la partie : s'il existe une progression enregistrée
+            // pour le scénario courant, proposer de **poursuivre** ou de
+            // **repartir du début** (sous-boucle d'input + rendu, comme l'écran
+            // de paramétrage ci-dessus - l'état courant porte déjà la
+            // sauvegarde restaurée par `load_progression`).
+            if crate::scenario::has_saved_progression(state) {
+                // la touche qui a lancé la partie (ex R) est encore dans la
+                // file d'input : on cède une frame avant de lire les touches
+                // du choix, sinon elle serait relue immédiatement (ex R =
+                // lancement → « repartir »)
+                next_frame().await;
+                let mut launch = false;
+                'launch_choice: loop {
+                    if LIMIT_FPS {
+                        let elapsed = get_time() - last_frame;
+                        if elapsed < target_frame {
+                            std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
+                        }
+                        last_frame = get_time();
+                    }
+                    for k in [
+                        KeyCode::Escape,
+                        KeyCode::Enter,
+                        KeyCode::Space,
+                        KeyCode::Key1,
+                        KeyCode::Key2,
+                        KeyCode::C,
+                        KeyCode::R,
+                    ] {
+                        if is_key_pressed(k) {
+                            match k {
+                                // ESC : annule le lancement, retour à l'écran
+                                // titre (le scénario reste sélectionné)
+                                KeyCode::Escape => break 'launch_choice,
+                                // poursuivre le scénario : l'état porte déjà
+                                // la progression restaurée
+                                KeyCode::Enter | KeyCode::Space | KeyCode::Key1 | KeyCode::C => {
+                                    launch = true;
+                                    break 'launch_choice;
+                                }
+                                // repartir du début : progression remise à
+                                // zéro (clés `prog_*` supprimées, règles de
+                                // départ réappliquées - le vaisseau sera
+                                // reconstruit au lancement, voir `main.rs`)
+                                KeyCode::Key2 | KeyCode::R => {
+                                    crate::scenario::reset_progression(state);
+                                    progression_reset = true;
+                                    launch = true;
+                                    break 'launch_choice;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    draw_frame(
+                        state,
+                        assets,
+                        rt,
+                        camera,
+                        &banner_colors,
+                        sounds,
+                        get_time() < flash_until,
+                    );
+                    draw_launch_choice(state);
+                    next_frame().await;
+                }
+                if !launch {
+                    continue; // ESC : retour à l'écran titre
+                }
             }
             break;
         }
@@ -299,6 +376,137 @@ pub async fn title_loop(
 
     // le `break` ci-dessus quitte la boucle (lancement de la partie)
     (false, progression_reset)
+}
+
+/// Affiche la liste des objectifs DAG d'un scénario custom sur l'écran titre
+/// avec leur statut : complété (✓ vert), débloqué (→ jaune), verrouillé
+/// (🔒 gris). Renvoie la position Y après la dernière ligne affichée.
+fn draw_objectives_list(state: &crate::state::GameState, start_y: f64) -> f64 {
+    let tracker = &state.objective_tracker;
+    if !tracker.has_objectives() {
+        return start_y;
+    }
+
+    let mut y = start_y;
+
+    // En-tête
+    let header = format!(
+        "[ OBJECTIFS : {}/{} ]",
+        tracker.completed_count(),
+        tracker.total_count()
+    );
+    draw_centered_line(&header, y as f32);
+    y += 18.0;
+
+    // Lister tous les objectifs avec leur statut
+    let all_objectives = &tracker.objectives;
+    let completed_ids = &tracker.completed_ids;
+
+    // Déterminer les objectifs débloqués (prérequis satisfaits)
+    let mut unlocked_set = std::collections::HashSet::new();
+    for obj in all_objectives.iter() {
+        if !completed_ids.contains(&obj.id)
+            && obj
+                .prerequisites
+                .iter()
+                .all(|pre| completed_ids.contains(pre))
+        {
+            unlocked_set.insert(obj.id.clone());
+        }
+    }
+
+    for obj in all_objectives.iter() {
+        let (symbol, color) = if completed_ids.contains(&obj.id) {
+            ("✓", 0xFF39FF88u32) // vert néon = complété
+        } else if unlocked_set.contains(&obj.id) {
+            ("→", 0xFFFFFF00u32) // jaune = débloqué (en cours)
+        } else {
+            ("·", 0xFF666688u32) // gris = verrouillé
+        };
+
+        let line = format!("  {} {} - {}", symbol, obj.title, obj.description);
+        // Tronquer si trop long (> 80 caractères)
+        let display_line = if line.len() > 80 {
+            format!("{}...", &line[..77])
+        } else {
+            line
+        };
+        draw_centered_line_color(&display_line, y as f32, argb_to_color(color));
+        y += 16.0;
+    }
+
+    y += 4.0; // espace avant les touches
+    y
+}
+
+/// Dessine une ligne centrée avec une couleur donnée.
+fn draw_centered_line_color(line: &str, y: f32, color: Color) {
+    let w = measure_text(line, None, 14, 1.0).width;
+    draw_text(line, (VIEWPORT_WIDTH as f32 - w) / 2.0, y, 14.0, color);
+}
+
+/// Boîte de choix affichée au lancement d'un scénario qui a une progression
+/// enregistrée (`has_saved_progression`) : propose de **poursuivre le
+/// scénario** ou de **repartir du début** - avec le résumé de la sauvegarde
+/// (`SAVE`, mêmes segments que l'écran titre) et les touches du choix. Dessinée
+/// par-dessus l'écran titre (fond sombre + bordure, comme l'écran de
+/// paramétrage) ; la sous-boucle d'input correspondante est dans `title_loop`.
+fn draw_launch_choice(state: &GameState) {
+    const BG: u32 = 0xD01478DC;
+    const BORDER: u32 = 0xFF1AB2FF;
+    const FG: u32 = 0xFFD6EEFF;
+    const FG_DIM: u32 = 0xFFC2E4FF;
+    // poursuivre = vert néon (comme les objectifs complétés), repartir du
+    // début = rouge (remise à zéro de la progression)
+    const CONTINUE: u32 = 0xFF39FF88;
+    const RESTART: u32 = 0xFFFF5A5A;
+
+    let w = 560.0;
+    let h = 200.0;
+    let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
+    let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
+
+    // fenêtre : fond + bordure
+    draw_rectangle(left, top, w, h, argb_to_color(BG));
+    draw_rectangle_lines(left, top, w, h, 2.0, argb_to_color(BORDER));
+
+    // titre centré
+    let title = "*** SAUVEGARDE TROUVEE ***";
+    let title_w = measure_text(title, None, 16, 1.0).width;
+    draw_text(
+        title,
+        left + (w - title_w) / 2.0,
+        top + 30.0,
+        16.0,
+        argb_to_color(FG),
+    );
+
+    // résumé de la progression enregistrée (mêmes segments que la ligne
+    // `[ SAVE : … ]` de l'écran titre) - tronqué s'il est trop long
+    let scenario = crate::scenario::scenario(state.scenario);
+    let summary: String = crate::scenario::save_summary_segments(state)
+        .iter()
+        .map(|s| s.text.as_str())
+        .collect();
+    let summary_line = format!("{} - {}", scenario.name, summary);
+    let summary_line = if summary_line.len() > 76 {
+        format!("{}...", &summary_line[..73])
+    } else {
+        summary_line
+    };
+    let summary_w = measure_text(&summary_line, None, 12, 1.0).width;
+    draw_text(
+        &summary_line,
+        left + (w - summary_w) / 2.0,
+        top + 58.0,
+        12.0,
+        argb_to_color(FG_DIM),
+    );
+
+    // les deux options
+    draw_centered_line_color("1 / ENTER : POURSUIVRE LE SCENARIO", top + 96.0, argb_to_color(CONTINUE));
+    draw_centered_line_color("2 / R : REPARTIR DU DEBUT", top + 126.0, argb_to_color(RESTART));
+    draw_centered_line_color("ESC : retour a l'ecran titre", top + 164.0, argb_to_color(FG_DIM));
 }
 
 /// Dessine une frame de l'écran titre : caméra selon le mode d'affichage,
@@ -403,8 +611,24 @@ fn draw_frame(
     });
     draw_segments_line(&save_segments, y as f32, None);
     y += 20.0;
+
+    // Objectifs DAG (scénarios custom) : liste des étapes avec statut
+    if crate::scenario::is_custom(state.scenario) {
+        y = draw_objectives_list(state, y);
+    }
+
+    let custom_count = crate::scenario_loader::loaded_count();
+    let key_hint = if custom_count > 0 {
+        format!(
+            "[ N/B : scenario (1-{} : pick)  |  F : window / zoomed / native  |  O : settings ]",
+            3 + custom_count.min(6)
+        )
+    } else {
+        "[ N/B : scenario (1-3 : pick)  |  F : window / zoomed / native  |  O : settings ]"
+            .to_string()
+    };
     for line in [
-        "[ N/B : scenario (1-3 : pick)  |  F : window / zoomed / native  |  O : settings ]",
+        key_hint.as_str(),
         "[ ESC to quit ]",
         "[ Hit other key to launch ]",
     ] {

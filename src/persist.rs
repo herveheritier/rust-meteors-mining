@@ -147,6 +147,18 @@ pub fn set_i32_to(path: &Path, key: &str, value: i32) -> io::Result<()> {
     write_all(path, &map)
 }
 
+/// Lit une clé chaîne de caractères (absente → `None`).
+pub fn get_str_from(path: &Path, key: &str) -> Option<String> {
+    read_all(path).get(key).cloned()
+}
+
+/// Écrit une clé chaîne de caractères (les autres clés sont conservées).
+pub fn set_str_to(path: &Path, key: &str, value: &str) -> io::Result<()> {
+    let mut map = read_all(path);
+    map.insert(key.to_string(), value.to_string());
+    write_all(path, &map)
+}
+
 /// Lit une clé booléenne (stockée `1`/`0` ; absente ou invalide → `None`).
 pub fn get_bool(key: &str) -> Option<bool> {
     get_bool_from(&config_path(), key)

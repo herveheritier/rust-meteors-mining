@@ -23,10 +23,12 @@ mod garbage;
 mod generate;
 mod geom;
 mod marketplace;
+mod objective_tracker;
 mod persist;
 mod remote;
 mod render;
 mod scenario;
+mod scenario_loader;
 mod scenario_objectives;
 mod shape;
 mod state;
@@ -222,6 +224,30 @@ async fn main() {
             return;
         }
     }
+
+    // Appliquer la position / orientation / vitesse initiales du vaisseau
+    // (scénarios custom, valeurs de l'éditeur de scénarios) : appliquées au
+    // lancement de la partie, APRÈS l'écran titre - le scénario finalement
+    // sélectionné (persisté ou choisi avec N/B/1-9) est le seul qui compte.
+    if state.initial_ship_x != 0.0 || state.initial_ship_y != 0.0
+        || state.initial_ship_orientation != 0.0 || state.initial_ship_velocity != 0.0
+    {
+        let s = &mut shapes[PLAYER_INDEX];
+        s.position.x = state.initial_ship_x;
+        s.position.y = state.initial_ship_y;
+        s.orientation = state.initial_ship_orientation.to_radians();
+        s.velocity = state.initial_ship_velocity;
+    }
+    // Le vaisseau démarre à quai (liens d'accostage attachés, statut
+    // « DOCKED ») seulement s'il est **immobile au centre de la station** :
+    // position initiale (0,0) ET vitesse nulle - une position ou une vitesse
+    // initiale non nulle (scénario custom de l'éditeur) signifie que le
+    // vaisseau démarre en vol, hors de la base (pas de liens, pas
+    // d'accostage ; la mire réapparaîtra au retour, voir
+    // `game::update_docking_guide`)
+    let start_docked = crate::scenario::start_docked(&state);
+    state.dock_links = start_docked;
+    state.player_at_station = if start_docked { -1 } else { 0 };
 
     // le keypress qui a lancé la partie (ex F du titre) est encore dans la
     // file d'input : sans ça, la première frame de jeu le verrait (ex F →
@@ -547,6 +573,8 @@ async fn main() {
             shapes[pilot].velocity,
             hud_end_x,
         );
+        // Objectifs DAG (scénarios custom) : panneau dans le coin supérieur droit
+        render::draw_objectives_hud(&state);
 
         // affichages de debug (touches D et I)
         if state.show_info {

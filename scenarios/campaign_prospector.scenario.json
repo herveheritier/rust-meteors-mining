@@ -10,7 +10,11 @@
     "start_reputation": 0,
     "start_mode": 0,
     "lives": 0,
-    "shield_capacity": 0
+    "shield_capacity": 0,
+    "start_pos_x": 300,
+    "start_pos_y": 0,
+    "start_orientation": 0,
+    "start_velocity": 0
   },
   "objectives": [
     {

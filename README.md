@@ -88,7 +88,10 @@ cargo run --release
 
 La fenêtre 960 × 540 s'ouvre sur l'écran titre - appuyez sur une touche
 (autre que F/O/N) pour lancer la partie. **N** y change de scénario (jeu
-libre ou Progression, voir « Scénarios » ci-dessous).
+libre ou Progression, voir « Scénarios » ci-dessous). Au lancement d'un
+scénario qui a une **progression enregistrée**, le jeu propose de
+**poursuivre** (1/ENTRÉE) ou de **repartir du début** (2/R - la sauvegarde est
+remise à zéro) ; ESC annule et revient à l'écran titre.
 
 ### Exécutable autonome
 
@@ -268,9 +271,9 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   (`FUEL_PRICE`/`FUEL_STEP`, `AMMO_PRICE`/`AMMO_STEP`) ;
 - **régler les météores & collisions** : force de réaction d'un météore qui
   percute la base (`METEOR_STATION_RESTITUTION` - le triangle qui collisionne
-  explose et le météore est repoussé : sa composante de vitesse vers la base
-  est réfléchie, 1.0 = rebond parfait, 0 = pas de réaction), débris par
-  explosion (`GARBAGE_PER_TRIANGLE`), vitesse maximale
+  explose et le météore est repoussé : seule sa trajectoire est réfléchie,
+  la vitesse est conservée, 1.0 = rebond parfait (miroir), 0 = pas de
+  réaction), débris par explosion (`GARBAGE_PER_TRIANGLE`), vitesse maximale
   (`METEOR_VELOCITY_MAX`), génération procédurale (`TRIANGLES_IN_SHAPE_*`,
   `TRIANGLE_BASE_*`, `TRIANGLE_HEIGHT_*`) et population
   (`INITIAL_MAX_METEOR_SHAPES`, `SHAPES_COUNT`) - constantes de

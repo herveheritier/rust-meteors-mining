@@ -2449,6 +2449,209 @@ pub fn draw_message(state: &mut GameState) {
     }
 }
 
+// ─── Objectifs DAG (scénarios custom) ──────────────────────────────────────
+
+/// Affiche les objectifs DAG du scénario custom en cours dans le coin
+/// supérieur droit de l'écran : panneau semi-transparent avec l'objectif
+/// courant en grand, un sous-objectif s'il y en a un, et une barre de
+/// progression. Affiché uniquement si le tracker a des objectifs.
+pub fn draw_objectives_hud(state: &GameState) {
+    let tracker = &state.objective_tracker;
+    if !tracker.has_objectives() {
+        return;
+    }
+
+    let total = tracker.total_count();
+    let completed = tracker.completed_count();
+
+    // Lister les objectifs débloqués
+    let unlocked = tracker.unlocked_objectives();
+    let primary = unlocked.first();
+    let secondary = unlocked.get(1);
+
+    // ── Panneau principal (coin supérieur droit) ──────────────────────────
+    let panel_w: f32 = 260.0;
+    let mut panel_h: f32 = 32.0; // header
+    if primary.is_some() { panel_h += 40.0; }
+    if secondary.is_some() { panel_h += 22.0; }
+    panel_h += 18.0; // barre
+    let panel_h = panel_h + 8.0; // padding bas
+
+    let panel_x = VIEWPORT_WIDTH as f32 - panel_w - 12.0;
+    let panel_y = 36.0;
+
+    // Fond semi-transparent (ombre portée)
+    draw_rectangle(
+        panel_x + 2.0, panel_y + 2.0, panel_w, panel_h,
+        Color::new(0.0, 0.0, 0.0, 0.6),
+    );
+    // Fond principal
+    draw_rectangle(
+        panel_x, panel_y, panel_w, panel_h,
+        Color::new(0.06, 0.08, 0.12, 0.85),
+    );
+    // Bordure fine
+    draw_rectangle_lines(
+        panel_x, panel_y, panel_w, panel_h, 1.0,
+        Color::new(0.22, 0.8, 0.53, 0.6),
+    );
+
+    let mut y = panel_y + 18.0;
+    let text_x = panel_x + 10.0;
+
+    // En-tête : OBJECTIFS 2/5
+    let header = format!("OBJECTIFS {}/{}", completed, total);
+    draw_text(&header, text_x, y, 14.0, Color::new(0.9, 0.93, 0.94, 1.0));
+    y += 20.0;
+
+    // Objectif principal (le plus important)
+    if let Some(obj) = primary {
+        draw_text(
+            &obj.title, text_x, y, 14.0,
+            Color::new(0.22, 1.0, 0.53, 1.0),
+        );
+        y += 16.0;
+        let desc = &obj.description;
+        let short_desc = if desc.len() > 42 {
+            format!("{}...", &desc[..39])
+        } else {
+            desc.clone()
+        };
+        draw_text(
+            &short_desc, text_x, y, 11.0,
+            Color::new(0.75, 0.78, 0.82, 0.9),
+        );
+        y += 14.0;
+    }
+
+    // Sous-objectif (plus discret)
+    if let Some(obj) = secondary {
+        draw_text(
+            &format!("> {}", obj.title), text_x + 6.0, y, 11.0,
+            Color::new(1.0, 0.84, 0.0, 0.8),
+        );
+        y += 16.0;
+    }
+
+    // Barre de progression
+    if total > 0 {
+        let bar_w = panel_w - 20.0;
+        let bar_h = 8.0;
+        let bar_x = text_x;
+        let progress = completed as f64 / total as f64;
+        draw_rectangle(bar_x, y, bar_w, bar_h, Color::new(0.2, 0.22, 0.28, 1.0));
+        draw_rectangle(
+            bar_x, y, bar_w * progress as f32, bar_h,
+            Color::new(0.22, 1.0, 0.53, 0.9),
+        );
+    }
+
+    // ── Notification de complétion (flash au centre) ─────────────────────
+    if let Some(title) = &tracker.last_completed_title {
+        let timer = tracker.notification_timer;
+        // Fondu : plein pendant 2.5s, puis fondu sur 1.5s
+        let alpha = if timer > 1.5 {
+            1.0f32
+        } else {
+            (timer as f32 / 1.5).max(0.0)
+        };
+        // Légère oscillation d'échelle pour attirer l'œil
+        let pulse = 1.0 + 0.03 * (get_time() * 4.0).sin() as f32;
+
+        let banner_w = 340.0;
+        let banner_h = 48.0;
+        let bx = (VIEWPORT_WIDTH as f32 - banner_w) / 2.0;
+        let by = VIEWPORT_HEIGHT as f32 - 120.0;
+
+        // Ombre
+        draw_rectangle(
+            bx + 3.0, by + 3.0, banner_w, banner_h,
+            Color::new(0.0, 0.0, 0.0, 0.5 * alpha),
+        );
+        // Fond vert sombre
+        draw_rectangle(
+            bx, by, banner_w, banner_h,
+            Color::new(0.05, 0.25, 0.1, 0.9 * alpha),
+        );
+        // Bordure verte vive
+        draw_rectangle_lines(
+            bx, by, banner_w, banner_h, 2.0,
+            Color::new(0.22, 1.0, 0.53, alpha),
+        );
+
+        // Ligne 1 : ✓ OBJECTIF ATTEINT
+        let check = "✓  OBJECTIF ATTEINT";
+        let cw = measure_text(check, None, 16, 1.0).width * pulse;
+        draw_text(
+            check,
+            (VIEWPORT_WIDTH as f32 - cw) / 2.0,
+            by + 20.0,
+            16.0 * pulse,
+            Color::new(0.22, 1.0, 0.53, alpha),
+        );
+
+        // Ligne 2 : nom de l'objectif
+        let tw = measure_text(title, None, 14, 1.0).width * pulse;
+        draw_text(
+            title,
+            (VIEWPORT_WIDTH as f32 - tw) / 2.0,
+            by + 40.0,
+            14.0 * pulse,
+            Color::new(1.0, 1.0, 1.0, alpha),
+        );
+    }
+}
+
+/// Formate le texte d'une condition pour l'affichage HUD.
+#[allow(dead_code)]
+fn format_condition_hud(cond: &crate::scenario_loader::JsonCondition, state: &GameState) -> String {
+    match cond.condition_type.as_str() {
+        "DestroyAsteroids" => {
+            let current = state.meteors_destroyed.min(cond.required as i32);
+            format!("Meteors: {}/{}", current, cond.required)
+        }
+        "CollectMinerals" => {
+            let current = state.resources.minerals.min(cond.required as i32);
+            format!("Minerals: {}/{}", current, cond.required)
+        }
+        "ReachReputation" => {
+            let current = state.resources.reputation.min(cond.required as f64);
+            format!("Reputation: {:.0}/{}", current, cond.required)
+        }
+        "DockAtStation" => {
+            format!("Dock: {}/{}", state.docking_count.min(cond.required as i32), cond.required)
+        }
+        "UnlockMovementMode" => {
+            let unlocked = state
+                .unlocked_modes
+                .get(cond.mode as usize)
+                .copied()
+                .unwrap_or(false);
+            format!("Mode {}: {}", cond.mode, if unlocked { "DONE" } else { "locked" })
+        }
+        "SurviveTime" => format!("Survive: play the game"),
+        "PrecisionShooting" => {
+            if state.bullets_fired == 0 {
+                format!("Precision: 0 hits (need {})", cond.hits)
+            } else {
+                let hits = state.bullets_fired - state.bullets_lost;
+                let precision = 100.0 * (1.0 - state.bullets_lost as f64 / state.bullets_fired as f64);
+                format!("Hits: {} ({}%)", hits, precision as i32)
+            }
+        }
+        "BuyUpgrade" => {
+            let level = match cond.track.as_str() {
+                "Fuel" => state.resources.fuel_level,
+                "Ammo" => state.resources.ammo_level,
+                "Cargo" => state.resources.cargo_level,
+                _ => 0,
+            };
+            format!("{}: Lvl {}/{}", cond.track, level, cond.level)
+        }
+        _ => cond.condition_type.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

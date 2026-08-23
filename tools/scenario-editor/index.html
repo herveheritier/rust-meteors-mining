@@ -165,6 +165,36 @@
   .form-control:focus { outline: none; border-color: var(--accent); }
   textarea.form-control { resize: vertical; min-height: 60px; }
 
+  .sidebar-subtitle {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--orange);
+    margin: 0 0 10px;
+    font-weight: 600;
+  }
+  .start-map-canvas {
+    width: 100%;
+    height: auto;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: block;
+    margin-bottom: 6px;
+  }
+  .start-status {
+    font-size: 11px;
+    font-family: var(--mono);
+    padding: 5px 8px;
+    border-radius: 6px;
+    margin-bottom: 5px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .start-status.docked { color: var(--accent); background: rgba(57,255,136,0.08); border-color: rgba(57,255,136,0.3); }
+  .start-status.flying { color: var(--orange); background: rgba(255,160,64,0.08); border-color: rgba(255,160,64,0.3); }
+  .start-map-hint { font-size: 10px; color: var(--muted); line-height: 1.4; }
+
   /* GRAPH CANVAS VIEW */
   .view-container { flex: 1; display: none; position: relative; overflow: hidden; }
   .view-container.active { display: flex; flex-direction: column; }
@@ -400,6 +430,30 @@
         <label>Capacité Bouclier (0.0 = Aucun)</label>
         <input type="number" step="0.5" id="scen-shield" class="form-control" value="0.0" onchange="updateScenarioMeta()">
       </div>
+      <hr style="border:0; border-top:1px solid var(--border-soft); margin:10px 0;">
+      <div class="sidebar-subtitle">🚀 Position de départ du vaisseau</div>
+      <div class="form-group">
+        <label>Position X (0 = centre, station)</label>
+        <input type="number" step="10" id="scen-pos-x" class="form-control" value="0" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Position Y (0 = centre, station)</label>
+        <input type="number" step="10" id="scen-pos-y" class="form-control" value="0" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Orientation (degrés, 0 = droite)</label>
+        <input type="number" step="15" id="scen-orient" class="form-control" value="0" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Vitesse (0 = immobile)</label>
+        <input type="number" step="0.5" id="scen-velocity" class="form-control" value="0" onchange="updateScenarioMeta()">
+      </div>
+      <div class="form-group">
+        <label>Aperçu sur la carte du monde</label>
+        <canvas id="scen-startmap" width="240" height="200" class="start-map-canvas"></canvas>
+        <div id="scen-start-status" class="start-status"></div>
+        <div class="start-map-hint">⦿ station (0,0) · zone d'accostage (rayon 15) · hors carte → marqueur rouge</div>
+      </div>
     </div>
 
     <div class="sidebar-section">
@@ -479,7 +533,7 @@ let currentScenario = {
   name: "CAMPAGNE DE PROSPECTION",
   description: "Séquence d'objectifs guidée pour devenir un prospecteur chevronné.",
   rules_color: "0xFF39FF88",
-  initial_state: { start_fuel: 100, start_ammo: 30, start_minerals: 0, start_reputation: 0, start_mode: 0, lives: 0, shield_capacity: 0 },
+  initial_state: { start_fuel: 100, start_ammo: 30, start_minerals: 0, start_reputation: 0, start_mode: 0, lives: 0, shield_capacity: 0, start_pos_x: 0, start_pos_y: 0, start_orientation: 0, start_velocity: 0 },
   objectives: []
 };
 
@@ -571,6 +625,11 @@ function populateFormMeta() {
   document.getElementById('scen-minerals').value = currentScenario.initial_state?.start_minerals ?? 0;
   document.getElementById('scen-lives').value = currentScenario.initial_state?.lives ?? 0;
   document.getElementById('scen-shield').value = currentScenario.initial_state?.shield_capacity ?? 0.0;
+  document.getElementById('scen-pos-x').value = currentScenario.initial_state?.start_pos_x ?? 0;
+  document.getElementById('scen-pos-y').value = currentScenario.initial_state?.start_pos_y ?? 0;
+  document.getElementById('scen-orient').value = currentScenario.initial_state?.start_orientation ?? 0;
+  document.getElementById('scen-velocity').value = currentScenario.initial_state?.start_velocity ?? 0;
+  renderStartMap();
 }
 
 function updateScenarioMeta() {
@@ -585,9 +644,125 @@ function updateScenarioMeta() {
     start_reputation: 0.0,
     start_mode: 0,
     lives: parseInt(document.getElementById('scen-lives').value) || 0,
-    shield_capacity: parseFloat(document.getElementById('scen-shield').value) || 0.0
+    shield_capacity: parseFloat(document.getElementById('scen-shield').value) || 0.0,
+    start_pos_x: parseFloat(document.getElementById('scen-pos-x').value) || 0,
+    start_pos_y: parseFloat(document.getElementById('scen-pos-y').value) || 0,
+    start_orientation: parseFloat(document.getElementById('scen-orient').value) || 0,
+    start_velocity: parseFloat(document.getElementById('scen-velocity').value) || 0
   };
+  renderStartMap();
   validateDAG();
+}
+
+// ─── Mini-carte de la position de départ ────────────────────────────────────
+// Zone dessinable du monde (DRAW_MINX..DRAW_MAXX / DRAW_MINY..DRAW_MAXY de
+// `src/config.rs`) : la station est en (0,0), en bas-gauche de la zone
+// visible. La carte reflète la règle côté jeu (`scenario::start_docked`) :
+// position (0,0) ET vitesse nulle = départ à quai, sinon départ en vol.
+const MAP_WORLD = { minX: -100, maxX: 1060, minY: -100, maxY: 640 };
+const STATION_RADIUS = 110; // STATION_INNER_RADIUS (anneau d'accostage)
+const DOCK_DISTANCE = 15;   // STATION_DOCK_DISTANCE (zone d'accostage)
+
+function renderStartMap() {
+  const canvas = document.getElementById('scen-startmap');
+  const status = document.getElementById('scen-start-status');
+  if (!canvas || !status) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width;
+  const H = canvas.height;
+  const pad = 16;
+  const worldW = MAP_WORLD.maxX - MAP_WORLD.minX; // 1160
+  const worldH = MAP_WORLD.maxY - MAP_WORLD.minY; // 740
+  const scale = Math.min((W - 2 * pad) / worldW, (H - 2 * pad) / worldH);
+  const ox = (W - worldW * scale) / 2;
+  const oy = (H - worldH * scale) / 2;
+  const sx = (wx) => ox + (wx - MAP_WORLD.minX) * scale;
+  const sy = (wy) => oy + (MAP_WORLD.maxY - wy) * scale;
+
+  const readNum = (id) => parseFloat(document.getElementById(id).value) || 0;
+  const x = readNum('scen-pos-x');
+  const y = readNum('scen-pos-y');
+  const orient = readNum('scen-orient');
+  const velocity = readNum('scen-velocity');
+
+  // fond
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(15,19,28,0.9)';
+  ctx.fillRect(0, 0, W, H);
+
+  // grille (pas de 200 unités monde)
+  ctx.strokeStyle = 'rgba(38,46,63,0.5)';
+  ctx.lineWidth = 1;
+  for (let gx = Math.ceil(MAP_WORLD.minX / 200) * 200; gx <= MAP_WORLD.maxX; gx += 200) {
+    ctx.beginPath();
+    ctx.moveTo(sx(gx), pad - 4);
+    ctx.lineTo(sx(gx), H - pad + 4);
+    ctx.stroke();
+  }
+  for (let gy = Math.ceil(MAP_WORLD.minY / 200) * 200; gy <= MAP_WORLD.maxY; gy += 200) {
+    ctx.beginPath();
+    ctx.moveTo(pad - 4, sy(gy));
+    ctx.lineTo(W - pad + 4, sy(gy));
+    ctx.stroke();
+  }
+
+  // axes passant par la station (0,0)
+  ctx.strokeStyle = 'rgba(139,147,167,0.35)';
+  ctx.beginPath(); ctx.moveTo(sx(0), pad - 4); ctx.lineTo(sx(0), H - pad + 4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(pad - 4, sy(0)); ctx.lineTo(W - pad + 4, sy(0)); ctx.stroke();
+
+  // zone d'accostage (rayon STATION_DOCK_DISTANCE) puis anneau de la station
+  ctx.beginPath();
+  ctx.arc(sx(0), sy(0), Math.max(DOCK_DISTANCE * scale, 2), 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(57,255,136,0.25)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(sx(0), sy(0), STATION_RADIUS * scale, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(57,255,136,0.9)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(sx(0), sy(0), 3, 0, Math.PI * 2);
+  ctx.fillStyle = '#39ff88';
+  ctx.fill();
+
+  // marqueur du vaisseau (triangle orienté) : clampé à la zone dessinable,
+  // rouge s'il est hors de la zone visible
+  const px = sx(x);
+  const py = sy(y);
+  const inView = px >= pad && px <= W - pad && py >= pad && py <= H - pad;
+  const cx = Math.min(Math.max(px, pad + 6), W - pad - 6);
+  const cy = Math.min(Math.max(py, pad + 6), H - pad - 6);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-orient * Math.PI / 180); // 0 = droite ; positif = anti-horaire (comme le jeu)
+  ctx.fillStyle = inView ? '#ffd700' : '#ff5c5c';
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(9, 0);
+  ctx.lineTo(-6, -6);
+  ctx.lineTo(-3, 0);
+  ctx.lineTo(-6, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // étiquette des coordonnées
+  ctx.font = '10px SFMono-Regular, Consolas, monospace';
+  ctx.fillStyle = inView ? 'rgba(230,233,240,0.9)' : 'rgba(255,92,92,0.95)';
+  ctx.fillText(inView ? `(${x}, ${y})` : `(${x}, ${y}) · hors carte`, pad + 4, H - pad - 4);
+
+  // statut : à quai ou en vol (règle `scenario::start_docked`)
+  if (x === 0 && y === 0 && velocity === 0) {
+    status.textContent = "🛰️ DÉPART À QUAI — liens d'accostage attachés";
+    status.className = 'start-status docked';
+  } else {
+    const velText = velocity !== 0 ? ` · vitesse ${velocity}` : '';
+    status.textContent = `🚀 DÉPART EN VOL — (${x}, ${y})${velText}`;
+    status.className = 'start-status flying';
+  }
 }
 
 // Validation du DAG (Absence de cycle)
@@ -1086,8 +1261,11 @@ function generateRustCode() {
   const codeBox = document.getElementById('rust-code-preview');
   let code = `//! Code généré automatiquement par l'Éditeur de Scénarios DAG.
 //! Fichier : src/scenario_objectives.rs
-
-use std::collections::HashSet;
+//!
+//! NB : ce module est historique - les objectifs sont désormais chargés
+//! dynamiquement depuis les fichiers JSON (scenario_loader.rs). Les
+//! éléments ci-dessous sont conservés pour la compatibilité de l'outil
+//! d'édition qui génère ce fichier.
 
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
@@ -1115,6 +1293,7 @@ pub enum ObjectiveReward {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub struct ObjectiveSpec {
     pub id: &'static str,
     pub title: &'static str,
@@ -1125,6 +1304,7 @@ pub struct ObjectiveSpec {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub struct ScenarioChain {
     pub id: &'static str,
     pub name: &'static str,
@@ -1133,6 +1313,7 @@ pub struct ScenarioChain {
     pub objectives: &'static [ObjectiveSpec],
 }
 
+#[allow(dead_code)]
 pub const GENERATED_OBJECTIVES: &[ObjectiveSpec] = &[\n`;
 
   currentScenario.objectives.forEach(obj => {
@@ -1151,7 +1332,7 @@ pub const GENERATED_OBJECTIVES: &[ObjectiveSpec] = &[\n`;
   });
 
   code += `];\n\n`;
-  code += `pub const GENERATED_SCENARIO_CHAIN: ScenarioChain = ScenarioChain {\n`;
+  code += `#[allow(dead_code)]\npub const GENERATED_SCENARIO_CHAIN: ScenarioChain = ScenarioChain {\n`;
   code += `    id: "${currentScenario.id || 'scenario_custom'}",\n`;
   code += `    name: "${escapeRustStr(currentScenario.name || 'SCÉNARIO PERSONNALISÉ')}",\n`;
   code += `    description: "${escapeRustStr(currentScenario.description || '')}",\n`;

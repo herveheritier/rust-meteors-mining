@@ -53,6 +53,10 @@ pub enum ScenarioId {
     Progression,
     /// Survie : vies, bouclier et multiplicateur de dégâts - sans économie.
     Survival,
+    /// Scénario chargé depuis un fichier JSON (scenarios/*.scenario.json,
+    /// éditeur de scénarios DAG). L'index désigne le scénario dans la
+    /// liste `LOADED_SCENARIOS` du module `scenario_loader`.
+    Custom(usize),
 }
 
 /// Ressources économiques du joueur (scénarios à économie) et de survie
@@ -285,6 +289,35 @@ pub fn scenario(id: ScenarioId) -> Scenario {
         ScenarioId::FreePlay => FREE_PLAY_SCENARIO,
         ScenarioId::Progression => PROGRESSION_SCENARIO,
         ScenarioId::Survival => SURVIVAL_SCENARIO,
+        ScenarioId::Custom(i) => {
+            *crate::scenario_loader::loaded_rules(i).unwrap_or(&FREE_PLAY_SCENARIO)
+        }
+    }
+}
+
+/// Nombre total de scénarios disponibles (3 built-in + N chargés depuis JSON).
+pub fn total_scenario_count() -> usize {
+    3 + crate::scenario_loader::loaded_count()
+}
+
+/// Convertit un index global (0 = FreePlay, 1 = Progression, 2 = Survival,
+/// 3+ = custom) en `ScenarioId`. Renvoie `FreePlay` si l'index est hors bornes.
+pub fn scenario_id_from_index(index: usize) -> ScenarioId {
+    match index {
+        0 => ScenarioId::FreePlay,
+        1 => ScenarioId::Progression,
+        2 => ScenarioId::Survival,
+        i => ScenarioId::Custom(i - 3),
+    }
+}
+
+/// Convertit un `ScenarioId` en index global (voir `scenario_id_from_index`).
+pub fn scenario_index(id: ScenarioId) -> usize {
+    match id {
+        ScenarioId::FreePlay => 0,
+        ScenarioId::Progression => 1,
+        ScenarioId::Survival => 2,
+        ScenarioId::Custom(i) => i + 3,
     }
 }
 
@@ -298,6 +331,12 @@ pub fn has_economy(state: &GameState) -> bool {
 /// vies : `lives > 0` (Survival), sinon classique (FreePlay/Progression).
 pub fn has_survival(state: &GameState) -> bool {
     scenario(state.scenario).lives > 0
+}
+
+/// Indique si un `ScenarioId` est un scénario custom (chargé depuis JSON).
+#[allow(dead_code)]
+pub fn is_custom(id: ScenarioId) -> bool {
+    matches!(id, ScenarioId::Custom(_))
 }
 
 // ─── Règles affichées (écran titre) ─────────────────────────────────────────
@@ -341,6 +380,20 @@ pub fn scenario_rules(id: ScenarioId) -> Vec<RuleSegment> {
     match id {
         ScenarioId::FreePlay => {
             label(&mut out, "aucun coût - carburant/munitions illimités, tous les modes débloqués");
+        }
+        ScenarioId::Custom(_) => {
+            if s.lives > 0 {
+                value(&mut out, s.lives.to_string());
+                label(&mut out, &format!(
+                    " vie{}, bouclier ",
+                    if s.lives > 1 { "s" } else { "" }
+                ));
+                value(&mut out, format!("{}", s.shield_capacity));
+            } else if s.has_economy {
+                label(&mut out, "économie personnalisée");
+            } else {
+                label(&mut out, "mode personnalisé");
+            }
         }
         ScenarioId::Progression => {
             label(&mut out, "modes payants : ");
@@ -432,6 +485,29 @@ pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
     };
     match state.scenario {
         ScenarioId::FreePlay => vec![label("aucune sauvegarde (jeu libre)")],
+        ScenarioId::Custom(_) => {
+            let mut out = vec![];
+            if has_economy(state) {
+                out.push(label("minerais "));
+                out.push(value(state.resources.minerals.to_string()));
+            }
+            if has_survival(state) {
+                if !out.is_empty() {
+                    out.push(label(" - "));
+                }
+                out.push(value(state.resources.lives.to_string()));
+                out.push(label(if state.resources.lives > 1 {
+                    " vies - bouclier "
+                } else {
+                    " vie - bouclier "
+                }));
+                out.push(value(format!("{:.1}", state.resources.shield)));
+            }
+            if out.is_empty() {
+                out.push(label("(pas de progression)").to_owned());
+            }
+            out
+        }
         ScenarioId::Progression => {
             let unlocked = state.unlocked_modes.iter().filter(|&&u| u).count();
             let mut out = vec![
@@ -479,6 +555,7 @@ pub fn start_mode(id: ScenarioId) -> i32 {
         ScenarioId::FreePlay => MOVING_MODE_DIRECTIONAL,
         ScenarioId::Progression => MOVING_MODE_REALISTIC,
         ScenarioId::Survival => MOVING_MODE_DIRECTIONAL,
+        ScenarioId::Custom(_) => MOVING_MODE_REALISTIC,
     }
 }
 
@@ -491,25 +568,24 @@ pub fn select_scenario(state: &mut GameState, id: ScenarioId) {
 }
 
 /// Bascule de scénario (écran titre, touche N) - jeu libre → Progression →
-/// Survival → jeu libre - et applique ses règles de départ.
+/// Survival → (scénarios custom) → jeu libre - et applique ses règles de
+/// départ. Les scénarios JSON chargés depuis `scenarios/` sont inclus dans
+/// la boucle après les 3 built-in.
 pub fn cycle_scenario(state: &mut GameState) {
-    let next = match state.scenario {
-        ScenarioId::FreePlay => ScenarioId::Progression,
-        ScenarioId::Progression => ScenarioId::Survival,
-        ScenarioId::Survival => ScenarioId::FreePlay,
-    };
-    select_scenario(state, next);
+    let idx = scenario_index(state.scenario);
+    let total = total_scenario_count();
+    let next_idx = (idx + 1) % total;
+    select_scenario(state, scenario_id_from_index(next_idx));
 }
 
 /// Bascule au scénario **précédent** (écran titre, touche B - inverse de N) :
-/// jeu libre → Survival → Progression → jeu libre.
+/// jeu libre → (scénarios custom en inverse) → Survival → Progression →
+/// jeu libre.
 pub fn cycle_scenario_back(state: &mut GameState) {
-    let prev = match state.scenario {
-        ScenarioId::FreePlay => ScenarioId::Survival,
-        ScenarioId::Progression => ScenarioId::FreePlay,
-        ScenarioId::Survival => ScenarioId::Progression,
-    };
-    select_scenario(state, prev);
+    let idx = scenario_index(state.scenario);
+    let total = total_scenario_count();
+    let prev_idx = if idx == 0 { total - 1 } else { idx - 1 };
+    select_scenario(state, scenario_id_from_index(prev_idx));
 }
 
 /// Applique les règles de départ du scénario courant : ressources initiales,
@@ -524,6 +600,52 @@ pub fn apply_start(state: &mut GameState) {
     match state.scenario {
         ScenarioId::FreePlay | ScenarioId::Survival => {
             // jeu libre : aucune ressource ; Survival : vies + bouclier pleins
+            state.resources = Resources {
+                lives: s.lives,
+                shield: s.shield_capacity,
+                ..Resources::default()
+            };
+            state.unlocked_modes = [true; MOVING_MODE_COUNT as usize];
+        }
+        ScenarioId::Custom(ci) if s.has_economy => {
+            // Scénario custom avec économie : comme Progression (minerais,
+            // carburant/munitions payants, armes à acheter). Les valeurs
+            // initiales (minerals, reputation) viennent du JSON éditeur.
+            let (json_minerals, json_reputation) = crate::scenario_loader
+                ::loaded_data(ci)
+                .map(|d| (
+                    d.json.initial_state.start_minerals,
+                    d.json.initial_state.start_reputation,
+                ))
+                .unwrap_or((0, 0.0));
+            state.resources = Resources {
+                fuel: s.start_fuel,
+                minerals: json_minerals,
+                reputation: json_reputation,
+                lives: s.lives,
+                shield: s.shield_capacity,
+                fuel_level: 0,
+                ammo_level: 0,
+                cargo_level: 0,
+                weapon_ammo: [0; WEAPON_SLOTS],
+                weapon_owned: [false; WEAPON_SLOTS],
+            };
+            for i in 0..weapon_slot_count() {
+                if weapon_spec(i).cost == 0 {
+                    state.resources.weapon_owned[i] = true;
+                    state.resources.weapon_ammo[i] = s.start_ammo;
+                }
+            }
+            let start = start_mode(ScenarioId::Progression);
+            state.unlocked_modes = [false; MOVING_MODE_COUNT as usize];
+            for (i, unlocked) in state.unlocked_modes.iter_mut().enumerate() {
+                *unlocked = MODE_COSTS[i] == 0 || i as i32 == start;
+            }
+            state.moving_mode = start;
+            state.player.cargo_size = cargo_capacity(state);
+        }
+        ScenarioId::Custom(_) => {
+            // Scénario custom sans économie : comme FreePlay/Survival
             state.resources = Resources {
                 lives: s.lives,
                 shield: s.shield_capacity,
@@ -569,6 +691,49 @@ pub fn apply_start(state: &mut GameState) {
             state.player.cargo_size = cargo_capacity(state);
         }
     }
+    // Position / orientation / vitesse initiales du vaisseau (scénarios
+    // custom, valeurs de l'éditeur). Les scénarios built-in démarrent toujours
+    // au centre de la station (0,0, orientation 0, immobile) : on remet les
+    // champs à zéro pour ne pas garder les valeurs d'un scénario custom
+    // précédemment sélectionné.
+    match state.scenario {
+        ScenarioId::Custom(ci) => {
+            if let Some(data) = crate::scenario_loader::loaded_data(ci) {
+                let ist = &data.json.initial_state;
+                state.initial_ship_x = ist.start_pos_x;
+                state.initial_ship_y = ist.start_pos_y;
+                state.initial_ship_orientation = ist.start_orientation;
+                state.initial_ship_velocity = ist.start_velocity;
+            }
+        }
+        _ => {
+            state.initial_ship_x = 0.0;
+            state.initial_ship_y = 0.0;
+            state.initial_ship_orientation = 0.0;
+            state.initial_ship_velocity = 0.0;
+        }
+    }
+    // Initialiser le suivi des objectifs DAG pour les scénarios custom
+    match state.scenario {
+        ScenarioId::Custom(ci) => {
+            state.objective_tracker.init_for_scenario(ci);
+        }
+        _ => {
+            state.objective_tracker.reset();
+        }
+    }
+}
+
+/// Le vaisseau démarre-t-il **à quai** (liens d'accostage attachés, statut
+/// « DOCKED ») ? Oui seulement s'il est **immobile au centre de la station** :
+/// position initiale (0,0) ET vitesse nulle. Une position initiale différente
+/// de 0 (scénario custom de l'éditeur) ou une vitesse initiale non nulle
+/// signifient que le vaisseau démarre en vol, hors de la base - pas de liens,
+/// pas d'accostage (la mire réapparaîtra au retour, voir
+/// `game::update_docking_guide`). Appliquée au lancement de la partie
+/// (`main.rs`), où `dock_links` et `player_at_station` en sont dérivés.
+pub fn start_docked(state: &GameState) -> bool {
+    state.initial_ship_x == 0.0 && state.initial_ship_y == 0.0 && state.initial_ship_velocity == 0.0
 }
 
 // ─── Carburant et munitions ─────────────────────────────────────────────────
@@ -1482,6 +1647,7 @@ const PROG_UP_FUEL_KEY: &str = "prog_up_fuel";
 const PROG_UP_AMMO_KEY: &str = "prog_up_ammo";
 const PROG_UP_CARGO_KEY: &str = "prog_up_cargo";
 const PROG_WEAPONS_KEY: &str = "prog_weapons";
+const PROG_OBJECTIVES_KEY: &str = "prog_objectives";
 
 /// Masque binaire des modes de déplacement débloqués (bit i = mode i).
 fn unlocked_mask(state: &GameState) -> i32 {
@@ -1516,7 +1682,7 @@ fn weapons_owned_mask(state: &GameState) -> i32 {
 /// réécrites (une partie Progression ne vide pas la sauvegarde Survival, et
 /// inversement). Version chemin explicite (tests).
 pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
-    crate::persist::set_i32_to(path, SCENARIO_KEY, state.scenario as i32)?;
+    crate::persist::set_i32_to(path, SCENARIO_KEY, scenario_index(state.scenario) as i32)?;
     if has_economy(state) {
         crate::persist::set_i32_to(path, PROG_MINERALS_KEY, state.resources.minerals)?;
         crate::persist::set_i32_to(path, PROG_MODES_KEY, unlocked_mask(state))?;
@@ -1541,6 +1707,11 @@ pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
             (state.resources.shield * 10.0).round() as i32,
         )?;
     }
+    // Objectifs DAG complétés (scénarios custom) : IDs séparés par virgules
+    if crate::scenario::is_custom(state.scenario) && state.objective_tracker.has_objectives() {
+        let completed: Vec<&str> = state.objective_tracker.completed_ids.iter().map(|s| s.as_str()).collect();
+        crate::persist::set_str_to(path, PROG_OBJECTIVES_KEY, &completed.join(","))?;
+    }
     Ok(())
 }
 
@@ -1562,6 +1733,14 @@ pub fn load_scenario_from(path: &Path) -> Option<ScenarioId> {
         Some(0) => Some(ScenarioId::FreePlay),
         Some(1) => Some(ScenarioId::Progression),
         Some(2) => Some(ScenarioId::Survival),
+        Some(i @ 3..) => {
+            let custom_idx = (i as usize) - 3;
+            if custom_idx < crate::scenario_loader::loaded_count() {
+                Some(ScenarioId::Custom(custom_idx))
+            } else {
+                None // scénario custom supprimé depuis la dernière session
+            }
+        }
         _ => None,
     }
 }
@@ -1655,6 +1834,22 @@ pub fn load_progression_from(path: &Path, state: &mut GameState) {
             state.resources.shield = (shield as f64 / 10.0).clamp(0.0, s.shield_capacity);
         }
     }
+    // Objectifs DAG complétés (scénarios custom) : restaurer depuis la
+    // sauvegarde (IDs séparés par virgules)
+    if is_custom(state.scenario) && state.objective_tracker.has_objectives() {
+        if let Some(ids_str) = crate::persist::get_str_from(path, PROG_OBJECTIVES_KEY) {
+            for id in ids_str.split(',') {
+                let id = id.trim().to_string();
+                if !id.is_empty() {
+                    state.objective_tracker.completed_ids.insert(id.clone());
+                    // Marquer l'objectif comme complété dans le tracker
+                    if let Some(obj) = state.objective_tracker.objectives.iter_mut().find(|o| o.id == *id) {
+                        obj.completed = true;
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Surimpose la progression enregistrée dans le fichier de config utilisateur
@@ -1690,11 +1885,73 @@ pub fn reset_progression_from(path: &Path, state: &mut GameState) {
         PROG_WEAPONS_KEY,
         PROG_LIVES_KEY,
         PROG_SHIELD_KEY,
+        PROG_OBJECTIVES_KEY,
         "moving_mode",
     ] {
         let _ = crate::persist::delete_key_from(path, key);
     }
     apply_start(state);
+}
+
+/// Y a-t-il une progression **enregistrée** pour le scénario courant ?
+///
+/// Détecte une sauvegarde **réelle** (le joueur a joué et progressé), pas une
+/// simple sélection du scénario à l'écran titre (qui écrit déjà les clés
+/// `prog_*` aux valeurs du départ) : `state` contient la progression
+/// restaurée (`load_progression`) - ses valeurs sont comparées à celles d'un
+/// départ frais (`apply_start` sur un état vierge) ; une sauvegarde nulle
+/// (valeurs identiques au départ) est ignorée, pour ne pas proposer un choix
+/// inutile au lancement. En jeu libre, jamais de sauvegarde. Utilisé à
+/// l'écran titre pour proposer « poursuivre le scénario » ou « repartir du
+/// début » au lancement (`title.rs`).
+pub fn has_saved_progression(state: &GameState) -> bool {
+    has_saved_progression_from(&crate::persist::config_path(), state)
+}
+
+/// Version chemin explicite de `has_saved_progression` (tests) : mêmes règles,
+/// et en plus les **objectifs DAG complétés** (scénarios custom) restaurés
+/// depuis la sauvegarde (`prog_objectives`) - des étapes validées constituent
+/// une progression même si les ressources sont revenues à leur départ (ex
+/// récompenses dépensées).
+pub fn has_saved_progression_from(path: &Path, state: &GameState) -> bool {
+    let s = scenario(state.scenario);
+    // jeu libre : jamais de sauvegarde
+    if !s.has_economy && s.lives == 0 && !is_custom(state.scenario) {
+        return false;
+    }
+    // objectifs DAG complétés (scénarios custom) : une sauvegarde avec des
+    // étapes validées est réelle même si les ressources sont revenues au
+    // départ
+    if is_custom(state.scenario) {
+        if let Some(ids) = crate::persist::get_str_from(path, PROG_OBJECTIVES_KEY) {
+            if !ids.trim().is_empty() {
+                return true;
+            }
+        }
+    }
+    // départ frais : les valeurs de référence pour comparer
+    let mut fresh = GameState::new();
+    fresh.scenario = state.scenario;
+    apply_start(&mut fresh);
+    if s.has_economy {
+        if state.resources.minerals != fresh.resources.minerals
+            || (state.resources.reputation - fresh.resources.reputation).abs() > 1e-9
+            || state.resources.fuel_level != fresh.resources.fuel_level
+            || state.resources.ammo_level != fresh.resources.ammo_level
+            || state.resources.cargo_level != fresh.resources.cargo_level
+            || state.unlocked_modes != fresh.unlocked_modes
+            || state.resources.weapon_owned != fresh.resources.weapon_owned
+        {
+            return true;
+        }
+    }
+    if s.lives > 0 {
+        // une vie perdue ou un bouclier entamé : le joueur a joué
+        if state.resources.lives < s.lives || (state.resources.shield - s.shield_capacity).abs() > 1e-9 {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -1753,6 +2010,29 @@ mod tests {
         assert!(surv.contains("bouclier 3"));
         assert!(surv.contains("×1"));
         assert!(surv.contains("2 s d'invulnérabilité"));
+    }
+
+    #[test]
+    fn ship_starts_docked_only_when_at_rest_at_station_center() {
+        // le vaisseau démarre à quai (liens attachés, « DOCKED ») seulement
+        // s'il est **immobile au centre de la station** : position (0,0) et
+        // vitesse nulle - voir `start_docked`, appliqué au lancement
+        let mut s = GameState::new();
+        assert!(start_docked(&s)); // valeurs par défaut : centre, immobile
+        // position initiale différente de 0 : le vaisseau démarre en vol
+        s.initial_ship_x = 300.0;
+        assert!(!start_docked(&s));
+        s.initial_ship_x = 0.0;
+        s.initial_ship_y = -200.0;
+        assert!(!start_docked(&s));
+        s.initial_ship_y = 0.0;
+        // vitesse initiale non nulle au centre : pas à quai non plus
+        s.initial_ship_velocity = 2.0;
+        assert!(!start_docked(&s));
+        // l'orientation seule n'empêche pas le démarrage à quai
+        s.initial_ship_velocity = 0.0;
+        s.initial_ship_orientation = 90.0;
+        assert!(start_docked(&s));
     }
 
     #[test]
@@ -1905,8 +2185,8 @@ mod tests {
 
     #[test]
     fn cycle_scenario_toggles_and_reapplies_start() {
-        // jeu libre → Progression → Survival → jeu libre (touche N) ; chaque
-        // bascule réapplique les règles de départ du scénario
+        // jeu libre → Progression → Survival → (customs) → jeu libre (touche N)
+        // ; chaque bascule réapplique les règles de départ du scénario
         let mut s = GameState::new();
         cycle_scenario(&mut s);
         assert_eq!(s.scenario, ScenarioId::Progression);
@@ -1916,7 +2196,11 @@ mod tests {
         assert_eq!(s.resources.lives, SURVIVAL_SCENARIO.lives);
         assert_eq!(s.resources.shield, SURVIVAL_SCENARIO.shield_capacity);
         assert!(s.unlocked_modes.iter().all(|&u| u));
-        cycle_scenario(&mut s);
+        // on cycle jusqu'à revenir à FreePlay (les customs éventuels sont traversés)
+        let total = total_scenario_count();
+        for _ in 2..total {
+            cycle_scenario(&mut s);
+        }
         assert_eq!(s.scenario, ScenarioId::FreePlay);
         assert_eq!(s.resources, Resources::default());
         assert!(s.unlocked_modes.iter().all(|&u| u));
@@ -1924,16 +2208,15 @@ mod tests {
 
     #[test]
     fn cycle_scenario_back_goes_to_previous() {
-        // touche B : inverse de N - jeu libre → Survival → Progression
+        // touche B : inverse de N - on recule jusqu'à revenir à FreePlay
         let mut s = GameState::new();
-        cycle_scenario_back(&mut s);
-        assert_eq!(s.scenario, ScenarioId::Survival);
-        assert_eq!(s.resources.lives, SURVIVAL_SCENARIO.lives);
-        cycle_scenario_back(&mut s);
-        assert_eq!(s.scenario, ScenarioId::Progression);
-        assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
-        cycle_scenario_back(&mut s);
+        let total = total_scenario_count();
+        for _ in 0..total {
+            cycle_scenario_back(&mut s);
+        }
         assert_eq!(s.scenario, ScenarioId::FreePlay);
+        assert_eq!(s.resources, Resources::default());
+        assert!(s.unlocked_modes.iter().all(|&u| u));
     }
 
     #[test]
@@ -2650,6 +2933,53 @@ mod tests {
         assert_eq!(get_i32_from(&p, "prog_minerals"), Some(77)); // conservés
         // seul REALISTIC est débloqué au départ (INERTIAL est payant)
         assert_eq!(get_i32_from(&p, "prog_modes"), Some(0b1000));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn has_saved_progression_detects_only_real_saves() {
+        // une sauvegarde **réelle** (progression différente du départ) est
+        // détectée ; un scénario seulement sélectionné à l'écran titre (les
+        // clés `prog_*` sont écrites aux valeurs du départ) ne l'est pas -
+        // pas de choix « poursuivre / repartir » inutile au lancement
+        let p = temp_path("hassave.cfg");
+        let _ = std::fs::remove_file(&p);
+        // Progression jamais jouée : pas de sauvegarde
+        let fresh = progression_state();
+        assert!(!has_saved_progression_from(&p, &fresh));
+        // même après un cycle écran titre (select + save_progression) : les
+        // clés existent mais aux valeurs du départ - toujours pas de sauvegarde
+        save_progression_to(&p, &fresh).unwrap();
+        assert!(!has_saved_progression_from(&p, &fresh));
+        // joué (minerais gagnés) : la sauvegarde est réelle
+        let mut played = fresh.clone();
+        played.resources.minerals = 42;
+        save_progression_to(&p, &played).unwrap();
+        assert!(has_saved_progression_from(&p, &played));
+        // détectée aussi sur l'état restauré (ex écran titre après relance)
+        let mut restored = progression_state();
+        load_progression_from(&p, &mut restored);
+        assert!(has_saved_progression_from(&p, &restored));
+        // jeu libre : jamais de sauvegarde
+        assert!(!has_saved_progression_from(&p, &GameState::new()));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn has_saved_progression_detects_survival_damage() {
+        // Survival : une vie perdue ou un bouclier entamé = sauvegarde réelle ;
+        // départ complet (vies et bouclier pleins) = pas de sauvegarde
+        let p = temp_path("hassavesurv.cfg");
+        let _ = std::fs::remove_file(&p);
+        let fresh = survival_state();
+        assert!(!has_saved_progression_from(&p, &fresh));
+        let mut played = fresh.clone();
+        played.resources.shield = 2.5; // impact subi
+        save_progression_to(&p, &played).unwrap();
+        assert!(has_saved_progression_from(&p, &played));
+        let mut restored = survival_state();
+        load_progression_from(&p, &mut restored);
+        assert!(has_saved_progression_from(&p, &restored));
         let _ = std::fs::remove_file(&p);
     }
 

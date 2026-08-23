@@ -3158,7 +3158,7 @@ function gameplayCard() {
   const cGrid = el("div", "field-grid");
   cGrid.appendChild(field("Force de réaction (restitution)", "gp-restitution",
     economyNumber("gp-restitution", floatSetter("restitution"), g.restitution, 0, "0.1",
-      "Le triangle qui collisionne explose et le météore est repoussé : sa composante de vitesse vers la base est réfléchie avec cette restitution. 1.0 = rebond parfait, 0 = pas de réaction (METEOR_STATION_RESTITUTION).")));
+      "Le triangle qui collisionne explose et le météore est repoussé : seule la trajectoire est réfléchie avec cette restitution (la vitesse est conservée). 1.0 = rebond parfait (miroir), 0 = pas de réaction (glissement tangentiel) (METEOR_STATION_RESTITUTION).")));
   cGrid.appendChild(field("Débris par triangle explosé", "gp-debris",
     economyNumber("gp-debris", intSetter("debrisPerTriangle"), g.debrisPerTriangle, 0, "1",
       "Taille de l'explosion d'un triangle détruit (GARBAGE_PER_TRIANGLE).")));

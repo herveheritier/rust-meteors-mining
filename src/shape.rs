@@ -350,7 +350,17 @@ pub fn resolve_elastic_collision(a: &mut Shape, b: &mut Shape) {
 
 /// Détecte la collision entre deux formes : AABB par triangle puis SAT.
 /// Pose les indicateurs `collid`/`collid_by` des deux côtés (ex `detectCollision`).
-pub fn detect_collision(shape_a: &Shape, shape_b: &Shape, triangles: &mut [Triangle]) -> bool {
+/// `index_a`/`index_b` sont les indices des formes dans le tableau `shapes` ;
+/// `collid_by` stocke l'**index** (pas le type) pour pouvoir identifier la
+/// forme précise qui a causé la collision (ex. quelle balle a touché quel
+/// météore).
+pub fn detect_collision(
+    shape_a: &Shape,
+    shape_b: &Shape,
+    index_a: usize,
+    index_b: usize,
+    triangles: &mut [Triangle],
+) -> bool {
     let mut res = false;
     for i in shape_a.first_triangle..=shape_a.last_triangle {
         if triangles[i].life == 0 {
@@ -371,9 +381,9 @@ pub fn detect_collision(shape_a: &Shape, shape_b: &Shape, triangles: &mut [Trian
             // SAT
             if triangles_collide(&triangles[j], &triangles[i]) {
                 triangles[i].collid = true;
-                triangles[i].collid_by = shape_b.who_i_am;
+                triangles[i].collid_by = index_b as i32;
                 triangles[j].collid = true;
-                triangles[j].collid_by = shape_a.who_i_am;
+                triangles[j].collid_by = index_a as i32;
                 res = true;
             }
         }
@@ -828,11 +838,11 @@ mod tests {
         a.who_i_am = WHOIAM_METEOR;
         b.who_i_am = WHOIAM_BULLET;
 
-        assert!(detect_collision(&a, &b, &mut triangles));
+        assert!(detect_collision(&a, &b, 0, 1, &mut triangles));
         assert!(triangles[0].collid);
-        assert_eq!(triangles[0].collid_by, WHOIAM_BULLET);
+        assert_eq!(triangles[0].collid_by, 1); // index de la forme B (balle)
         assert!(triangles[1].collid);
-        assert_eq!(triangles[1].collid_by, WHOIAM_METEOR);
+        assert_eq!(triangles[1].collid_by, 0); // index de la forme A (météore)
     }
 
     #[test]

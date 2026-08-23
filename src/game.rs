@@ -184,14 +184,17 @@ pub fn update(
         return (Action::Continue, camera);
     }
 
-    // Boîte de choix DOCK STATION ouverte : le monde est gelé - seuls les
-    // clics sur UNLOAD / SHOP / CLOSE sont traités (ex boucle bloquante de
+    // Boîte de choix DOCK STATION ouverte : seuls les clics sur UNLOAD /
+    // SHOP / CLOSE sont traités (ex boucle bloquante de
     // `windowUtils_choiceBox`). UNLOAD décharge la soute (minerais
     // disponibles pour le ravitaillement juste après) et SHOP ouvre le
     // magasin de la station - le carburant et les munitions s'y achètent
     // indépendamment (section RAVITAILLEMENT, plus de bouton REFUEL/REARM) ;
     // la boîte ne se ferme qu'avec CLOSE, pour décharger puis se ravitailler
-    // dans le même accostage.
+    // dans le même accostage. Le vaisseau est gelé, mais le **monde, lui,
+    // continue** : les météores et les débris dérivent autour de la base
+    // (voir `collisions` - le vaisseau à quai est protégé). Après CLOSE, la
+    // rétraction des liens est une cinématique : le monde est de nouveau gelé.
     if state.dock_box {
         match choice_box_click() {
             ChoiceClick::None => {}
@@ -232,17 +235,27 @@ pub fn update(
                 undock(state);
             }
         }
+        // toujours à quai (CLOSE lance la rétraction, traitée en tête de
+        // frame) : le monde continue de vivre - météores et débris dérivent,
+        // se heurtent à la base (indestructible) et entre eux, tandis que le
+        // vaisseau accosté reste intact (voir `collisions`)
+        if state.dock_box {
+            collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
+        }
         return (Action::Continue, camera);
     }
 
     // Magasin de la station ouvert (bouton SHOP de la boîte DOCK STATION) :
-    // le monde est gelé - les curseurs du ravitaillement sont mis à jour à
-    // chaque frame (`shop_update` : glisser, molette, bornage aux minerais),
-    // puis les clics sur les lignes de mode de déplacement (sélection gratuite
-    // ou déblocage contre minerais, `scenario::try_select_mode`), les lignes
+    // les curseurs du ravitaillement sont mis à jour à chaque frame
+    // (`shop_update` : glisser, molette, bornage aux minerais), puis les
+    // clics sur les lignes de mode de déplacement (sélection gratuite ou
+    // déblocage contre minerais, `scenario::try_select_mode`), les lignes
     // d'extension (achat contre minerais, `scenario::buy_upgrade`), les
     // lignes de ravitaillement (achat de la **quantité du curseur**) et sur
     // CLOSE (retour à la boîte DOCK STATION, toujours accosté) sont traités.
+    // Le vaisseau est gelé, mais le **monde, lui, continue** : les météores
+    // et les débris dérivent autour de la base (voir `collisions` - le
+    // vaisseau à quai est protégé).
     if state.shop_box {
         shop_update(state);
         match shop_box_click(state) {
@@ -274,6 +287,9 @@ pub fn update(
                 state.dock_box = true;
             }
         }
+        // toujours à quai (CLOSE ramène à la boîte DOCK STATION) : le monde
+        // continue de vivre - météores et débris dérivent (vaisseau protégé)
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         return (Action::Continue, camera);
     }
 
@@ -436,6 +452,50 @@ pub fn update(
         create_shape(state, shapes, triangles, camera, elements, rng);
     }
 
+    // Suivi des objectifs DAG (scénarios custom) : vérifie les conditions,
+    // attribue les récompenses et affiche les messages.
+    // On extrait le tracker temporairement pour éviter l'emprunt croisé
+    // (le tracker lit `state` pendant que `update` le modifie).
+    let mut tracker = std::mem::take(&mut state.objective_tracker);
+    if tracker.has_objectives() {
+        let results = tracker.update(state);
+        for result in results {
+            // Appliquer la récompense
+            match result.reward.reward_type.as_str() {
+                "Minerals" => {
+                    state.resources.minerals += result.reward.amount as i32;
+                }
+                "Reputation" => {
+                    state.resources.reputation += result.reward.amount;
+                }
+                "Fuel" => {
+                    let cap = crate::scenario::fuel_capacity(state);
+                    state.resources.fuel = (state.resources.fuel + result.reward.amount).min(cap);
+                }
+                "Ammo" => {
+                    let cap = crate::scenario::ammo_capacity(state);
+                    for i in 0..crate::scenario::weapon_slot_count() {
+                        if crate::scenario::weapon_owned(state, i) {
+                            state.resources.weapon_ammo[i] =
+                                (state.resources.weapon_ammo[i] + result.reward.amount as i32).min(cap);
+                        }
+                    }
+                }
+                "Victory" => {
+                    state.send_message("OBJECTIVE: VICTORY!");
+                }
+                _ => {}
+            }
+            // Message HUD
+            let title = tracker
+                .objective_title(&result.id)
+                .unwrap_or(&result.id);
+            state.send_message(&format!(">> {} <<", title));
+        }
+    }
+    tracker.tick(dt);
+    state.objective_tracker = tracker;
+
     // télécommande (`remote.rs`) : publie l'état du jeu (HUD, ressources) que
     // la page du téléphone affiche en direct via `GET /state`
     crate::remote::publish_state(state);
@@ -449,7 +509,10 @@ pub fn update(
 ///
 /// Seuls les déplacements des formes sont gelés en pause ; les débris, les
 /// collisions et la génération automatique continuent (comportement exact de
-/// l'original).
+/// l'original). À quai (boîte DOCK STATION ou magasin ouverts, voir
+/// `update`), les météores continuent de dériver mais le vaisseau est
+/// **protégé** : aucune collision avec lui n'est détectée tant que la boîte
+/// est ouverte.
 fn collisions(
     state: &mut GameState,
     shapes: &mut Vec<Shape>,
@@ -476,6 +539,11 @@ fn collisions(
     }
 
     // ─── détection de collisions (paires de formes proches) ────────────────
+    // à quai (boîte DOCK STATION ou magasin ouverts) : le vaisseau est
+    // **protégé** - il reste intact pendant que les météores dérivent autour
+    // de la base (aucun impact qui l'endommagerait, aucun choc élastique qui
+    // le pousserait hors de l'anneau, aucun vol de gemme de soute)
+    let player_docked = state.dock_box || state.shop_box;
     let mut elastic_pairs: Vec<(usize, usize)> = Vec::new();
     for i in 0..shapes.len() {
         // pas de détection si la forme n'est pas un collider
@@ -490,6 +558,10 @@ fn collisions(
             if shapes[i].who_i_am == WHOIAM_PLAYER && shapes[j].who_i_am == WHOIAM_BULLET {
                 continue;
             }
+            // vaisseau à quai : aucune collision avec lui (protégé)
+            if player_docked && (i == PLAYER_INDEX || j == PLAYER_INDEX) {
+                continue;
+            }
             // détection seulement si les formes ne sont pas trop éloignées
             let x_dist = (shapes[i].position.x + shapes[i].center.x
                 - shapes[j].position.x
@@ -501,7 +573,7 @@ fn collisions(
                 .abs();
             let sum_radius = shapes[i].radius + shapes[j].radius;
             if x_dist <= sum_radius && y_dist <= sum_radius {
-                if detect_collision(&shapes[i], &shapes[j], triangles) {
+                if detect_collision(&shapes[i], &shapes[j], i, j, triangles) {
                     // pas de choc élastique entre une gemme et (vaisseau ou
                     // météore), ni avec la station
                     let no_elastic = (shapes[i].who_i_am == WHOIAM_GEM
@@ -534,8 +606,9 @@ fn collisions(
         let shape_index = triangles[i].shape_index as usize;
         let who = shapes[shape_index].who_i_am;
         let collid_by = triangles[i].collid_by;
+        let collid_by_who = shapes[collid_by as usize].who_i_am;
 
-        if collid_by == WHOIAM_PLAYER
+        if collid_by_who == WHOIAM_PLAYER
             && who == WHOIAM_GEM
             && state.player.cargo_qty < state.player.cargo_size
         {
@@ -554,9 +627,9 @@ fn collisions(
             if state.player.cargo_qty >= state.player.cargo_size {
                 state.send_message("YOUR LOADING BAY IS FULL, YOU MUST UNLOAD IT AT THE STATION");
             }
-        } else if collid_by == WHOIAM_GEM && who == WHOIAM_PLAYER {
+        } else if collid_by_who == WHOIAM_GEM && who == WHOIAM_PLAYER {
             // déjà résolu côté gemme (cargaison pleine)
-        } else if collid_by == WHOIAM_STATION && who == WHOIAM_PLAYER {
+        } else if collid_by_who == WHOIAM_STATION && who == WHOIAM_PLAYER {
             // accostage (M5)
         } else if who == WHOIAM_STATION {
             // la station est indestructible
@@ -591,7 +664,7 @@ fn collisions(
             if state.resources.shield != shield_before || state.resources.lives != lives_before {
                 let _ = scenario::save_progression(state);
             }
-        } else if collid_by == WHOIAM_METEOR && who == WHOIAM_GEM {
+        } else if collid_by_who == WHOIAM_METEOR && who == WHOIAM_GEM {
             // un météore percute une gemme : il l'absorbe - la gemme
             // disparaît entièrement et la quantité de minerai du météore
             // augmente (`minerals`, libérée si le météore est lui-même
@@ -614,7 +687,7 @@ fn collisions(
                     triangles[j].life = 0;
                 }
             }
-        } else if collid_by == WHOIAM_GEM && who == WHOIAM_METEOR {
+        } else if collid_by_who == WHOIAM_GEM && who == WHOIAM_METEOR {
             // déjà résolu côté gemme (absorption) : le météore n'est pas
             // endommagé en avalant la gemme (une gemme de soute, elle,
             // traverse sans rien faire)
@@ -656,7 +729,11 @@ fn collisions(
             }
         } else {
             triangles[i].life = 0;
-            shapes[shape_index].life -= 1;
+            // ne descend jamais sous 0 : une forme déjà morte (ex une munition
+            // dont les triangles ont été tués côté météore) reste morte
+            if shapes[shape_index].life > 0 {
+                shapes[shape_index].life -= 1;
+            }
             // un météore qui percute la **station** (base indestructible)
             // subit une force de réaction : le triangle explose (débris +
             // son ci-dessous) et sa composante de vitesse vers la base est
@@ -666,7 +743,7 @@ fn collisions(
             // collision renverse la composante radiale, les suivants voient
             // déjà `vn >= 0` et ne refont rien.
             if who == WHOIAM_METEOR
-                && collid_by == WHOIAM_STATION
+                && collid_by_who == WHOIAM_STATION
                 && shapes[shape_index].life > 0
             {
                 // normale du choc : du centre de la base vers le point
@@ -678,29 +755,35 @@ fn collisions(
                     let (nx, ny) = (dx / norm, dy / norm);
                     // vitesse monde du météore (y inversé : `moving_shape`
                     // soustrait `sin(direction)·v`)
-                    let vx = shapes[shape_index].velocity * shapes[shape_index].direction.cos();
-                    let vy = -shapes[shape_index].velocity * shapes[shape_index].direction.sin();
+                    let speed = shapes[shape_index].velocity;
+                    let vx = speed * shapes[shape_index].direction.cos();
+                    let vy = -speed * shapes[shape_index].direction.sin();
                     let vn = vx * nx + vy * ny; // radiale (négative = vers la base)
                     if vn < 0.0 {
+                        // seule la TRAJECTOIRE est réfléchie : la direction
+                        // du rebond (selon la restitution) est recalculée,
+                        // mais la VITESSE du météore est conservée - le choc
+                        // avec la base repousse le météore sans le ralentir
                         let rx = vx - (1.0 + METEOR_STATION_RESTITUTION) * vn * nx;
                         let ry = vy - (1.0 + METEOR_STATION_RESTITUTION) * vn * ny;
-                        shapes[shape_index].velocity = rx.hypot(ry);
-                        if shapes[shape_index].velocity > 0.0 {
+                        let r = rx.hypot(ry);
+                        if r > 0.0 {
                             let d = (-ry).atan2(rx);
                             shapes[shape_index].direction = if d < 0.0 { d + TAU } else { d };
+                            shapes[shape_index].velocity = speed;
                         }
                     }
                 }
             }
             // collision vaisseau/gemme non résolue parce que soute pleine
-            if collid_by == WHOIAM_PLAYER && who == WHOIAM_GEM {
+            if collid_by_who == WHOIAM_PLAYER && who == WHOIAM_GEM {
                 state.send_message("YOU CANNOT TAKE ANY ADDITIONAL RESOURCES, UNLOAD AT THE STATION");
             }
             // si le joueur détruit un météore, la limite de météores augmente
             // (ex mainLoop : compteur + « R+1 » affiché - le bonus flottant
             // et les sons arrivent en M4) et la réputation du scénario
             // augmente (d'autant plus que la précision de tir est bonne)
-            if collid_by == WHOIAM_BULLET
+            if collid_by_who == WHOIAM_BULLET
                 && who == WHOIAM_METEOR
                 && shapes[shape_index].life <= 0
             {
@@ -710,6 +793,20 @@ fn collisions(
                 let _ = scenario::save_progression(state);
                 if state.max_meteor_shapes < SHAPES_COUNT {
                     state.max_meteor_shapes += 1;
+                }
+            }
+            // toute munition qui touche un triangle de météore est détruite en
+            // même temps que ce triangle : elle ne traverse pas le météore -
+            // un tir consomme au plus un triangle (le météore survit s'il en
+            // reste). Idempotent : plusieurs triangles du même météore
+            // chevauchés la même frame ne la détruisent qu'une fois.
+            if collid_by_who == WHOIAM_BULLET && who == WHOIAM_METEOR {
+                let bullet_idx = collid_by as usize;
+                if bullet_idx < shapes.len() && shapes[bullet_idx].who_i_am == WHOIAM_BULLET {
+                    shapes[bullet_idx].life = 0;
+                    for t in shapes[bullet_idx].first_triangle..=shapes[bullet_idx].last_triangle {
+                        triangles[t].life = 0;
+                    }
                 }
             }
             // débris + son d'impact : volume selon la distance au vaisseau,
@@ -730,7 +827,7 @@ fn collisions(
             // seul cas de destruction de minerai (`who == WHOIAM_GEM` n'entre
             // pas ici).
             if triangles[i].element > 0 && who == WHOIAM_METEOR {
-                if collid_by == WHOIAM_BULLET && triangles[i].element > 0 {
+                if collid_by_who == WHOIAM_BULLET && triangles[i].element > 0 {
                     let source = triangles[i];
                     create_gem(shapes, triangles, elements, &source, rng);
                     if shapes[shape_index].minerals > 0 {
@@ -746,7 +843,7 @@ fn collisions(
             // météore ne relibèrent rien.
             if who == WHOIAM_METEOR
                 && shapes[shape_index].life <= 0
-                && (collid_by == WHOIAM_METEOR || collid_by == WHOIAM_BULLET)
+                && (collid_by_who == WHOIAM_METEOR || collid_by_who == WHOIAM_BULLET)
             {
                 release_meteor_minerals(shapes, triangles, elements, shape_index, rng);
             }
@@ -1106,6 +1203,8 @@ fn docking(
             // l'accostage démarre : le guide est coupé - il ne réapparaîtra
             // qu'à un prochain retour (et pas pendant qu'on quitte l'accostage)
             state.docking_guide = false;
+            // compteur d'accostages (objectifs DAG)
+            state.docking_count += 1;
         } else {
             // déchargement : la soute est convertie en minerais (scénario à
             // économie) puis vidée - le ravitaillement s'achète au magasin
@@ -2463,29 +2562,30 @@ mod tests {
             "aucun débris vivant : {}",
             garbages.len()
         );
-        // force de réaction : la vitesse est réfléchie le long de la normale
-        // du point d'impact (diagonale (1,1)) avec la restitution réglée dans
-        // l'outil - on recalcule la réflexion attendue depuis la constante
-        // (`METEOR_STATION_RESTITUTION` est un paramètre de mise au point :
-        // le test ne doit pas dépendre de sa valeur exacte). Vitesse initiale
-        // 1.0 vers -x : vx = -1, vy = 0 ; normale du choc (1/√2, 1/√2).
+        // force de réaction : seule la TRAJECTOIRE est réfléchie - la
+        // direction du rebond (selon la restitution réglée dans l'outil) est
+        // recalculée le long de la normale du point d'impact (diagonale
+        // (1,1)), mais la VITESSE du météore est conservée (le choc avec la
+        // base repousse le météore sans le ralentir). On recalcule la
+        // direction attendue depuis la constante (`METEOR_STATION_RESTITUTION`
+        // est un paramètre de mise au point : le test ne doit pas dépendre de
+        // sa valeur exacte). Vitesse initiale 1.0 vers -x : vx = -1, vy = 0 ;
+        // normale du choc (1/√2, 1/√2).
         let e = crate::marketplace::METEOR_STATION_RESTITUTION;
         let inv_sqrt2 = std::f64::consts::FRAC_1_SQRT_2;
         let (vx, vy) = (-1.0, 0.0);
         let vn = vx * inv_sqrt2 + vy * inv_sqrt2; // radiale (négative = vers la base)
         let rx = vx - (1.0 + e) * vn * inv_sqrt2;
         let ry = vy - (1.0 + e) * vn * inv_sqrt2;
-        let expected_v = rx.hypot(ry);
         let mut expected_dir = (-ry).atan2(rx);
         if expected_dir < 0.0 {
             expected_dir += TAU;
         }
         let m = &shapes[1];
         assert!(
-            (m.velocity - expected_v).abs() < 1e-9,
-            "vitesse après réaction : {} (attendu {})",
-            m.velocity,
-            expected_v
+            (m.velocity - 1.0).abs() < 1e-9,
+            "la vitesse doit être conservée : {} (attendu 1.0)",
+            m.velocity
         );
         assert!(
             (m.direction - expected_dir).abs() < 1e-9,
@@ -2664,6 +2764,97 @@ mod tests {
         assert_eq!(gem.unwrap().element, 1);
         assert_eq!(triangles[1].life, 0);
         assert_eq!(shapes[1].life, 0);
+    }
+
+    #[test]
+    fn bullet_fully_destroyed_when_hitting_meteor_triangle() {
+        // toute munition qui touche un triangle de météore est détruite en
+        // même temps que ce triangle, même si le météore survit : un tir
+        // consomme au plus un triangle - la munition (mesh multi-triangles,
+        // ex missile) ne traverse pas le météore pour en grignoter d'autres.
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_BULLET, 0, 1, 0.0, 0.0), // munition 2 triangles
+            test_shape(WHOIAM_METEOR, 2, 3, 2.0, 2.0), // météore 2 triangles
+        ];
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),   // munition : touche le météore
+            test_triangle(1, 0, 50.0, 50.0), // munition : loin (ne touche rien)
+            test_triangle(2, 1, 0.0, 0.0),   // météore : touché par la munition
+            test_triangle(3, 1, 60.0, 60.0), // météore : intact
+        ];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // la munition entière est détruite (y compris le triangle qui n'a pas
+        // touché) en même temps que le triangle du météore touché
+        assert_eq!(shapes[0].life, 0, "la munition doit être détruite");
+        assert_eq!(triangles[0].life, 0);
+        assert_eq!(triangles[1].life, 0, "tous les triangles de la munition meurent");
+        // le météore survit mais perd exactement le triangle touché
+        assert_eq!(shapes[1].life, 1, "le météore survit");
+        assert_eq!(triangles[2].life, 0, "triangle du météore touché détruit");
+        assert_eq!(triangles[3].life, 1, "triangle du météore intact");
+        // le météore n'est pas compté comme détruit par le joueur
+        assert_eq!(state.meteors_destroyed, 0);
+    }
+
+    #[test]
+    fn docked_ship_is_protected_while_meteors_keep_drifting() {
+        // à quai (boîte DOCK STATION ouverte) : le monde continue de vivre -
+        // les météores dérivent autour de la base, mais le vaisseau accosté
+        // est **protégé** : aucun impact ne l'endommage ni ne le pousse. Une
+        // fois la boîte fermée, le vaisseau libre est de nouveau vulnérable.
+        let mut state = GameState::new();
+        state.dock_box = true; // vaisseau à quai, boîte DOCK STATION ouverte
+        // vaisseau (index 0) au centre, météore (index 1) dont un triangle
+        // chevauche le premier triangle du vaisseau (même géométrie que les
+        // tests voisins)
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 1, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 2, 3, 2.0, 2.0),
+        ];
+        // le météore dérive vers +x (comme dans le monde vivant à quai)
+        shapes[1].velocity = 1.0;
+        shapes[1].direction = 0.0;
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),   // vaisseau : chevauché par le météore
+            test_triangle(1, 0, 50.0, 50.0), // vaisseau : loin (ne touche rien)
+            test_triangle(2, 1, 2.0, 2.0),   // météore : chevauche le vaisseau
+            test_triangle(3, 1, 60.0, 60.0), // météore : intact
+        ];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 1.0 / 60.0);
+
+        // le météore a dérivé : le monde ne s'est pas arrêté à quai
+        assert!(
+            shapes[1].position.x > 2.0,
+            "le météore doit continuer de se déplacer à quai : {}",
+            shapes[1].position.x
+        );
+        // le vaisseau accosté est intact : aucun impact, aucun dégât
+        assert_eq!(shapes[0].life, 2, "le vaisseau à quai ne doit pas être endommagé");
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(shapes[1].life, 2, "le météore non plus (aucune collision détectée)");
+        assert!(garbages.is_empty(), "aucune explosion à quai");
+
+        // boîte fermée (vaisseau libre) : le même météore, toujours en
+        // chevauchement après sa dérive, l'endommage maintenant - un impact
+        // suffit à détruire le vaisseau (1 impact = détruit, comme l'original)
+        state.dock_box = false;
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 1.0 / 60.0);
+        assert_eq!(shapes[0].life, 0, "vaisseau libre : détruit par l'impact");
+        assert_eq!(triangles[0].life, 0);
+        assert_eq!(triangles[1].life, 0, "tous les triangles du vaisseau meurent");
+        assert_eq!(shapes[1].life, 1, "le météore survit mais perd son triangle");
+        assert_eq!(triangles[2].life, 0);
+        assert_eq!(triangles[3].life, 1, "triangle du météore intact");
     }
 
     #[test]

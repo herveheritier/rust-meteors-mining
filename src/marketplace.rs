@@ -74,7 +74,7 @@ pub const TRIANGLE_HEIGHT_MAX: i32 = 22;
 
 /// Population de météores : nombre initial maximal, plafonné à
 /// `SHAPES_COUNT` (+1 par météore détruit).
-pub const INITIAL_MAX_METEOR_SHAPES: i32 = 15;
+pub const INITIAL_MAX_METEOR_SHAPES: i32 = 50;
 pub const SHAPES_COUNT: i32 = 150;
 
 /// Poids de la **précision de tir** sur la remise de réputation : la remise

@@ -141,6 +141,9 @@ pub struct GameState {
     pub player_at_station: i32,
     pub player_enter_station: i32,
     pub meteors_destroyed: i32,
+    /// Nombre total d'accostages réussis à la station (incrémenté à chaque
+    /// animation d'accostage démarrée) - utilisé par les objectifs DAG.
+    pub docking_count: i32,
     pub bullets_fired: i32,
     pub bullets_lost: i32,
     pub moving_mode: i32,
@@ -312,6 +315,18 @@ pub struct GameState {
     pub message_queue: String,
     pub message1: String,
     pub message2: String,
+    /// Suivi des objectifs DAG du scénario custom en cours (vide pour les
+    /// scénarios built-in sans objectifs) - voir `objective_tracker.rs`.
+    pub objective_tracker: crate::objective_tracker::ObjectiveTracker,
+    /// Position initiale X du vaisseau (scénarios custom,appliquée après
+    /// `create_player_vaisseau`).
+    pub initial_ship_x: f64,
+    /// Position initiale Y du vaisseau.
+    pub initial_ship_y: f64,
+    /// Orientation initiale du vaisseau en degrés (0 = droite).
+    pub initial_ship_orientation: f64,
+    /// Vitesse initiale du vaisseau (0 = immobile).
+    pub initial_ship_velocity: f64,
 }
 
 impl GameState {
@@ -331,6 +346,7 @@ impl GameState {
             player_at_station: -1,
             player_enter_station: 0,
             meteors_destroyed: 0,
+            docking_count: 0,
             bullets_fired: 0,
             bullets_lost: 0,
             moving_mode: MOVING_MODE_DIRECTIONAL,
@@ -378,6 +394,11 @@ impl GameState {
             message_queue: String::new(),
             message1: String::new(),
             message2: String::new(),
+            objective_tracker: crate::objective_tracker::ObjectiveTracker::default(),
+            initial_ship_x: 0.0,
+            initial_ship_y: 0.0,
+            initial_ship_orientation: 0.0,
+            initial_ship_velocity: 0.0,
         }
     }
 
