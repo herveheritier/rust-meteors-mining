@@ -81,27 +81,38 @@ extern "C" {
     fn XFree(data: *mut c_void) -> c_int;
     fn XSendEvent(display: *mut Display, w: Window, propagate: c_int, event_mask: c_long, event: *mut XEvent) -> c_int;
     fn XFlush(display: *mut Display) -> c_int;
+    fn XTranslateCoordinates(
+        display: *mut Display,
+        src_w: Window,
+        dest_w: Window,
+        src_x: c_int,
+        src_y: c_int,
+        dest_x_return: *mut c_int,
+        dest_y_return: *mut c_int,
+        child_return: *mut Window,
+    ) -> c_int;
+    fn XMoveWindow(display: *mut Display, w: Window, x: c_int, y: c_int) -> c_int;
 }
 
 /// Ouvre le display par défaut et exécute `f` dessus, puis le ferme.
 ///
-/// Retourne `false` si le display n'est pas ouvrable (pas de serveur X11).
-fn with_display(f: impl FnOnce(*mut Display) -> bool) -> bool {
+/// Retourne `None` si le display n'est pas ouvrable (pas de serveur X11).
+fn with_display<T>(f: impl FnOnce(*mut Display) -> T) -> Option<T> {
     #[cfg(not(target_os = "linux"))]
     {
         let _ = f;
-        false
+        None
     }
 
     #[cfg(target_os = "linux")]
     unsafe {
         let display = XOpenDisplay(std::ptr::null());
         if display.is_null() {
-            return false;
+            return None;
         }
-        let ok = f(display);
+        let result = f(display);
         XCloseDisplay(display);
-        ok
+        Some(result)
     }
 }
 
@@ -110,7 +121,40 @@ fn with_display(f: impl FnOnce(*mut Display) -> bool) -> bool {
 ///
 /// Retourne `true` si le message a été envoyé au WM (le WM fait le reste).
 pub fn set_fullscreen(add: bool) -> bool {
-    with_display(|display| unsafe { send_fullscreen_message(display, add) })
+    with_display(|display| unsafe { send_fullscreen_message(display, add) }).unwrap_or(false)
+}
+
+/// Position de la fenêtre du jeu (coin supérieur gauche du client, relatif à
+/// la racine X) via `XTranslateCoordinates` - utilisée pour persister et
+/// restaurer la position de la fenêtre fenêtrée. `None` si indisponible (pas
+/// de serveur X11 ou fenêtre introuvable).
+pub fn window_position() -> Option<(i32, i32)> {
+    with_display(|display| unsafe {
+        let window = find_game_window(display)?;
+        let root = XDefaultRootWindow(display);
+        let mut x: c_int = 0;
+        let mut y: c_int = 0;
+        let mut child: Window = 0;
+        if XTranslateCoordinates(display, window, root, 0, 0, &mut x, &mut y, &mut child) != 0 {
+            Some((x, y))
+        } else {
+            None
+        }
+    })
+    .flatten()
+}
+
+/// Déplace la fenêtre du jeu à la position donnée (coin supérieur gauche,
+/// relatif à la racine X). Retourne `false` si indisponible (pas de serveur
+/// X11 ou fenêtre introuvable).
+pub fn move_window(x: i32, y: i32) -> bool {
+    with_display(|display| unsafe {
+        let Some(window) = find_game_window(display) else {
+            return false;
+        };
+        XMoveWindow(display, window, x, y) != 0
+    })
+    .unwrap_or(false)
 }
 
 /// Envoie le ClientMessage `_NET_WM_STATE` avec l'action ADD/REMOVE de

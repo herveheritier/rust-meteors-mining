@@ -15,7 +15,7 @@ use crate::game;
 use crate::geom::Point;
 use crate::render::{
     argb_to_color, cycle_view_mode, draw_settings_box, draw_stars, draw_zoomed, native_camera,
-    virtual_camera, window_scaled,
+    persist_window_geometry, virtual_camera, window_scaled,
 };
 use crate::state::ViewMode;
 use crate::state::GameState;
@@ -135,6 +135,11 @@ pub async fn title_loop(
             }
             last_frame = get_time();
         }
+
+        // fenêtre fenêtrée : persiste position/taille réelles quand elles
+        // changent (déplacement ou redimensionnement par le WM) - au plus une
+        // vérification par seconde (`persist_window_geometry`)
+        persist_window_geometry(state);
 
         // touche F : plein écran ; O : écran de paramétrage ; N/B/1-3 :
         // scénario ; toute autre touche : lancement
@@ -396,7 +401,7 @@ fn draw_objectives_list(state: &crate::state::GameState, start_y: f64) -> f64 {
         tracker.total_count()
     );
     draw_centered_line(&header, y as f32);
-    y += 18.0;
+    y += 20.0;
 
     // Lister tous les objectifs avec leur statut
     let all_objectives = &tracker.objectives;
@@ -425,14 +430,16 @@ fn draw_objectives_list(state: &crate::state::GameState, start_y: f64) -> f64 {
         };
 
         let line = format!("  {} {} - {}", symbol, obj.title, obj.description);
-        // Tronquer si trop long (> 80 caractères)
-        let display_line = if line.len() > 80 {
-            format!("{}...", &line[..77])
+        // Tronquer si trop long (> 80 caractères), sans couper un caractère
+        // UTF-8 en deux (accents)
+        let display_line: String = if line.chars().count() > 80 {
+            let truncated: String = line.chars().take(77).collect();
+            format!("{}...", truncated)
         } else {
             line
         };
         draw_centered_line_color(&display_line, y as f32, argb_to_color(color));
-        y += 16.0;
+        y += 20.0;
     }
 
     y += 4.0; // espace avant les touches
@@ -441,8 +448,8 @@ fn draw_objectives_list(state: &crate::state::GameState, start_y: f64) -> f64 {
 
 /// Dessine une ligne centrée avec une couleur donnée.
 fn draw_centered_line_color(line: &str, y: f32, color: Color) {
-    let w = measure_text(line, None, 14, 1.0).width;
-    draw_text(line, (VIEWPORT_WIDTH as f32 - w) / 2.0, y, 14.0, color);
+    let w = measure_text(line, None, 16, 1.0).width;
+    draw_text(line, (VIEWPORT_WIDTH as f32 - w) / 2.0, y, 16.0, color);
 }
 
 /// Boîte de choix affichée au lancement d'un scénario qui a une progression

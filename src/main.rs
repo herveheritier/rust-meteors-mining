@@ -42,8 +42,8 @@ use ::rand::SeedableRng;
 use ::rand_chacha::ChaCha12Rng;
 
 use crate::config::{
-    ATTEMPT_FPS, EVA_CROSSFADE_DURATION, PLAYER_INDEX, STATION_INDEX, VIEWPORT_HEIGHT,
-    VIEWPORT_WIDTH, WINDOW_SIZES, WINDOW_TITLE,
+    view_mode_message, ATTEMPT_FPS, EVA_CROSSFADE_DURATION, PLAYER_INDEX, STATION_INDEX,
+    VIEWPORT_HEIGHT, VIEWPORT_WIDTH, WINDOW_SIZES, WINDOW_TITLE,
 };
 use crate::geom::Point;
 use crate::state::{GameState, RenderStyle, ViewMode};
@@ -55,7 +55,11 @@ fn window_conf() -> Conf {
     // la fenêtre (taille initiale en fenêtré) et anticrénelage MSAA - ce
     // dernier est fixé à la **création** de la fenêtre (macroquad ne permet
     // pas de le changer à chaud) : il prend effet au lancement suivant
-    let (win_w, win_h) = persist::load_window_size().unwrap_or((VIEWPORT_WIDTH as i32, VIEWPORT_HEIGHT as i32));
+    // taille de fenêtre persistée : la taille **réelle** (redimensionnement à
+    // la main, clés `win_w`/`win_h`) prime sur l'index du réglage SIZE
+    let (win_w, win_h) = persist::load_window_px_size()
+        .or_else(|| persist::load_window_size())
+        .unwrap_or((VIEWPORT_WIDTH as i32, VIEWPORT_HEIGHT as i32));
     let antialias = persist::get_bool("antialias").unwrap_or(false);
     Conf {
         window_title: WINDOW_TITLE.to_owned(),
@@ -107,16 +111,33 @@ async fn main() {
     }
     // options graphiques persistées (écran de paramétrage O) : style de
     // rendu et anticrénelage (reflété par la case, l'effet étant appliqué
-    // par `window_conf`). NB : le mode d'affichage (fenêtré / plein écran
-    // zoomé / natif, touche F ou clic WINDOW de l'écran O) n'est **pas**
-    // persisté - le jeu démarre toujours fenêtré, pour que le cycle F soit
-    // prévisible (3 pressions de F = cycle complet).
+    // par `window_conf`).
     if let Some(style) = persist::load_render_style() {
         state.render_style = match style {
             1 => RenderStyle::Colored,
             2 => RenderStyle::Mesh,
             _ => RenderStyle::Textured,
         };
+    }
+    // position de la fenêtre fenêtrée persistée (déplacement à la main,
+    // clés `win_x`/`win_y`) : restaurée au lancement (X11 ; sans effet hors
+    // Linux), avant l'entrée éventuelle en plein écran ci-dessous
+    if let Some((x, y)) = persist::load_window_pos() {
+        crate::x11::move_window(x, y);
+    }
+    // mode d'affichage persisté (touche F ou clic WINDOW de l'écran O) : le
+    // jeu démarre dans le dernier mode utilisé - le plein écran (zoomé ou
+    // natif) est entré dès l'écran titre, comme le ferait la touche F ; le
+    // cycle F reste prévisible puisqu'il part de l'état réellement appliqué
+    if let Some(mode) = persist::load_view_mode() {
+        state.view_mode = match mode {
+            1 => ViewMode::Zoomed,
+            2 => ViewMode::Native,
+            _ => ViewMode::Windowed,
+        };
+        if state.view_mode != ViewMode::Windowed {
+            render::enter_fullscreen();
+        }
     }
     if let Some(size) = persist::get_i32("window_size") {
         if (0..WINDOW_SIZES.len() as i32).contains(&size) {
@@ -293,6 +314,9 @@ async fn main() {
     const LIMIT_FPS: bool = true;
     let target_frame = 1.0 / ATTEMPT_FPS as f64;
     let mut last_frame = get_time();
+    // le mode d'affichage actif (persisté, touche F) est annoncé dans le HUD
+    // au lancement de la partie - même message que la touche F
+    state.send_message(view_mode_message(state.view_mode as i32));
     let mut pending_fullscreen = state.view_mode != ViewMode::Windowed;
     loop {
         if LIMIT_FPS {
@@ -310,6 +334,11 @@ async fn main() {
             pending_fullscreen = false;
             render::enter_fullscreen();
         }
+
+        // fenêtre fenêtrée : persiste position/taille réelles quand elles
+        // changent (déplacement ou redimensionnement par le WM) - au plus une
+        // vérification par seconde (`persist_window_geometry`)
+        render::persist_window_geometry(&state);
 
         // Input + physique + collisions (mouvement, météores, pause, modes
         // d'affichage, musique) - M2/M3. La caméra est calculée par update

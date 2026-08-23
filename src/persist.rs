@@ -41,7 +41,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::config::{MOVING_MODE_COUNT, RENDER_STYLE_COUNT, WINDOW_SIZES};
+use crate::config::{MOVING_MODE_COUNT, RENDER_STYLE_COUNT, VIEW_MODE_COUNT, WINDOW_SIZES};
 
 /// Nom du fichier de configuration (dans le dossier de configuration
 /// utilisateur, sous `meteors-mining/`).
@@ -239,6 +239,58 @@ pub fn save_window_size(index: i32) -> io::Result<()> {
     set_i32("window_size", index)
 }
 
+/// Lit la position de fenêtre enregistrée `(x, y)` (coin supérieur gauche,
+/// relatif à l'écran ; absente → `None`). Mise à jour quand la fenêtre
+/// fenêtrée est déplacée (voir `render::persist_window_geometry`).
+pub fn load_window_pos() -> Option<(i32, i32)> {
+    Some((get_i32("win_x")?, get_i32("win_y")?))
+}
+
+/// Enregistre la position de fenêtre (les autres clés sont conservées).
+pub fn save_window_pos(x: i32, y: i32) -> io::Result<()> {
+    set_i32("win_x", x)?;
+    set_i32("win_y", y)
+}
+
+/// Lit la taille **réelle** de fenêtre enregistrée `(largeur, hauteur)` en
+/// pixels (taille fenêtrée au dernier déplacement/redimensionnement ; absente
+/// ou invalide → `None`). Complète `load_window_size` (l'index du réglage
+/// SIZE) quand la fenêtre a été redimensionnée à la main.
+pub fn load_window_px_size() -> Option<(i32, i32)> {
+    load_window_px_size_from(&config_path())
+}
+
+/// Lit `win_w`/`win_h` dans un fichier donné (version testable).
+pub fn load_window_px_size_from(path: &Path) -> Option<(i32, i32)> {
+    let w = get_i32_from(path, "win_w")?;
+    let h = get_i32_from(path, "win_h")?;
+    (w > 0 && h > 0).then_some((w, h))
+}
+
+/// Enregistre la taille réelle de fenêtre en pixels (les autres clés sont
+/// conservées).
+pub fn save_window_px_size(w: i32, h: i32) -> io::Result<()> {
+    set_i32("win_w", w)?;
+    set_i32("win_h", h)
+}
+
+/// Lit le mode d'affichage enregistré (fenêtré / zoomé / natif), borné à
+/// `[0, VIEW_MODE_COUNT-1]` (sinon `None`).
+pub fn load_view_mode() -> Option<i32> {
+    load_view_mode_from(&config_path())
+}
+
+/// Lit `view_mode` dans un fichier donné (version testable).
+pub fn load_view_mode_from(path: &Path) -> Option<i32> {
+    let mode = get_i32_from(path, "view_mode")?;
+    (0..VIEW_MODE_COUNT).contains(&mode).then_some(mode)
+}
+
+/// Enregistre le mode d'affichage (les autres clés sont conservées).
+pub fn save_view_mode(mode: i32) -> io::Result<()> {
+    set_i32("view_mode", mode)
+}
+
 /// Écrit `moving_mode` dans un fichier donné (version testable).
 pub fn save_moving_mode_to(path: &Path, mode: i32) -> io::Result<()> {
     set_i32_to(path, "moving_mode", mode)
@@ -395,6 +447,42 @@ mod tests {
         fs::write(&p, "render_style=9\nwindow_size=banane\n").unwrap();
         assert_eq!(load_render_style_from(&p), None);
         assert_eq!(load_window_size_from(&p), None);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn window_geom_keys_round_trip() {
+        // position et taille réelles de la fenêtre fenêtrée : aller-retour,
+        // et taille nulle/invalide ignorée (défaut conservé)
+        let p = temp_path("wingeom.cfg");
+        let _ = fs::remove_file(&p);
+        set_i32_to(&p, "win_x", 120).unwrap();
+        set_i32_to(&p, "win_y", 80).unwrap();
+        set_i32_to(&p, "win_w", 1280).unwrap();
+        set_i32_to(&p, "win_h", 720).unwrap();
+        assert_eq!(get_i32_from(&p, "win_x"), Some(120));
+        assert_eq!(get_i32_from(&p, "win_y"), Some(80));
+        assert_eq!(load_window_px_size_from(&p), Some((1280, 720)));
+        // taille nulle ou invalide → None
+        fs::write(&p, "win_w=0\nwin_h=0\n").unwrap();
+        assert_eq!(load_window_px_size_from(&p), None);
+        fs::write(&p, "win_w=-5\nwin_h=banane\n").unwrap();
+        assert_eq!(load_window_px_size_from(&p), None);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn view_mode_round_trip_and_is_bounded() {
+        // mode d'affichage : aller-retour, et valeurs hors bornes ignorées
+        let p = temp_path("viewmode.cfg");
+        let _ = fs::remove_file(&p);
+        set_i32_to(&p, "view_mode", 2).unwrap();
+        assert_eq!(load_view_mode_from(&p), Some(2));
+        // hors bornes → None (comportement des wrappers de chargement)
+        fs::write(&p, "view_mode=banane\n").unwrap();
+        assert_eq!(load_view_mode_from(&p), None);
+        fs::write(&p, "view_mode=9\n").unwrap();
+        assert_eq!(load_view_mode_from(&p), None);
         let _ = fs::remove_file(&p);
     }
 }

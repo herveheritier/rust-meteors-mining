@@ -39,6 +39,13 @@ pub fn argb_to_color(argb: u32) -> Color {
     )
 }
 
+/// Dessine un texte avec une ombre portée pour améliorer la lisibilité sur
+/// le fond de jeu (utilisé par le HUD d'objectifs et les boîtes de dialogue).
+fn draw_text_shadow(text: &str, x: f32, y: f32, font_size: f32, color: Color) {
+    draw_text(text, x + 1.0, y + 1.0, font_size, Color::new(0.0, 0.0, 0.0, 0.65));
+    draw_text(text, x, y, font_size, color);
+}
+
 // ─── Assets ──────────────────────────────────────────────────────────────────
 
 /// Une couche d'étoiles : positions (dans la tuile) + alpha de chaque étoile.
@@ -275,7 +282,7 @@ pub fn draw_choice_box() {
 
     // titre centré (ex drawTextLeftTop au milieu de la largeur)
     let text_w = measure_text(msg, None, 16, 1.0).width;
-    draw_text(msg, left + (w - text_w) / 2.0, top + 2.0 * BOX_PADDING + 12.0, 16.0, argb_to_color(BOX_FG));
+    draw_text_shadow(msg, left + (w - text_w) / 2.0, top + 2.0 * BOX_PADDING + 12.0, 16.0, argb_to_color(BOX_FG));
 
     // boutons avec survol
     let l = choice_box_layout();
@@ -469,7 +476,7 @@ pub fn draw_shop_box(state: &GameState) {
     // titre centré
     let title = "*** PLACE DE MARCHÉ ***";
     let text_w = measure_text(title, None, 16, 1.0).width;
-    draw_text(
+    draw_text_shadow(
         title,
         left + (w - text_w) / 2.0,
         top + 2.0 * BOX_PADDING + 12.0,
@@ -486,7 +493,7 @@ pub fn draw_shop_box(state: &GameState) {
     // survol blanc (clic = achat ; une arme possédée n'est pas cliquable)
     if show_upgrades && weapons_n > 0 {
         let header = l.weapons[0].y - 12.0;
-        draw_text("ARMES", left + BOX_PADDING + 4.0, header, 12.0, argb_to_color(BOX_FG));
+        draw_text_shadow("ARMES", left + BOX_PADDING + 4.0, header, 16.0, argb_to_color(BOX_FG));
         for (i, rect) in l.weapons.iter().enumerate().take(weapons_n) {
             let spec = scenario::weapon_spec(i);
             let owned = scenario::weapon_owned(state, i);
@@ -505,7 +512,7 @@ pub fn draw_shop_box(state: &GameState) {
                     None => "FREE".to_string(),
                 }
             };
-            draw_text(
+            draw_text_shadow(
                 &format!("W{} {}", i + 1, spec.name),
                 rect.x + 4.0,
                 rect.y + 16.0,
@@ -513,12 +520,12 @@ pub fn draw_shop_box(state: &GameState) {
                 color,
             );
             let status_w = measure_text(&status, None, 16, 1.0).width;
-            draw_text(&status, rect.x + rect.w - 4.0 - status_w, rect.y + 16.0, 16.0, color);
-            draw_text(
+            draw_text_shadow(&status, rect.x + rect.w - 4.0 - status_w, rect.y + 16.0, 16.0, color);
+            draw_text_shadow(
                 &format!("MUNITIONS: {} m / {} u", spec.ammo_price, spec.ammo_pack),
                 rect.x + 4.0,
                 rect.y + 32.0,
-                12.0,
+                16.0,
                 argb_to_color(BOX_FG_DIM),
             );
         }
@@ -533,11 +540,11 @@ pub fn draw_shop_box(state: &GameState) {
     // blanc, clic sur la ligne hors piste = achat de la quantité
     if show_upgrades {
         let header = l.supplies_fuel.y - 12.0;
-        draw_text(
+        draw_text_shadow(
             "RAVITAILLEMENT",
             left + BOX_PADDING + 4.0,
             header,
-            12.0,
+            16.0,
             argb_to_color(BOX_FG),
         );
         // FUEL : réservoir courant + curseur (manque du réservoir) + coût
@@ -549,7 +556,7 @@ pub fn draw_shop_box(state: &GameState) {
         } else {
             format!("FUEL: {:.0}/{:.0}", state.resources.fuel, fuel_cap)
         };
-        draw_text(&fuel_txt, l.supplies_fuel.x + 4.0, l.supplies_fuel.y + 22.0, 16.0, fuel_color);
+        draw_text_shadow(&fuel_txt, l.supplies_fuel.x + 4.0, l.supplies_fuel.y + 22.0, 16.0, fuel_color);
         draw_supply_slider(l.slider_fuel, fuel_missing, state.shop_fuel_qty, m);
         let fuel_qty = state.shop_fuel_qty;
         let fuel_packs = (fuel_missing > 0.0 && fuel_qty > 0.0).then(|| {
@@ -585,7 +592,7 @@ pub fn draw_shop_box(state: &GameState) {
             } else {
                 format!("{}: {}/{}", spec.name, state.resources.weapon_ammo[i], ammo_cap)
             };
-            draw_text(&ammo_txt, rect.x + 4.0, rect.y + 22.0, 16.0, color);
+            draw_text_shadow(&ammo_txt, rect.x + 4.0, rect.y + 22.0, 16.0, color);
             draw_supply_slider(l.slider_ammo[i], missing as f64, state.shop_ammo_qty[i], m);
             let ammo_packs = (missing > 0 && qty > 0).then(|| {
                 let n = scenario::ammo_pack_count(state, i, qty);
@@ -624,7 +631,7 @@ pub fn draw_shop_box(state: &GameState) {
                 ),
                 None => format!("{}: {} (MAX)", line.label, line.capacity),
             };
-            draw_text(&text, rect.x + 4.0, rect.y + 18.0, 16.0, color);
+            draw_text_shadow(&text, rect.x + 4.0, rect.y + 18.0, 16.0, color);
         }
     }
 
@@ -635,7 +642,7 @@ pub fn draw_shop_box(state: &GameState) {
     // quand la réputation du rang courant réduit le coût, FREE sinon) -
     // survol blanc (clic = sélection gratuite ou déblocage contre minerais)
     let modes_header = l.modes[0].y - 12.0;
-    draw_text("MOVING MODE", left + BOX_PADDING + 4.0, modes_header, 12.0, argb_to_color(BOX_FG));
+    draw_text_shadow("MOVING MODE", left + BOX_PADDING + 4.0, modes_header, 16.0, argb_to_color(BOX_FG));
     for (i, rect) in l.modes.iter().enumerate() {
         let mode = MOVING_MODE_ORDER[i];
         let catalog = MOVING_MODES[mode as usize];
@@ -657,10 +664,10 @@ pub fn draw_shop_box(state: &GameState) {
                 None => "FREE".to_string(),
             }
         };
-        draw_text(catalog.name, rect.x + 4.0, rect.y + 16.0, 16.0, color);
+        draw_text_shadow(catalog.name, rect.x + 4.0, rect.y + 16.0, 16.0, color);
         let status_w = measure_text(&status, None, 16, 1.0).width;
-        draw_text(&status, rect.x + rect.w - 4.0 - status_w, rect.y + 16.0, 16.0, color);
-        draw_text(catalog.description, rect.x + 4.0, rect.y + 32.0, 12.0, argb_to_color(BOX_FG_DIM));
+        draw_text_shadow(&status, rect.x + rect.w - 4.0 - status_w, rect.y + 16.0, 16.0, color);
+        draw_text_shadow(catalog.description, rect.x + 4.0, rect.y + 32.0, 16.0, argb_to_color(BOX_FG_DIM));
     }
 
     // retour à la boîte DOCK STATION
@@ -674,10 +681,10 @@ pub fn draw_shop_box(state: &GameState) {
 /// rien ne manque, « - » quand rien n'est sélectionné (aucun minerai).
 fn draw_supply_cost(rect: Rect, txt: String, packs: Option<String>, color: Color) {
     let w = measure_text(&txt, None, 16, 1.0).width;
-    draw_text(&txt, rect.x + rect.w - 4.0 - w, rect.y + 22.0, 16.0, color);
+    draw_text_shadow(&txt, rect.x + rect.w - 4.0 - w, rect.y + 22.0, 16.0, color);
     if let Some(packs) = packs {
         let pw = measure_text(&packs, None, 12, 1.0).width;
-        draw_text(&packs, rect.x + rect.w - 4.0 - pw, rect.y + 32.0, 12.0, argb_to_color(BOX_FG_DIM));
+        draw_text_shadow(&packs, rect.x + rect.w - 4.0 - pw, rect.y + 32.0, 16.0, argb_to_color(BOX_FG_DIM));
     }
 }
 
@@ -707,7 +714,7 @@ fn draw_box_button(label: &str, rect: Rect) {
     let color = argb_to_color(if hovered { BOX_HOVER } else { BOX_FG });
     draw_rectangle_lines(rect.x, rect.y, rect.w, rect.h, 1.5, color);
     let text_w = measure_text(label, None, 16, 1.0).width;
-    draw_text(label, rect.x + (rect.w - text_w) / 2.0, rect.y + 18.0, 16.0, color);
+    draw_text_shadow(label, rect.x + (rect.w - text_w) / 2.0, rect.y + 18.0, 16.0, color);
 }
 
 // ─── Fenêtre d'aide (touche S, ex windowUtils_help) ─────────────────────────
@@ -838,10 +845,10 @@ pub fn settings_box_layout() -> SettingsLayout {
     let volume_track = Rect::new(col_left + 100.0, top + 110.0, col_w - 104.0, 22.0);
     // RESET PROGRESSION : bouton pleine largeur de la colonne gauche, sous le
     // volume (remet à zéro la progression du scénario courant)
-    let reset_progress = Rect::new(col_left, top + 160.0, col_w, 26.0);
+    let reset_progress = Rect::new(col_left, top + 158.0, col_w, 26.0);
     // TOUCH UI : case à cocher sous RESET PROGRESSION (interface tactile
     // joystick + bouton de tir, `touch.rs`)
-    let touch_ui = Rect::new(col_left, top + 192.0, col_w, 26.0);
+    let touch_ui = Rect::new(col_left, top + 184.0, col_w, 26.0);
 
     // colonne droite : panneau des options graphiques
     let graphics_panel = Rect::new(col_right, top + 44.0, col_w, 176.0);
@@ -901,7 +908,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     // titre centré (ex drawTextLeftTop au milieu de la largeur)
     let msg = "*** SETTINGS ***";
     let text_w = measure_text(msg, None, 16, 1.0).width;
-    draw_text(msg, left + (w - text_w) / 2.0, top + 2.0 * BOX_PADDING + 12.0, 16.0, argb_to_color(BOX_FG));
+    draw_text_shadow(msg, left + (w - text_w) / 2.0, top + 2.0 * BOX_PADDING + 12.0, 16.0, argb_to_color(BOX_FG));
 
     let layout = settings_box_layout();
     let m = mouse_to_game();
@@ -925,12 +932,12 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     let thumb_x = (track.x + fill - 2.0).clamp(track.x, track.x + track.w - 4.0);
     draw_rectangle(thumb_x, bar_y - 4.0, 4.0, 14.0, color);
     let value = format!("{}%", vol_pct);
-    let value_w = measure_text(&value, None, 12, 1.0).width;
+    let value_w = measure_text(&value, None, 16, 1.0).width;
     draw_text(
         &value,
         track.x + (track.w - value_w) / 2.0,
-        track.y + track.h + 12.0,
-        12.0,
+        track.y + track.h + 4.0,
+        16.0,
         argb_to_color(BOX_FG_DIM),
     );
 
@@ -940,7 +947,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     let g = layout.graphics_panel;
     draw_rectangle(g.x, g.y, g.w, g.h, argb_to_color(BOX_PANEL_BG));
     draw_rectangle_lines(g.x, g.y, g.w, g.h, 1.0, argb_to_color(BOX_PANEL_BORDER));
-    draw_text("GRAPHICS", g.x + 10.0, g.y + 14.0, 12.0, argb_to_color(BOX_FG));
+    draw_text("GRAPHICS", g.x + 10.0, g.y + 14.0, 16.0, argb_to_color(BOX_FG));
     draw_cycle_row(layout.render, "RENDER", render_style_label(state.render_style as i32), m);
     draw_cycle_row(layout.window_mode, "WINDOW", window_mode_label(state.view_mode as i32), m);
     draw_cycle_row(layout.window_size, "SIZE", &window_size_label(state.window_size), m);
@@ -954,7 +961,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
             "RESTART REQUIRED",
             g.x + 30.0,
             layout.antialias.y + 40.0,
-            12.0,
+            16.0,
             argb_to_color(BOX_FG_DIM),
         );
         draw_box_button("RESTART", layout.restart);
@@ -975,8 +982,8 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
         draw_text(
             &format!("REMOTE: {url}"),
             layout.music.x + 4.0,
-            top + 232.0,
-            12.0,
+            top + 218.0,
+            16.0,
             argb_to_color(BOX_FG_DIM),
         );
     }
@@ -1158,6 +1165,44 @@ pub fn cycle_view_mode(state: &mut GameState) {
             ViewMode::Windowed
         }
     };
+    // le dernier mode utilisé est persisté : le jeu redémarre dedans
+    let _ = crate::persist::save_view_mode(state.view_mode as i32);
+}
+
+/// Persiste la position et la taille **réelles** de la fenêtre fenêtrée quand
+/// elles changent (déplacement ou redimensionnement par le WM) : écriture du
+/// fichier de config une seule fois par changement. La position est lue via
+/// X11 (`x11::window_position`, indisponible hors Linux : seule la taille est
+/// alors persistée). Appelé périodiquement par les boucles titre et jeu (au
+/// plus une vérification par seconde - l'ouverture du display X coûte).
+pub fn persist_window_geometry(state: &GameState) {
+    if state.view_mode != ViewMode::Windowed {
+        return;
+    }
+    static LAST_CHECK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let now_ms = (get_time() * 1000.0) as u64;
+    if now_ms.saturating_sub(LAST_CHECK.load(std::sync::atomic::Ordering::Relaxed)) < 1000 {
+        return;
+    }
+    LAST_CHECK.store(now_ms, std::sync::atomic::Ordering::Relaxed);
+
+    let w = screen_width() as i32;
+    let h = screen_height() as i32;
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    let size_changed = crate::persist::load_window_px_size() != Some((w, h));
+    if let Some((x, y)) = crate::x11::window_position() {
+        let pos_changed = crate::persist::load_window_pos() != Some((x, y));
+        if size_changed {
+            let _ = crate::persist::save_window_px_size(w, h);
+        }
+        if pos_changed {
+            let _ = crate::persist::save_window_pos(x, y);
+        }
+    } else if size_changed {
+        let _ = crate::persist::save_window_px_size(w, h);
+    }
 }
 
 /// Affiche la texture de la vue virtuelle dans la fenêtre, zoomée (letterbox,
@@ -2127,11 +2172,13 @@ pub fn draw_eva_recovery_cable(
         color.a *= 1.0 - t;
         draw_docking_cable(a, b, 1.0, 0.0, true, color); // tendu
     } else {
-        // récupération : déploiement rapide vers le cosmonaute (les ~30 % du
-        // début), puis cordon tendu qui tire - ondulation forte tant que le
-        // câble est lâche, nulle une fois la tension installée
+        // récupération en deux phases : le cordon se déploie de l'anneau
+        // vers le cosmonaute (qui reste sur place) pendant la fraction
+        // `EVA_CABLE_DEPLOY_FRACTION`, puis, complètement tendu, le ramène
+        // sur l'anneau - ondulation forte tant que le câble est lâche
+        // (déploiement), nulle une fois la tension installée (traction)
         let t = (1.0 - state.eva_recovery / EVA_RECOVERY_DURATION).clamp(0.0, 1.0) as f32;
-        let deploy = (t / 0.3).clamp(0.0, 1.0);
+        let deploy = (t / EVA_CABLE_DEPLOY_FRACTION as f32).clamp(0.0, 1.0);
         let wave = 10.0 * (1.0 - t);
         draw_docking_cable(a, b, deploy, wave, true, color);
     }
@@ -2451,6 +2498,31 @@ pub fn draw_message(state: &mut GameState) {
 
 // ─── Objectifs DAG (scénarios custom) ──────────────────────────────────────
 
+/// Découpe `text` en plusieurs lignes qui tiennent dans `max_width` pixels à
+/// la taille de police `font_size` (coupure aux espaces, sans couper les
+/// mots). Permet d'afficher un objectif de scénario en entier, sans troncature.
+fn wrap_text(text: &str, max_width: f32, font_size: u16) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        let candidate = if current.is_empty() {
+            word.to_string()
+        } else {
+            format!("{} {}", current, word)
+        };
+        if !current.is_empty() && measure_text(&candidate, None, font_size, 1.0).width > max_width {
+            lines.push(std::mem::take(&mut current));
+            current = word.to_string();
+        } else {
+            current = candidate;
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
 /// Affiche les objectifs DAG du scénario custom en cours dans le coin
 /// supérieur droit de l'écran : panneau semi-transparent avec l'objectif
 /// courant en grand, un sous-objectif s'il y en a un, et une barre de
@@ -2470,12 +2542,35 @@ pub fn draw_objectives_hud(state: &GameState) {
     let secondary = unlocked.get(1);
 
     // ── Panneau principal (coin supérieur droit) ──────────────────────────
-    let panel_w: f32 = 260.0;
-    let mut panel_h: f32 = 32.0; // header
-    if primary.is_some() { panel_h += 40.0; }
-    if secondary.is_some() { panel_h += 22.0; }
-    panel_h += 18.0; // barre
-    let panel_h = panel_h + 8.0; // padding bas
+    let panel_w: f32 = 280.0;
+    let text_w = panel_w - 22.0; // marges gauche/droite
+    let title_font = 16u16;
+    let desc_font = 16u16;
+    let sub_font = 16u16;
+
+    // Texte calculé une seule fois (wrapping pour ne jamais tronquer)
+    let title_lines = primary
+        .map(|o| wrap_text(&o.title, text_w, title_font))
+        .unwrap_or_default();
+    let desc_lines = primary
+        .map(|o| wrap_text(&o.description, text_w, desc_font))
+        .unwrap_or_default();
+    let sub_lines = secondary
+        .map(|o| wrap_text(&format!("> {}", o.title), text_w, sub_font))
+        .unwrap_or_default();
+
+    let title_line_h = 20.0f32;
+    let desc_line_h = 20.0f32;
+    let sub_line_h = 20.0f32;
+
+    // Hauteur dynamique : la boîte s'adapte à la longueur du texte complet
+    let mut panel_h: f32 = 14.0; // padding haut
+    panel_h += 20.0; // en-tête
+    panel_h += title_lines.len() as f32 * title_line_h;
+    panel_h += desc_lines.len() as f32 * desc_line_h;
+    panel_h += sub_lines.len() as f32 * sub_line_h;
+    panel_h += 18.0; // barre de progression
+    panel_h += 10.0; // padding bas
 
     let panel_x = VIEWPORT_WIDTH as f32 - panel_w - 12.0;
     let panel_y = 36.0;
@@ -2483,59 +2578,52 @@ pub fn draw_objectives_hud(state: &GameState) {
     // Fond semi-transparent (ombre portée)
     draw_rectangle(
         panel_x + 2.0, panel_y + 2.0, panel_w, panel_h,
-        Color::new(0.0, 0.0, 0.0, 0.6),
+        Color::new(0.0, 0.0, 0.0, 0.5),
     );
-    // Fond principal
+    // Fond principal (plus transparent pour laisser voir le jeu)
     draw_rectangle(
         panel_x, panel_y, panel_w, panel_h,
-        Color::new(0.06, 0.08, 0.12, 0.85),
+        Color::new(0.05, 0.07, 0.10, 0.7),
     );
     // Bordure fine
     draw_rectangle_lines(
         panel_x, panel_y, panel_w, panel_h, 1.0,
-        Color::new(0.22, 0.8, 0.53, 0.6),
+        Color::new(0.22, 0.8, 0.53, 0.55),
     );
 
-    let mut y = panel_y + 18.0;
-    let text_x = panel_x + 10.0;
+    let mut y = panel_y + 14.0;
+    let text_x = panel_x + 11.0;
 
     // En-tête : OBJECTIFS 2/5
-    let header = format!("OBJECTIFS {}/{}", completed, total);
-    draw_text(&header, text_x, y, 14.0, Color::new(0.9, 0.93, 0.94, 1.0));
+    draw_text_shadow(
+        &format!("OBJECTIFS {}/{}", completed, total),
+        text_x, y, 16.0,
+        Color::new(0.92, 0.95, 0.96, 1.0),
+    );
     y += 20.0;
 
-    // Objectif principal (le plus important)
-    if let Some(obj) = primary {
-        draw_text(
-            &obj.title, text_x, y, 14.0,
-            Color::new(0.22, 1.0, 0.53, 1.0),
-        );
-        y += 16.0;
-        let desc = &obj.description;
-        let short_desc = if desc.len() > 42 {
-            format!("{}...", &desc[..39])
-        } else {
-            desc.clone()
-        };
-        draw_text(
-            &short_desc, text_x, y, 11.0,
-            Color::new(0.75, 0.78, 0.82, 0.9),
-        );
-        y += 14.0;
+    // Objectif principal (le plus important) : titre puis description
+    // complète, éventuellement sur plusieurs lignes
+    if !title_lines.is_empty() || !desc_lines.is_empty() {
+        for line in &title_lines {
+            draw_text_shadow(line, text_x, y, title_font as f32, Color::new(0.22, 1.0, 0.53, 1.0));
+            y += title_line_h;
+        }
+        for line in &desc_lines {
+            draw_text_shadow(line, text_x, y, desc_font as f32, Color::new(0.84, 0.88, 0.92, 1.0));
+            y += desc_line_h;
+        }
     }
 
     // Sous-objectif (plus discret)
-    if let Some(obj) = secondary {
-        draw_text(
-            &format!("> {}", obj.title), text_x + 6.0, y, 11.0,
-            Color::new(1.0, 0.84, 0.0, 0.8),
-        );
-        y += 16.0;
+    for line in &sub_lines {
+        draw_text_shadow(line, text_x + 6.0, y, sub_font as f32, Color::new(1.0, 0.84, 0.0, 1.0));
+        y += sub_line_h;
     }
 
     // Barre de progression
     if total > 0 {
-        let bar_w = panel_w - 20.0;
+        let bar_w = panel_w - 22.0;
         let bar_h = 8.0;
         let bar_x = text_x;
         let progress = completed as f64 / total as f64;
@@ -2591,12 +2679,12 @@ pub fn draw_objectives_hud(state: &GameState) {
         );
 
         // Ligne 2 : nom de l'objectif
-        let tw = measure_text(title, None, 14, 1.0).width * pulse;
+        let tw = measure_text(title, None, 16, 1.0).width * pulse;
         draw_text(
             title,
             (VIEWPORT_WIDTH as f32 - tw) / 2.0,
             by + 40.0,
-            14.0 * pulse,
+            16.0 * pulse,
             Color::new(1.0, 1.0, 1.0, alpha),
         );
     }

@@ -301,11 +301,7 @@ pub fn update(
     // faut presser F deux fois pour changer de mode.
     if f_pressed(state) {
         cycle_view_mode(state);
-        state.send_message(match state.view_mode {
-            ViewMode::Windowed => "WINDOWED",
-            ViewMode::Zoomed => "FULLSCREEN (ZOOMED)",
-            ViewMode::Native => "FULLSCREEN (NATIVE)",
-        });
+        state.send_message(crate::config::view_mode_message(state.view_mode as i32));
     }
 
     // M : bascule la musique (ex `M : mute music` de mainLoop) - persistée
@@ -1081,13 +1077,16 @@ fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &m
     state.send_message("STATION RECOVERY - HOLD ON");
 }
 
-/// Fait avancer la **récupération** du cosmonaute EVA d'une frame : le cordon
-/// (jailli de l'anneau vers lui) le **ramène sur l'anneau** - sa position est
-/// interpolée (smoothstep) de `eva_recovery_from_pos` vers `eva_recovery_to_pos`
-/// pendant `EVA_RECOVERY_DURATION`, vitesse nulle, le monde est gelé. À la
-/// fin, le **fondu enchaîné** démarre : le vaisseau est reconstruit au centre
-/// de la station (`respawn_player`, liens attachés) et le cosmonaute s'efface
-/// pendant que le vaisseau apparaît (`advance_eva_crossfade`).
+/// Fait avancer la **récupération** du cosmonaute EVA d'une frame, en deux
+/// phases (monde gelé, vitesse nulle) : pendant la fraction
+/// `EVA_CABLE_DEPLOY_FRACTION` de `EVA_RECOVERY_DURATION`, le cordon jaillit
+/// de l'anneau vers le cosmonaute qui reste **sur place** ; une fois
+/// complètement déployé (tendu), il le **ramène sur l'anneau** - position
+/// interpolée (smoothstep) de `eva_recovery_from_pos` vers
+/// `eva_recovery_to_pos` sur la phase restante. À la fin, le **fondu
+/// enchaîné** démarre : le vaisseau est reconstruit au centre de la station
+/// (`respawn_player`, liens attachés) et le cosmonaute s'efface pendant que
+/// le vaisseau apparaît (`advance_eva_crossfade`).
 fn advance_eva_recovery(
     state: &mut GameState,
     shapes: &mut [Shape],
@@ -1095,15 +1094,24 @@ fn advance_eva_recovery(
     dt: f64,
 ) {
     state.eva_recovery = (state.eva_recovery - dt).max(0.0);
-    // avancement 0..1 avec lissage (smoothstep) pour un mouvement fluide
+    // avancement global 0..1 sur toute la durée de la récupération
     let t = (1.0 - state.eva_recovery / EVA_RECOVERY_DURATION).clamp(0.0, 1.0);
-    let e = t * t * (3.0 - 2.0 * t);
     let idx = state.eva_cosmonaut as usize;
     let c = &mut shapes[idx];
-    c.position.x =
-        state.eva_recovery_from_pos.x + (state.eva_recovery_to_pos.x - state.eva_recovery_from_pos.x) * e;
-    c.position.y =
-        state.eva_recovery_from_pos.y + (state.eva_recovery_to_pos.y - state.eva_recovery_from_pos.y) * e;
+    if t < EVA_CABLE_DEPLOY_FRACTION {
+        // Phase 1 : le cordon se déploie de l'anneau vers le cosmonaute,
+        // qui reste **sur place** tant qu'il n'est pas complètement tendu
+        c.position = state.eva_recovery_from_pos;
+    } else {
+        // Phase 2 : cordon complètement déployé, il ramène le cosmonaute
+        // sur l'anneau - interpolation lissée (smoothstep) sur la phase
+        let u = ((t - EVA_CABLE_DEPLOY_FRACTION) / (1.0 - EVA_CABLE_DEPLOY_FRACTION)).clamp(0.0, 1.0);
+        let e = u * u * (3.0 - 2.0 * u);
+        c.position.x = state.eva_recovery_from_pos.x
+            + (state.eva_recovery_to_pos.x - state.eva_recovery_from_pos.x) * e;
+        c.position.y = state.eva_recovery_from_pos.y
+            + (state.eva_recovery_to_pos.y - state.eva_recovery_from_pos.y) * e;
+    }
     c.velocity = 0.0;
     c.rotation = 0.0;
     for j in c.first_triangle..=c.last_triangle {
@@ -1774,9 +1782,9 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             let _ = persist::save_render_style(state.render_style as i32);
         }
         SettingsClick::WindowMode => {
-            // même cycle que la touche F (fenêtré → zoomé → natif) - pour la
-            // session en cours uniquement (non persisté : le jeu démarre
-            // toujours fenêtré, cycle F prévisible)
+            // même cycle que la touche F (fenêtré → zoomé → natif) ; le
+            // mode est persisté dans `cycle_view_mode` : le jeu redémarre
+            // dans le dernier mode utilisé
             cycle_view_mode(state);
         }
         SettingsClick::WindowSize => {
@@ -1940,6 +1948,8 @@ fn apply_view_mode(state: &mut GameState, target: ViewMode) {
         _ => {}
     }
     state.view_mode = target;
+    // le dernier mode utilisé est persisté : le jeu redémarre dedans
+    let _ = crate::persist::save_view_mode(target as i32);
 }
 
 /// Applique le volume maître depuis une fraction (0..1) de la barre et le

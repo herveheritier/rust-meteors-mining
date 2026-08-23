@@ -93,6 +93,9 @@ pub const RENDER_STYLE_COLORED: i32 = 1;
 pub const RENDER_STYLE_MESH: i32 = 2;
 pub const RENDER_STYLE_COUNT: i32 = 3;
 
+/// Nombre de modes d'affichage de la fenêtre (fenêtré / zoomé / natif).
+pub const VIEW_MODE_COUNT: i32 = 3;
+
 /// Libellé d'affichage d'un style de rendu (écran de paramétrage).
 pub fn render_style_label(style: i32) -> &'static str {
     match style {
@@ -117,6 +120,16 @@ pub fn window_mode_label(mode: i32) -> &'static str {
         WINDOW_MODE_ZOOMED => "ZOOMED",
         WINDOW_MODE_NATIVE => "NATIVE",
         _ => "?",
+    }
+}
+
+/// Message HUD annonçant le mode d'affichage **activé** (touche F et
+/// lancement de la partie) : fenêtré, ou plein écran zoomé / natif.
+pub fn view_mode_message(mode: i32) -> &'static str {
+    match mode {
+        WINDOW_MODE_ZOOMED => "FULLSCREEN (ZOOMED)",
+        WINDOW_MODE_NATIVE => "FULLSCREEN (NATIVE)",
+        _ => "WINDOWED",
     }
 }
 
@@ -202,6 +215,12 @@ pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 /// de l'anneau jusqu'à lui puis le ramène sur l'anneau - le monde est gelé
 /// (voir `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
 pub const EVA_RECOVERY_DURATION: f64 = 2.5;
+/// Fraction de `EVA_RECOVERY_DURATION` consacrée au **déploiement** du cordon
+/// de récupération : pendant cette première phase le cosmonaute reste sur
+/// place et le cordon jaillit de l'anneau jusqu'à lui ; une fois
+/// complètement déployé (tendu), il le ramène sur l'anneau (voir
+/// `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
+pub const EVA_CABLE_DEPLOY_FRACTION: f64 = 0.3;
 /// Durée (secondes) du **fondu enchaîné** après la récupération : le
 /// cosmonaute ramené sur l'anneau s'efface pendant que le vaisseau
 /// reconstruit apparaît au centre de la station, liens attachés (voir
