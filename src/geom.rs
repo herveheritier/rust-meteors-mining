@@ -137,6 +137,36 @@ impl World {
     }
 }
 
+/// Vecteur le plus court entre `from` et `to` dans le monde **torique** :
+/// chaque composante est ramenée dans `[-moitié, +moitié]` de la taille du
+/// monde (repliement cyclique) - un objet proche de l'autre côté de la
+/// frontière compte comme proche (ex distance vaisseau ↔ base affichée au
+/// HUD, détection d'accostage).
+pub fn wrapped_delta(from: Point, to: Point, world: &World) -> Point {
+    let wx = world.maxx - world.minx;
+    let wy = world.maxy - world.miny;
+    let mut dx = to.x - from.x;
+    let mut dy = to.y - from.y;
+    if dx > wx / 2.0 {
+        dx -= wx;
+    } else if dx < -wx / 2.0 {
+        dx += wx;
+    }
+    if dy > wy / 2.0 {
+        dy -= wy;
+    } else if dy < -wy / 2.0 {
+        dy += wy;
+    }
+    Point::new(dx, dy)
+}
+
+/// Distance euclidienne la plus courte entre deux points dans le monde
+/// torique (voir `wrapped_delta`).
+pub fn wrapped_distance(from: Point, to: Point, world: &World) -> f64 {
+    let d = wrapped_delta(from, to, world);
+    d.x.hypot(d.y)
+}
+
 // ─── Segment ─────────────────────────────────────────────────────────────────
 
 /// Un segment (ex `segment_type`).
@@ -455,6 +485,31 @@ mod tests {
         let mut p = Point::new(0.0, -60.0);
         p.normalize_world(&w);
         assert_eq!(p.y, 40.0);
+    }
+
+    #[test]
+    fn wrapped_delta_takes_the_shortest_cyclic_path() {
+        let w = test_world(); // bornes ±50 → largeur 100
+        // même quadrant : distance directe
+        let d = wrapped_delta(Point::new(10.0, 10.0), Point::new(20.0, 30.0), &w);
+        assert!((d.x - 10.0).abs() < 1e-12 && (d.y - 20.0).abs() < 1e-12);
+        // de l'autre côté de la frontière droite : le repli est plus court
+        // (40 → 10) que le chemin direct (40 → 90)
+        let d = wrapped_delta(Point::new(40.0, 0.0), Point::new(-40.0, 0.0), &w);
+        assert!((d.x - 20.0).abs() < 1e-12);
+        assert!((d.y).abs() < 1e-12);
+        // idem sur l'axe Y
+        let d = wrapped_delta(Point::new(0.0, -40.0), Point::new(0.0, 40.0), &w);
+        assert!((d.x).abs() < 1e-12);
+        assert!((d.y + 20.0).abs() < 1e-12);
+        // la distance torique est bien la plus courte des deux chemins
+        let direct = (80.0f64).hypot(0.0);
+        let wrapped = wrapped_distance(Point::new(40.0, 0.0), Point::new(-40.0, 0.0), &w);
+        assert!(wrapped < direct);
+        assert!((wrapped - 20.0).abs() < 1e-12);
+        // l'égalité (exactement une demi-largeur) garde le chemin direct
+        let d = wrapped_delta(Point::new(-25.0, 0.0), Point::new(25.0, 0.0), &w);
+        assert!((d.x - 50.0).abs() < 1e-12);
     }
 
     #[test]

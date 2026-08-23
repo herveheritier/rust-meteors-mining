@@ -55,52 +55,28 @@ pub struct ScenarioChain {
 #[allow(dead_code)]
 pub const GENERATED_OBJECTIVES: &[ObjectiveSpec] = &[
     ObjectiveSpec {
-        id: "step_first_dock",
-        title: "Premier Accostage",
-        description: "Accostez à la station pour initialiser les systèmes de bord.",
+        id: "step_start",
+        title: "Premier Objectif",
+        description: "Survivre ",
         prerequisites: &[],
-        condition: ObjectiveCondition::DockAtStation { required: 1 },
-        reward: ObjectiveReward::Minerals(5),
-    },
-    ObjectiveSpec {
-        id: "step_mine_gems",
-        title: "Récolte Initiale",
-        description: "Détruisez des météores et collectez 10 minerais.",
-        prerequisites: &["step_first_dock"],
-        condition: ObjectiveCondition::CollectMinerals { required: 10 },
+        condition: ObjectiveCondition::SurviveTime { seconds: 30.0 },
         reward: ObjectiveReward::Minerals(10),
     },
     ObjectiveSpec {
-        id: "step_reputation",
-        title: "Notoriété du Mineur",
-        description: "Atteignez 25 points de réputation auprès de la station.",
-        prerequisites: &["step_mine_gems"],
-        condition: ObjectiveCondition::ReachReputation { required: 25.0 },
-        reward: ObjectiveReward::Reputation(10.0),
-    },
-    ObjectiveSpec {
-        id: "step_unlock_inertial",
-        title: "Nouveau Mode de Vol",
-        description: "Achetez le mode de déplacement Inerte au magasin.",
-        prerequisites: &["step_reputation"],
+        id: "obj_mt66lao7",
+        title: "Mode Inertiel",
+        description: "Acheter le mode de  contrôle  inertial",
+        prerequisites: &["step_start"],
         condition: ObjectiveCondition::UnlockMovementMode { mode: 1 },
-        reward: ObjectiveReward::Fuel(50.0),
-    },
-    ObjectiveSpec {
-        id: "step_master_pilot",
-        title: "Maître Pilote",
-        description: "Détruisez 50 météores avec le nouveau système de navigation.",
-        prerequisites: &["step_unlock_inertial"],
-        condition: ObjectiveCondition::DestroyAsteroids { required: 50 },
-        reward: ObjectiveReward::Victory,
+        reward: ObjectiveReward::Minerals(10),
     },
 ];
 
 #[allow(dead_code)]
 pub const GENERATED_SCENARIO_CHAIN: ScenarioChain = ScenarioChain {
-    id: "campaign_prospector",
-    name: "CAMPAGNE DE PROSPECTION",
-    description: "Séquence d'objectifs guidée pour devenir un prospecteur chevronné.",
+    id: "test",
+    name: "TEST",
+    description: "Description de votre nouveau scénario.",
     rules_color: 0xFF39FF88,
     objectives: GENERATED_OBJECTIVES,
 };

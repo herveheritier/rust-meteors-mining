@@ -761,6 +761,7 @@ pub fn draw_help_box() {
         "G : generate a shape",
         "O : settings (audio, graphics)",
         "K : kill all shapes",
+        "Enter : dock box (when docked)",
     ];
     for (i, label) in labels.iter().enumerate() {
         draw_text(
@@ -1914,7 +1915,8 @@ pub fn draw_docking_marker(
     if !inner_draw_limit(Point::new(center.x as f64, center.y as f64)) {
         return; // la zone est hors écran (la distance est au HUD)
     }
-    let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
+    // distance la plus courte dans le monde torique (repliement cyclique)
+    let dist = crate::geom::wrapped_distance(player_position, station_position, world);
     let in_zone = dist < STATION_DOCK_DISTANCE;
     // qualité de l'approche sur tout le rayon de la base (voir
     // `docking_approach_quality`) : interpolation continue rouge → vert
@@ -1978,7 +1980,8 @@ pub fn docking_marker_visible(
     {
         return false; // tenu par les liens, ou pas encore revenu à la base
     }
-    let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
+    // distance la plus courte dans le monde torique (repliement cyclique)
+    let dist = crate::geom::wrapped_distance(player_position, station_position, &state.world);
     dist < station_radius
 }
 
@@ -2201,7 +2204,8 @@ pub fn draw_docking_hud(
     player_speed: f64,
     x: f32,
 ) {
-    let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
+    // distance la plus courte dans le monde torique (repliement cyclique)
+    let dist = crate::geom::wrapped_distance(player_position, station_position, &state.world);
     let in_zone = dist < STATION_DOCK_DISTANCE;
     // récupération du cosmonaute / fondu enchaîné : considéré comme accosté
     let (text, color) = if state.dock_box
@@ -2555,6 +2559,9 @@ pub fn draw_objectives_hud(state: &GameState) {
     let desc_lines = primary
         .map(|o| wrap_text(&o.description, text_w, desc_font))
         .unwrap_or_default();
+    let cond_lines = primary
+        .map(|o| wrap_text(&format!("-> {}", format_condition_hud(&o.condition, state, o.active_time)), text_w, desc_font))
+        .unwrap_or_default();
     let sub_lines = secondary
         .map(|o| wrap_text(&format!("> {}", o.title), text_w, sub_font))
         .unwrap_or_default();
@@ -2568,6 +2575,7 @@ pub fn draw_objectives_hud(state: &GameState) {
     panel_h += 20.0; // en-tête
     panel_h += title_lines.len() as f32 * title_line_h;
     panel_h += desc_lines.len() as f32 * desc_line_h;
+    panel_h += cond_lines.len() as f32 * desc_line_h;
     panel_h += sub_lines.len() as f32 * sub_line_h;
     panel_h += 18.0; // barre de progression
     panel_h += 10.0; // padding bas
@@ -2611,6 +2619,10 @@ pub fn draw_objectives_hud(state: &GameState) {
         }
         for line in &desc_lines {
             draw_text_shadow(line, text_x, y, desc_font as f32, Color::new(0.84, 0.88, 0.92, 1.0));
+            y += desc_line_h;
+        }
+        for line in &cond_lines {
+            draw_text_shadow(line, text_x, y, desc_font as f32, Color::new(0.0, 1.0, 1.0, 0.9));
             y += desc_line_h;
         }
     }
@@ -2692,7 +2704,7 @@ pub fn draw_objectives_hud(state: &GameState) {
 
 /// Formate le texte d'une condition pour l'affichage HUD.
 #[allow(dead_code)]
-fn format_condition_hud(cond: &crate::scenario_loader::JsonCondition, state: &GameState) -> String {
+fn format_condition_hud(cond: &crate::scenario_loader::JsonCondition, state: &GameState, active_time: f64) -> String {
     match cond.condition_type.as_str() {
         "DestroyAsteroids" => {
             let current = state.meteors_destroyed.min(cond.required as i32);
@@ -2717,14 +2729,25 @@ fn format_condition_hud(cond: &crate::scenario_loader::JsonCondition, state: &Ga
                 .unwrap_or(false);
             format!("Mode {}: {}", cond.mode, if unlocked { "DONE" } else { "locked" })
         }
-        "SurviveTime" => format!("Survive: play the game"),
+        "SurviveTime" => {
+            let target = if cond.seconds > 0.0 {
+                cond.seconds
+            } else if cond.required > 0 {
+                cond.required as f64
+            } else {
+                30.0
+            };
+            let current = active_time.min(target);
+            format!("Survive: {:.0}/{}s", current, target as u32)
+        }
         "PrecisionShooting" => {
+            let target_pct = (cond.min_precision * 100.0).round() as i32;
             if state.bullets_fired == 0 {
-                format!("Precision: 0 hits (need {})", cond.hits)
+                format!("Precision: 0/{} hits, {}% min", cond.hits, target_pct)
             } else {
                 let hits = state.bullets_fired - state.bullets_lost;
                 let precision = 100.0 * (1.0 - state.bullets_lost as f64 / state.bullets_fired as f64);
-                format!("Hits: {} ({}%)", hits, precision as i32)
+                format!("Hits: {}/{} ({}% / {}% min)", hits, cond.hits, precision as i32, target_pct)
             }
         }
         "BuyUpgrade" => {

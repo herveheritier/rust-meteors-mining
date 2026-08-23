@@ -221,7 +221,7 @@ pub struct GameState {
     /// Animation d'accostage en cours (secondes restantes, 0 = aucune) :
     /// avant d'ouvrir la boîte DOCK STATION, le vaisseau pivote vers la droite
     /// (orientation 0) tout en se recentrant au centre de la station, pendant
-    /// `DOCK_ANIMATION_DURATION` - le monde est gelé (voir
+    /// `DOCK_ANIMATION_DURATION` - le monde continue de tourner (voir
     /// `game::advance_dock_animation` et `render::draw_docking_line`).
     pub dock_anim: f64,
     /// Position du vaisseau au début de l'animation d'accostage (interpolée
@@ -233,8 +233,8 @@ pub struct GameState {
     /// Rétraction des liens d'accostage en cours (secondes restantes, 0 =
     /// aucune) : au départ (bouton CLOSE de la boîte DOCK STATION), le vaisseau
     /// reste au centre et les 4 traits néon se rétractent vers le bord
-    /// intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` - le monde est
-    /// gelé (voir `game::advance_dock_retract` et
+    /// intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` - le monde
+    /// continue de tourner (voir `game::advance_dock_retract` et
     /// `render::draw_docking_line`).
     pub dock_retract: f64,
     /// Liens d'accostage **attachés à quai** : vrai au lancement et après un
@@ -264,7 +264,7 @@ pub struct GameState {
     /// Récupération du cosmonaute EVA en cours (secondes restantes, 0 =
     /// aucune) : vaisseau détruit, il a rejoint la zone d'accostage - un
     /// cordon jaillit de l'anneau jusqu'à lui et le ramène sur l'anneau
-    /// pendant `EVA_RECOVERY_DURATION` (monde gelé, voir
+    /// pendant `EVA_RECOVERY_DURATION` (le monde continue de tourner, voir
     /// `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
     pub eva_recovery: f64,
     /// Position du cosmonaute au début de la récupération (interpolée vers

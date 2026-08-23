@@ -99,8 +99,10 @@ pub fn update(
     // est détruit.
     let mut camera = camera_for(state, &shapes[pilot_index(state)]);
 
-    // Écran de paramétrage ouvert (touche O) : le monde est gelé et seul
-    // l'input de l'écran est traité (voir `handle_settings_input`). Un clic
+    // Écran de paramétrage ouvert (touche O) : seul l'input de l'écran est
+    // traité (voir `handle_settings_input`) - le monde, lui, **continue de
+    // tourner** : les météores et les débris dérivent derrière l'écran (le
+    // vaisseau reste vulnérable, seule la touche P gèle le monde). Un clic
     // sur RESTART demande la relance du jeu ; un clic sur RESET PROGRESSION
     // reconstruit le vaisseau (les plans liés aux extensions achetées
     // disparaissent avec les niveaux remis à zéro).
@@ -109,6 +111,7 @@ pub fn update(
         if result.progression_reset {
             crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
         }
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         let action = if result.restart { Action::Restart } else { Action::Continue };
         return (action, camera);
     }
@@ -132,36 +135,49 @@ pub fn update(
         state.last_keycode = qb_keycode(*k);
     }
 
-    // Fenêtre d'aide ouverte (touche S) : le monde est gelé, seul le bouton
-    // CLOSE est traité (ex boucle bloquante de `windowUtils_help`).
+    // Fenêtre d'aide ouverte (touche S) : seul le bouton CLOSE est traité
+    // (ex boucle bloquante de `windowUtils_help`) - le monde, lui,
+    // **continue de tourner** : les météores et les débris dérivent derrière
+    // la fenêtre (le vaisseau reste vulnérable, seule la touche P gèle le
+    // monde).
     if state.help_box {
         if help_box_click() {
             state.help_box = false;
         }
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         return (Action::Continue, camera);
     }
 
-    // Animation d'accostage (3 s, avant la boîte DOCK STATION) : le monde est
-    // gelé - le vaisseau pivote vers la droite (orientation 0) tout en se
-    // recentrant au centre de la station (voir `advance_dock_animation` et
-    // `render::draw_docking_line`).
+    // Animation d'accostage (3 s, avant la boîte DOCK STATION) : le vaisseau
+    // pivote vers la droite (orientation 0) tout en se recentrant au centre
+    // de la station (voir `advance_dock_animation` et
+    // `render::draw_docking_line`). Le monde, lui, **continue de tourner** :
+    // les météores et les débris dérivent autour de la base pendant
+    // l'animation (voir `collisions` - le vaisseau qui s'aligne est protégé,
+    // comme à quai). Seule la touche P (pause) gèle le monde.
     if state.dock_anim > 0.0 {
         advance_dock_animation(state, shapes, triangles, dt);
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         return (Action::Continue, camera);
     }
 
     // Récupération du cosmonaute EVA (vaisseau détruit, il a rejoint la base) :
-    // le monde est gelé - un cordon jaillit de l'anneau jusqu'à lui puis le
-    // ramène sur l'anneau (`advance_eva_recovery`, cordon dessiné par
+    // un cordon jaillit de l'anneau jusqu'à lui puis le ramène sur l'anneau
+    // (`advance_eva_recovery`, cordon dessiné par
     // `render::draw_eva_recovery_cable`), puis le **fondu enchaîné** fait
     // apparaître le vaisseau reconstruit au centre, liens attachés
     // (`advance_eva_crossfade` - la caméra glisse de l'anneau vers le centre).
+    // Le monde, lui, **continue de tourner** : les météores et les débris
+    // dérivent pendant toute la séquence (le cosmonaute est un non-collider,
+    // il ne peut pas être percuté pendant que le cordon le tire).
     if state.eva_recovery > 0.0 {
         advance_eva_recovery(state, shapes, triangles, dt);
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         return (Action::Continue, camera);
     }
     if state.eva_crossfade > 0.0 {
         let camera = advance_eva_crossfade(state, shapes, triangles, dt);
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         return (Action::Continue, camera);
     }
 
@@ -169,18 +185,27 @@ pub fn update(
     // quai, mire cachée - voir `state.dock_links`) : dès que le joueur donne
     // une commande de déplacement (flèches, tous modes), les liens se
     // rétractent (même animation qu'au départ après CLOSE), puis le vaisseau
-    // est libre.
-    if state.dock_links && player_moving_input() {
-        release_links(state);
+    // est libre. Entrée ouvre la boîte DOCK STATION (UNLOAD / SHOP / CLOSE)
+    // pour décharger ou faire ses achats sans quitter l'accostage - sinon la
+    // boîte ne s'ouvre qu'au bout de l'animation d'accostage automatique.
+    if state.dock_links {
+        if is_key_pressed(KeyCode::Enter) {
+            state.dock_box = true;
+        } else if player_moving_input() {
+            release_links(state);
+        }
     }
 
     // Rétraction des liens d'accostage au départ (CLOSE de la boîte ou
-    // démarrage de la base) : le monde est gelé - le vaisseau reste au centre,
-    // les 4 traits néon se rétractent vers le bord intérieur de l'anneau
-    // (voir `advance_dock_retract` et `render::draw_docking_line`), puis le
-    // vaisseau est libre.
+    // démarrage de la base) : le vaisseau reste au centre, les 4 traits néon
+    // se rétractent vers le bord intérieur de l'anneau (voir
+    // `advance_dock_retract` et `render::draw_docking_line`), puis le
+    // vaisseau est libre. Le monde, lui, **continue de tourner** : les
+    // météores et les débris dérivent pendant la rétraction (le vaisseau
+    // tenu au centre est protégé, comme à quai).
     if state.dock_retract > 0.0 {
         advance_dock_retract(state, shapes, triangles, dt);
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         return (Action::Continue, camera);
     }
 
@@ -194,7 +219,8 @@ pub fn update(
     // dans le même accostage. Le vaisseau est gelé, mais le **monde, lui,
     // continue** : les météores et les débris dérivent autour de la base
     // (voir `collisions` - le vaisseau à quai est protégé). Après CLOSE, la
-    // rétraction des liens est une cinématique : le monde est de nouveau gelé.
+    // rétraction des liens garde elle aussi le monde vivant (vaisseau
+    // protégé au centre).
     if state.dock_box {
         match choice_box_click() {
             ChoiceClick::None => {}
@@ -231,7 +257,7 @@ pub fn update(
             }
             ChoiceClick::Close => {
                 // quitte l'accostage : les liens néon se rétractent
-                // (animation de `DOCK_RETRACT_DURATION`, monde gelé)
+                // (animation de `DOCK_RETRACT_DURATION`, monde vivant)
                 undock(state);
             }
         }
@@ -454,7 +480,7 @@ pub fn update(
     // (le tracker lit `state` pendant que `update` le modifie).
     let mut tracker = std::mem::take(&mut state.objective_tracker);
     if tracker.has_objectives() {
-        let results = tracker.update(state);
+        let results = tracker.update(state, dt);
         for result in results {
             // Appliquer la récompense
             match result.reward.reward_type.as_str() {
@@ -506,9 +532,10 @@ pub fn update(
 /// Seuls les déplacements des formes sont gelés en pause ; les débris, les
 /// collisions et la génération automatique continuent (comportement exact de
 /// l'original). À quai (boîte DOCK STATION ou magasin ouverts, voir
-/// `update`), les météores continuent de dériver mais le vaisseau est
-/// **protégé** : aucune collision avec lui n'est détectée tant que la boîte
-/// est ouverte.
+/// `update`) et pendant les cinématiques d'accostage (animation d'accostage,
+/// rétraction des liens, fondu enchaîné du secours EVA), les météores
+/// continuent de dériver mais le vaisseau est **protégé** : aucune collision
+/// avec lui n'est détectée. Le monde ne se fige que sur la touche P (pause).
 fn collisions(
     state: &mut GameState,
     shapes: &mut Vec<Shape>,
@@ -535,11 +562,17 @@ fn collisions(
     }
 
     // ─── détection de collisions (paires de formes proches) ────────────────
-    // à quai (boîte DOCK STATION ou magasin ouverts) : le vaisseau est
-    // **protégé** - il reste intact pendant que les météores dérivent autour
-    // de la base (aucun impact qui l'endommagerait, aucun choc élastique qui
-    // le pousserait hors de l'anneau, aucun vol de gemme de soute)
-    let player_docked = state.dock_box || state.shop_box;
+    // vaisseau « tenu » (boîte DOCK STATION ou magasin ouverts, animation
+    // d'accostage, rétraction des liens, fondu enchaîné du secours EVA) : il
+    // est **protégé** - il reste intact pendant que les météores dérivent
+    // autour de la base (aucun impact qui l'endommagerait, aucun choc
+    // élastique qui le pousserait hors de l'anneau, aucun vol de gemme de
+    // soute)
+    let player_docked = state.dock_box
+        || state.shop_box
+        || state.dock_anim > 0.0
+        || state.dock_retract > 0.0
+        || state.eva_crossfade > 0.0;
     let mut elastic_pairs: Vec<(usize, usize)> = Vec::new();
     for i in 0..shapes.len() {
         // pas de détection si la forme n'est pas un collider
@@ -1037,11 +1070,12 @@ fn rescue_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &mut
 /// Le cosmonaute EVA a atteint la zone d'accostage (vaisseau détruit) : la
 /// station le **récupère** - un cordon va jaillir de l'anneau jusqu'à lui et
 /// le ramener sur l'anneau (voir `advance_eva_recovery` et
-/// `render::draw_eva_recovery_cable`). Le monde sera gelé : `docking` est
-/// appelée dans la frame, la suite est traitée en tête de `update` (les
-/// frames suivantes retournent avant la physique). Après la récupération, le
-/// fondu enchaîné fait apparaître le vaisseau reconstruit
-/// (`advance_eva_crossfade`, terminé par `rescue_cosmonaut`).
+/// `render::draw_eva_recovery_cable`). Le monde continue de tourner :
+/// `docking` est appelée dans la frame, la suite est traitée en tête de
+/// `update` (les frames suivantes font avancer `collisions` juste après
+/// l'animation). Après la récupération, le fondu enchaîné fait apparaître le
+/// vaisseau reconstruit (`advance_eva_crossfade`, terminé par
+/// `rescue_cosmonaut`).
 fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
     let idx = state.eva_cosmonaut as usize;
     if idx >= shapes.len() {
@@ -1078,7 +1112,8 @@ fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &m
 }
 
 /// Fait avancer la **récupération** du cosmonaute EVA d'une frame, en deux
-/// phases (monde gelé, vitesse nulle) : pendant la fraction
+/// phases (vitesse nulle - le monde continue de tourner, voir `update`) :
+/// pendant la fraction
 /// `EVA_CABLE_DEPLOY_FRACTION` de `EVA_RECOVERY_DURATION`, le cordon jaillit
 /// de l'anneau vers le cosmonaute qui reste **sur place** ; une fois
 /// complètement déployé (tendu), il le **ramène sur l'anneau** - position
@@ -1183,19 +1218,26 @@ fn docking(
     // la zone d'accostage (cercle de rayon `STATION_DOCK_DISTANCE` au centre,
     // la station est en (0,0)), la **récupération** démarre : un cordon
     // jaillit de l'anneau et le ramène sur l'anneau, puis le fondu enchaîné
-    // fait apparaître le vaisseau reconstruit (le monde est gelé - la suite
-    // est traitée en tête de `update` : `advance_eva_recovery` puis
+    // fait apparaître le vaisseau reconstruit (le monde continue de tourner -
+    // la suite est traitée en tête de `update` : `advance_eva_recovery` puis
     // `advance_eva_crossfade`, qui termine par `rescue_cosmonaut`)
     if state.cosmonaut_active {
         let c = &shapes[state.eva_cosmonaut as usize];
-        if state.eva_recovery <= 0.0 && c.position.x.hypot(c.position.y) < STATION_DOCK_DISTANCE {
+        if state.eva_recovery <= 0.0
+            && crate::geom::wrapped_distance(c.position, shapes[STATION_INDEX].position, &state.world)
+                < STATION_DOCK_DISTANCE
+        {
             start_eva_recovery(state, shapes, triangles);
         }
         return;
     }
-    let dx = shapes[PLAYER_INDEX].position.x - shapes[STATION_INDEX].position.x;
-    let dy = shapes[PLAYER_INDEX].position.y - shapes[STATION_INDEX].position.y;
-    let in_zone = dx * dx + dy * dy < STATION_DOCK_DISTANCE * STATION_DOCK_DISTANCE;
+    // distance la plus courte dans le monde torique (repliement cyclique)
+    let delta = crate::geom::wrapped_delta(
+        shapes[PLAYER_INDEX].position,
+        shapes[STATION_INDEX].position,
+        &state.world,
+    );
+    let in_zone = delta.x * delta.x + delta.y * delta.y < STATION_DOCK_DISTANCE * STATION_DOCK_DISTANCE;
     // l'accostage se termine seulement si le vaisseau est presque immobile
     if in_zone && shapes[PLAYER_INDEX].velocity.abs() < STATION_DOCK_SPEED {
         if state.player_at_station == 0 {
@@ -1248,8 +1290,9 @@ fn docking(
 /// boîte DOCK STATION s'ouvre et le message d'accostage est envoyé (comme
 /// avant, mais repoussé après l'animation).
 ///
-/// Le monde est gelé pendant l'animation (appelé par `update` avant la
-/// physique) ; le trait d'accostage est dessiné par
+/// Le monde, lui, continue de tourner pendant l'animation (appelé par
+/// `update`, qui fait avancer `collisions` juste après - le vaisseau qui
+/// s'aligne est protégé) ; le trait d'accostage est dessiné par
 /// `render::draw_docking_line`.
 fn advance_dock_animation(
     state: &mut GameState,
@@ -1278,7 +1321,7 @@ fn advance_dock_animation(
     if state.dock_anim <= 0.0 {
         state.dock_anim = 0.0;
         state.send_message("YOU ARE DOCKED AT THE STATION");
-        state.dock_box = true; // ouvre la boîte DOCK STATION (jeu gelé)
+        state.dock_box = true; // ouvre la boîte DOCK STATION (monde vivant)
     }
 }
 
@@ -1292,10 +1335,11 @@ fn undock(state: &mut GameState) {
 /// Libère le vaisseau : détache les liens (s'ils étaient attachés à quai,
 /// lancement/respawn) et démarre la **rétraction des liens** - le vaisseau
 /// reste au centre de la station, les 4 traits néon se rétractent vers le
-/// bord intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` (monde gelé,
-/// voir `advance_dock_retract`), puis il est libre. En quittant la base, le
-/// **guide d'accostage est coupé** : la mire ne réapparaîtra qu'au retour
-/// (franchissement de la limite extérieure en entrant).
+/// bord intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` (le monde
+/// continue de tourner, voir `advance_dock_retract`), puis il est libre. En
+/// quittant la base, le **guide d'accostage est coupé** : la mire ne
+/// réapparaîtra qu'au retour (franchissement de la limite extérieure en
+/// entrant).
 fn release_links(state: &mut GameState) {
     state.dock_links = false;
     state.docking_guide = false;
@@ -1322,7 +1366,8 @@ fn update_docking_guide(
         state.dock_was_outside = true;
         return;
     }
-    let dist = (player_position.x - station_position.x).hypot(player_position.y - station_position.y);
+    // distance la plus courte dans le monde torique (repliement cyclique)
+    let dist = crate::geom::wrapped_distance(player_position, station_position, &state.world);
     let outside = dist >= station_radius;
     if outside {
         state.docking_guide = false;
@@ -1375,8 +1420,9 @@ fn fire_pressed() -> bool {
 /// visuellement (voir `render::draw_docking_line`). À la fin, le vaisseau est
 /// libre (le monde se dégèle, `docking` peut le faire repartir).
 ///
-/// Le monde est gelé pendant la rétraction (appelé par `update` avant la
-/// physique).
+/// Le monde, lui, continue de tourner pendant la rétraction (appelé par
+/// `update`, qui fait avancer `collisions` juste après - le vaisseau tenu au
+/// centre est protégé).
 fn advance_dock_retract(
     state: &mut GameState,
     shapes: &mut [Shape],
@@ -3107,8 +3153,8 @@ mod tests {
     #[test]
     fn closing_dock_box_starts_link_retraction() {
         // CLOSE quitte l'accostage : la boîte se ferme et la **rétraction des
-        // liens** démarre (le vaisseau reste au centre, monde gelé) ; à la fin
-        // de `DOCK_RETRACT_DURATION`, le vaisseau est libre
+        // liens** démarre (le vaisseau reste au centre, monde vivant) ; à la
+        // fin de `DOCK_RETRACT_DURATION`, le vaisseau est libre
         let mut state = GameState::new();
         state.dock_box = true;
         let mut shapes = vec![
@@ -3140,7 +3186,7 @@ mod tests {
         // au lancement, le vaisseau est à quai (liens attachés, mire cachée -
         // voir `state.dock_links`) ; dès qu'il démarre (commande de mouvement
         // ou CLOSE après un accostage), `release_links` détache les liens et
-        // lance la rétraction (monde gelé pendant `DOCK_RETRACT_DURATION`)
+        // lance la rétraction (monde vivant pendant `DOCK_RETRACT_DURATION`)
         let mut state = GameState::new();
         assert!(state.dock_links); // à quai au lancement
 

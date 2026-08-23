@@ -84,7 +84,7 @@
       ],
       "condition": {
         "type": "UnlockMovementMode",
-        "mode": 1
+        "mode": 0
       },
       "reward": {
         "type": "Fuel",

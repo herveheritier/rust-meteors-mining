@@ -582,21 +582,158 @@ async function loadScenarioList() {
     const listEl = document.getElementById('scenarios-list');
     listEl.innerHTML = '';
 
+    let activeFound = false;
+
     data.scenarios.forEach(file => {
+      const isCurrent = currentScenario && currentScenario.id && (file === `${currentScenario.id}.scenario.json` || file.replace('.scenario.json', '') === currentScenario.id);
+      if (isCurrent) activeFound = true;
+
       const item = document.createElement('div');
-      item.className = 'scenario-item' + (file.includes(currentScenario.id) ? ' active' : '');
+      item.className = 'scenario-item' + (isCurrent ? ' active' : '');
       item.onclick = () => loadScenario(file);
       item.innerHTML = `
-        <div>
-          <div class="scenario-item-name">${file.replace('.scenario.json', '')}</div>
-          <div class="scenario-item-meta">JSON</div>
+        <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <div>
+            <div class="scenario-item-name">${file.replace('.scenario.json', '')}</div>
+            <div class="scenario-item-meta">JSON</div>
+          </div>
+          <button class="btn btn-sm btn-danger" style="padding:2px 6px;" title="Supprimer le scénario" onclick="event.stopPropagation(); deleteScenarioFile('${file}')">🗑️</button>
         </div>
       `;
       listEl.appendChild(item);
     });
+
+    if (!activeFound && currentScenario && currentScenario.id) {
+      const item = document.createElement('div');
+      item.className = 'scenario-item active';
+      item.innerHTML = `
+        <div>
+          <div class="scenario-item-name">${currentScenario.id}</div>
+          <div class="scenario-item-meta" style="color:var(--orange);">Nouveau *</div>
+        </div>
+      `;
+      listEl.appendChild(item);
+    }
   } catch (err) {
     console.error("Erreur chargement scénarios:", err);
   }
+}
+
+// Création d'un nouveau scénario
+function createNewScenario() {
+  const input = prompt("Entrez l'ID du nouveau scénario (ex: mission_alpha) :", "custom_scenario");
+  if (input === null) return;
+  const slug = input.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_') || ("scenario_" + Date.now().toString(36));
+
+  currentScenario = {
+    id: slug,
+    name: input.trim().toUpperCase() || "NOUVEAU SCÉNARIO",
+    description: "Description de votre nouveau scénario.",
+    rules_color: "0xFF39FF88",
+    initial_state: {
+      start_fuel: 100,
+      start_ammo: 30,
+      start_minerals: 0,
+      start_reputation: 0.0,
+      start_mode: 0,
+      lives: 0,
+      shield_capacity: 0.0,
+      start_pos_x: 0,
+      start_pos_y: 0,
+      start_orientation: 0,
+      start_velocity: 0
+    },
+    objectives: [
+      {
+        id: "step_start",
+        title: "Premier Objectif",
+        description: "Action initiale à accomplir.",
+        prerequisites: [],
+        condition: { type: "DestroyAsteroids", required: 5 },
+        reward: { type: "Minerals", amount: 10 },
+        position: { x: 100, y: 150 }
+      }
+    ]
+  };
+
+  selectedObjId = "step_start";
+  connectingSourceId = null;
+  populateFormMeta();
+  validateDAG();
+  renderGraph();
+  renderInspector();
+  loadScenarioList();
+}
+
+// Suppression d'un fichier scénario
+async function deleteScenarioFile(filename) {
+  if (!confirm(`Voulez-vous vraiment supprimer le scénario ${filename} ?`)) return;
+  try {
+    const res = await fetch('/api/scenarios/' + filename, { method: 'DELETE' });
+    if (res.ok) {
+      if (currentScenario && currentScenario.id && filename.includes(currentScenario.id)) {
+        createNewScenario();
+      } else {
+        loadScenarioList();
+      }
+    }
+  } catch (err) {
+    alert("Erreur lors de la suppression du fichier.");
+  }
+}
+
+// Disposition automatique du graphe DAG
+function autoLayoutDAG() {
+  if (!currentScenario || !currentScenario.objectives) return;
+
+  const depths = new Map();
+  const objMap = new Map();
+  currentScenario.objectives.forEach(o => objMap.set(o.id, o));
+
+  function getDepth(id, visited = new Set()) {
+    if (depths.has(id)) return depths.get(id);
+    if (visited.has(id)) return 0;
+    visited.add(id);
+
+    const obj = objMap.get(id);
+    if (!obj || !obj.prerequisites || obj.prerequisites.length === 0) {
+      depths.set(id, 0);
+      return 0;
+    }
+
+    let maxPreDepth = 0;
+    for (const pre of obj.prerequisites) {
+      maxPreDepth = Math.max(maxPreDepth, getDepth(pre, new Set(visited)));
+    }
+    const d = maxPreDepth + 1;
+    depths.set(id, d);
+    return d;
+  }
+
+  currentScenario.objectives.forEach(obj => getDepth(obj.id));
+
+  const layers = new Map();
+  currentScenario.objectives.forEach(obj => {
+    const d = depths.get(obj.id) || 0;
+    if (!layers.has(d)) layers.set(d, []);
+    layers.get(d).push(obj);
+  });
+
+  const layerWidth = 300;
+  const nodeHeight = 180;
+  const startX = 80;
+  const startY = 80;
+
+  layers.forEach((nodes, d) => {
+    nodes.forEach((obj, idx) => {
+      obj.position = {
+        x: startX + d * layerWidth,
+        y: startY + idx * nodeHeight
+      };
+    });
+  });
+
+  resetZoom();
 }
 
 // Chargement d'un scénario JSON
@@ -652,6 +789,7 @@ function updateScenarioMeta() {
   };
   renderStartMap();
   validateDAG();
+  loadScenarioList();
 }
 
 // ─── Mini-carte de la position de départ ────────────────────────────────────
@@ -883,8 +1021,12 @@ function formatConditionText(cond) {
     case 'ReachReputation': return `${cond.required} pts de réputation`;
     case 'DockAtStation': return `${cond.required} accostages station`;
     case 'BuyUpgrade': return `Atelier ${cond.track} niveau ${cond.level}`;
-    case 'UnlockMovementMode': return `Mode de vol #${cond.mode} débloqué`;
-    case 'SurviveTime': return `Survie ${cond.seconds} secondes`;
+    case 'UnlockMovementMode': {
+      const modeNames = { 0: 'Inertiel', 1: '4 Voies', 2: 'Directionnel', 3: 'Réaliste' };
+      const mName = modeNames[cond.mode] || `Mode #${cond.mode}`;
+      return `Mode de vol ${mName} débloqué`;
+    }
+    case 'SurviveTime': return `Survie ${cond.seconds || cond.required || 30} secondes`;
     case 'PrecisionShooting': return `${cond.hits} tirs à >${Math.round((cond.min_precision||0)*100)}% préc.`;
     default: return cond.type;
   }
@@ -1056,17 +1198,37 @@ function renderConditionInputs(cond) {
           <input type="number" class="form-control" value="${cond.required || 10}" onchange="updateObjCondVal('required', parseInt(this.value))">
         </div>`;
     case 'ReachReputation':
-    case 'SurviveTime':
       return `
         <div class="form-group">
           <label>Valeur Requise</label>
-          <input type="number" step="0.5" class="form-control" value="${cond.required || cond.seconds || 25}" onchange="updateObjCondVal(cond.type==='SurviveTime'?'seconds':'required', parseFloat(this.value))">
+          <input type="number" step="0.5" class="form-control" value="${cond.required || 25}" onchange="updateObjCondVal('required', parseFloat(this.value))">
+        </div>`;
+    case 'SurviveTime':
+      return `
+        <div class="form-group">
+          <label>Durée de Survie (secondes)</label>
+          <input type="number" step="1" class="form-control" value="${cond.seconds || cond.required || 30}" onchange="updateObjCondVal('seconds', parseFloat(this.value))">
         </div>`;
     case 'UnlockMovementMode':
       return `
         <div class="form-group">
-          <label>Index du Mode (1=Inertial, 2=4Ways, 3=Directional)</label>
-          <input type="number" class="form-control" value="${cond.mode || 1}" onchange="updateObjCondVal('mode', parseInt(this.value))">
+          <label>Mode de vol à débloquer</label>
+          <select class="form-control" onchange="updateObjCondVal('mode', parseInt(this.value))">
+            <option value="0" ${cond.mode===0||cond.mode===undefined?'selected':''}>Inertiel (INERTIAL - Mode 0)</option>
+            <option value="1" ${cond.mode===1?'selected':''}>4 Voies (4 WAYS - Mode 1)</option>
+            <option value="2" ${cond.mode===2?'selected':''}>Directionnel (DIRECTIONAL - Mode 2)</option>
+            <option value="3" ${cond.mode===3?'selected':''}>Réaliste (REALISTIC - Mode 3)</option>
+          </select>
+        </div>`;
+    case 'PrecisionShooting':
+      return `
+        <div class="form-group">
+          <label>Nombre de tirs au but</label>
+          <input type="number" min="1" class="form-control" value="${cond.hits || 15}" onchange="updateObjCondVal('hits', parseInt(this.value))">
+        </div>
+        <div class="form-group">
+          <label>Précision minimale (%)</label>
+          <input type="number" min="0" max="100" step="5" class="form-control" value="${Math.round((cond.min_precision ?? 0.8) * 100)}" onchange="updateObjCondVal('min_precision', (parseFloat(this.value) || 0) / 100)">
         </div>`;
     default:
       return '';
@@ -1085,7 +1247,17 @@ function updateObjField(field, val) {
 function updateObjConditionType(type) {
   const obj = currentScenario.objectives.find(o => o.id === selectedObjId);
   if (obj) {
-    obj.condition = { type, required: 10 };
+    if (type === 'SurviveTime') {
+      obj.condition = { type, seconds: 30 };
+    } else if (type === 'UnlockMovementMode') {
+      obj.condition = { type, mode: 0 };
+    } else if (type === 'PrecisionShooting') {
+      obj.condition = { type, hits: 15, min_precision: 0.8 };
+    } else if (type === 'BuyUpgrade') {
+      obj.condition = { type, track: 'Fuel', level: 1 };
+    } else {
+      obj.condition = { type, required: 10 };
+    }
     renderInspector();
     renderGraph();
   }

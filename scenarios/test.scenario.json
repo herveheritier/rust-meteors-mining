@@ -1,0 +1,60 @@
+{
+  "id": "test",
+  "name": "TEST",
+  "description": "Description de votre nouveau scénario.",
+  "rules_color": "0xFF39FF88",
+  "initial_state": {
+    "start_fuel": 100,
+    "start_ammo": 30,
+    "start_minerals": 100,
+    "start_reputation": 0,
+    "start_mode": 0,
+    "lives": 0,
+    "shield_capacity": 0,
+    "start_pos_x": 0,
+    "start_pos_y": 0,
+    "start_orientation": 0,
+    "start_velocity": 0
+  },
+  "objectives": [
+    {
+      "id": "step_start",
+      "title": "Premier Objectif",
+      "description": "Survivre ",
+      "prerequisites": [],
+      "condition": {
+        "type": "SurviveTime",
+        "required": 10,
+        "seconds": 30
+      },
+      "reward": {
+        "type": "Minerals",
+        "amount": 10
+      },
+      "position": {
+        "x": 88.18181818181819,
+        "y": 146.36363636363637
+      }
+    },
+    {
+      "id": "obj_mt66lao7",
+      "title": "Mode Inertiel",
+      "description": "Acheter le mode de  contrôle  inertial",
+      "prerequisites": [
+        "step_start"
+      ],
+      "condition": {
+        "type": "UnlockMovementMode",
+        "mode": 0
+      },
+      "reward": {
+        "type": "Minerals",
+        "amount": 10
+      },
+      "position": {
+        "x": 378.1766530960706,
+        "y": 145.68092206446812
+      }
+    }
+  ]
+}

@@ -212,8 +212,9 @@ pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 
 /// Durée (secondes) de la **récupération** du cosmonaute EVA par la station
 /// (vaisseau détruit, il a rejoint la zone d'accostage) : un cordon jaillit
-/// de l'anneau jusqu'à lui puis le ramène sur l'anneau - le monde est gelé
-/// (voir `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
+/// de l'anneau jusqu'à lui puis le ramène sur l'anneau - le monde continue
+/// de tourner (voir `game::advance_eva_recovery` et
+/// `render::draw_eva_recovery_cable`).
 pub const EVA_RECOVERY_DURATION: f64 = 2.5;
 /// Fraction de `EVA_RECOVERY_DURATION` consacrée au **déploiement** du cordon
 /// de récupération : pendant cette première phase le cosmonaute reste sur
@@ -232,17 +233,17 @@ pub const EVA_CROSSFADE_DURATION: f64 = 2.0;
 pub const EVA_RECOVERY_CABLE_COLOR: u32 = 0xFFFFA040;
 
 /// Durée (secondes) de l'animation d'accostage avant l'ouverture de la boîte
-/// DOCK STATION : le monde est gelé, le vaisseau pivote vers la droite
-/// (orientation 0) tout en se recentrant exactement au centre de la station,
-/// et 4 traits néon relient le bord intérieur de la station aux côtés du
-/// vaisseau (voir `render::draw_docking_line` et
+/// DOCK STATION : le vaisseau pivote vers la droite (orientation 0) tout en
+/// se recentrant exactement au centre de la station, et 4 traits néon
+/// relient le bord intérieur de la station aux côtés du vaisseau - le monde
+/// continue de tourner (voir `render::draw_docking_line` et
 /// `game::advance_dock_animation`).
 pub const DOCK_ANIMATION_DURATION: f64 = 3.0;
 
 /// Durée (secondes) de la rétraction des liens d'accostage au départ
-/// (bouton CLOSE de la boîte DOCK STATION) : le monde est gelé, le vaisseau
-/// reste au centre, les 4 traits néon se rétractent du vaisseau vers le bord
-/// intérieur de l'anneau, puis le vaisseau est libre (voir
+/// (bouton CLOSE de la boîte DOCK STATION) : le vaisseau reste au centre,
+/// les 4 traits néon se rétractent du vaisseau vers le bord intérieur de
+/// l'anneau, puis le vaisseau est libre - le monde continue de tourner (voir
 /// `render::draw_docking_line` et `game::advance_dock_retract`).
 pub const DOCK_RETRACT_DURATION: f64 = 1.5;
 

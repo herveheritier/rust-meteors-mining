@@ -16,7 +16,8 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
 - **Soute** : 5 éléments maximum - pleine, il faut décharger à la station.
 - **Station** : au lancement (et après respawn) le vaisseau est **à quai**
   au centre de la base, **tenu par 4 liens néon** (mire cachée) ; dès qu'on
-  démarre (une flèche), les **liens se rétractent** (1,5 s, monde gelé) et le
+  démarre (une flèche), les **liens se rétractent** (1,5 s, monde vivant) et
+  le
   vaisseau est libre - hors de la base, ni lien ni cible, et **pas de mire
   tant qu'on quitte l'accostage** : la mire n'est affichée **que lors du
   retour**. Au **retour**, au moment où l'on **franchit la limite extérieure
@@ -29,7 +30,7 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   (`DOCK DIST: 123` - sans unité - / `DOCK: SLOW DOWN` / `DOCK: IN RANGE` /
   `DOCKED`).
   L'accostage se termine seulement **presque immobile dans la zone** : la
-  mire **disparaît** et une **animation de 3 s** (monde gelé) **projette**
+  mire **disparaît** et une **animation de 3 s** (monde vivant) **projette**
   les **4 liens** en diagonale (**NO, SO, SE, NE**) : ils jaillissent de
   l'anneau vers le vaisseau (onde qui court vers lui) et se branchent **près
   de son centre** (l'illusion qu'ils le touchent), puis le pivote vers la
@@ -71,7 +72,7 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   ressuscité en Survival, peut les ramasser à nouveau. Son **seul
   objectif** : **rejoindre la base** - dès qu'il atteint la zone d'accostage au centre de la
   station, la **récupération** s'anime : un **cordon orange** jaillit de
-  l'anneau jusqu'à lui et le **ramène sur l'anneau** (~2,5 s, monde gelé,
+  l'anneau jusqu'à lui et le **ramène sur l'anneau** (~2,5 s, monde vivant,
   ondulation qui s'affaisse quand la tension monte), puis un **fondu
   enchaîné** (2 s) l'efface pendant que le **vaisseau reconstruit apparaît
   au centre de la station, liens attachés** (la caméra glisse de l'anneau
