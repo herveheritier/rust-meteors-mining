@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meteors Mining - jouer en ligne</title>
+    <style>
+        html,
+        body,
+        canvas {
+            margin: 0px;
+            padding: 0px;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: absolute;
+            background: black;
+            z-index: 0;
+        }
+
+        /* Bandeau discret en haut de l'écran titre : rappel des touches */
+        #hint {
+            position: absolute;
+            top: 8px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: #9ad0ff;
+            font: 14px/1.4 monospace;
+            pointer-events: none;
+            z-index: 1;
+            text-shadow: 1px 1px 2px #000;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="glcanvas" tabindex='1'></canvas>
+    <div id="hint">
+        Cliquez sur le jeu puis : ↑/←/→/↓ = déplacement - Shift = tirer - P = pause - O = réglages<br>
+        (sur mobile : joystick tactile bas-gauche + bouton de tir - la télécommande et la manette ne sont pas
+        disponibles sur le web)
+    </div>
+    <!-- Runtime web miniquad 0.4.11 (glue GL + chargeur wasm), identique à la
+         version embarquée dans le binaire - voir miniquad (MIT/Apache-2.0). -->
+    <script src="gl.js"></script>
+    <script>load("rust-meteors-mining.wasm");</script>
+</body>
+
+</html>

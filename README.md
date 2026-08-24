@@ -118,6 +118,24 @@ statique sur GitHub) - à relancer après chaque `cargo build --release` :
 upx --best --lzma target/release/rust-meteors-mining
 ```
 
+### Jouer en ligne (WebAssembly)
+
+Le jeu compile aussi vers **wasm32-unknown-unknown** et se joue dans le
+navigateur : les assets et la police sont embarqués (`include_bytes!`),
+`web/` contient le scaffolding minimal (`index.html` plein écran + `gl.js`,
+le runtime web miniquad 0.4.11 versionné) et le binaire est publié sur
+**GitHub Pages** par le workflow `deploy-wasm` (push sur `main`).
+
+```bash
+# test local
+cargo build --release --target wasm32-unknown-unknown
+cp web/index.html web/gl.js target/wasm32-unknown-unknown/release/rust-meteors-mining.wasm /tmp/site/
+python3 -m http.server 8000 --directory /tmp/site   # ouvrir http://localhost:8000/
+```
+
+Sur le web, la télécommande HTTP, la manette et le son sont désactivés
+(compatibilité plateforme) ; restent le clavier et le joystick tactile.
+
 ## Contrôles
 
 | Touche | Action |

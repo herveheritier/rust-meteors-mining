@@ -1,0 +1,65 @@
+# Déploiement web sur GitHub Pages : build wasm + page minimale (web/).
+#
+# Déclenché sur chaque push vers main (et manuellement). Le site publié est
+# composé de trois fichiers : index.html (affichage plein écran), gl.js
+# (runtime web miniquad 0.4.11, versionné dans web/) et le binaire wasm du
+# jeu (assets et police embarqués via include_bytes! - aucun fichier externe).
+#
+# Prérequis une fois dans les réglages du dépôt :
+#   Settings > Pages > Source: "GitHub Actions"
+
+name: Deploy WASM to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm-release
+
+      - name: Build wasm
+        run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Assemble the site (index.html + glue + wasm)
+        run: |
+          mkdir -p site
+          cp web/index.html web/gl.js site/
+          cp target/wasm32-unknown-unknown/release/rust-meteors-mining.wasm site/
+          ls -lh site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
