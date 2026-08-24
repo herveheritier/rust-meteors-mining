@@ -1590,7 +1590,7 @@ pub fn cargo_capacity(state: &GameState) -> i32 {
 
 /// Ligne d'affichage d'une amélioration de l'atelier : libellé, capacité
 /// actuelle et prochaine extension (`None` = au max) - pour l'écran atelier
-/// (`render::draw_shop_box`).
+/// (`shop_render::draw_shop_box`).
 pub struct UpgradeLine {
     /// Libellé de la ligne (ex « FUEL TANK »).
     pub label: &'static str,

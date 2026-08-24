@@ -18,6 +18,7 @@
 mod audio;
 mod config;
 mod cosmonaut;
+mod dock_render;
 mod docking;
 mod eva;
 mod font;
@@ -25,6 +26,7 @@ mod game;
 mod garbage;
 mod generate;
 mod geom;
+mod hud;
 mod input;
 mod marketplace;
 mod objective_tracker;
@@ -37,9 +39,11 @@ mod scenario_objectives;
 mod settings;
 mod shape;
 mod shop;
+mod shop_render;
 mod state;
 mod title;
 mod touch;
+mod ui_boxes;
 mod vaisseau;
 mod wasm_audio_shims; // no-op audio sur wasm (silencieux) - vide sur le natif
 mod x11;
