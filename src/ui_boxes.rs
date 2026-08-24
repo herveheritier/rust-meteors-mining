@@ -120,6 +120,10 @@ pub struct SettingsLayout {
     /// `NONE`) ; un clic arme la saisie clavier (4 chiffres max, ENTRÉE
     /// valide, ÉCHAP annule - vide + ENTRÉE = aucune protection).
     pub pin_edit: Rect,
+    /// Ligne cliquable de la case SAVE POSITION (le vaisseau repart de sa
+    /// dernière position à la sortie - colonne droite, sous le panneau
+    /// GRAPHICS).
+    pub save_position: Rect,
     /// Bouton RESET (réglages par défaut).
     pub reset: Rect,
     /// Bouton RESTART (relance le jeu - affiché uniquement quand un réglage
@@ -169,6 +173,9 @@ pub fn settings_box_layout() -> SettingsLayout {
     let window_mode = Rect::new(col_right + 10.0, top + 96.0, row_w, 26.0);
     let window_size = Rect::new(col_right + 10.0, top + 126.0, row_w, 26.0);
     let antialias = Rect::new(col_right + 10.0, top + 156.0, row_w, 26.0);
+    // SAVE POSITION : case sous le panneau GRAPHICS (colonne droite) - le
+    // vaisseau repart de sa dernière position (persistée à la sortie)
+    let save_position = Rect::new(col_right + 6.0, top + 232.0, row_w + 8.0, 26.0);
 
     // boutons en bas : RESET à gauche, CLOSE à droite (ex
     // `windowUtils_choiceBox` : 1er sur la moitié gauche, 2e sur la moitié
@@ -201,6 +208,7 @@ pub fn settings_box_layout() -> SettingsLayout {
         reset_progress,
         touch_ui,
         pin_edit,
+        save_position,
         reset,
         restart,
         close,
@@ -300,6 +308,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
         draw_box_button("RESET PROGRESSION", layout.reset_progress);
     }
     draw_checkbox(layout.touch_ui, state.touch_ui, "TOUCH UI", m);
+    draw_checkbox(layout.save_position, state.save_position, "SAVE POSITION", m);
 
     // télécommande : ligne REMOTE PIN (code à saisir au clavier après un
     // clic - ENTRÉE valide, ÉCHAP annule, vide + ENTRÉE = aucune protection)

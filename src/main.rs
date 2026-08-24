@@ -171,6 +171,12 @@ async fn main() {
         state.touch_ui = on;
     }
     crate::touch::set_enabled(state.touch_ui);
+    // option SAVE POSITION (case de l'écran de paramétrage, clé
+    // `save_position`) : le vaisseau repart de sa dernière position à la
+    // sortie (voir plus bas, au lancement de la partie)
+    if let Some(on) = persist::get_bool("save_position") {
+        state.save_position = on;
+    }
     // PIN de la télécommande HTTP (ligne REMOTE PIN de l'écran de
     // paramétrage, clé `remote_pin`) : chargé au lancement - vide = aucune
     // protection (comportement historique)
@@ -279,18 +285,30 @@ async fn main() {
             return;
         }
 
-    // Appliquer la position / orientation / vitesse initiales du vaisseau
-    // (scénarios custom, valeurs de l'éditeur de scénarios) : appliquées au
-    // lancement de la partie, APRÈS l'écran titre - le scénario finalement
-    // sélectionné (persisté ou choisi avec N/B/1-9) est le seul qui compte.
-    if state.initial_ship_x != 0.0 || state.initial_ship_y != 0.0
-        || state.initial_ship_orientation != 0.0 || state.initial_ship_velocity != 0.0
-    {
+    // Appliquer la position / orientation initiales du vaisseau (scénarios
+    // custom, valeurs de l'éditeur de scénarios) : appliquées au lancement de
+    // la partie, APRÈS l'écran titre - le scénario finalement sélectionné
+    // (persisté ou choisi avec N/B/1-3) est le seul qui compte.
+    let mut start_x = state.initial_ship_x;
+    let mut start_y = state.initial_ship_y;
+    let start_orientation = state.initial_ship_orientation.to_radians();
+    let start_velocity = state.initial_ship_velocity;
+    // option SAVE POSITION (case de l'écran de paramétrage) : la dernière
+    // position du vaisseau (sauvegardée à la sortie) écrase la position de
+    // départ - le joueur reprend exactement où il était (position nulle =
+    // à quai, comportement normal)
+    if state.save_position {
+        if let (Some(x), Some(y)) = (persist::get_i32("ship_x"), persist::get_i32("ship_y")) {
+            start_x = x as f64;
+            start_y = y as f64;
+        }
+    }
+    if start_x != 0.0 || start_y != 0.0 || start_orientation != 0.0 || start_velocity != 0.0 {
         let s = &mut shapes[PLAYER_INDEX];
-        s.position.x = state.initial_ship_x;
-        s.position.y = state.initial_ship_y;
-        s.orientation = state.initial_ship_orientation.to_radians();
-        s.velocity = state.initial_ship_velocity;
+        s.position.x = start_x;
+        s.position.y = start_y;
+        s.orientation = start_orientation;
+        s.velocity = start_velocity;
     }
     // Le vaisseau démarre à quai (liens d'accostage attachés, statut
     // « DOCKED ») seulement s'il est **immobile au centre de la station** :
@@ -397,6 +415,14 @@ async fn main() {
                 // où un changement n'aurait pas été persisté au moment où il
                 // s'est produit
                 let _ = crate::scenario::save_progression(&state);
+                // option SAVE POSITION : la position du vaisseau (centres)
+                // est sauvegardée pour le prochain lancement (clés `ship_x` /
+                // `ship_y`, arrondies à l'unité monde)
+                if state.save_position {
+                    let p = shapes[PLAYER_INDEX].position;
+                    let _ = persist::set_i32("ship_x", p.x.round() as i32);
+                    let _ = persist::set_i32("ship_y", p.y.round() as i32);
+                }
                 break;
             }
             // RESTART (écran de paramétrage, ex changement d'anticrénelage) :

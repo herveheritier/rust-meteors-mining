@@ -33,6 +33,9 @@ pub enum SettingsClick {
     Antialias,
     /// Affiche/coupe l'interface tactile (joystick + bouton de tir, `touch.rs`).
     TouchUi,
+    /// Bascule la sauvegarde de position du vaisseau à la sortie (le
+    /// prochain lancement repart de la dernière position).
+    SavePosition,
     /// Ligne REMOTE PIN : arme la saisie du code de la télécommande (ou, si
     /// la saisie est déjà armée, valide le code tapé).
     PinEdit,
@@ -94,6 +97,9 @@ pub fn settings_box_click(state: &GameState) -> SettingsClick {
     }
     if l.pin_edit.contains(m) {
         return SettingsClick::PinEdit;
+    }
+    if l.save_position.contains(m) {
+        return SettingsClick::SavePosition;
     }
     if state.antialias != state.antialias_applied && l.restart.contains(m) {
         return SettingsClick::Restart;
@@ -196,6 +202,15 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             state.touch_ui = !state.touch_ui;
             let _ = persist::set_bool("touch_ui", state.touch_ui);
             crate::touch::set_enabled(state.touch_ui);
+        }
+        SettingsClick::SavePosition => {
+            state.save_position = !state.save_position;
+            let _ = persist::set_bool("save_position", state.save_position);
+            state.send_message(if state.save_position {
+                "SAVE POSITION ON"
+            } else {
+                "SAVE POSITION OFF"
+            });
         }
         SettingsClick::PinEdit => {
             if state.settings_pin_edit {
@@ -330,6 +345,7 @@ pub fn reset_settings_fields(state: &mut GameState) {
     state.window_size = 0;
     state.antialias = false;
     state.touch_ui = true; // interface tactile affichée par défaut
+    state.save_position = false; // position du vaisseau non sauvegardée
 }
 
 /// Remet les réglages par défaut (bouton RESET) : champs par défaut
@@ -371,6 +387,7 @@ pub fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
         "window_size",
         "antialias",
         "touch_ui",
+        "save_position",
     ] {
         let _ = persist::delete_key(key);
     }

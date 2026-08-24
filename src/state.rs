@@ -224,6 +224,12 @@ pub struct GameState {
     /// et bouton de tir bas-droite (`touch.rs`). Masquée (et inopérante) quand
     /// le réglage est éteint - le jeu se pilote alors au clavier seul.
     pub touch_ui: bool,
+    /// Sauvegarde la **position du vaisseau** à la sortie (touche ESC, case
+    /// SAVE POSITION de l'écran de paramétrage, clé `save_position`) : au
+    /// lancement suivant, le vaisseau repart de la dernière position (au lieu
+    /// du centre de la station) - débarqué, sans liens d'accostage, comme une
+    /// position initiale de scénario custom (`initial_ship_*`).
+    pub save_position: bool,
     /// Valeur d'anticrénelage effectivement appliquée par la fenêtre au
     /// lancement (`Conf.sample_count`). Si `antialias` en diffère, un
     /// redémarrage est nécessaire (bouton RESTART de l'écran de paramétrage).
@@ -395,6 +401,7 @@ impl GameState {
             antialias: false,
             antialias_applied: false,
             touch_ui: true, // interface tactile affichée par défaut
+            save_position: false, // option SAVE POSITION éteinte par défaut
             max_meteor_shapes: INITIAL_MAX_METEOR_SHAPES,
             dock_anim: 0.0,
             dock_anim_from_pos: Point::new(0.0, 0.0),
