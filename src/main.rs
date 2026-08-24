@@ -23,6 +23,7 @@ mod docking;
 mod eva;
 mod font;
 mod game;
+mod gamepad;
 mod garbage;
 mod generate;
 mod geom;
@@ -363,6 +364,9 @@ async fn main() {
         // Input + physique + collisions (mouvement, météores, pause, modes
         // d'affichage, musique) - M2/M3. La caméra est calculée par update
         // (comme l'original, après la résolution des collisions).
+        // Manette : gilrs met à jour l'état interne à la lecture de ses
+        // événements - poll au début de la frame (no-op sur wasm)
+        crate::gamepad::poll();
         let dt = get_frame_time() as f64;
         let (action, camera) = game::update(
             &mut state,

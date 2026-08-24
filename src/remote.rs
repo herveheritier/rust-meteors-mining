@@ -23,7 +23,7 @@ use std::sync::Mutex;
 #[cfg(not(target_arch = "wasm32"))]
 use macroquad::prelude::info;
 #[cfg(not(target_arch = "wasm32"))]
-use tiny_http::{Header, Method, Response, Server};
+use tiny_http::{Header, ListenAddr, Method, Response, Server};
 
 /// Port d'écoute du serveur de contrôle (le jeu écoute sur toutes les
 /// interfaces : joignable depuis le réseau local).
@@ -198,21 +198,39 @@ pub fn fire() -> bool {
 ///
 /// En cas d'échec (port occupé…), renvoie l'erreur - le jeu continue sans
 /// télécommande. Sur wasm : toujours une erreur (télécommande désactivée).
+/// Démarre la télécommande sur le port configuré (`REMOTE_PORT`) et renvoie
+/// l'URL publique de la page de contrôle.
 pub fn start() -> Result<String, String> {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let server = Server::http(format!("0.0.0.0:{}", REMOTE_PORT)).map_err(|e| e.to_string())?;
-        let ip = lan_ip().unwrap_or_else(|| "localhost".to_string());
-        info!("Remote control listening on {ip}");
-        let url = format!("http://{}:{}/", ip, REMOTE_PORT);
-        *URL.lock().unwrap() = Some(url.clone());
-        std::thread::spawn(move || serve(server));
-        Ok(url)
+        start_on(REMOTE_PORT)
     }
     #[cfg(target_arch = "wasm32")]
     {
         Err("télécommande indisponible sur wasm".to_string())
     }
+}
+
+/// Démarre la télécommande sur un port donné (0 = port éphémère choisi par
+/// le système - utilisé par les tests pour ne pas entrer en conflit avec une
+/// instance du jeu ouverte sur `REMOTE_PORT`) et renvoie l'URL publique de
+/// la page de contrôle.
+#[cfg(not(target_arch = "wasm32"))]
+fn start_on(port: u16) -> Result<String, String> {
+    let server = Server::http(format!("0.0.0.0:{port}")).map_err(|e| e.to_string())?;
+    // port réellement lié (0 → port éphémère) : l'URL publiée doit être
+    // joignable - `server_addr` avant de déplacer le serveur dans le thread
+    let bound = match server.server_addr() {
+        ListenAddr::IP(addr) => addr.port(),
+        #[cfg(unix)]
+        ListenAddr::Unix(_) => port,
+    };
+    let ip = lan_ip().unwrap_or_else(|| "localhost".to_string());
+    info!("Remote control listening on {ip}");
+    let url = format!("http://{}:{}/", ip, bound);
+    *URL.lock().unwrap() = Some(url.clone());
+    std::thread::spawn(move || serve(server));
+    Ok(url)
 }
 
 /// Boucle du thread serveur : traite chaque requête HTTP (page, commandes,
@@ -659,7 +677,9 @@ mod tests {
         use std::io::{Read, Write};
         use std::time::{Duration, Instant};
 
-        let url = start().expect("le serveur doit démarrer");
+        // port éphémère (0) : le test doit passer même si le jeu tourne déjà
+        // et écoute sur `REMOTE_PORT`
+        let url = start_on(0).expect("le serveur doit démarrer");
         let host_port = url.trim_end_matches('/').trim_start_matches("http://").to_string();
         // (en-têtes HTTP/1.1 + corps optionnel - `Connection: close` pour que
         // le test n'ait pas à gérer le keep-alive)

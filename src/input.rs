@@ -45,31 +45,34 @@ pub fn player_moving_input() -> bool {
 }
 
 /// Commandes de déplacement : touche clavier, joystick tactile (`touch.rs`,
-/// bas-gauche) OU télécommande (`remote.rs`, téléphone sur le réseau local) -
-/// les trois pilotent comme les flèches.
+/// bas-gauche), télécommande (`remote.rs`, téléphone sur le réseau local) OU
+/// manette de jeu (`gamepad.rs`, stick gauche / croix directionnelle) - les
+/// quatre pilotent comme les flèches.
 pub fn up_pressed() -> bool {
-    is_key_down(KeyCode::Up) || crate::touch::up() || crate::remote::up()
+    is_key_down(KeyCode::Up) || crate::touch::up() || crate::remote::up() || crate::gamepad::up()
 }
 
 pub fn down_pressed() -> bool {
-    is_key_down(KeyCode::Down) || crate::touch::down() || crate::remote::down()
+    is_key_down(KeyCode::Down) || crate::touch::down() || crate::remote::down() || crate::gamepad::down()
 }
 
 pub fn left_pressed() -> bool {
-    is_key_down(KeyCode::Left) || crate::touch::left() || crate::remote::left()
+    is_key_down(KeyCode::Left) || crate::touch::left() || crate::remote::left() || crate::gamepad::left()
 }
 
 pub fn right_pressed() -> bool {
-    is_key_down(KeyCode::Right) || crate::touch::right() || crate::remote::right()
+    is_key_down(KeyCode::Right) || crate::touch::right() || crate::remote::right() || crate::gamepad::right()
 }
 
-/// Tir : Shift (clavier), bouton de tir tactile (`touch.rs`, bas-droite) OU
-/// télécommande (`remote.rs`).
+/// Tir : clavier (Shift), bouton de tir tactile (`touch.rs`, bas-droite),
+/// télécommande (`remote.rs`) OU manette (bouton A / gâchette droite,
+/// `gamepad.rs`).
 pub fn fire_pressed() -> bool {
     is_key_down(KeyCode::LeftShift)
         || is_key_down(KeyCode::RightShift)
         || crate::touch::fire()
         || crate::remote::fire()
+        || crate::gamepad::fire()
 }
 
 /// Contrôles du vaisseau selon `state.moving_mode` (port fidèle des blocs

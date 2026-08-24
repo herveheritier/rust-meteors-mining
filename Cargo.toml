@@ -20,6 +20,14 @@ image = { version = "0.24", default-features = false, features = ["jpeg"] }
 # le vaisseau depuis une page web servie par le jeu (voir src/remote.rs).
 tiny_http = { version = "0.12", default-features = false }
 
+# Manette de jeu (gamepad) : macroquad 0.4 ne fournit aucune API manette
+# (miniquad 0.4.11 « gamepads soon ») - gilrs lit les manettes directement
+# (evdev / XInput / IOKit selon la plateforme). Cible native uniquement : sur
+# wasm (où gilrs ne compile pas), le clavier et le joystick tactile restent
+# disponibles (`src/gamepad.rs` fournit des stubs vides sur wasm).
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+gilrs = "0.11"
+
 # getrandom 0.2 (via rand 0.8) : sur wasm32-unknown-unknown, le tirage
 # aléatoire doit passer par `window.crypto` (feature `js`) - sans elle la
 # compilation échoue (compile_error! de getrandom). Dépendance cible :
