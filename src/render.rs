@@ -1177,6 +1177,10 @@ pub struct SettingsLayout {
     /// Ligne cliquable de la case TOUCH UI (interface tactile bas-gauche /
     /// bas-droite, `touch.rs`).
     pub touch_ui: Rect,
+    /// Ligne REMOTE PIN (télécommande HTTP) : affiche le code courant (ou
+    /// `NONE`) ; un clic arme la saisie clavier (4 chiffres max, ENTRÉE
+    /// valide, ÉCHAP annule - vide + ENTRÉE = aucune protection).
+    pub pin_edit: Rect,
     /// Bouton RESET (réglages par défaut).
     pub reset: Rect,
     /// Bouton RESTART (relance le jeu - affiché uniquement quand un réglage
@@ -1189,7 +1193,7 @@ pub struct SettingsLayout {
 /// Calcule la géométrie de l'écran de paramétrage (voir `SettingsLayout`).
 pub fn settings_box_layout() -> SettingsLayout {
     let w = 560.0;
-    let h = 280.0;
+    let h = 300.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
     let col_w = 250.0;
@@ -1201,13 +1205,16 @@ pub fn settings_box_layout() -> SettingsLayout {
     let auto_generate = Rect::new(col_left, top + 76.0, col_w, 26.0);
     // volume : barre horizontale (ascenseur) sur la majeure partie de la
     // ligne, après le libellé VOLUME ; zone de clic de 22 px de haut
-    let volume_track = Rect::new(col_left + 100.0, top + 110.0, col_w - 104.0, 22.0);
+    let volume_track = Rect::new(col_left + 100.0, top + 108.0, col_w - 104.0, 22.0);
     // RESET PROGRESSION : bouton pleine largeur de la colonne gauche, sous le
     // volume (remet à zéro la progression du scénario courant)
-    let reset_progress = Rect::new(col_left, top + 158.0, col_w, 26.0);
+    let reset_progress = Rect::new(col_left, top + 154.0, col_w, 26.0);
     // TOUCH UI : case à cocher sous RESET PROGRESSION (interface tactile
     // joystick + bouton de tir, `touch.rs`)
-    let touch_ui = Rect::new(col_left, top + 184.0, col_w, 26.0);
+    let touch_ui = Rect::new(col_left, top + 180.0, col_w, 26.0);
+    // REMOTE PIN : ligne cliquable sous TOUCH UI (télécommande HTTP - le
+    // code est saisi au clavier après le clic, voir `game.rs`)
+    let pin_edit = Rect::new(col_left, top + 206.0, col_w, 26.0);
 
     // colonne droite : panneau des options graphiques
     let graphics_panel = Rect::new(col_right, top + 44.0, col_w, 176.0);
@@ -1244,6 +1251,7 @@ pub fn settings_box_layout() -> SettingsLayout {
         antialias,
         reset_progress,
         touch_ui,
+        pin_edit,
         reset,
         restart,
         close,
@@ -1256,7 +1264,7 @@ pub fn settings_box_layout() -> SettingsLayout {
 /// l'état musique et le volume courant.
 pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     let w = 560.0;
-    let h = 280.0;
+    let h = 300.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
 
@@ -1334,15 +1342,38 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
         draw_box_button("RESET PROGRESSION", layout.reset_progress);
     }
     draw_checkbox(layout.touch_ui, state.touch_ui, "TOUCH UI", m);
-    // télécommande : rappel de l'URL de la page de contrôle (le téléphone
-    // pilote le vaisseau sur le réseau local - voir `remote.rs`), en bas de
-    // la colonne gauche, au-dessus des boutons RESET / CLOSE
+
+    // télécommande : ligne REMOTE PIN (code à saisir au clavier après un
+    // clic - ENTRÉE valide, ÉCHAP annule, vide + ENTRÉE = aucune protection)
+    // et rappel de l'URL de la page de contrôle (le téléphone pilote le
+    // vaisseau sur le réseau local - voir `remote.rs`), en bas de la colonne
+    // gauche, au-dessus des boutons RESET / CLOSE
+    let pin_row = layout.pin_edit;
+    let pin_color = argb_to_color(if pin_row.contains(m) { BOX_HOVER } else { BOX_FG });
+    draw_text("REMOTE PIN", pin_row.x + 4.0, pin_row.y + 18.0, 16.0, pin_color);
+    let pin_display = if state.settings_pin_edit {
+        let mut shown = state.settings_pin_buffer.clone();
+        shown.push('_');
+        shown
+    } else if state.remote_pin.is_empty() {
+        "NONE".to_string()
+    } else {
+        "\u{2022}".repeat(state.remote_pin.len())
+    };
+    let pin_w = measure_text(&pin_display, None, 16, 1.0).width;
+    draw_text(
+        &pin_display,
+        pin_row.x + pin_row.w - 4.0 - pin_w,
+        pin_row.y + 18.0,
+        16.0,
+        pin_color,
+    );
     if let Some(url) = crate::remote::url() {
         draw_text(
             &format!("REMOTE: {url}"),
             layout.music.x + 4.0,
-            top + 218.0,
-            16.0,
+            top + 240.0,
+            13.0,
             argb_to_color(BOX_FG_DIM),
         );
     }

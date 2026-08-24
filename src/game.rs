@@ -1886,6 +1886,9 @@ enum SettingsClick {
     Antialias,
     /// Affiche/coupe l'interface tactile (joystick + bouton de tir, `touch.rs`).
     TouchUi,
+    /// Ligne REMOTE PIN : arme la saisie du code de la télécommande (ou, si
+    /// la saisie est déjà armée, valide le code tapé).
+    PinEdit,
     /// Relance le jeu (affiché quand un réglage modifié exige un redémarrage).
     Restart,
     Reset,
@@ -1928,6 +1931,9 @@ fn settings_box_click(state: &GameState) -> SettingsClick {
     }
     if l.touch_ui.contains(m) {
         return SettingsClick::TouchUi;
+    }
+    if l.pin_edit.contains(m) {
+        return SettingsClick::PinEdit;
     }
     if state.antialias != state.antialias_applied && l.restart.contains(m) {
         return SettingsClick::Restart;
@@ -2010,6 +2016,16 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             let _ = persist::set_bool("touch_ui", state.touch_ui);
             crate::touch::set_enabled(state.touch_ui);
         }
+        SettingsClick::PinEdit => {
+            if state.settings_pin_edit {
+                // second clic (ou ENTRÉE) : valide la saisie en cours
+                confirm_remote_pin(state);
+            } else {
+                // arme la saisie : le tampon part du code actuel (modifiable)
+                state.settings_pin_buffer = state.remote_pin.clone();
+                state.settings_pin_edit = true;
+            }
+        }
         SettingsClick::Restart => result.restart = true,
         SettingsClick::Reset => reset_settings(state, sounds.as_deref_mut()),
         SettingsClick::ResetProgress => {
@@ -2032,10 +2048,61 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             );
         }
     }
+    // Saisie du PIN de la télécommande : les chiffres remplissent le tampon
+    // (4 max), RETOUR ARRIÈRE efface, ENTRÉE valide, ÉCHAP annule la saisie
+    // (sans fermer l'écran). Les autres clés de l'écran (ESC = fermer) sont
+    // neutralisées pendant la saisie.
+    if state.settings_pin_edit {
+        for key in get_keys_pressed() {
+            match key {
+                KeyCode::Key0 | KeyCode::Kp0 => push_pin_digit(state, '0'),
+                KeyCode::Key1 | KeyCode::Kp1 => push_pin_digit(state, '1'),
+                KeyCode::Key2 | KeyCode::Kp2 => push_pin_digit(state, '2'),
+                KeyCode::Key3 | KeyCode::Kp3 => push_pin_digit(state, '3'),
+                KeyCode::Key4 | KeyCode::Kp4 => push_pin_digit(state, '4'),
+                KeyCode::Key5 | KeyCode::Kp5 => push_pin_digit(state, '5'),
+                KeyCode::Key6 | KeyCode::Kp6 => push_pin_digit(state, '6'),
+                KeyCode::Key7 | KeyCode::Kp7 => push_pin_digit(state, '7'),
+                KeyCode::Key8 | KeyCode::Kp8 => push_pin_digit(state, '8'),
+                KeyCode::Key9 | KeyCode::Kp9 => push_pin_digit(state, '9'),
+                KeyCode::Backspace => {
+                    state.settings_pin_buffer.pop();
+                }
+                KeyCode::Enter | KeyCode::KpEnter => confirm_remote_pin(state),
+                KeyCode::Escape => {
+                    state.settings_pin_edit = false;
+                }
+                _ => {}
+            }
+        }
+        return result;
+    }
     if is_key_pressed(KeyCode::Escape) {
         close_and_persist(state);
     }
     result
+}
+
+/// Ajoute un chiffre au tampon de saisie du PIN (4 chiffres maximum).
+fn push_pin_digit(state: &mut GameState, digit: char) {
+    if state.settings_pin_buffer.len() < 4 {
+        state.settings_pin_buffer.push(digit);
+    }
+}
+
+/// Valide la saisie du PIN de la télécommande : le code (vide = aucune
+/// protection) est appliqué à l'état et persisté.
+fn confirm_remote_pin(state: &mut GameState) {
+    let pin = state.settings_pin_buffer.clone();
+    state.remote_pin = pin.clone();
+    let _ = persist::save_remote_pin(&pin);
+    state.settings_pin_edit = false;
+    let msg = if pin.is_empty() {
+        "REMOTE PIN OFF".to_string()
+    } else {
+        format!("REMOTE PIN: {pin}")
+    };
+    state.send_message(&msg);
 }
 
 /// Ferme l'écran de paramétrage. (Le mode de déplacement se choisit au

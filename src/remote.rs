@@ -29,7 +29,7 @@ pub const REMOTE_PORT: u16 = 8642;
 
 /// État partagé entre le thread du serveur (requêtes `/cmd` et `/state`) et
 /// la boucle de jeu (lecture des commandes, publication de l'état du jeu).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RemoteState {
     /// Commandes reçues du téléphone (joystick + tir).
     pub up: bool,
@@ -59,6 +59,10 @@ pub struct RemoteState {
     pub shield: f64,
     /// Compteur de météores détruits (jeu libre - le « score »).
     pub score: i32,
+    /// Code PIN exigé par le `POST /cmd` (vide = aucune protection) : copié
+    /// depuis `state.remote_pin` à chaque `publish_state` - la page de
+    /// contrôle affiche une saisie de PIN et l'envoie avec chaque commande.
+    pub pin: String,
 }
 
 impl RemoteState {
@@ -87,6 +91,7 @@ impl RemoteState {
             lives: 0,
             shield: 0.0,
             score: 0,
+            pin: String::new(),
         }
     }
 }
@@ -164,10 +169,32 @@ fn serve(server: Server) {
                 respond(request, "application/json", &body);
             }
             (&Method::Post, "/cmd") => {
-                let mut body = String::new();
-                let _ = request.as_reader().read_to_string(&mut body);
-                apply_cmd(&body);
-                respond(request, "text/plain", "ok");
+                // corps borné (4 Ko suffisent largement pour 5 booléens +
+                // un PIN) : une requête démesurée est rejetée sans lecture
+                // complète (`Read::take` exige une taille concrète - la
+                // lecture est bornée à la main)
+                let mut body = Vec::new();
+                let mut buf = [0u8; 512];
+                loop {
+                    let n = request.as_reader().read(&mut buf).unwrap_or(0);
+                    if n == 0 || body.len() >= MAX_CMD_BODY as usize {
+                        break;
+                    }
+                    body.extend_from_slice(&buf[..n]);
+                }
+                let body = String::from_utf8_lossy(&body);
+                if apply_cmd(&body) {
+                    respond(request, "text/plain", "ok");
+                } else {
+                    // PIN manquant / incorrect ou corps illisible : refus
+                    let header =
+                        Header::from_bytes(b"Content-Type", b"text/plain").unwrap();
+                    let _ = request.respond(
+                        Response::from_string("forbidden".to_string())
+                            .with_status_code(401)
+                            .with_header(header),
+                    );
+                }
             }
             _ => {
                 // favicon.ico et tout le reste : 404
@@ -186,23 +213,40 @@ fn respond(request: tiny_http::Request, content_type: &str, body: &str) {
     let _ = request.respond(Response::from_string(body.to_string()).with_header(header));
 }
 
+/// Taille maximale (octets) du corps d'un `POST /cmd` : 5 booléens + un PIN
+/// de 4 chiffres = quelques dizaines d'octets - 4 Ko laissent une marge
+/// confortable tout en rejetant les corps démesurés.
+const MAX_CMD_BODY: u64 = 4096;
+
 /// Applique des commandes reçues (`POST /cmd`, JSON) à un état - un corps
 /// illisible est ignoré (l'état reste inchangé). Pur (testable sans global).
-fn apply_cmd_to(s: &mut RemoteState, body: &str) {
+///
+/// Renvoie `false` si la commande est refusée : PIN incorrect (la
+/// télécommande est protégée par `s.pin`) ou corps illisible.
+fn apply_cmd_to(s: &mut RemoteState, body: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
-        return;
+        return false;
     };
+    // PIN : le serveur exige `pin` dans le corps quand un code est configuré
+    // (vide = aucune protection)
+    let expected = &s.pin;
+    let given = v.get("pin").and_then(|x| x.as_str()).unwrap_or("");
+    if !expected.is_empty() && given != expected {
+        return false;
+    }
     let get = |k: &str| v.get(k).and_then(|x| x.as_bool()).unwrap_or(false);
     s.up = get("up");
     s.down = get("down");
     s.left = get("left");
     s.right = get("right");
     s.fire = get("fire");
+    true
 }
 
-/// Applique des commandes reçues à l'état partagé (`POST /cmd`).
-fn apply_cmd(body: &str) {
-    apply_cmd_to(&mut STATE.lock().unwrap(), body);
+/// Applique des commandes reçues à l'état partagé (`POST /cmd`). Renvoie
+/// `false` si la commande est refusée (PIN incorrect ou corps illisible).
+fn apply_cmd(body: &str) -> bool {
+    apply_cmd_to(&mut STATE.lock().unwrap(), body)
 }
 
 /// Snapshot de l'état du jeu à publier (champs du HUD + ressources). Pur
@@ -231,6 +275,7 @@ fn snapshot(state: &GameState) -> RemoteState {
     s.lives = state.resources.lives;
     s.shield = state.resources.shield;
     s.score = state.meteors_destroyed;
+    s.pin = state.remote_pin.clone();
     s
 }
 
@@ -270,6 +315,7 @@ fn state_json_from(s: &RemoteState) -> String {
         "lives": s.lives,
         "shield": s.shield,
         "score": s.score,
+        "pin_required": !s.pin.is_empty(),
     })
     .to_string()
 }
@@ -324,6 +370,20 @@ const PAGE: &str = r##"<!doctype html>
   #fire.pressed { background: rgba(255,60,60,.6); border-color: #fff; }
   #hud { position: fixed; top: 10px; left: 10px; right: 10px; font-size: 13px;
     line-height: 1.4; white-space: pre-wrap; pointer-events: none; text-shadow: 0 0 4px #000; }
+  #pinbox { position: fixed; inset: 0; background: rgba(0,0,0,.75);
+    display: flex; align-items: center; justify-content: center; }
+  #pinbox.hidden { display: none; }
+  .pin-card { background: #141b2e; border: 2px solid rgba(255,255,255,.35);
+    border-radius: 8px; padding: 18px 22px; text-align: center; font-family: monospace; }
+  .pin-card h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: 1px; }
+  .pin-card input { width: 110px; padding: 8px; font-size: 22px; text-align: center;
+    background: #0a0e1a; color: #fff; border: 1px solid rgba(255,255,255,.4);
+    border-radius: 4px; letter-spacing: 6px; }
+  .pin-card button { margin-top: 10px; padding: 8px 22px; font-size: 15px;
+    background: rgba(90,200,120,.85); color: #062; border: none; border-radius: 4px;
+    font-weight: bold; cursor: pointer; font-family: monospace; }
+  .pin-card .hint { margin-top: 10px; font-size: 11px; color: rgba(255,255,255,.55); }
+  .pin-card .bad { color: #ff8080; font-size: 11px; min-height: 14px; }
 </style>
 </head>
 <body>
@@ -335,12 +395,41 @@ const PAGE: &str = r##"<!doctype html>
 </div>
 <div id="fire">FIRE</div>
 <div id="hud"></div>
+<div id="pinbox" class="hidden">
+  <div class="pin-card">
+    <h2>REMOTE PIN</h2>
+    <input id="pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off">
+    <div><button id="pinok">OK</button></div>
+    <div class="bad" id="pinbad"></div>
+    <div class="hint">Code à choisir dans le jeu - écran O, ligne REMOTE PIN</div>
+  </div>
+</div>
 <script>
 "use strict";
 const fire = document.getElementById('fire');
 const hud = document.getElementById('hud');
+const pinbox = document.getElementById('pinbox');
+const pinInput = document.getElementById('pin');
+const pinBad = document.getElementById('pinbad');
 const cmd = { up:false, down:false, left:false, right:false, fire:false };
 let dirty = false;
+// PIN mémorisé dans le navigateur (localStorage) : envoyé avec chaque
+// commande - une protection vide = aucune exigence
+let pin = localStorage.getItem('mm_pin') || '';
+
+// saisie du PIN : affichée quand le jeu l'exige, le code soumis est retenu
+// pour les commandes suivantes (et mémorisé pour la prochaine visite)
+document.getElementById('pinok').addEventListener('click', () => {
+  pin = pinInput.value.trim();
+  if (pin.length > 0 && !/^[0-9]{1,4}$/.test(pin)) {
+    pinBad.textContent = '4 chiffres maximum';
+    return;
+  }
+  pinBad.textContent = '';
+  localStorage.setItem('mm_pin', pin);
+  pinbox.classList.add('hidden');
+  dirty = true;
+});
 
 // un bouton directionnel : pressé → commande active (maintenue tant que le
 // doigt reste dessus, capture du pointeur = pas de perte en glissant)
@@ -374,14 +463,27 @@ fire.addEventListener('pointercancel', fireUp);
 setInterval(() => {
   if (!dirty) return;
   dirty = false;
+  const body = JSON.stringify(cmd);
   fetch('/cmd', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(cmd) }).catch(() => {});
+                  // le PIN est joint à chaque commande (le serveur le refuse
+                  // sinon) - rejet 401 = reprompt sur la page
+                  body: pin ? JSON.stringify({ ...cmd, pin }) : body })
+    .then(r => { if (r.status === 401) { pinbox.classList.remove('hidden'); pinBad.textContent = 'PIN refusé'; } })
+    .catch(() => {});
 }, 33);
 
 // état du jeu en direct (HUD du téléphone), toutes les 250 ms
 setInterval(async () => {
   try {
     const s = await (await fetch('/state')).json();
+    // le jeu exige un PIN : la saisie est affichée (elle reste invisible
+    // tant que la télécommande n'est pas protégée)
+    if (s.pin_required) {
+      pinbox.classList.remove('hidden');
+    } else {
+      pinbox.classList.add('hidden');
+      pinBad.textContent = '';
+    }
     const lines = [];
     if (s.economy) {
       lines.push('FUEL ' + s.fuel.toFixed(0) + '/' + s.fuel_cap +
@@ -412,16 +514,44 @@ mod tests {
     #[test]
     fn cmd_updates_remote_inputs() {
         let mut s = RemoteState::new();
-        apply_cmd_to(&mut s, r#"{"up":true,"down":false,"left":true,"right":false,"fire":true}"#);
+        assert!(apply_cmd_to(
+            &mut s,
+            r#"{"up":true,"down":false,"left":true,"right":false,"fire":true}"#
+        ));
         assert!(s.up && s.left && s.fire);
         assert!(!s.down && !s.right);
     }
 
     #[test]
-    fn malformed_cmd_is_ignored() {
+    fn malformed_cmd_is_refused() {
         let mut s = RemoteState::new();
-        apply_cmd_to(&mut s, "pas du json");
+        assert!(!apply_cmd_to(&mut s, "pas du json"));
         assert!(!s.up && !s.down && !s.left && !s.right && !s.fire);
+    }
+
+    #[test]
+    fn cmd_with_pin_is_checked() {
+        let mut s = RemoteState::new();
+        s.pin = "1234".to_string();
+        // sans PIN dans le corps : refusé
+        assert!(!apply_cmd_to(
+            &mut s,
+            r#"{"up":true,"down":false,"left":false,"right":false,"fire":false}"#
+        ));
+        assert!(!s.up && !s.down);
+        // mauvais PIN : refusé
+        assert!(!apply_cmd_to(
+            &mut s,
+            r#"{"up":true,"down":false,"left":false,"right":false,"fire":false,"pin":"9999"}"#
+        ));
+        assert!(!s.up && !s.down);
+        // bon PIN : accepté
+        assert!(apply_cmd_to(
+            &mut s,
+            r#"{"up":true,"down":false,"left":false,"right":false,"fire":false,"pin":"1234"}"#
+        ));
+        assert!(s.up);
+        assert!(!s.down);
     }
 
     #[test]
@@ -440,6 +570,7 @@ mod tests {
         assert!(parsed.get("fps").is_some());
         assert!(parsed.get("fuel").is_some());
         assert!(parsed.get("rank").is_some());
+        assert_eq!(parsed.get("pin_required"), Some(&serde_json::json!(false)));
     }
 
     /// Bout en bout (sans fenêtre, juste un socket local) : le serveur sert

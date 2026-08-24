@@ -160,6 +160,12 @@ async fn main() {
         state.touch_ui = on;
     }
     crate::touch::set_enabled(state.touch_ui);
+    // PIN de la télécommande HTTP (ligne REMOTE PIN de l'écran de
+    // paramétrage, clé `remote_pin`) : chargé au lancement - vide = aucune
+    // protection (comportement historique)
+    if let Some(pin) = persist::load_remote_pin() {
+        state.remote_pin = pin;
+    }
     // la valeur effectivement appliquée par la fenêtre (`window_conf` lit la
     // même clé) : si `antialias` en diffère ensuite, un redémarrage est
     // nécessaire (bouton RESTART de l'écran de paramétrage)

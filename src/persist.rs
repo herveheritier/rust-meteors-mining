@@ -113,6 +113,15 @@ fn read_all(path: &Path) -> HashMap<String, String> {
 }
 
 /// Écrit toutes les clés (triées) ; crée le dossier parent s'il n'existe pas.
+///
+/// Écriture **atomique** : le contenu est d'abord écrit dans un fichier
+/// temporaire du même dossier, puis `rename` par-dessus la cible - une
+/// coupure de courant ou un crash en pleine écriture ne peut pas laisser un
+/// fichier de configuration (ou de progression) tronqué : on retrouve soit
+/// l'ancienne version complète, soit la nouvelle. `rename` est atomique sur
+/// un même système de fichiers, et le fichier temporaire porte un nom
+/// unique par processus (PID) pour que deux instances du jeu ne s'écrasent
+/// pas mutuellement.
 fn write_all(path: &Path, map: &HashMap<String, String>) -> io::Result<()> {
     let mut lines: Vec<String> = map
         .iter()
@@ -122,7 +131,30 @@ fn write_all(path: &Path, map: &HashMap<String, String>) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, lines.join("\n") + "\n")
+    let content = lines.join("\n") + "\n";
+    let tmp = path.with_file_name(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("cfg"),
+        std::process::id()
+    ));
+    fs::write(&tmp, &content)?;
+    match fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        // Windows : `rename` échoue si la destination existe déjà (contrairement
+        // à Unix où elle est remplacée atomiquement) - on supprime la cible
+        // puis on réessaie. Le court intervalle sans fichier est acceptable
+        // (repli Windows uniquement).
+        Err(_) => {
+            let _ = fs::remove_file(path);
+            let result = fs::rename(&tmp, path);
+            if result.is_err() {
+                let _ = fs::remove_file(&tmp);
+            }
+            result
+        }
+    }
 }
 
 /// Lit une clé entière (absente ou invalide → `None`).
@@ -296,6 +328,42 @@ pub fn save_moving_mode_to(path: &Path, mode: i32) -> io::Result<()> {
     set_i32_to(path, "moving_mode", mode)
 }
 
+// ─── télécommande HTTP ──────────────────────────────────────────────────────
+
+/// Code PIN de la télécommande HTTP (clé `remote_pin`, 0 à 4 chiffres) -
+/// vide (ou clé absente) = aucune protection. Tout autre contenu est ignoré
+/// (repli sur aucun PIN).
+pub fn load_remote_pin() -> Option<String> {
+    load_remote_pin_from(&config_path())
+}
+
+/// Version testable de `load_remote_pin`.
+pub fn load_remote_pin_from(path: &Path) -> Option<String> {
+    let pin = read_all(path).get("remote_pin")?.trim().to_string();
+    if !pin.is_empty() && pin.len() <= 4 && pin.chars().all(|c| c.is_ascii_digit()) {
+        Some(pin)
+    } else if pin.is_empty() {
+        Some(String::new())
+    } else {
+        None
+    }
+}
+
+/// Enregistre le code PIN de la télécommande (0 à 4 chiffres) ; un PIN vide
+/// supprime la clé (aucune protection).
+pub fn save_remote_pin(pin: &str) -> io::Result<()> {
+    save_remote_pin_to(&config_path(), pin)
+}
+
+/// Version testable de `save_remote_pin`.
+pub fn save_remote_pin_to(path: &Path, pin: &str) -> io::Result<()> {
+    if pin.is_empty() {
+        delete_key_from(path, "remote_pin")
+    } else {
+        set_str_to(path, "remote_pin", pin)
+    }
+}
+
 // ─── suppression ────────────────────────────────────────────────────────────
 
 /// Supprime une clé du fichier de configuration (les autres clés sont
@@ -336,6 +404,32 @@ mod tests {
         let _ = fs::remove_file(&p);
         save_moving_mode_to(&p, MOVING_MODE_4_WAYS).unwrap();
         assert_eq!(load_moving_mode_from(&p), Some(MOVING_MODE_4_WAYS));
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn atomic_write_leaves_no_temp_file_and_replaces_existing() {
+        // une sauvegarde remplace proprement un fichier existant, sans
+        // laisser de fichier temporaire ni perdre les autres clés
+        let p = temp_path("atomic.cfg");
+        let _ = fs::remove_file(&p);
+        let mut map = HashMap::new();
+        map.insert("foo".to_string(), "bar".to_string());
+        write_all(&p, &map).unwrap();
+        // pas de .tmp résiduel dans le dossier
+        let leftovers: Vec<_> = std::fs::read_dir(p.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().starts_with(".atomic.cfg."))
+            .collect();
+        assert!(leftovers.is_empty(), "fichiers temporaires résiduels: {leftovers:?}");
+        // la réécriture remplace bien le contenu
+        map.insert("foo".to_string(), "baz".to_string());
+        map.insert("moving_mode".to_string(), MOVING_MODE_4_WAYS.to_string());
+        write_all(&p, &map).unwrap();
+        let content = fs::read_to_string(&p).unwrap();
+        assert!(content.contains("foo=baz"));
+        assert!(content.contains(&format!("moving_mode={MOVING_MODE_4_WAYS}")));
         let _ = fs::remove_file(&p);
     }
 
@@ -430,6 +524,25 @@ mod tests {
         assert_eq!(get_i32_from(&p, "volume"), Some(40));
         assert_eq!(get_bool_from(&p, "music"), Some(true));
         assert_eq!(load_moving_mode_from(&p), Some(MOVING_MODE_4_WAYS));
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn remote_pin_round_trip_and_validation() {
+        // aller-retour d'un PIN ; un PIN vide supprime la clé ; un contenu
+        // invalide (trop long, non numérique) est ignoré
+        let p = temp_path("pin.cfg");
+        let _ = fs::remove_file(&p);
+        save_remote_pin_to(&p, "1234").unwrap();
+        assert_eq!(load_remote_pin_from(&p), Some("1234".to_string()));
+        // PIN vide = aucune protection (clé supprimée)
+        save_remote_pin_to(&p, "").unwrap();
+        assert_eq!(load_remote_pin_from(&p), None);
+        // contenu invalide ignoré (aucun PIN)
+        fs::write(&p, "remote_pin=abcde5\n").unwrap();
+        assert_eq!(load_remote_pin_from(&p), None);
+        fs::write(&p, "remote_pin=12a3\n").unwrap();
+        assert_eq!(load_remote_pin_from(&p), None);
         let _ = fs::remove_file(&p);
     }
 

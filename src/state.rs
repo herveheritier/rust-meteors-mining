@@ -309,6 +309,18 @@ pub struct GameState {
     /// choisit désormais au magasin de la station - bouton SHOP de la boîte
     /// DOCK STATION.)
     pub settings_box: bool,
+    /// Code PIN de la télécommande HTTP (vide = aucune protection - n'importe
+    /// qui sur le réseau local peut piloter le vaisseau). Saisi dans l'écran
+    /// de paramétrage (ligne REMOTE PIN) et persisté (clé `remote_pin`) -
+    /// exigé par le `POST /cmd` du serveur (`remote.rs`).
+    pub remote_pin: String,
+    /// Saisie du PIN de la télécommande en cours dans l'écran de paramétrage :
+    /// les chiffres du clavier remplissent `settings_pin_buffer` (4 max),
+    /// ENTRÉE valide, ÉCHAP annule.
+    pub settings_pin_edit: bool,
+    /// Pin en cours de saisie dans l'écran de paramétrage (chiffres tapés,
+    /// avant validation par ENTRÉE).
+    pub settings_pin_buffer: String,
     /// Affiche les données de debug des formes (touche D, ex `showData%`).
     pub show_data: bool,
     /// Affiche les informations de debug (touche I, ex `showInfo%`).
@@ -399,6 +411,9 @@ impl GameState {
             shop_box: false,
             help_box: false,
             settings_box: false,
+            remote_pin: String::new(),
+            settings_pin_edit: false,
+            settings_pin_buffer: String::new(),
             show_data: false,
             show_info: false,
             last_keycode: 0,
