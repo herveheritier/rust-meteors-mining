@@ -6,7 +6,7 @@
 //! `is_vertex_in_shape`, `choose_border_segment`, `meshes_to_shape`,
 //! `resize_shape`, `create_specific_shape`.
 //!
-//! Les meshes (station, alien, gemme, balle) étaient des instructions `DATA`
+//! Les meshes (station, alien, minerai, balle) étaient des instructions `DATA`
 //! du code QB64 (voir `docs/ASSETS.md` §3) ; ils deviennent des constantes ici.
 
 use rand::Rng;
@@ -161,8 +161,8 @@ pub const ALIEN_MESH: Mesh = &[
     ],
 ];
 
-/// Gemme - `data 1,4` puis 4 points → 2 triangles (voir `createGem`).
-pub const GEM_MESH: Mesh = &[&[
+/// Minerai ramassable - `data 1,4` puis 4 points → 2 triangles (voir `createMineral`).
+pub const MINERAL_MESH: Mesh = &[&[
     (2.0, -2.0),
     (-2.0, -2.0),
     (-2.0, 2.0),
@@ -205,15 +205,15 @@ pub struct Shape {
     pub life: i32,
     pub element: i32,
     /// Quantité de minerai contenue dans un météore (1 par triangle
-    /// minéralisé au départ, +1 par gemme absorbée) : libérée en gemmes à la
+    /// minéralisé au départ, +1 par minerai absorbé) : libérée en minerais à la
     /// position du météore quand il est détruit par la collision d'un autre
     /// météore. 0 hors météores.
     pub minerals: i32,
-    /// Gemme **rejetée de la soute** du vaisseau détruit (`eject_cargo_gems`) :
+    /// Minerai **rejeté de la soute** du vaisseau détruit (`eject_cargo_minerals`) :
     /// les météores ne l'absorbent **pas** (elle doit rester ramassable par le
     /// cosmonaute EVA, ou le vaisseau ressuscité en Survival) - seule la
     /// résolution de collision la ramasse (vaisseau) ou la proximité
-    /// (cosmonaute). `false` pour les gemmes libérées par un météore détruit
+    /// (cosmonaute). `false` pour les minerais libérés par un météore détruit
     /// (`create_gem`), qui, elles, restent absorbables.
     pub ejected_cargo: bool,
     /// Angle (radians) de balancement actuel des membres du cosmonaute EVA :

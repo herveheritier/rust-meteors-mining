@@ -6,7 +6,7 @@
   "initial_state": {
     "start_fuel": 0.0,
     "start_ammo": 0,
-    "start_minerals": 0,
+    "start_credits": 0,
     "start_reputation": 0.0,
     "start_mode": 3,
     "lives": 3,
@@ -53,7 +53,7 @@
         "min_precision": 0.8
       },
       "reward": {
-        "type": "Minerals",
+        "type": "Credits",
         "amount": 25
       },
       "position": { "x": 420, "y": 280 }

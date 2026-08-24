@@ -19,7 +19,7 @@ use crate::cosmonaut::{animate_eva_cosmonaut, COSMONAUTE_EVA_PARK};
 use crate::marketplace::*;
 use crate::garbage::{generate_garbages, moving_garbage, Garbage};
 use crate::generate::{
-    create_alien, create_gem, create_shape, eject_cargo_gems, fire_bullet, release_meteor_minerals,
+    create_alien, create_mineral, create_shape, eject_cargo_minerals, fire_bullet, release_meteor_minerals,
 };
 use crate::persist;
 use crate::scenario;
@@ -211,7 +211,7 @@ pub fn update(
 
     // Boîte de choix DOCK STATION ouverte : seuls les clics sur UNLOAD /
     // SHOP / CLOSE sont traités (ex boucle bloquante de
-    // `windowUtils_choiceBox`). UNLOAD décharge la soute (minerais
+    // `windowUtils_choiceBox`). UNLOAD décharge la soute (crédits
     // disponibles pour le ravitaillement juste après) et SHOP ouvre le
     // magasin de la station - le carburant et les munitions s'y achètent
     // indépendamment (section RAVITAILLEMENT, plus de bouton REFUEL/REARM) ;
@@ -235,7 +235,7 @@ pub fn update(
                     e.count = 0;
                 }
                 state.player.cargo_qty = 0;
-                // la progression (minerais) est persistée au déchargement
+                // la progression (crédits) est persistée au déchargement
                 let _ = scenario::save_progression(state);
             }
             ChoiceClick::Shop => {
@@ -248,6 +248,8 @@ pub fn update(
                 state.dock_box = false;
                 state.shop_box = true;
                 state.shop_drag = None;
+                state.shop_tab = crate::config::SHOP_TAB_SUPPLIES; // onglet ravitaillement par défaut
+                state.shop_feedback.clear();
                 state.shop_fuel_qty = scenario::affordable_fuel_qty(state);
                 for i in 0..scenario::weapon_slot_count() {
                     if scenario::weapon_owned(state, i) {
@@ -273,10 +275,10 @@ pub fn update(
 
     // Magasin de la station ouvert (bouton SHOP de la boîte DOCK STATION) :
     // les curseurs du ravitaillement sont mis à jour à chaque frame
-    // (`shop_update` : glisser, molette, bornage aux minerais), puis les
+    // (`shop_update` : glisser, molette, bornage aux crédits), puis les
     // clics sur les lignes de mode de déplacement (sélection gratuite ou
-    // déblocage contre minerais, `scenario::try_select_mode`), les lignes
-    // d'extension (achat contre minerais, `scenario::buy_upgrade`), les
+    // déblocage contre crédits, `scenario::try_select_mode`), les lignes
+    // d'extension (achat contre crédits, `scenario::buy_upgrade`), les
     // lignes de ravitaillement (achat de la **quantité du curseur**) et sur
     // CLOSE (retour à la boîte DOCK STATION, toujours accosté) sont traités.
     // Le vaisseau est gelé, mais le **monde, lui, continue** : les météores
@@ -288,15 +290,75 @@ pub fn update(
             ShopClick::None => {}
             ShopClick::Mode(mode) => select_mode_and_save(state, mode),
             ShopClick::Weapon(i) => buy_weapon_and_save(state, shapes, triangles, i),
+            ShopClick::BuyRadar => buy_radar_and_save(state),
             // ravitaillement : carburant et munitions achetés indépendamment,
-            // à la quantité choisie sur le curseur de la ligne (minerais
-            // persistés)
+            // à la quantité choisie sur le curseur de la ligne (crédits
+            // persistés) - le résultat (achat / refus / plein) s'affiche dans
+            // le pied de la fenêtre (`shop_feedback`)
             ShopClick::Refuel => {
-                scenario::buy_fuel_qty(state, state.shop_fuel_qty);
+                match scenario::buy_fuel_qty(state, state.shop_fuel_qty) {
+                    scenario::SupplyOutcome::Purchased(cost) => {
+                        state.shop_feedback = format!("Carburant acheté (-{} CR)", cost);
+                        state.shop_feedback_ok = true;
+                    }
+                    scenario::SupplyOutcome::Insufficient(_) => {
+                        state.shop_feedback = "PAS ASSEZ DE CRÉDITS".to_string();
+                        state.shop_feedback_ok = false;
+                    }
+                    scenario::SupplyOutcome::Full => state.shop_feedback.clear(),
+                }
                 let _ = scenario::save_progression(state);
             }
             ShopClick::Rearm(i) => {
-                scenario::buy_ammo_qty(state, i, state.shop_ammo_qty[i] as i32);
+                match scenario::buy_ammo_qty(state, i, state.shop_ammo_qty[i] as i32) {
+                    scenario::SupplyOutcome::Purchased(cost) => {
+                        state.shop_feedback = format!("Munitions achetées (-{} CR)", cost);
+                        state.shop_feedback_ok = true;
+                    }
+                    scenario::SupplyOutcome::Insufficient(_) => {
+                        state.shop_feedback = "PAS ASSEZ DE CRÉDITS".to_string();
+                        state.shop_feedback_ok = false;
+                    }
+                    scenario::SupplyOutcome::Full => state.shop_feedback.clear(),
+                }
+                let _ = scenario::save_progression(state);
+            }
+            ShopClick::RefillAll => {
+                // plein de carburant + munitions (toutes armes possédées) au
+                // maximum achetable - un seul clic pour tout ravitailler
+                let had_missing =
+                    (scenario::fuel_capacity(state) - state.resources.fuel).max(0.0) > 0.0
+                        || (0..scenario::weapon_slot_count())
+                            .filter(|&i| scenario::weapon_owned(state, i))
+                            .any(|i| scenario::ammo_capacity(state) - state.resources.weapon_ammo[i] > 0);
+                let mut spent = 0;
+                let fuel_missing = (scenario::fuel_capacity(state) - state.resources.fuel).max(0.0);
+                if let scenario::SupplyOutcome::Purchased(c) =
+                    scenario::buy_fuel_qty(state, fuel_missing)
+                {
+                    spent += c;
+                }
+                for i in 0..scenario::weapon_slot_count() {
+                    if scenario::weapon_owned(state, i) {
+                        let missing =
+                            (scenario::ammo_capacity(state) - state.resources.weapon_ammo[i]).max(0);
+                        if let scenario::SupplyOutcome::Purchased(c) =
+                            scenario::buy_ammo_qty(state, i, missing)
+                        {
+                            spent += c;
+                        }
+                    }
+                }
+                if spent > 0 {
+                    state.shop_feedback = format!("Ravitaillement complet (-{} CR)", spent);
+                    state.shop_feedback_ok = true;
+                } else if had_missing {
+                    state.shop_feedback = "PAS ASSEZ DE CRÉDITS".to_string();
+                    state.shop_feedback_ok = false;
+                } else {
+                    state.shop_feedback = "Tout est déjà plein".to_string();
+                    state.shop_feedback_ok = true;
+                }
                 let _ = scenario::save_progression(state);
             }
             ShopClick::BuyFuelUpgrade => {
@@ -311,6 +373,7 @@ pub fn update(
             ShopClick::Close => {
                 state.shop_box = false;
                 state.dock_box = true;
+                state.shop_feedback.clear();
             }
         }
         // toujours à quai (CLOSE ramène à la boîte DOCK STATION) : le monde
@@ -484,8 +547,10 @@ pub fn update(
         for result in results {
             // Appliquer la récompense
             match result.reward.reward_type.as_str() {
-                "Minerals" => {
-                    state.resources.minerals += result.reward.amount as i32;
+                "Credits" | "Minerals" => {
+                    // `Minerals` (ancien nom) reste accepté pour les
+                    // scénarios écrits avant le renommage minerais → crédits
+                    state.resources.credits += result.reward.amount as i32;
                 }
                 "Reputation" => {
                     state.resources.reputation += result.reward.amount;
@@ -566,7 +631,7 @@ fn collisions(
     // d'accostage, rétraction des liens, fondu enchaîné du secours EVA) : il
     // est **protégé** - il reste intact pendant que les météores dérivent
     // autour de la base (aucun impact qui l'endommagerait, aucun choc
-    // élastique qui le pousserait hors de l'anneau, aucun vol de gemme de
+    // élastique qui le pousserait hors de l'anneau, aucun vol de minerai de
     // soute)
     let player_docked = state.dock_box
         || state.shop_box
@@ -603,11 +668,11 @@ fn collisions(
             let sum_radius = shapes[i].radius + shapes[j].radius;
             if x_dist <= sum_radius && y_dist <= sum_radius {
                 if detect_collision(&shapes[i], &shapes[j], i, j, triangles) {
-                    // pas de choc élastique entre une gemme et (vaisseau ou
+                    // pas de choc élastique entre un minerai et (vaisseau ou
                     // météore), ni avec la station
-                    let no_elastic = (shapes[i].who_i_am == WHOIAM_GEM
+                    let no_elastic = (shapes[i].who_i_am == WHOIAM_MINERAL
                         && (shapes[j].who_i_am == WHOIAM_PLAYER || shapes[j].who_i_am == WHOIAM_METEOR))
-                        || (shapes[j].who_i_am == WHOIAM_GEM
+                        || (shapes[j].who_i_am == WHOIAM_MINERAL
                             && (shapes[i].who_i_am == WHOIAM_PLAYER || shapes[i].who_i_am == WHOIAM_METEOR))
                         || shapes[i].who_i_am == WHOIAM_STATION
                         || shapes[j].who_i_am == WHOIAM_STATION;
@@ -638,11 +703,11 @@ fn collisions(
         let collid_by_who = shapes[collid_by as usize].who_i_am;
 
         if collid_by_who == WHOIAM_PLAYER
-            && who == WHOIAM_GEM
+            && who == WHOIAM_MINERAL
             && state.player.cargo_qty < state.player.cargo_size
         {
-            // ramassage d'une gemme (M4 - nécessite les balles pour créer des
-            // gemmes) : détruite, son élément est compté dans la soute
+            // ramassage d.un minerai (M4 - nécessite les balles pour créer des
+            // minerais) : détruit, son élément est compté dans la soute
             shapes[shape_index].life = 0;
             triangles[i].life = 0;
             let element = triangles[i].element as usize;
@@ -651,13 +716,13 @@ fn collisions(
             }
             state.player.cargo_qty += 1;
             if let Some(sounds) = sounds.as_mut() {
-                sounds.play_gem();
+                sounds.play_mineral();
             }
             if state.player.cargo_qty >= state.player.cargo_size {
                 state.send_message("YOUR LOADING BAY IS FULL, YOU MUST UNLOAD IT AT THE STATION");
             }
-        } else if collid_by_who == WHOIAM_GEM && who == WHOIAM_PLAYER {
-            // déjà résolu côté gemme (cargaison pleine)
+        } else if collid_by_who == WHOIAM_MINERAL && who == WHOIAM_PLAYER {
+            // déjà résolu côté minerai (cargaison pleine)
         } else if collid_by_who == WHOIAM_STATION && who == WHOIAM_PLAYER {
             // accostage (M5)
         } else if who == WHOIAM_STATION {
@@ -676,7 +741,7 @@ fn collisions(
                     // les minerais collectés sont rejetés autour du crash
                     // avant le respawn (la position du vaisseau est encore
                     // celle du crash) - à récupérer en revenant sur place
-                    eject_cargo_gems(state, shapes, triangles, elements, rng);
+                    eject_cargo_minerals(state, shapes, triangles, elements, rng);
                     respawn_player(state, shapes, triangles);
                 }
                 scenario::PlayerHit::GameOver => {
@@ -684,7 +749,7 @@ fn collisions(
                     // chargement est rejeté autour du crash comme ailleurs
                     triangles[i].life = 0;
                     shapes[PLAYER_INDEX].life = 0;
-                    eject_cargo_gems(state, shapes, triangles, elements, rng);
+                    eject_cargo_minerals(state, shapes, triangles, elements, rng);
                 }
             }
             // la progression Survival (vies, bouclier) est persistée quand un
@@ -693,22 +758,22 @@ fn collisions(
             if state.resources.shield != shield_before || state.resources.lives != lives_before {
                 let _ = scenario::save_progression(state);
             }
-        } else if collid_by_who == WHOIAM_METEOR && who == WHOIAM_GEM {
-            // un météore percute une gemme : il l'absorbe - la gemme
+        } else if collid_by_who == WHOIAM_METEOR && who == WHOIAM_MINERAL {
+            // un météore percute un minerai : il l.absorbe - le minerai
             // disparaît entièrement et la quantité de minerai du météore
             // augmente (`minerals`, libérée si le météore est lui-même
             // détruit par un autre météore). Le météore le plus proche de la
-            // gemme est celui qui l'a percutée (`collid_by` ne porte que le
-            // type, pas l'index). Une seule fois par gemme (toute la gemme
-            // est tuée au premier triangle). NB : une gemme **rejetée de la
+            // minerai est celui qui l.a percuté (`collid_by` ne porte que le
+            // type, pas l.index). Une seule fois par minerai (tout le minerai
+            // est tué au premier triangle). NB : un minerai **rejeté de la
             // soute** du vaisseau détruit (`ejected_cargo`) n'est PAS absorbée
             // - elle doit rester ramassable par le cosmonaute EVA (ou le
             // vaisseau ressuscité en Survival), le minerai n'est pas perdu
-            // avec le crash ; sans choc élastique (météore/gemme), elle
+            // avec le crash ; sans choc élastique (météore/minerai), il
             // traverse simplement le météore.
             if shapes[shape_index].life > 0 && !shapes[shape_index].ejected_cargo {
-                let gem_pos = shapes[shape_index].position;
-                if let Some(meteor) = nearest_meteor(shapes, gem_pos) {
+                let mineral_pos = shapes[shape_index].position;
+                if let Some(meteor) = nearest_meteor(shapes, mineral_pos) {
                     shapes[meteor].minerals += 1;
                 }
                 shapes[shape_index].life = 0;
@@ -716,9 +781,9 @@ fn collisions(
                     triangles[j].life = 0;
                 }
             }
-        } else if collid_by_who == WHOIAM_GEM && who == WHOIAM_METEOR {
-            // déjà résolu côté gemme (absorption) : le météore n'est pas
-            // endommagé en avalant la gemme (une gemme de soute, elle,
+        } else if collid_by_who == WHOIAM_MINERAL && who == WHOIAM_METEOR {
+            // déjà résolu côté minerai (absorption) : le météore n.est pas
+            // endommagé en avalant le minerai (un minerai de soute, lui,
             // traverse sans rien faire)
         } else if who == WHOIAM_PLAYER {
             // vaisseau joueur : mesh multi-triangles (35 faces) mais toujours
@@ -742,9 +807,9 @@ fn collisions(
                     activate_cosmonaut(state, shapes, triangles);
                 }
                 // les minerais collectés sont **rejetés autour** du crash :
-                // la soute est vidée en gemmes éparpillées à proximité, que
+                // la soute est vidée en minerais éparpillés à proximité, que
                 // le cosmonaute pourra ramasser pour les ramener à la station
-                eject_cargo_gems(state, shapes, triangles, elements, rng);
+                eject_cargo_minerals(state, shapes, triangles, elements, rng);
                 // débris du crash + son d'impact (comme pour toute forme
                 // détruite - voir la branche générique ci-dessous)
                 if let Some(sounds) = sounds.as_mut() {
@@ -804,8 +869,8 @@ fn collisions(
                     }
                 }
             }
-            // collision vaisseau/gemme non résolue parce que soute pleine
-            if collid_by_who == WHOIAM_PLAYER && who == WHOIAM_GEM {
+            // collision vaisseau/minerai non résolue parce que soute pleine
+            if collid_by_who == WHOIAM_PLAYER && who == WHOIAM_MINERAL {
                 state.send_message("YOU CANNOT TAKE ANY ADDITIONAL RESOURCES, UNLOAD AT THE STATION");
             }
             // si le joueur détruit un météore, la limite de météores augmente
@@ -850,23 +915,23 @@ fn collisions(
             }
             generate_garbages(garbages, &triangles[i], shapes, rng);
             // un triangle minéralisé d'un MÉTÉORE détruit par un missile
-            // libère son minerai : une gemme apparaît (le minerai n'est pas
+            // libère son minerai : un minerai apparaît (le minerai n.est pas
             // détruit avec le météore). Un missile qui touche directement
-            // une gemme, elle, la détruit - pas de nouvelle gemme : c'est le
-            // seul cas de destruction de minerai (`who == WHOIAM_GEM` n'entre
+            // un minerai, lui, le détruit - pas de nouveau minerai : c.est le
+            // seul cas de destruction de minerai (`who == WHOIAM_MINERAL` n'entre
             // pas ici).
             if triangles[i].element > 0 && who == WHOIAM_METEOR {
                 if collid_by_who == WHOIAM_BULLET && triangles[i].element > 0 {
                     let source = triangles[i];
-                    create_gem(shapes, triangles, elements, &source, rng);
+                    create_mineral(shapes, triangles, elements, &source, rng);
                     if shapes[shape_index].minerals > 0 {
                         shapes[shape_index].minerals -= 1;
                     }
                 }
             }
             // le météore est détruit (par un autre météore ou par un missile
-            // du vaisseau) : ses minerais restants - absorbés de gemmes
-            // mangées - sont libérés en gemmes à sa position, jamais détruits
+            // du vaisseau) : ses minerais restants - absorbés de minerais
+            // mangés - sont libérés en minerais à sa position, jamais détruits
             // avec lui. Une seule fois : `minerals` passe à 0 dans
             // `release_meteor_minerals`, les triangles suivants du même
             // météore ne relibèrent rien.
@@ -888,20 +953,20 @@ fn collisions(
         }
     }
 
-    // ramassage des gemmes par le **cosmonaute EVA** (vaisseau détruit) : il
-    // les ramasse par proximité (non-collider - les gemmes le traversent) et
+    // ramassage des minerais par le **cosmonaute EVA** (vaisseau détruit) : il
+    // les ramasse par proximité (non-collider - les minerais le traversent) et
     // les **rapporte à la station** : la soute est déchargée à l'accostage
     // après le secours (`docking`/`rescue_cosmonaut`), comme pour le vaisseau
-    eva_collect_gems(state, shapes, triangles, elements, sounds);
+    eva_collect_minerals(state, shapes, triangles, elements, sounds);
 }
 
-/// Ramassage des gemmes par le **cosmonaute EVA** : chaque gemme dont le
+/// Ramassage des minerais par le **cosmonaute EVA** : chaque minerai dont le
 /// centre entre dans le rayon `EVA_PICKUP_RADIUS` du cosmonaute est ramassée
 /// - détruite, son élément est compté dans la **même soute que le vaisseau**
-/// (déchargée en minerais à la station après le secours). Soute pleine, plus
+/// (déchargée en crédits à la station après le secours). Soute pleine, plus
 /// de ramassage. Sans effet quand le vaisseau est intact (`cosmonaut_active`
 /// faux) : le cosmonaute garé ne ramasse rien.
-fn eva_collect_gems(
+fn eva_collect_minerals(
     state: &mut GameState,
     shapes: &mut [Shape],
     triangles: &mut [Triangle],
@@ -917,7 +982,7 @@ fn eva_collect_gems(
     }
     let pos = shapes[eva].position;
     for g in 0..shapes.len() {
-        if g == eva || shapes[g].who_i_am != WHOIAM_GEM || shapes[g].life <= 0 {
+        if g == eva || shapes[g].who_i_am != WHOIAM_MINERAL || shapes[g].life <= 0 {
             continue;
         }
         // soute pleine : plus de ramassage
@@ -928,7 +993,7 @@ fn eva_collect_gems(
         if d > EVA_PICKUP_RADIUS {
             continue;
         }
-        // ramassage : la gemme est détruite, son élément compté dans la soute
+        // ramassage : le minerai est détruit, son élément compté dans la soute
         let first = shapes[g].first_triangle;
         let element = triangles[first].element as usize;
         if element < elements.len() {
@@ -940,7 +1005,7 @@ fn eva_collect_gems(
             triangles[j].life = 0;
         }
         if let Some(sounds) = sounds.as_mut() {
-            sounds.play_gem();
+            sounds.play_mineral();
         }
         if state.player.cargo_qty >= state.player.cargo_size {
             state.send_message("YOUR LOADING BAY IS FULL, YOU MUST UNLOAD IT AT THE STATION");
@@ -949,9 +1014,9 @@ fn eva_collect_gems(
 }
 
 /// Météore vivant le plus proche d'une position donnée - utilisé par
-/// l'absorption d'une gemme : `collid_by` ne porte que le type
-/// (`WHOIAM_METEOR`), pas l'index de la forme qui a percuté la gemme - on
-/// attribue donc l'absorption au météore le plus proche de la gemme (celui
+/// l.absorption d.un minerai : `collid_by` ne porte que le type
+/// (`WHOIAM_METEOR`), pas l'index de la forme qui a percuté le minerai - on
+/// attribue donc l.absorption au météore le plus proche du minerai (celui
 /// qui vient de la percuter).
 fn nearest_meteor(shapes: &[Shape], pos: Point) -> Option<usize> {
     let mut best: Option<(usize, f64)> = None;
@@ -1095,12 +1160,13 @@ fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &m
         )
     };
     state.eva_recovery = EVA_RECOVERY_DURATION;
-    // le cosmonaute est immobilisé pendant que le cordon le tire
+    // le cosmonaute est immobilisé pendant que le cordon le tire, mais il
+    // **garde son orientation** (il reste tourné comme il l'était en arrivant
+    // - pas de repositionnement brutal à la récupération)
     let c = &mut shapes[idx];
     c.velocity = 0.0;
     c.direction = 0.0;
     c.rotation = 0.0;
-    c.orientation = 0.0;
     for j in c.first_triangle..=c.last_triangle {
         compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
     }
@@ -1256,7 +1322,7 @@ fn docking(
             // compteur d'accostages (objectifs DAG)
             state.docking_count += 1;
         } else {
-            // déchargement : la soute est convertie en minerais (scénario à
+            // déchargement : la soute est convertie en crédits (scénario à
             // économie) puis vidée - le ravitaillement s'achète au magasin
             // (section RAVITAILLEMENT)
             let had_cargo = state.player.cargo_qty > 0;
@@ -1267,7 +1333,7 @@ fn docking(
             state.player.cargo_qty = 0;
             state.player_enter_station = 0;
             state.player_at_station = -1;
-            // la progression (minerais) n'est persistée que s'il y avait du
+            // la progression (crédits) n'est persistée que s'il y avait du
             // cargo (cette branche tourne à chaque frame à quai - pas
             // d'écriture du fichier de config à chaque frame)
             if had_cargo {
@@ -1490,7 +1556,7 @@ fn delete_out_of_range_bullets(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChoiceClick {
     None,
-    /// Décharge la soute (minerais disponibles pour le ravitaillement).
+    /// Décharge la soute (crédits disponibles pour le ravitaillement).
     Unload,
     /// Ouvre le magasin de la station (carburant, munitions, armes,
     /// extensions et modes de déplacement en scénario à économie).
@@ -1530,12 +1596,17 @@ enum ShopClick {
     Mode(i32),
     /// Achète une arme du catalogue (index dans `VAISSEAU_WEAPONS`).
     Weapon(usize),
+    /// Achète le **radar de bord** (minimap globale - onglet ÉQUIPEMENT).
+    BuyRadar,
     /// Achète la quantité du curseur de carburant (ligne FUEL du
     /// ravitaillement).
     Refuel,
     /// Achète la quantité du curseur de munitions de l'arme `i` (ligne AMMO
     /// de l'arme - une par arme possédée).
     Rearm(usize),
+    /// Remplit le carburant et les munitions de toutes les armes possédées
+    /// au maximum achetable (bouton TOUT REMPLIR).
+    RefillAll,
     /// Achète l'extension de réservoir de carburant (atelier).
     BuyFuelUpgrade,
     /// Achète l'extension de chargeur de munitions (atelier).
@@ -1546,65 +1617,101 @@ enum ShopClick {
     Close,
 }
 
-/// Détecte un clic sur le magasin de la station : une ligne d'arme
-/// (achat), une ligne de mode de déplacement (sélection/déblocage), une
-/// ligne d'extension (achat), une ligne de ravitaillement (achat de la
-/// **quantité du curseur**) ou le bouton CLOSE (retour à la boîte DOCK
-/// STATION). Une pression sur la piste d'un curseur n'achète rien : elle
-/// est saisie par `shop_update` (début de glisser).
+/// Détecte un clic sur le magasin de la station : un **bouton « pilule »**
+/// de l'onglet actif (achat d'arme, sélection/déblocage de mode, extension,
+/// ravitaillement à la quantité du curseur, TOUT REMPLIR) ou le bouton
+/// CLOSE. Les onglets et les pistes des curseurs ne sont PAS traités ici :
+/// ils le sont par `shop_update` (état mutable : bascule d'onglet, début de
+/// glisser).
 fn shop_box_click(state: &GameState) -> ShopClick {
     if !is_mouse_button_pressed(MouseButton::Left) {
         return ShopClick::None;
     }
     let l = shop_box_layout(state);
     let m = mouse_to_game();
-    // curseurs du ravitaillement : le clic sur une piste glisse la quantité
-    // (`shop_update`), il n'achète pas - pistes vides (hors économie,
-    // réservoir plein) ignorées
+    // onglets : la bascule d'onglet est traitée par `shop_update`
+    if l.tabs.iter().any(|t| t.contains(m)) {
+        return ShopClick::None;
+    }
+    // pistes des curseurs : le clic glisse la quantité (`shop_update`)
     if (l.slider_fuel.w > 0.0 && l.slider_fuel.contains(m))
         || l.slider_ammo.iter().any(|t| t.w > 0.0 && t.contains(m))
     {
         return ShopClick::None;
     }
-    for (i, rect) in l.weapons.iter().enumerate() {
-        if rect.contains(m) {
-            return ShopClick::Weapon(i);
+    // boutons d'action de l'onglet actif (un seul onglet affiché à la fois :
+    // les rectangles des autres onglets sont vides)
+    match state.shop_tab {
+        crate::config::SHOP_TAB_WEAPONS => {
+            for (i, r) in l.buy_weapon.iter().enumerate() {
+                if r.w > 0.0 && r.contains(m) {
+                    return ShopClick::Weapon(i);
+                }
+            }
+            if l.buy_radar.w > 0.0 && l.buy_radar.contains(m) {
+                return ShopClick::BuyRadar;
+            }
+        }
+        crate::config::SHOP_TAB_WORKSHOP => {
+            if l.buy_fuel_upgrade.contains(m) {
+                return ShopClick::BuyFuelUpgrade;
+            }
+            if l.buy_ammo_upgrade.contains(m) {
+                return ShopClick::BuyAmmoUpgrade;
+            }
+            if l.buy_cargo_upgrade.contains(m) {
+                return ShopClick::BuyCargoUpgrade;
+            }
+        }
+        crate::config::SHOP_TAB_MODES => {
+            for (i, r) in l.buy_mode.iter().enumerate() {
+                if r.w > 0.0 && r.contains(m) {
+                    return ShopClick::Mode(MOVING_MODE_ORDER[i]);
+                }
+            }
+        }
+        _ => {
+            if l.buy_fuel.w > 0.0 && l.buy_fuel.contains(m) {
+                return ShopClick::Refuel;
+            }
+            for (i, r) in l.buy_ammo.iter().enumerate() {
+                if r.w > 0.0 && r.contains(m) {
+                    return ShopClick::Rearm(i);
+                }
+            }
+            if l.refill_all.w > 0.0 && l.refill_all.contains(m) {
+                return ShopClick::RefillAll;
+            }
         }
     }
-    for (i, rect) in l.modes.iter().enumerate() {
-        if rect.contains(m) {
-            return ShopClick::Mode(MOVING_MODE_ORDER[i]);
-        }
-    }
-    // ravitaillement : carburant et munitions achetés indépendamment, à la
-    // quantité du curseur de la ligne (une ligne AMMO par arme possédée)
-    if l.supplies_fuel.contains(m) {
-        ShopClick::Refuel
-    } else if let Some(i) = l.supplies_ammo.iter().position(|r| r.contains(m)) {
-        ShopClick::Rearm(i)
-    } else if l.fuel.contains(m) {
-        ShopClick::BuyFuelUpgrade
-    } else if l.ammo.contains(m) {
-        ShopClick::BuyAmmoUpgrade
-    } else if l.cargo.contains(m) {
-        ShopClick::BuyCargoUpgrade
-    } else if l.close.contains(m) {
+    if l.close.contains(m) {
         ShopClick::Close
     } else {
         ShopClick::None
     }
 }
 
-/// Met à jour les curseurs du ravitaillement du magasin à chaque frame :
-/// pression sur une piste (début de glisser - la quantité saute au
-/// pointeur), glisser (bouton maintenu, la valeur suit le pointeur),
-/// molette sur une piste (± un paquet de la ressource : `fuel_step` pour le
-/// carburant, le paquet de l'arme pour les munitions) et bornage des
-/// quantités au manque des réservoirs et aux minerais disponibles
+/// Met à jour le magasin de la station à chaque frame : bascule d'onglet
+/// (un clic sur un onglet change l'onglet actif et efface le retour
+/// d'action), curseurs du ravitaillement (pression sur une piste = début de
+/// glisser - la quantité saute au pointeur ; glisser bouton maintenu ;
+/// molette = ± un paquet de la ressource) et bornage des quantités au
+/// manque des réservoirs et aux crédits disponibles
 /// (`scenario::clamp_shop_quantities`). Appelé avant `shop_box_click`.
 fn shop_update(state: &mut GameState) {
     let l = shop_box_layout(state);
     let m = mouse_to_game();
+    // bascule d'onglet : une pression sur un onglet change l'onglet actif
+    // (et efface le retour d'action de l'onglet précédent)
+    if is_mouse_button_pressed(MouseButton::Left) {
+        for (i, tab) in l.tabs.iter().enumerate() {
+            if tab.contains(m) && state.shop_tab as usize != i {
+                state.shop_tab = i as u8;
+                state.shop_feedback.clear();
+                break;
+            }
+        }
+    }
     // début de glisser : une pression sur une piste saisit le curseur
     if is_mouse_button_pressed(MouseButton::Left) {
         if l.slider_fuel.w > 0.0 && l.slider_fuel.contains(m) {
@@ -1661,49 +1768,95 @@ fn shop_update(state: &mut GameState) {
     scenario::clamp_shop_quantities(state);
 }
 
-/// Achète une arme du catalogue au magasin (bouton SHOP de la boîte DOCK
-/// STATION) puis persiste la progression (minerais, armes possédées). Le
+/// Achète une arme du catalogue au magasin (bouton MARCHÉ de la boîte DOCK
+/// STATION) puis persiste la progression (crédits, armes possédées). Le
 /// mesh de l'arme achetée apparaît sur le vaisseau : reconstruction avec la
-/// nouvelle composition (`vaisseau::rebuild_player_vaisseau`).
+/// nouvelle composition (`vaisseau::rebuild_player_vaisseau`). Le résultat
+/// (achat / refus) s'affiche dans le pied de la fenêtre (`shop_feedback`).
 fn buy_weapon_and_save(
     state: &mut GameState,
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
     i: usize,
 ) {
-    if matches!(scenario::buy_weapon(state, i), scenario::WeaponOutcome::Purchased(_)) {
-        crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+    match scenario::buy_weapon(state, i) {
+        scenario::WeaponOutcome::Purchased(cost) => {
+            crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+            state.shop_feedback = format!("Arme achetée (-{} CR)", cost);
+            state.shop_feedback_ok = true;
+        }
+        scenario::WeaponOutcome::Insufficient(_) => {
+            state.shop_feedback = "PAS ASSEZ DE CRÉDITS".to_string();
+            state.shop_feedback_ok = false;
+        }
+        scenario::WeaponOutcome::Owned => state.shop_feedback.clear(),
+    }
+    let _ = scenario::save_progression(state);
+}
+
+/// Achète le **radar de bord** au magasin (bouton MARCHÉ de la boîte DOCK
+/// STATION, onglet ÉQUIPEMENT) puis persiste la progression (crédits, radar
+/// possédé) : la minimap globale (positions des météores) s'affiche dès
+/// l'achat (`scenario::has_radar`). Le résultat (achat / refus) s'affiche
+/// dans le pied de la fenêtre (`shop_feedback`).
+fn buy_radar_and_save(state: &mut GameState) {
+    match scenario::buy_radar(state) {
+        scenario::RadarOutcome::Purchased(cost) => {
+            state.shop_feedback = format!("Radar installé (-{} CR)", cost);
+            state.shop_feedback_ok = true;
+        }
+        scenario::RadarOutcome::Insufficient(_) => {
+            state.shop_feedback = "PAS ASSEZ DE CRÉDITS".to_string();
+            state.shop_feedback_ok = false;
+        }
+        scenario::RadarOutcome::Owned => state.shop_feedback.clear(),
     }
     let _ = scenario::save_progression(state);
 }
 
 /// Achète une extension du magasin (réservoir, chargeur ou soute) puis persiste
-/// la progression (minerais, niveaux d'extension) - les réservoirs montent à
+/// la progression (crédits, niveaux d'extension) - les réservoirs montent à
 /// la nouvelle capacité et la soute s'agrandit dans `buy_upgrade`. Un plan du
 /// vaisseau lié à la ligne achetée peut apparaître : le mesh est reconstruit
-/// avec la nouvelle composition (`vaisseau::rebuild_player_vaisseau`).
+/// avec la nouvelle composition (`vaisseau::rebuild_player_vaisseau`). Le
+/// résultat (achat / refus) s'affiche dans le pied de la fenêtre.
 fn buy_upgrade_and_save(
     state: &mut GameState,
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
     track: scenario::UpgradeTrackId,
 ) {
-    if matches!(scenario::buy_upgrade(state, track), scenario::UpgradeOutcome::Purchased(_)) {
-        crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+    match scenario::buy_upgrade(state, track) {
+        scenario::UpgradeOutcome::Purchased(cost) => {
+            crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+            state.shop_feedback = format!("Extension achetée (-{} CR)", cost);
+            state.shop_feedback_ok = true;
+        }
+        scenario::UpgradeOutcome::Insufficient(_) => {
+            state.shop_feedback = "PAS ASSEZ DE CRÉDITS".to_string();
+            state.shop_feedback_ok = false;
+        }
+        scenario::UpgradeOutcome::Maxed => state.shop_feedback.clear(),
     }
     let _ = scenario::save_progression(state);
 }
 
-/// Sélectionne un mode de déplacement dans le magasin (bouton SHOP de la
+/// Sélectionne un mode de déplacement dans le magasin (bouton MARCHÉ de la
 /// boîte DOCK STATION) : la sélection passe par le scénario (un mode
-/// verrouillé est payé en minerais, refusé si insuffisant - messages HUD) ;
+/// verrouillé est payé en crédits, refusé si insuffisant - messages HUD) ;
 /// le mode devenu courant est annoncé au HUD, et le mode + la progression
-/// (minerais, modes débloqués) sont persistés immédiatement.
+/// (crédits, modes débloqués) sont persistés immédiatement. Le résultat
+/// s'affiche dans le pied de la fenêtre (`shop_feedback`).
 fn select_mode_and_save(state: &mut GameState, mode: i32) {
     if scenario::try_select_mode(state, mode) {
         state.send_message(&format!("MOVING MODE: {}", crate::marketplace::mode_label(mode)));
         let _ = persist::save_moving_mode(state.moving_mode);
         let _ = scenario::save_progression(state);
+        state.shop_feedback = format!("Mode de vol : {}", crate::marketplace::mode_label(mode));
+        state.shop_feedback_ok = true;
+    } else {
+        state.shop_feedback = "PAS ASSEZ DE CRÉDITS".to_string();
+        state.shop_feedback_ok = false;
     }
 }
 
@@ -2433,7 +2586,7 @@ mod tests {
     #[test]
     fn meteor_meteor_collision_releases_minerals() {
         // deux météores se percutent et sont détruits : leurs minerais sont
-        // libérés en gemmes à leur position (une gemme par unité de minerai)
+        // libérés en minerais à leur position (un minerai par unité de minerai)
         let mut state = GameState::new();
         let mut shapes = vec![
             test_shape(WHOIAM_METEOR, 0, 1, 0.0, 0.0),
@@ -2456,18 +2609,18 @@ mod tests {
         assert_eq!(shapes[0].life, 0);
         assert_eq!(shapes[1].life, 0);
         assert_eq!(shapes[0].minerals, 0);
-        let gems = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).count();
-        assert_eq!(gems, 2);
+        let minerals = shapes.iter().filter(|s| s.who_i_am == WHOIAM_MINERAL).count();
+        assert_eq!(minerals, 2);
     }
 
     #[test]
-    fn meteor_absorbs_gem_increasing_its_minerals() {
-        // un météore percute une gemme : il l'absorbe - la gemme disparaît
+    fn meteor_absorbs_mineral_increasing_its_minerals() {
+        // un météore percute un minerai : il l.absorbe - le minerai disparaît
         // et la quantité de minerai du météore augmente (sans endommager le
         // météore)
         let mut state = GameState::new();
         let mut shapes = vec![
-            test_shape(WHOIAM_GEM, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_MINERAL, 0, 0, 0.0, 0.0),
             test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
         ];
         let mut triangles = vec![
@@ -2481,7 +2634,7 @@ mod tests {
 
         collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
-        // la gemme a été absorbée (détruite), le météore a gagné un minerai
+        // le minerai a été absorbé (détruit), le météore a gagné un minerai
         assert_eq!(shapes[0].life, 0);
         assert_eq!(shapes[1].minerals, 1);
         // le météore n'est pas endommagé par l'absorption
@@ -2536,7 +2689,7 @@ mod tests {
             m.velocity = 0.0;
             m.position = Point::new(140.0, 0.0);
         }
-        // sans élément minéral : pas de gemme créée, test ciblé sur la collision
+        // sans élément minéral : pas de minerai créé, test ciblé sur la collision
         for i in shapes[idx].first_triangle..=shapes[idx].last_triangle {
             triangles[i].element = 0;
         }
@@ -2795,9 +2948,9 @@ mod tests {
     }
 
     #[test]
-    fn bullet_destroying_mineral_triangle_creates_gem() {
-        // une balle détruit un triangle avec élément : une gemme apparaît
-        // (ex mainLoop : `if element > 0 and collidBy = BULLET → createGem`).
+    fn bullet_destroying_mineral_triangle_creates_mineral() {
+        // une balle détruit un triangle avec élément : un minerai apparaît
+        // (ex mainLoop : `if element > 0 and collidBy = BULLET → createMineral`).
         // La détection pose les indicateurs `collid`/`collid_by` (resetés en
         // début de frame) : on utilise une vraie balle qui chevauche le
         // météore.
@@ -2814,10 +2967,10 @@ mod tests {
 
         collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
-        // une gemme a été créée (forme supplémentaire WHOIAM_GEM)
-        let gem = shapes.iter().find(|s| s.who_i_am == WHOIAM_GEM);
-        assert!(gem.is_some(), "une gemme doit apparaître");
-        assert_eq!(gem.unwrap().element, 1);
+        // un minerai a été créé (forme supplémentaire WHOIAM_MINERAL)
+        let mineral = shapes.iter().find(|s| s.who_i_am == WHOIAM_MINERAL);
+        assert!(mineral.is_some(), "un minerai doit apparaître");
+        assert_eq!(mineral.unwrap().element, 1);
         assert_eq!(triangles[1].life, 0);
         assert_eq!(shapes[1].life, 0);
     }
@@ -2916,8 +3069,8 @@ mod tests {
     #[test]
     fn missile_destroying_meteor_releases_absorbed_minerals() {
         // un missile détruit un météore qui contient des minerais absorbés
-        // (gemmes mangées, sans triangle minéralisé restant) : les minerais
-        // sont libérés en gemmes - pas détruits avec le météore
+        // (minerais mangés, sans triangle minéralisé restant) : les minerais
+        // sont libérés en minerais - pas détruits avec le météore
         let mut state = GameState::new();
         let mut shapes = vec![
             test_shape(WHOIAM_BULLET, 0, 0, 0.0, 0.0),
@@ -2934,19 +3087,19 @@ mod tests {
         // le météore est détruit et ses minerais libérés (pas détruits)
         assert_eq!(shapes[1].life, 0);
         assert_eq!(shapes[1].minerals, 0);
-        let gems = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).count();
-        assert_eq!(gems, 3, "les 3 minerais absorbés doivent être libérés");
+        let minerals = shapes.iter().filter(|s| s.who_i_am == WHOIAM_MINERAL).count();
+        assert_eq!(minerals, 3, "les 3 minerais absorbés doivent être libérés");
     }
 
     #[test]
-    fn missile_hitting_gem_directly_destroys_it() {
-        // un missile qui touche directement une gemme la DÉTRUIT : c'est le
-        // seul cas de destruction de minerai - aucune nouvelle gemme n'est
+    fn missile_hitting_mineral_directly_destroys_it() {
+        // un missile qui touche directement un minerai le DÉTRUIT : c.est le
+        // seul cas de destruction de minerai - aucun nouveau minerai n.est
         // créée (pas de « libération »)
         let mut state = GameState::new();
         let mut shapes = vec![
             test_shape(WHOIAM_BULLET, 0, 0, 0.0, 0.0),
-            test_shape(WHOIAM_GEM, 1, 1, 2.0, 2.0),
+            test_shape(WHOIAM_MINERAL, 1, 1, 2.0, 2.0),
         ];
         let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
         triangles[1].element = 1; // GOLD
@@ -2956,20 +3109,20 @@ mod tests {
 
         collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
-        // la gemme est détruite et aucune nouvelle gemme n'est apparue
+        // le minerai est détruit et aucun nouveau minerai n.est apparu
         assert_eq!(shapes[1].life, 0);
         assert_eq!(triangles[1].life, 0);
-        let gems = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).count();
-        assert_eq!(gems, 1, "la gemme détruite ne doit pas être dupliquée");
+        let minerals = shapes.iter().filter(|s| s.who_i_am == WHOIAM_MINERAL).count();
+        assert_eq!(minerals, 1, "le minerai détruit ne doit pas être dupliqué");
     }
 
     #[test]
-    fn player_collects_gem_into_cargo() {
-        // le vaisseau ramasse une gemme : élément compté, soute remplie
+    fn player_collects_mineral_into_cargo() {
+        // le vaisseau ramasse un minerai : élément compté, soute remplie
         let mut state = GameState::new();
         let mut shapes = vec![
             test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
-            test_shape(WHOIAM_GEM, 1, 1, 2.0, 2.0),
+            test_shape(WHOIAM_MINERAL, 1, 1, 2.0, 2.0),
         ];
         let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
         triangles[1].element = 2; // IRON
@@ -3343,7 +3496,7 @@ mod tests {
         // scénario Progression : le déchargement à la station convertit la
         // soute en minerais (GOLD ×4 = 20) mais n'achète plus le
         // ravitaillement - il se paie au magasin (section RAVITAILLEMENT) :
-        // réservoirs et minerais intacts, pas de message d'achat
+        // réservoirs et crédits intacts, pas de message d.achat
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
         crate::scenario::apply_start(&mut state);
@@ -3363,10 +3516,10 @@ mod tests {
 
         assert_eq!(elements[1].count, 0);
         assert_eq!(state.player.cargo_qty, 0);
-        assert_eq!(state.resources.minerals, 20);
+        assert_eq!(state.resources.credits, 20);
         assert_eq!(state.resources.fuel, 10.0);
         assert_eq!(state.resources.weapon_ammo[0], 5);
-        assert!(state.message_queue.contains("CARGO UNLOADED: +20 MINERALS"));
+        assert!(state.message_queue.contains("CARGO UNLOADED: +20 CREDITS"));
         assert!(!state.message_queue.contains("SUPPLIES PURCHASED"));
     }
 
@@ -3380,7 +3533,7 @@ mod tests {
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
         crate::scenario::apply_start(&mut state);
-        state.resources.minerals = 100;
+        state.resources.credits = 100;
         state.resources.fuel = 10.0;
         state.resources.weapon_ammo[0] = 5;
 
@@ -3389,7 +3542,7 @@ mod tests {
             crate::scenario::purchase_fuel(&mut state),
             crate::scenario::SupplyOutcome::Purchased(9)
         );
-        assert_eq!(state.resources.minerals, 91);
+        assert_eq!(state.resources.credits, 91);
         assert_eq!(state.resources.fuel, crate::scenario::fuel_capacity(&state)); // 100
         assert_eq!(state.resources.weapon_ammo[0], 5);
 
@@ -3398,7 +3551,7 @@ mod tests {
             crate::scenario::purchase_ammo(&mut state),
             crate::scenario::SupplyOutcome::Purchased(5)
         );
-        assert_eq!(state.resources.minerals, 86);
+        assert_eq!(state.resources.credits, 86);
         assert_eq!(
             crate::scenario::total_ammo(&state),
             crate::scenario::ammo_capacity(&state)
@@ -3666,8 +3819,8 @@ mod tests {
     }
 
     #[test]
-    fn eva_cosmonaut_picks_up_nearby_gems() {
-        // le cosmonaute EVA ramasse une gemme proche : gemme détruite, son
+    fn eva_cosmonaut_picks_up_nearby_minerals() {
+        // le cosmonaute EVA ramasse un minerai proche : minerai détruit, son
         // élément compté dans la soute (rapportée à la station au secours)
         let mut state = GameState::new();
         state.cosmonaut_active = true;
@@ -3675,7 +3828,7 @@ mod tests {
         let mut shapes = vec![
             test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
             test_shape(WHOIAM_COSMONAUT, 1, 1, 100.0, 100.0),
-            test_shape(WHOIAM_GEM, 2, 2, 105.0, 100.0), // à 5 unités
+            test_shape(WHOIAM_MINERAL, 2, 2, 105.0, 100.0), // à 5 unités
         ];
         let mut triangles = vec![
             test_triangle(0, 0, 0.0, 0.0),
@@ -3685,9 +3838,9 @@ mod tests {
         triangles[2].element = 1; // GOLD
         let mut elements = default_elements();
 
-        eva_collect_gems(&mut state, &mut shapes, &mut triangles, &mut elements, None);
+        eva_collect_minerals(&mut state, &mut shapes, &mut triangles, &mut elements, None);
 
-        assert_eq!(shapes[2].life, 0, "la gemme est ramassée");
+        assert_eq!(shapes[2].life, 0, "le minerai est ramassé");
         assert_eq!(triangles[2].life, 0);
         assert_eq!(elements[1].count, 1);
         assert_eq!(state.player.cargo_qty, 1);
@@ -3696,15 +3849,15 @@ mod tests {
     }
 
     #[test]
-    fn eva_cosmonaut_ignores_distant_or_inactive_gems() {
-        // gemme trop loin du cosmonaute : pas de ramassage
+    fn eva_cosmonaut_ignores_distant_or_inactive_minerals() {
+        // minerai trop loin du cosmonaute : pas de ramassage
         let mut state = GameState::new();
         state.cosmonaut_active = true;
         state.eva_cosmonaut = 1;
         let mut shapes = vec![
             test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
             test_shape(WHOIAM_COSMONAUT, 1, 1, 100.0, 100.0),
-            test_shape(WHOIAM_GEM, 2, 2, 200.0, 100.0), // à 100 unités
+            test_shape(WHOIAM_MINERAL, 2, 2, 200.0, 100.0), // à 100 unités
         ];
         let mut triangles = vec![
             test_triangle(0, 0, 0.0, 0.0),
@@ -3714,9 +3867,9 @@ mod tests {
         triangles[2].element = 1;
         let mut elements = default_elements();
 
-        eva_collect_gems(&mut state, &mut shapes, &mut triangles, &mut elements, None);
+        eva_collect_minerals(&mut state, &mut shapes, &mut triangles, &mut elements, None);
 
-        assert_eq!(shapes[2].life, 1, "gemme trop loin");
+        assert_eq!(shapes[2].life, 1, "minerai trop loin");
         assert_eq!(state.player.cargo_qty, 0);
 
         // vaisseau intact (pas d'EVA) : le cosmonaute garé ne ramasse rien
@@ -3725,7 +3878,7 @@ mod tests {
         let mut shapes = vec![
             test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
             test_shape(WHOIAM_COSMONAUT, 1, 1, 100.0, 100.0),
-            test_shape(WHOIAM_GEM, 2, 2, 105.0, 100.0),
+            test_shape(WHOIAM_MINERAL, 2, 2, 105.0, 100.0),
         ];
         let mut triangles = vec![
             test_triangle(0, 0, 0.0, 0.0),
@@ -3735,56 +3888,56 @@ mod tests {
         triangles[2].element = 1;
         let mut elements = default_elements();
 
-        eva_collect_gems(&mut state, &mut shapes, &mut triangles, &mut elements, None);
+        eva_collect_minerals(&mut state, &mut shapes, &mut triangles, &mut elements, None);
 
         assert_eq!(shapes[2].life, 1, "vaisseau intact : pas d'EVA");
         assert_eq!(state.player.cargo_qty, 0);
     }
 
     #[test]
-    fn ejected_cargo_gems_are_not_absorbed_by_meteors() {
+    fn ejected_cargo_minerals_are_not_absorbed_by_meteors() {
         // REGRESSION : les minerais de la soute rejetés au crash étaient
         // absorbés par le météore du crash (encore vivant, posé sur le
         // vaisseau détruit) AVANT que le cosmonaute ne puisse les ramasser -
-        // le minerai était perdu. Une gemme de soute (`ejected_cargo`)
+        // le minerai était perdu. Un minerai de soute (`ejected_cargo`)
         // chevauchant un météore doit **survivre** à la collision, quand une
-        // gemme normale (minerai libéré d'un météore détruit) est absorbée.
+        // minerai normal (minerai libéré d.un météore détruit) est absorbé.
         let mut state = GameState::new();
         let mut shapes = vec![
-            test_shape(WHOIAM_GEM, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_MINERAL, 0, 0, 0.0, 0.0),
             test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
         ];
         let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
         triangles[0].element = 1; // GOLD
-        shapes[0].ejected_cargo = true; // gemme de soute (rejetée au crash)
+        shapes[0].ejected_cargo = true; // minerai de soute (rejeté au crash)
         let mut garbages = Vec::new();
         let mut elements = default_elements();
         let mut rng = seed();
 
         collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
-        // la gemme de soute survit (pas absorbée), le météore n'a rien gagné
-        assert_eq!(shapes[0].life, 1, "la gemme de soute ne doit pas être absorbée");
+        // le minerai de soute survit (pas absorbé), le météore n.a rien gagné
+        assert_eq!(shapes[0].life, 1, "le minerai de soute ne doit pas être absorbé");
         assert_eq!(triangles[0].life, 1);
         assert_eq!(shapes[1].minerals, 0);
         assert_eq!(shapes[1].life, 1);
 
-        // une gemme NORMALE au même endroit, elle, est absorbée par le météore
+        // un minerai NORMAL au même endroit, lui, est absorbé par le météore
         let mut state = GameState::new();
         let mut shapes = vec![
-            test_shape(WHOIAM_GEM, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_MINERAL, 0, 0, 0.0, 0.0),
             test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
         ];
         let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
         triangles[0].element = 1; // GOLD
-        // ejected_cargo reste false (défaut) : la gemme est absorbée
+        // ejected_cargo reste false (défaut) : le minerai est absorbé
         let mut garbages = Vec::new();
         let mut elements = default_elements();
         let mut rng = seed();
 
         collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
-        assert_eq!(shapes[0].life, 0, "une gemme normale est absorbée");
+        assert_eq!(shapes[0].life, 0, "un minerai normal est absorbé");
         assert_eq!(shapes[1].minerals, 1);
     }
 }

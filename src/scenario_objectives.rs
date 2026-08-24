@@ -10,7 +10,7 @@
 #[allow(dead_code)]
 pub enum ObjectiveCondition {
     DestroyAsteroids { required: u32 },
-    CollectMinerals { required: u32 },
+    CollectCredits { required: u32 },
     ReachReputation { required: f64 },
     DockAtStation { required: u32 },
     BuyUpgrade { track: &'static str, level: i32 },
@@ -22,7 +22,7 @@ pub enum ObjectiveCondition {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum ObjectiveReward {
-    Minerals(i32),
+    Credits(i32),
     Reputation(f64),
     Fuel(f64),
     Ammo(i32),
@@ -60,7 +60,7 @@ pub const GENERATED_OBJECTIVES: &[ObjectiveSpec] = &[
         description: "Survivre ",
         prerequisites: &[],
         condition: ObjectiveCondition::SurviveTime { seconds: 30.0 },
-        reward: ObjectiveReward::Minerals(10),
+        reward: ObjectiveReward::Credits(10),
     },
     ObjectiveSpec {
         id: "obj_mt66lao7",
@@ -68,7 +68,7 @@ pub const GENERATED_OBJECTIVES: &[ObjectiveSpec] = &[
         description: "Acheter le mode de  contrôle  inertial",
         prerequisites: &["step_start"],
         condition: ObjectiveCondition::UnlockMovementMode { mode: 1 },
-        reward: ObjectiveReward::Minerals(10),
+        reward: ObjectiveReward::Credits(10),
     },
 ];
 

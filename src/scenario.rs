@@ -11,15 +11,15 @@
 //!   tous les modes de déplacement disponibles, carburant et munitions
 //!   illimités.
 //! - `Progression` (l'exemple décrit) : le vaisseau démarre en mode REALISTIC
-//!   (gratuit, coût 0 paramétré dans l'outil) ; il doit accumuler des minerais
-//!   (gemmes collectées sur les astéroïdes, déchargées à la station) pour
+//!   (gratuit, coût 0 paramétré dans l'outil) ; il doit accumuler des crédits
+//!   (minerais collectés sur les astéroïdes, déchargés à la station) pour
 //!   débloquer les modes payants (INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45) ;
 //!   chaque poussée consomme du carburant et chaque tir des munitions
-//!   (remplis à la station, contre minerais) ; détruire des astéroïdes
+//!   (remplis à la station, contre crédits) ; détruire des astéroïdes
 //!   augmente la réputation, d'autant plus que la précision de tir est bonne,
 //!   et décharger de la cargaison en rapporte aussi (commerce récompensé).
 //!   À la station, le **magasin** (bouton SHOP de la boîte DOCK STATION)
-//!   permet d'acheter contre minerais des **extensions de vaisseau** :
+//!   permet d'acheter contre crédits des **extensions de vaisseau** :
 //!   réservoir de carburant, chargeur de munitions et soute (capacités
 //!   augmentées, persistées comme la progression).
 //! - `Survival` (preuve que le système s'étend à d'autres mécaniques) : ni
@@ -31,7 +31,7 @@
 //!
 //! La progression d'un scénario est persistée dans le fichier de config
 //! (`persist.rs`, clés `scenario`, `prog_*`) et restaurée au lancement
-//! suivant : minerais/modes/réputation/niveaux d'atelier en Progression,
+//! suivant : crédits/modes/réputation/niveaux d.atelier en Progression,
 //! vies/bouclier en Survival - chaque scénario n'écrit que ses propres clés.
 //! Le carburant et les munitions, eux, repartent pleins à chaque lancement
 //! (à la capacité courante, extensions comprises).
@@ -49,7 +49,7 @@ use crate::state::{Element, GameState};
 pub enum ScenarioId {
     /// Jeu libre : comportement historique, sans économie.
     FreePlay,
-    /// Économie : minerais, carburant/munitions payants, réputation.
+    /// Économie : crédits, carburant/munitions payants, réputation.
     Progression,
     /// Survie : vies, bouclier et multiplicateur de dégâts - sans économie.
     Survival,
@@ -65,9 +65,10 @@ pub enum ScenarioId {
 pub struct Resources {
     /// Carburant en unités (0 = réservoir vide, plus de poussée).
     pub fuel: f64,
-    /// Minerais - la monnaie : déchargés à la station, dépensés pour les
-    /// modes de déplacement, les armes et le ravitaillement.
-    pub minerals: i32,
+    /// Crédits - la monnaie : obtenus en déchargeant les minerais à la
+    /// station, dépensés pour les modes de déplacement, les armes et le
+    /// ravitaillement.
+    pub credits: i32,
     /// Réputation - augmente avec les astéroïdes détruits et la précision.
     pub reputation: f64,
     /// Vies restantes (scénario Survival) - 0 = partie terminée.
@@ -93,6 +94,12 @@ pub struct Resources {
     /// tire pas) ; toujours `true` hors économie et pour les armes de base
     /// (coût 0). Le canon classique (catalogue vide) est toujours possédé.
     pub weapon_owned: [bool; WEAPON_SLOTS],
+    /// Radar de bord **possédé** (acheté au magasin) : affiche la minimap
+    /// globale (points des météores et des autres formes) - `false` = radar
+    /// éteint par défaut en scénario à économie. Hors économie (jeu libre /
+    /// Survival / custom sans économie), le radar est **toujours allumé**
+    /// (comportement historique, sans achat possible).
+    pub radar_owned: bool,
 }
 
 /// Types et données de la place de marché - extensions de vaisseau de
@@ -116,7 +123,7 @@ pub enum UpgradeTrackId {
     Fuel,
     /// Chargeur de munitions.
     Ammo,
-    /// Soute (cargaison de gemmes).
+    /// Soute (cargaison de minerais).
     Cargo,
 }
 
@@ -134,7 +141,7 @@ pub struct Scenario {
     pub name: &'static str,
     /// Courte description (écran titre).
     pub description: &'static str,
-    /// `true` : carburant/munitions/minerais actifs ; `false` : illimités et
+    /// `true` : carburant/munitions/crédits actifs ; `false` : illimités et
     /// tous les modes débloqués (comportement historique).
     pub has_economy: bool,
     /// Rangs de réputation (paliers débloqués par la réputation, seuils
@@ -149,7 +156,7 @@ pub struct Scenario {
     pub start_ammo: i32,
     /// Munitions consommées par tir.
     pub ammo_per_shot: i32,
-    /// Coût en minerais pour débloquer chaque mode de déplacement (index
+    /// Coût en crédits pour débloquer chaque mode de déplacement (index
     /// `MOVING_MODE_*` ; 0 = déjà débloqué).
     pub mode_costs: [i32; MOVING_MODE_COUNT as usize],
     /// Réputation gagnée par astéroïde détruit (hors bonus de précision).
@@ -163,7 +170,7 @@ pub struct Scenario {
     /// du rang est multipliée par `1 + poids × précision` (voir
     /// `DISCOUNT_PRECISION_WEIGHT` de `src/marketplace.rs`).
     pub discount_precision_weight: f64,
-    /// Prix (minerais) d'un plein par pas de `fuel_step` unités.
+    /// Prix (crédits) d.un plein par pas de `fuel_step` unités.
     pub fuel_price: i32,
     /// Pas de ravitaillement en carburant (unités par plein facturé).
     pub fuel_step: f64,
@@ -185,7 +192,7 @@ pub struct Scenario {
     /// (N/B/1-3).
     pub rules_color: u32,
     /// Ligne « réservoir de carburant » de l'atelier de la station (scénario
-    /// Progression) - extensions achetées en minerais ; vide ailleurs (pas
+    /// Progression) - extensions achetées en crédits ; vide ailleurs (pas
     /// d'atelier). La capacité courante (`fuel_capacity`) est la base + les
     /// bonus des extensions possédées.
     pub fuel_upgrades: UpgradeTrack,
@@ -231,7 +238,7 @@ pub const FREE_PLAY_SCENARIO: Scenario = Scenario {
 /// Règles du scénario d'exemple « Progression » (voir l'en-tête du module).
 pub const PROGRESSION_SCENARIO: Scenario = Scenario {
     name: "PROGRESSION",
-    description: "économie : minerais, carburant, réputation",
+    description: "économie : crédits, carburant, réputation",
     has_economy: true,
     ranks: PROGRESSION_RANKS,
     start_fuel: 100.0,
@@ -327,6 +334,15 @@ pub fn has_economy(state: &GameState) -> bool {
     scenario(state.scenario).has_economy
 }
 
+/// Le **radar de bord** est-il actif (minimap globale affichée) ? Hors
+/// économie (jeu libre, Survival, custom sans économie) : toujours `true`
+/// (comportement historique - la minimap est allumée par défaut). En
+/// scénario à économie : `true` seulement si le radar a été **acheté au
+/// magasin** (`Resources::radar_owned`) - éteint par défaut.
+pub fn has_radar(state: &GameState) -> bool {
+    !has_economy(state) || state.resources.radar_owned
+}
+
 /// Le scénario gère-t-il la survie (vies + bouclier) ? - déduit du nombre de
 /// vies : `lives > 0` (Survival), sinon classique (FreePlay/Progression).
 pub fn has_survival(state: &GameState) -> bool {
@@ -404,10 +420,11 @@ pub fn scenario_rules(id: ScenarioId) -> Vec<RuleSegment> {
                 }
                 value(&mut out, format!("{} {}", name, cost));
             }
-            label(&mut out, " minerais ; carburant/munitions payants ; rangs : ");
+            label(&mut out, " crédits ; carburant/munitions payants ; rangs : ");
             if let Some(first) = PROGRESSION_RANKS.first() {
                 value(&mut out, first.name.to_string());
             }
+            // « → » : la police embarquée (DejaVu Sans Mono) possède le glyphe
             label(&mut out, " → ");
             if let Some(last) = PROGRESSION_RANKS.last() {
                 value(&mut out, last.name.to_string());
@@ -447,7 +464,7 @@ fn mode_costs_pairs(s: &Scenario) -> Vec<(&'static str, i32)> {
         .collect()
 }
 
-/// « 4 WAYS 30, DIRECTIONAL 45 minerais » - coûts des modes de déplacement
+/// « 4 WAYS 30, DIRECTIONAL 45 crédits » - coûts des modes de déplacement
 /// payants (coût 0 = mode déjà débloqué, omis). Réservé aux tests (les règles
 /// de l'écran titre sont découpées en segments par `scenario_rules`).
 #[cfg(test)]
@@ -461,16 +478,16 @@ fn mode_costs_text(s: &Scenario) -> String {
             .map(|(name, cost)| format!("{} {}", name, cost))
             .collect::<Vec<_>>()
             .join(", ")
-            + " minerais"
+            + " crédits"
     }
 }
 
 /// Résumé segmenté de la progression **enregistrée** du scénario courant,
 /// affiché à l'écran titre sous les règles : `state.resources` contient déjà
-/// la sauvegarde restaurée (voir `load_progression`) - minerais, modes
+/// la sauvegarde restaurée (voir `load_progression`) - crédits, modes
 /// débloqués et réputation (+ rang) en Progression, vies et bouclier en
 /// Survival ; jeu libre : aucune sauvegarde. Découpé en segments comme
-/// `scenario_rules` : les valeurs (minerais, modes, réputation, rang, vies,
+/// `scenario_rules` : les valeurs (crédits, modes, réputation, rang, vies,
 /// bouclier) portent `color = Some(couleur du scénario)`, les libellés `None`.
 /// Fonction pure (tests).
 pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
@@ -488,8 +505,8 @@ pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
         ScenarioId::Custom(_) => {
             let mut out = vec![];
             if has_economy(state) {
-                out.push(label("minerais "));
-                out.push(value(state.resources.minerals.to_string()));
+                out.push(label("crédits "));
+                out.push(value(state.resources.credits.to_string()));
             }
             if has_survival(state) {
                 if !out.is_empty() {
@@ -511,8 +528,8 @@ pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
         ScenarioId::Progression => {
             let unlocked = state.unlocked_modes.iter().filter(|&&u| u).count();
             let mut out = vec![
-                label("minerais "),
-                value(state.resources.minerals.to_string()),
+                label("crédits "),
+                value(state.resources.credits.to_string()),
                 label(" - modes "),
                 value(format!("{}/{}", unlocked, MOVING_MODE_COUNT)),
                 label(" - réputation "),
@@ -608,19 +625,19 @@ pub fn apply_start(state: &mut GameState) {
             state.unlocked_modes = [true; MOVING_MODE_COUNT as usize];
         }
         ScenarioId::Custom(ci) if s.has_economy => {
-            // Scénario custom avec économie : comme Progression (minerais,
+            // Scénario custom avec économie : comme Progression (crédits,
             // carburant/munitions payants, armes à acheter). Les valeurs
-            // initiales (minerals, reputation) viennent du JSON éditeur.
-            let (json_minerals, json_reputation) = crate::scenario_loader
+            // initiales (crédits, réputation) viennent du JSON éditeur.
+            let (json_credits, json_reputation) = crate::scenario_loader
                 ::loaded_data(ci)
                 .map(|d| (
-                    d.json.initial_state.start_minerals,
+                    d.json.initial_state.start_credits,
                     d.json.initial_state.start_reputation,
                 ))
                 .unwrap_or((0, 0.0));
             state.resources = Resources {
                 fuel: s.start_fuel,
-                minerals: json_minerals,
+                credits: json_credits,
                 reputation: json_reputation,
                 lives: s.lives,
                 shield: s.shield_capacity,
@@ -629,6 +646,7 @@ pub fn apply_start(state: &mut GameState) {
                 cargo_level: 0,
                 weapon_ammo: [0; WEAPON_SLOTS],
                 weapon_owned: [false; WEAPON_SLOTS],
+                radar_owned: false,
             };
             for i in 0..weapon_slot_count() {
                 if weapon_spec(i).cost == 0 {
@@ -656,7 +674,7 @@ pub fn apply_start(state: &mut GameState) {
         ScenarioId::Progression => {
             state.resources = Resources {
                 fuel: s.start_fuel,
-                minerals: 0,
+                credits: 0,
                 reputation: 0.0,
                 lives: 0,
                 shield: 0.0,
@@ -665,6 +683,7 @@ pub fn apply_start(state: &mut GameState) {
                 cargo_level: 0,
                 weapon_ammo: [0; WEAPON_SLOTS],
                 weapon_owned: [false; WEAPON_SLOTS],
+                radar_owned: false,
             };
             // Armes équipées au départ : celles dont le coût configuré
             // (outil) est nul (0 = arme de base) - chargées à la capacité
@@ -806,9 +825,9 @@ pub fn try_fire(state: &mut GameState) -> [bool; WEAPON_SLOTS] {
 pub struct WeaponSpec {
     /// Nom de l'arme (magasin, messages HUD).
     pub name: &'static str,
-    /// Coût d'achat en minerais (0 = arme de base, équipée au départ).
+    /// Coût d.achat en crédits (0 = arme de base, équipée au départ).
     pub cost: i32,
-    /// Prix (minerais) d'un paquet de munitions.
+    /// Prix (crédits) d.un paquet de munitions.
     pub ammo_price: i32,
     /// Taille d'un paquet (munitions par paquet).
     pub ammo_pack: i32,
@@ -864,7 +883,7 @@ pub fn weapon_prices(state: &GameState, i: usize) -> Option<(i32, i32)> {
     (cost > 0).then(|| (cost, discounted_cost(cost, current_discount(state))))
 }
 
-/// Coût en minerais d'une arme pas encore possédée (`None` = déjà possédée,
+/// Coût en crédits d.une arme pas encore possédée (`None` = déjà possédée,
 /// coût nul ou pas d'économie) - le prix réellement payé (remisé).
 pub fn weapon_cost(state: &GameState, i: usize) -> Option<i32> {
     weapon_prices(state, i).map(|(_, discounted)| discounted)
@@ -875,13 +894,13 @@ pub fn weapon_cost(state: &GameState, i: usize) -> Option<i32> {
 pub enum WeaponOutcome {
     /// Arme déjà possédée (ou pas d'économie).
     Owned,
-    /// Arme achetée (coût en minerais déduit, équipée - livrée chargée).
+    /// Arme achetée (coût en crédits déduit, équipée - livrée chargée).
     Purchased(i32),
-    /// Pas assez de minerais (coût nécessaire).
+    /// Pas assez de crédits (coût nécessaire).
     Insufficient(i32),
 }
 
-/// Achète une arme du catalogue au magasin de la station : paie en minerais
+/// Achète une arme du catalogue au magasin de la station : paie en crédits
 /// (remise de réputation appliquée), l'équipe - son mesh apparaît sur le
 /// vaisseau (`vaisseau::rebuild_player_vaisseau` côté jeu) - et la livre
 /// **chargée** à la capacité courante. Hors scénario à économie : sans effet
@@ -893,25 +912,77 @@ pub fn buy_weapon(state: &mut GameState, i: usize) -> WeaponOutcome {
     let Some(cost) = weapon_cost(state, i) else {
         return WeaponOutcome::Owned; // coût 0 → arme de base, déjà équipée
     };
-    if state.resources.minerals < cost {
+    if state.resources.credits < cost {
         state.send_message(&format!(
-            "NOT ENOUGH MINERALS FOR {} ({} NEEDED)",
+            "NOT ENOUGH CREDITS FOR {} ({} NEEDED)",
             weapon_spec(i).name,
             cost
         ));
         return WeaponOutcome::Insufficient(cost);
     }
-    state.resources.minerals -= cost;
+    state.resources.credits -= cost;
     if i < WEAPON_SLOTS {
         state.resources.weapon_owned[i] = true;
         state.resources.weapon_ammo[i] = ammo_capacity(state); // livrée chargée
     }
     state.send_message(&format!(
-        "WEAPON {} PURCHASED: -{} MINERALS",
+        "WEAPON {} PURCHASED: -{} CREDITS",
         weapon_spec(i).name,
         cost
     ));
     WeaponOutcome::Purchased(cost)
+}
+
+// ─── Radar de bord (minimap globale) ────────────────────────────────────────
+
+/// Coût en crédits du **radar de bord** (`RADAR_COST` de `src/marketplace.rs`)
+/// - acheté au magasin (onglet ÉQUIPEMENT) en scénario à économie ; hors
+/// économie le radar est toujours allumé (gratuit, historique).
+pub fn radar_price(state: &GameState) -> Option<(i32, i32)> {
+    if !has_economy(state) || state.resources.radar_owned {
+        return None;
+    }
+    let cost = crate::marketplace::RADAR_COST;
+    (cost > 0).then(|| (cost, discounted_cost(cost, current_discount(state))))
+}
+
+/// Coût en crédits du radar non encore possédé (`None` = déjà possédé, hors
+/// économie ou coût nul) - le prix réellement payé (remisé).
+pub fn radar_cost(state: &GameState) -> Option<i32> {
+    radar_price(state).map(|(_, discounted)| discounted)
+}
+
+/// Résultat d'un achat du radar au magasin (`buy_radar`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadarOutcome {
+    /// Radar déjà possédé (ou pas d'économie).
+    Owned,
+    /// Radar acheté (coût en crédits déduit, minimap activée).
+    Purchased(i32),
+    /// Pas assez de crédits (coût nécessaire).
+    Insufficient(i32),
+}
+
+/// Achète le **radar de bord** au magasin de la station : paie en crédits
+/// (remise de réputation appliquée) et active la minimap globale (points des
+/// météores et des autres formes, `scenario::has_radar`). Hors scénario à
+/// économie : sans effet (`Owned` - le radar y est déjà allumé). Appelé par
+/// le magasin (bouton SHOP de la boîte DOCK STATION, onglet ÉQUIPEMENT).
+pub fn buy_radar(state: &mut GameState) -> RadarOutcome {
+    if !has_economy(state) || state.resources.radar_owned {
+        return RadarOutcome::Owned;
+    }
+    let Some(cost) = radar_cost(state) else {
+        return RadarOutcome::Owned; // coût 0 → déjà actif
+    };
+    if state.resources.credits < cost {
+        state.send_message(&format!("NOT ENOUGH CREDITS FOR RADAR ({} NEEDED)", cost));
+        return RadarOutcome::Insufficient(cost);
+    }
+    state.resources.credits -= cost;
+    state.resources.radar_owned = true;
+    state.send_message(&format!("RADAR PURCHASED: -{} CREDITS", cost));
+    RadarOutcome::Purchased(cost)
 }
 
 /// Total des munitions restantes des armes **possédées** (toutes armes
@@ -1080,13 +1151,13 @@ pub fn player_hit(state: &mut GameState, damage: f64) -> PlayerHit {
 
 // ─── Minerais et ravitaillement ─────────────────────────────────────────────
 
-/// Décharge la soute à la station : chaque gemme est convertie en minerais
+/// Décharge la soute à la station : chaque minerai est converti en crédits
 /// selon la valeur de son élément (`ELEMENT_VALUES`) et rapporte de la
 /// **réputation** (`reputation_per_mineral` - le commerce est récompensé,
 /// comme le tir l'est par les astéroïdes détruits). Appelé par `docking`
 /// (déchargement automatique de l'original, au plus tard à la frame suivant
 /// la fermeture de la boîte) et par le bouton UNLOAD de la boîte DOCK STATION
-/// (déchargement immédiat - les minerais financent le ravitaillement
+/// (déchargement immédiat - les crédits financent le ravitaillement
 /// carburant/munitions acheté au magasin du même accostage).
 pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
     let s = scenario(state.scenario);
@@ -1099,9 +1170,9 @@ pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
             gained += e.count * value;
         }
     }
-    state.resources.minerals += gained;
+    state.resources.credits += gained;
     if gained > 0 {
-        state.send_message(&format!("CARGO UNLOADED: +{} MINERALS", gained));
+        state.send_message(&format!("CARGO UNLOADED: +{} CREDITS", gained));
         // réputation gagnée par minerai déchargé - un palier franchi est
         // annoncé comme pour les astéroïdes détruits
         let before = rank_at(s.ranks, state.resources.reputation);
@@ -1119,13 +1190,13 @@ pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
 pub enum SupplyOutcome {
     /// Réservoir(s) déjà plein(s) (rien à payer).
     Full,
-    /// Ravitaillement payé (coût en minerais déduit).
+    /// Ravitaillement payé (coût en crédits déduit).
     Purchased(i32),
-    /// Pas assez de minerais (coût nécessaire).
+    /// Pas assez de crédits (coût nécessaire).
     Insufficient(i32),
 }
 
-/// Coût (minerais, remise de réputation appliquée) d'un **plein de
+/// Coût (crédits, remise de réputation appliquée) d'un **plein de
 /// carburant** : le manque au réservoir courant est facturé au pas du
 /// scénario (`fuel_price` par `fuel_step` unités, arrondi au pas supérieur).
 /// Hors économie ou réservoir plein : 0. Équivalent à `fuel_qty_cost` sur
@@ -1142,7 +1213,7 @@ pub fn fuel_refill_cost(state: &GameState) -> i32 {
     discounted_cost(raw, current_discount(state))
 }
 
-/// Coût (minerais, remise de réputation appliquée) du **rechargement des
+/// Coût (crédits, remise de réputation appliquée) du **rechargement des
 /// munitions** : chaque arme possédée est facturée au paquet de l'arme
 /// (`ammo_price` par paquet de `ammo_pack` munitions, arrondi au paquet
 /// supérieur) - les armes non possédées ne se rechargent pas. Hors économie
@@ -1178,7 +1249,7 @@ pub fn fuel_pack_count(state: &GameState, qty: f64) -> i32 {
     (qty / s.fuel_step).ceil() as i32
 }
 
-/// Coût (minerais, remise de réputation appliquée) de l'achat de `qty`
+/// Coût (crédits, remise de réputation appliquée) de l'achat de `qty`
 /// **unités** de carburant au magasin (ligne FUEL, curseur) : facturées au
 /// paquet du scénario (`fuel_price` par `fuel_step` - voir `fuel_pack_count`),
 /// puis remise appliquée. `qty <= 0` ou hors économie : 0. Pure (tests).
@@ -1200,7 +1271,7 @@ pub fn ammo_pack_count(state: &GameState, i: usize, qty: i32) -> i32 {
     (qty + spec.ammo_pack - 1) / spec.ammo_pack
 }
 
-/// Coût (minerais, remise de réputation appliquée) de l'achat de `qty`
+/// Coût (crédits, remise de réputation appliquée) de l'achat de `qty`
 /// **unités** de munitions pour l'arme `i` (ligne AMMO de l'arme, curseur) :
 /// facturées au paquet de l'arme (`ammo_price` par paquet de `ammo_pack` -
 /// voir `ammo_pack_count`), puis remise appliquée. `qty <= 0` ou hors
@@ -1213,7 +1284,7 @@ pub fn ammo_qty_cost(state: &GameState, i: usize, qty: i32) -> i32 {
 }
 
 /// Achète un **plein de carburant** à la station : remplit le réservoir à la
-/// capacité courante et déduit les minerais (voir `buy_fuel_qty`). Équivaut
+/// capacité courante et déduit les crédits (voir `buy_fuel_qty`). Équivaut
 /// au curseur FUEL du magasin à son maximum. Réservé aux tests (le magasin
 /// achète à la quantité du curseur).
 #[cfg(test)]
@@ -1226,7 +1297,7 @@ pub fn purchase_fuel(state: &mut GameState) -> SupplyOutcome {
 /// curseur) : facturées au paquet (`fuel_qty_cost` - un paquet minimum pour
 /// tout achat) ; le réservoir reçoit exactement `qty` unités, bornées au
 /// manque de la capacité courante. Minerais insuffisants → `Insufficient`
-/// (message « NOT ENOUGH MINERALS FOR FUEL », non répété au même coût).
+/// (message « NOT ENOUGH CREDITS FOR FUEL », non répété au même coût).
 pub fn buy_fuel_qty(state: &mut GameState, qty: f64) -> SupplyOutcome {
     if !has_economy(state) {
         return SupplyOutcome::Full;
@@ -1240,25 +1311,25 @@ pub fn buy_fuel_qty(state: &mut GameState, qty: f64) -> SupplyOutcome {
     if cost == 0 {
         return SupplyOutcome::Full;
     }
-    if state.resources.minerals < cost {
+    if state.resources.credits < cost {
         // le message n'est envoyé qu'au début du manque (pas à chaque clic
         // répété - `supplies_shortage_cost`)
         if state.supplies_shortage_cost != cost {
             state.supplies_shortage_cost = cost;
-            state.send_message(&format!("NOT ENOUGH MINERALS FOR FUEL ({} NEEDED)", cost));
+            state.send_message(&format!("NOT ENOUGH CREDITS FOR FUEL ({} NEEDED)", cost));
         }
         return SupplyOutcome::Insufficient(cost);
     }
     state.supplies_shortage_cost = 0;
-    state.resources.minerals -= cost;
+    state.resources.credits -= cost;
     state.resources.fuel = (state.resources.fuel + qty).min(fuel_capacity(state));
-    state.send_message(&format!("FUEL PURCHASED: -{} MINERALS", cost));
+    state.send_message(&format!("FUEL PURCHASED: -{} CREDITS", cost));
     SupplyOutcome::Purchased(cost)
 }
 
 /// Achète le **rechargement des munitions** à la station : chaque arme
 /// possédée repart pleine à la capacité courante (`ammo_refill_cost`, par
-/// paquet de l'arme) et les minerais sont déduits. Les munitions s'achètent
+/// paquet de l.arme) et les crédits sont déduits. Les munitions s'achètent
 /// **indépendamment** du carburant. Réservé aux tests (le magasin achète à
 /// la quantité des curseurs AMMO, un par arme possédée).
 #[cfg(test)]
@@ -1270,22 +1341,22 @@ pub fn purchase_ammo(state: &mut GameState) -> SupplyOutcome {
     if cost == 0 {
         return SupplyOutcome::Full;
     }
-    if state.resources.minerals < cost {
+    if state.resources.credits < cost {
         if state.supplies_shortage_cost != cost {
             state.supplies_shortage_cost = cost;
-            state.send_message(&format!("NOT ENOUGH MINERALS FOR AMMO ({} NEEDED)", cost));
+            state.send_message(&format!("NOT ENOUGH CREDITS FOR AMMO ({} NEEDED)", cost));
         }
         return SupplyOutcome::Insufficient(cost);
     }
     state.supplies_shortage_cost = 0;
-    state.resources.minerals -= cost;
+    state.resources.credits -= cost;
     let max_ammo = ammo_capacity(state);
     for i in 0..weapon_slot_count() {
         if weapon_owned(state, i) {
             state.resources.weapon_ammo[i] = max_ammo;
         }
     }
-    state.send_message(&format!("AMMO PURCHASED: -{} MINERALS", cost));
+    state.send_message(&format!("AMMO PURCHASED: -{} CREDITS", cost));
     SupplyOutcome::Purchased(cost)
 }
 
@@ -1294,7 +1365,7 @@ pub fn purchase_ammo(state: &mut GameState) -> SupplyOutcome {
 /// minimum pour tout achat) ; le chargeur reçoit exactement `qty` unités,
 /// bornées au manque de la capacité courante. Arme non possédée ou quantité
 /// nulle : sans effet (`Full`). Minerais insuffisants → `Insufficient`
-/// (message « NOT ENOUGH MINERALS FOR AMMO », non répété au même coût).
+/// (message « NOT ENOUGH CREDITS FOR AMMO », non répété au même coût).
 pub fn buy_ammo_qty(state: &mut GameState, i: usize, qty: i32) -> SupplyOutcome {
     if !has_economy(state) || !weapon_owned(state, i) {
         return SupplyOutcome::Full;
@@ -1308,27 +1379,27 @@ pub fn buy_ammo_qty(state: &mut GameState, i: usize, qty: i32) -> SupplyOutcome 
     if cost == 0 {
         return SupplyOutcome::Full;
     }
-    if state.resources.minerals < cost {
+    if state.resources.credits < cost {
         if state.supplies_shortage_cost != cost {
             state.supplies_shortage_cost = cost;
-            state.send_message(&format!("NOT ENOUGH MINERALS FOR AMMO ({} NEEDED)", cost));
+            state.send_message(&format!("NOT ENOUGH CREDITS FOR AMMO ({} NEEDED)", cost));
         }
         return SupplyOutcome::Insufficient(cost);
     }
     state.supplies_shortage_cost = 0;
-    state.resources.minerals -= cost;
+    state.resources.credits -= cost;
     state.resources.weapon_ammo[i] += qty;
     state.send_message(&format!(
-        "{} AMMO PURCHASED: -{} MINERALS",
+        "{} AMMO PURCHASED: -{} CREDITS",
         weapon_spec(i).name,
         cost
     ));
     SupplyOutcome::Purchased(cost)
 }
 
-/// Quantité maximale de carburant **achetable** avec les minerais courants :
+/// Quantité maximale de carburant **achetable** avec les crédits courants :
 /// le plus grand multiple du pas (`fuel_step`) dont le coût (remisé) ne
-/// dépasse pas les minerais, borné au manque du réservoir - 0 si même un
+/// dépasse pas les crédits, borné au manque du réservoir - 0 si même un
 /// paquet est hors de portée (ou hors économie). Positionne le curseur FUEL
 /// du magasin à l'ouverture. Pure (tests).
 pub fn affordable_fuel_qty(state: &GameState) -> f64 {
@@ -1339,7 +1410,7 @@ pub fn affordable_fuel_qty(state: &GameState) -> f64 {
     let missing = (fuel_capacity(state) - state.resources.fuel).max(0.0);
     let max_packs = (missing / s.fuel_step).ceil() as i32;
     for n in (1..=max_packs).rev() {
-        if discounted_cost(n * s.fuel_price, current_discount(state)) <= state.resources.minerals {
+        if discounted_cost(n * s.fuel_price, current_discount(state)) <= state.resources.credits {
             return (n as f64 * s.fuel_step).min(missing);
         }
     }
@@ -1347,8 +1418,8 @@ pub fn affordable_fuel_qty(state: &GameState) -> f64 {
 }
 
 /// Quantité maximale de munitions **achetable** pour l'arme `i` avec les
-/// minerais courants : le plus grand multiple du paquet de l'arme dont le
-/// coût (remisé) ne dépasse pas les minerais, borné au manque du chargeur -
+/// crédits courants : le plus grand multiple du paquet de l.arme dont le
+/// coût (remisé) ne dépasse pas les crédits, borné au manque du chargeur -
 /// 0 si même un paquet est hors de portée (ou hors économie). Positionne le
 /// curseur AMMO de l'arme à l'ouverture du magasin. Pure (tests).
 pub fn affordable_ammo_qty(state: &GameState, i: usize) -> i32 {
@@ -1359,7 +1430,7 @@ pub fn affordable_ammo_qty(state: &GameState, i: usize) -> i32 {
     let missing = (ammo_capacity(state) - state.resources.weapon_ammo[i]).max(0);
     let max_packs = (missing + spec.ammo_pack - 1) / spec.ammo_pack;
     for n in (1..=max_packs).rev() {
-        if discounted_cost(n * spec.ammo_price, current_discount(state)) <= state.resources.minerals {
+        if discounted_cost(n * spec.ammo_price, current_discount(state)) <= state.resources.credits {
             return (n * spec.ammo_pack).min(missing);
         }
     }
@@ -1367,7 +1438,7 @@ pub fn affordable_ammo_qty(state: &GameState, i: usize) -> i32 {
 }
 
 /// Borne les quantités des curseurs du magasin (carburant et munitions par
-/// arme possédée) à ce que les minerais permettent (`affordable_fuel_qty` /
+/// arme possédée) à ce que les crédits permettent (`affordable_fuel_qty` /
 /// Aimanate une quantité de curseur au **multiple du paquet** le plus proche
 /// (pour ne jamais payer un paquet sans en prendre les unités) - sauf le
 /// **maximum** (`max`, le plein du réservoir), qui reste atteignable même
@@ -1389,9 +1460,9 @@ pub fn snap_to_pack(qty: f64, pack: f64, max: f64) -> f64 {
 }
 
 /// Borne les quantités des curseurs du magasin (carburant et munitions par
-/// arme possédée) à ce que les minerais permettent (`affordable_fuel_qty` /
+/// arme possédée) à ce que les crédits permettent (`affordable_fuel_qty` /
 /// `affordable_ammo_qty` - déjà bornées au manque des réservoirs) : jamais
-/// une quantité dont le coût dépasserait les minerais disponibles - on ne
+/// une quantité dont le coût dépasserait les crédits disponibles - on ne
 /// peut pas se retrouver avec un curseur hors de portée. Les quantités sont
 /// aussi **aimantées aux multiples du paquet** (`snap_to_pack`) pour ne
 /// jamais payer un paquet sans en prendre les unités en glissant à la
@@ -1443,7 +1514,7 @@ pub fn mode_unlock_prices(state: &GameState, mode: i32) -> Option<(i32, i32)> {
     (cost > 0).then(|| (cost, discounted_cost(cost, current_discount(state))))
 }
 
-/// Coût en minerais d'un mode pas encore débloqué (`None` = débloqué, ou pas
+/// Coût en crédits d.un mode pas encore débloqué (`None` = débloqué, ou pas
 /// d'économie) - affiché dans le magasin de la station (bouton SHOP de la
 /// boîte DOCK STATION). C'est le prix réellement payé (remise de réputation
 /// du rang courant appliquée) ; voir `mode_unlock_prices` pour le tarif de
@@ -1453,8 +1524,8 @@ pub fn locked_cost(state: &GameState, mode: i32) -> Option<i32> {
 }
 
 /// Sélectionne un mode de déplacement dans le magasin de la station :
-/// débloqué → appliqué immédiatement ; verrouillé → payé en minerais (si
-/// possible, sinon message « NOT ENOUGH MINERALS ») puis appliqué. Renvoie
+/// débloqué → appliqué immédiatement ; verrouillé → payé en crédits (si
+/// possible, sinon message « NOT ENOUGH CREDITS ») puis appliqué. Renvoie
 /// `true` si le mode demandé est devenu le mode courant.
 pub fn try_select_mode(state: &mut GameState, mode: i32) -> bool {
     match locked_cost(state, mode) {
@@ -1463,19 +1534,19 @@ pub fn try_select_mode(state: &mut GameState, mode: i32) -> bool {
             true
         }
         Some(cost) => {
-            if state.resources.minerals >= cost {
-                state.resources.minerals -= cost;
+            if state.resources.credits >= cost {
+                state.resources.credits -= cost;
                 state.unlocked_modes[mode as usize] = true;
                 state.moving_mode = mode;
                 state.send_message(&format!(
-                    "MODE {} UNLOCKED ({} MINERALS)",
+                    "MODE {} UNLOCKED ({} CREDITS)",
                     mode_label(mode),
                     cost
                 ));
                 true
             } else {
                 state.send_message(&format!(
-                    "NOT ENOUGH MINERALS FOR {} ({} NEEDED)",
+                    "NOT ENOUGH CREDITS FOR {} ({} NEEDED)",
                     mode_label(mode),
                     cost
                 ));
@@ -1556,14 +1627,14 @@ pub fn upgrade_line(state: &GameState, track: UpgradeTrackId) -> UpgradeLine {
 pub enum UpgradeOutcome {
     /// Ligne déjà au niveau maximum (ou pas d'atelier hors économie).
     Maxed,
-    /// Extension achetée (coût en minerais déduit, niveau +1).
+    /// Extension achetée (coût en crédits déduit, niveau +1).
     Purchased(i32),
-    /// Pas assez de minerais (coût nécessaire).
+    /// Pas assez de crédits (coût nécessaire).
     Insufficient(i32),
 }
 
 /// Achète la prochaine extension d'une ligne à l'atelier de la station : paie
-/// en minerais et fait passer la ligne au niveau suivant - les réservoirs
+/// en crédits et fait passer la ligne au niveau suivant - les réservoirs
 /// montent à la nouvelle capacité (plein inclus) et la soute s'agrandit
 /// immédiatement. Hors scénario à économie (pas d'atelier) ou ligne au max :
 /// sans effet (`Maxed`). Appelé par le magasin (bouton SHOP de la
@@ -1585,14 +1656,14 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
     // la réputation remise les coûts de la station (atelier, ravitaillement,
     // modes) : le prix affiché et payé est le coût remisé
     let cost = discounted_cost(next.cost, current_discount(state));
-    if state.resources.minerals < cost {
+    if state.resources.credits < cost {
         state.send_message(&format!(
-            "NOT ENOUGH MINERALS FOR {} ({} NEEDED)",
+            "NOT ENOUGH CREDITS FOR {} ({} NEEDED)",
             next.name, cost
         ));
         return UpgradeOutcome::Insufficient(cost);
     }
-    state.resources.minerals -= cost;
+    state.resources.credits -= cost;
     match track {
         UpgradeTrackId::Fuel => {
             state.resources.fuel_level += 1;
@@ -1613,7 +1684,7 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
             state.player.cargo_size = cargo_capacity(state);
         }
     }
-    state.send_message(&format!("{} PURCHASED: -{} MINERALS", next.name, cost));
+    state.send_message(&format!("{} PURCHASED: -{} CREDITS", next.name, cost));
     UpgradeOutcome::Purchased(cost)
 }
 
@@ -1637,8 +1708,13 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
 /// - `prog_weapons`    - armes du catalogue possédées (masque binaire : bit
 ///   i = arme i achetée, Progression ; les munitions par arme repartent
 ///   pleines à chaque lancement, non persistées)
+/// - `prog_radar`      - radar de bord possédé (0/1, Progression) - la
+///   minimap globale reste éteinte tant que le radar n'est pas acheté
 const SCENARIO_KEY: &str = "scenario";
-const PROG_MINERALS_KEY: &str = "prog_minerals";
+const PROG_CREDITS_KEY: &str = "prog_credits";
+/// Ancienne clé (sauvegardes créées avant le renommage minerais → crédits) :
+/// relue en secours à la restauration, jamais réécrite.
+const PROG_MINERALS_LEGACY_KEY: &str = "prog_minerals";
 const PROG_MODES_KEY: &str = "prog_modes";
 const PROG_REPUTATION_KEY: &str = "prog_reputation";
 const PROG_LIVES_KEY: &str = "prog_lives";
@@ -1647,6 +1723,7 @@ const PROG_UP_FUEL_KEY: &str = "prog_up_fuel";
 const PROG_UP_AMMO_KEY: &str = "prog_up_ammo";
 const PROG_UP_CARGO_KEY: &str = "prog_up_cargo";
 const PROG_WEAPONS_KEY: &str = "prog_weapons";
+const PROG_RADAR_KEY: &str = "prog_radar";
 const PROG_OBJECTIVES_KEY: &str = "prog_objectives";
 
 /// Masque binaire des modes de déplacement débloqués (bit i = mode i).
@@ -1674,7 +1751,7 @@ fn weapons_owned_mask(state: &GameState) -> i32 {
 }
 
 /// Enregistre la progression courante dans un fichier de config donné :
-/// toujours le scénario choisi, et les ressources du scénario - minerais,
+/// toujours le scénario choisi, et les ressources du scénario - crédits,
 /// modes débloqués, réputation, extensions d'atelier et **armes possédées**
 /// en Progression, vies et bouclier en Survival (les munitions par arme
 /// repartent pleines au lancement : non persistées). Chaque scénario n'écrit
@@ -1684,7 +1761,7 @@ fn weapons_owned_mask(state: &GameState) -> i32 {
 pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
     crate::persist::set_i32_to(path, SCENARIO_KEY, scenario_index(state.scenario) as i32)?;
     if has_economy(state) {
-        crate::persist::set_i32_to(path, PROG_MINERALS_KEY, state.resources.minerals)?;
+        crate::persist::set_i32_to(path, PROG_CREDITS_KEY, state.resources.credits)?;
         crate::persist::set_i32_to(path, PROG_MODES_KEY, unlocked_mask(state))?;
         crate::persist::set_i32_to(
             path,
@@ -1698,6 +1775,8 @@ pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
         // armes possédées (les munitions par arme repartent pleines au
         // lancement : non persistées)
         crate::persist::set_i32_to(path, PROG_WEAPONS_KEY, weapons_owned_mask(state))?;
+        // radar de bord possédé (minimap globale)
+        crate::persist::set_i32_to(path, PROG_RADAR_KEY, state.resources.radar_owned as i32)?;
     }
     if has_survival(state) {
         crate::persist::set_i32_to(path, PROG_LIVES_KEY, state.resources.lives)?;
@@ -1752,7 +1831,7 @@ pub fn load_scenario() -> Option<ScenarioId> {
 }
 
 /// Surimpose la progression enregistrée sur l'état courant (après
-/// `apply_start`) : minerais, modes débloqués, réputation et niveaux
+/// `apply_start`) : crédits, modes débloqués, réputation et niveaux
 /// d'atelier en Progression, vies et bouclier en Survival. Les valeurs sont
 /// bornées par les règles du scénario (jamais plus de vies ni de bouclier
 /// que la capacité, jamais plus d'extensions que le nombre défini). En
@@ -1766,8 +1845,12 @@ pub fn load_scenario() -> Option<ScenarioId> {
 pub fn load_progression_from(path: &Path, state: &mut GameState) {
     let s = scenario(state.scenario);
     if s.has_economy {
-        if let Some(minerals) = crate::persist::get_i32_from(path, PROG_MINERALS_KEY) {
-            state.resources.minerals = minerals.max(0);
+        // crédits : clé courante, puis l'ancienne clé `prog_minerals` en
+        // secours pour les sauvegardes créées avant le renommage
+        let credits = crate::persist::get_i32_from(path, PROG_CREDITS_KEY)
+            .or_else(|| crate::persist::get_i32_from(path, PROG_MINERALS_LEGACY_KEY));
+        if let Some(credits) = credits {
+            state.resources.credits = credits.max(0);
         }
         if let Some(mask) = crate::persist::get_i32_from(path, PROG_MODES_KEY) {
             for (i, unlocked) in state.unlocked_modes.iter_mut().enumerate() {
@@ -1817,6 +1900,10 @@ pub fn load_progression_from(path: &Path, state: &mut GameState) {
                 0
             };
         }
+        // radar de bord : possédé si la sauvegarde l'a acheté (sinon éteint)
+        if let Some(radar) = crate::persist::get_i32_from(path, PROG_RADAR_KEY) {
+            state.resources.radar_owned = radar != 0;
+        }
         // réservoirs pleins à la capacité courante (extensions comprises) et
         // soute à la taille du niveau restauré
         state.resources.fuel = fuel_capacity(state);
@@ -1861,10 +1948,10 @@ pub fn load_progression(state: &mut GameState) {
 
 /// Remet la progression du scénario courant à zéro (bouton RESET PROGRESSION
 /// de l'écran de paramétrage) : les clés `prog_*` du fichier de config
-/// (minerais, modes payés, réputation, extensions d'atelier, armes
+/// (crédits, modes payés, réputation, extensions d'atelier, armes
 /// possédées, vies/bouclier) et le mode de déplacement choisi (`moving_mode`)
 /// sont supprimées, puis les règles de départ du scénario sont réappliquées
-/// (`apply_start`) : minerais 0, seuls les modes gratuits (coût 0) débloqués
+/// (`apply_start`) : crédits 0, seuls les modes gratuits (coût 0) débloqués
 /// et les armes de base (coût 0) équipées, réputation nulle, réservoirs
 /// pleins, mode de départ (REALISTIC en Progression). Les réglages (musique,
 /// volume, rendu, fenêtre) et le scénario choisi sont conservés.
@@ -1876,13 +1963,14 @@ pub fn reset_progression(state: &mut GameState) {
 /// clés de progression du fichier donné puis réapplique `apply_start`.
 pub fn reset_progression_from(path: &Path, state: &mut GameState) {
     for key in [
-        PROG_MINERALS_KEY,
+        PROG_CREDITS_KEY,
         PROG_MODES_KEY,
         PROG_REPUTATION_KEY,
         PROG_UP_FUEL_KEY,
         PROG_UP_AMMO_KEY,
         PROG_UP_CARGO_KEY,
         PROG_WEAPONS_KEY,
+        PROG_RADAR_KEY,
         PROG_LIVES_KEY,
         PROG_SHIELD_KEY,
         PROG_OBJECTIVES_KEY,
@@ -1934,7 +2022,7 @@ pub fn has_saved_progression_from(path: &Path, state: &GameState) -> bool {
     fresh.scenario = state.scenario;
     apply_start(&mut fresh);
     if s.has_economy {
-        if state.resources.minerals != fresh.resources.minerals
+        if state.resources.credits != fresh.resources.credits
             || (state.resources.reputation - fresh.resources.reputation).abs() > 1e-9
             || state.resources.fuel_level != fresh.resources.fuel_level
             || state.resources.ammo_level != fresh.resources.ammo_level
@@ -2003,7 +2091,7 @@ mod tests {
         assert!(prog.contains("DIRECTIONAL 45"));
         assert!(prog.contains("CADET"));
         assert!(prog.contains("ACE"));
-        assert!(prog.contains("minerais"));
+        assert!(prog.contains("crédits"));
 
         let surv = scenario_rules_text(ScenarioId::Survival);
         assert!(surv.contains("3 vies"));
@@ -2073,18 +2161,18 @@ mod tests {
 
     #[test]
     fn save_summary_shows_restored_progression() {
-        // le résumé d'écran titre décrit la sauvegarde restaurée : minerais,
+        // le résumé d.écran titre décrit la sauvegarde restaurée : crédits,
         // modes débloqués et réputation (+ rang) en Progression ; vies et
         // bouclier en Survival ; aucune en jeu libre
         let free = GameState::new();
         assert!(save_summary(&free).contains("aucune sauvegarde"));
 
         let mut prog = progression_state();
-        prog.resources.minerals = 42;
+        prog.resources.credits = 42;
         prog.resources.reputation = 60.0; // ACE
         prog.unlocked_modes = [true, true, false, true];
         let summary = save_summary(&prog);
-        assert!(summary.contains("minerais 42"));
+        assert!(summary.contains("crédits 42"));
         assert!(summary.contains("modes 3/4"));
         assert!(summary.contains("réputation 60"));
         assert!(summary.contains("(ACE)"));
@@ -2099,12 +2187,12 @@ mod tests {
 
     #[test]
     fn save_summary_segments_highlight_values() {
-        // les valeurs du résumé (minerais, modes, réputation, rang, vies,
+        // les valeurs du résumé (crédits, modes, réputation, rang, vies,
         // bouclier) portent `color = Some(couleur du scénario)`, les libellés
         // `None` - mêmes segments que `save_summary`, pour la coloration à
         // l'écran titre
         let mut prog = progression_state();
-        prog.resources.minerals = 42;
+        prog.resources.credits = 42;
         prog.resources.reputation = 60.0; // ACE
         prog.unlocked_modes = [true, true, false, true];
         let segs = save_summary_segments(&prog);
@@ -2143,7 +2231,7 @@ mod tests {
         // seuls les modes payants apparaissent (coût 0 = déjà débloqué, omis)
         assert_eq!(
             mode_costs_text(&PROGRESSION_SCENARIO),
-            "INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45 minerais"
+            "INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45 crédits"
         );
         assert_eq!(mode_costs_text(&FREE_PLAY_SCENARIO), "aucun");
     }
@@ -2168,14 +2256,14 @@ mod tests {
     fn progression_starts_realistic_with_start_resources() {
         // départ : REALISTIC (mode de départ, gratuit par configuration), les
         // modes payants (INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45) sont
-        // verrouillés ; réservoir et chargeur pleins, pas de minerais,
+        // verrouillés ; réservoir et chargeur pleins, pas de crédits,
         // réputation nulle
         let s = progression_state();
         assert!(has_economy(&s));
         assert_eq!(s.moving_mode, MOVING_MODE_REALISTIC);
         assert_eq!(s.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
         assert_eq!(total_ammo(&s), PROGRESSION_SCENARIO.start_ammo); // arme de base
-        assert_eq!(s.resources.minerals, 0);
+        assert_eq!(s.resources.credits, 0);
         assert_eq!(s.resources.reputation, 0.0);
         assert_eq!(locked_cost(&s, MOVING_MODE_REALISTIC), None);
         assert_eq!(locked_cost(&s, MOVING_MODE_INERTIAL), Some(15));
@@ -2238,25 +2326,25 @@ mod tests {
 
     #[test]
     fn progression_pays_minerals_to_unlock_modes() {
-        // 4 WAYS coûte 30 minerais : payé, débloqué définitivement (la
-        // re-sélection est ensuite gratuite) ; sans assez de minerais, refus
+        // 4 WAYS coûte 30 crédits : payé, débloqué définitivement (la
+        // re-sélection est ensuite gratuite) ; sans assez de crédits, refus
         let mut s = progression_state();
-        s.resources.minerals = 30;
+        s.resources.credits = 30;
         assert!(try_select_mode(&mut s, MOVING_MODE_4_WAYS));
         assert_eq!(s.moving_mode, MOVING_MODE_4_WAYS);
-        assert_eq!(s.resources.minerals, 0);
+        assert_eq!(s.resources.credits, 0);
         assert_eq!(locked_cost(&s, MOVING_MODE_4_WAYS), None);
         // un mode gratuit (REALISTIC) reste re-sélectionnable sans frais
         assert!(try_select_mode(&mut s, MOVING_MODE_REALISTIC));
         assert!(try_select_mode(&mut s, MOVING_MODE_4_WAYS));
-        assert_eq!(s.resources.minerals, 0);
+        assert_eq!(s.resources.credits, 0);
         // INERTIAL coûte 15 : pas assez (0) → refus, mode inchangé
         assert!(!try_select_mode(&mut s, MOVING_MODE_INERTIAL));
         assert_eq!(s.moving_mode, MOVING_MODE_4_WAYS);
         // DIRECTIONAL coûte 45 : pas assez (0) → refus, mode inchangé
         assert!(!try_select_mode(&mut s, MOVING_MODE_DIRECTIONAL));
         assert_eq!(s.moving_mode, MOVING_MODE_4_WAYS);
-        assert!(s.message_queue.contains("NOT ENOUGH MINERALS"));
+        assert!(s.message_queue.contains("NOT ENOUGH CREDITS"));
     }
 
     #[test]
@@ -2322,8 +2410,8 @@ mod tests {
 
     #[test]
     fn paid_weapon_is_bought_with_minerals_and_loaded() {
-        // une arme payante (ex ARME 2, 30 minerais) : refusée sans assez de
-        // minerais, achetée ensuite - équipée, livrée chargée à la capacité
+        // une arme payante (ex ARME 2, 30 crédits) : refusée sans assez de
+        // crédits, achetée ensuite - équipée, livrée chargée à la capacité
         // courante, puis non rachetable
         let mut s = progression_state();
         let i = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
@@ -2331,13 +2419,13 @@ mod tests {
             buy_weapon(&mut s, i),
             WeaponOutcome::Insufficient(weapon_spec(i).cost)
         );
-        assert!(s.message_queue.contains("NOT ENOUGH MINERALS"));
-        s.resources.minerals = 100;
+        assert!(s.message_queue.contains("NOT ENOUGH CREDITS"));
+        s.resources.credits = 100;
         let cost = weapon_cost(&s, i).unwrap();
         assert_eq!(buy_weapon(&mut s, i), WeaponOutcome::Purchased(cost));
         assert!(weapon_owned(&s, i));
         assert_eq!(s.resources.weapon_ammo[i], ammo_capacity(&s)); // livrée chargée
-        assert_eq!(s.resources.minerals, 100 - cost);
+        assert_eq!(s.resources.credits, 100 - cost);
         assert!(s.message_queue.contains("WEAPON"));
         assert_eq!(buy_weapon(&mut s, i), WeaponOutcome::Owned); // déjà possédée
     }
@@ -2348,7 +2436,7 @@ mod tests {
         // arme à court de munitions ne tire pas, l'autre continue
         let mut s = progression_state();
         let paid = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
-        s.resources.minerals = 1000;
+        s.resources.credits = 1000;
         let cost = weapon_cost(&s, paid).unwrap();
         assert_eq!(buy_weapon(&mut s, paid), WeaponOutcome::Purchased(cost));
         let mut both = [false; WEAPON_SLOTS];
@@ -2376,7 +2464,7 @@ mod tests {
         // la capacité de base, paquets de 5) ; le carburant reste intact
         let mut s = progression_state();
         let paid = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
-        s.resources.minerals = 1000;
+        s.resources.credits = 1000;
         let cost = weapon_cost(&s, paid).unwrap();
         assert_eq!(buy_weapon(&mut s, paid), WeaponOutcome::Purchased(cost));
         s.resources.weapon_ammo[0] = 0;
@@ -2405,7 +2493,7 @@ mod tests {
         let _ = std::fs::remove_file(&p);
         let mut s = progression_state();
         let paid = (0..weapon_slot_count()).find(|&i| weapon_spec(i).cost > 0).unwrap();
-        s.resources.minerals = 1000;
+        s.resources.credits = 1000;
         let cost = weapon_cost(&s, paid).unwrap();
         assert_eq!(buy_weapon(&mut s, paid), WeaponOutcome::Purchased(cost));
         s.resources.weapon_ammo[paid] = 3; // non persisté
@@ -2417,7 +2505,62 @@ mod tests {
         load_progression_from(&p, &mut t);
         assert!(weapon_owned(&t, paid));
         assert_eq!(t.resources.weapon_ammo[paid], ammo_capacity(&t)); // repart chargée
-        assert_eq!(t.resources.minerals, 1000 - cost);
+        assert_eq!(t.resources.credits, 1000 - cost);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn radar_on_by_default_outside_economy_and_buyable_with_credits() {
+        // jeu libre : le radar est allumé par défaut (comportement
+        // historique), rien à acheter (pas de prix)
+        let free = GameState::new();
+        assert!(has_radar(&free));
+        assert_eq!(radar_price(&free), None);
+        assert_eq!(buy_radar(&mut GameState::new()), RadarOutcome::Owned);
+
+        // Progression : radar éteint par défaut, prix affiché (remise
+        // CADET = 0), achat contre crédits
+        let mut s = progression_state();
+        assert!(!has_radar(&s));
+        assert_eq!(radar_price(&s), Some((20, 20)));
+        assert_eq!(radar_cost(&s), Some(20));
+        // pas assez de crédits : refusé, radar toujours éteint
+        s.resources.credits = 5;
+        assert_eq!(buy_radar(&mut s), RadarOutcome::Insufficient(20));
+        assert!(!has_radar(&s));
+        // assez de crédits : acheté, crédits déduits, radar allumé
+        s.resources.credits = 20;
+        assert_eq!(buy_radar(&mut s), RadarOutcome::Purchased(20));
+        assert!(has_radar(&s));
+        assert_eq!(s.resources.credits, 0);
+        // déjà possédé : plus de prix, plus d'achat possible
+        assert_eq!(radar_price(&s), None);
+        assert_eq!(buy_radar(&mut s), RadarOutcome::Owned);
+    }
+
+    #[test]
+    fn radar_persists_and_resets_with_progression() {
+        // le radar acheté est enregistré (`prog_radar`) et restauré au
+        // lancement suivant ; RESET PROGRESSION l'éteint à nouveau
+        let p = temp_path("radar.cfg");
+        let _ = std::fs::remove_file(&p);
+        let mut s = progression_state();
+        s.resources.credits = 100;
+        assert_eq!(buy_radar(&mut s), RadarOutcome::Purchased(20));
+        save_progression_to(&p, &s).unwrap();
+        assert_eq!(get_i32_from(&p, "prog_radar"), Some(1));
+
+        // un départ neuf a le radar éteint ; rechargé, il est allumé
+        let mut fresh = progression_state();
+        assert!(!has_radar(&fresh));
+        load_progression_from(&p, &mut fresh);
+        assert!(has_radar(&fresh));
+        assert_eq!(fresh.resources.credits, 80);
+
+        // RESET : la clé est supprimée et le radar repart éteint
+        reset_progression_from(&p, &mut fresh);
+        assert_eq!(get_i32_from(&p, "prog_radar"), None);
+        assert!(!has_radar(&fresh));
         let _ = std::fs::remove_file(&p);
     }
 
@@ -2607,25 +2750,25 @@ mod tests {
         elements[2].count = 1; // IRON ×1 = 3
         elements[3].count = 1; // WATER ×1 = 2
         unload_cargo(&mut s, &elements);
-        assert_eq!(s.resources.minerals, 15);
-        assert!(s.message_queue.contains("+15 MINERALS"));
+        assert_eq!(s.resources.credits, 15);
+        assert!(s.message_queue.contains("+15 CREDITS"));
 
         let mut f = GameState::new();
         unload_cargo(&mut f, &elements);
-        assert_eq!(f.resources.minerals, 0);
+        assert_eq!(f.resources.credits, 0);
         assert!(f.message_queue.is_empty());
     }
 
     #[test]
     fn cargo_unload_grants_reputation_and_rank_up() {
         // le commerce est récompensé : chaque minerai déchargé rapporte de la
-        // réputation (0,1 en Progression) - 100 minerais → +10 → le seuil
+        // réputation (0,1 en Progression) - 100 crédits → +10 → le seuil
         // PILOT (10) est franchi, « RANK UP: PILOT » est annoncé
         let mut s = progression_state();
         let mut elements = default_elements();
-        elements[1].count = 20; // GOLD ×20 = 100 minerais
+        elements[1].count = 20; // GOLD ×20 = 100 crédits
         unload_cargo(&mut s, &elements);
-        assert_eq!(s.resources.minerals, 100);
+        assert_eq!(s.resources.credits, 100);
         assert!(
             (s.resources.reputation - 10.0).abs() < 1e-9,
             "réputation {}",
@@ -2633,7 +2776,7 @@ mod tests {
         );
         assert!(s.message_queue.contains("RANK UP: PILOT"));
 
-        // en jeu libre, pas d'économie : ni minerais ni réputation
+        // en jeu libre, pas d.économie : ni crédits ni réputation
         let mut f = GameState::new();
         unload_cargo(&mut f, &elements);
         assert_eq!(f.resources.reputation, 0.0);
@@ -2646,46 +2789,46 @@ mod tests {
         // et le rechargement des munitions (4 paquets × 1 = 4) pas au
         // carburant - chacun est facturé à part
         let mut s = progression_state();
-        s.resources.minerals = 100;
+        s.resources.credits = 100;
         s.resources.fuel = 50.0;
         s.resources.weapon_ammo[0] = 10;
         assert_eq!(fuel_refill_cost(&s), 5); // 50 manquants / 10 par pas
         assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Purchased(5));
         assert_eq!(s.resources.fuel, fuel_capacity(&s)); // 100 (base)
-        assert_eq!(s.resources.minerals, 95);
+        assert_eq!(s.resources.credits, 95);
         assert_eq!(s.resources.weapon_ammo[0], 10); // munitions intactes
         assert!(s.message_queue.contains("FUEL PURCHASED"));
 
         assert_eq!(ammo_refill_cost(&s), 4); // 20 manquants / 5 par paquet
         assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Purchased(4));
-        assert_eq!(s.resources.minerals, 91);
+        assert_eq!(s.resources.credits, 91);
         assert_eq!(total_ammo(&s), ammo_capacity(&s)); // 30 (base)
         assert_eq!(s.resources.fuel, 100.0); // carburant intact
         assert!(s.message_queue.contains("AMMO PURCHASED"));
     }
 
     #[test]
-    fn supplies_are_refused_without_enough_minerals() {
-        // carburant et munitions refusés séparément avec seulement 2 minerais
+    fn supplies_are_refused_without_enough_credits() {
+        // carburant et munitions refusés séparément avec seulement 2 crédits
         // (plein de carburant 10, recharge de munitions 6) : réservoirs
         // inchangés, message envoyé une seule fois par coût (pas de
         // répétition à chaque clic)
         let mut s = progression_state();
-        s.resources.minerals = 2;
+        s.resources.credits = 2;
         s.resources.fuel = 0.0;
         s.resources.weapon_ammo[0] = 0;
         assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Insufficient(10));
         assert_eq!(s.resources.fuel, 0.0);
-        assert!(s.message_queue.contains("NOT ENOUGH MINERALS FOR FUEL"));
+        assert!(s.message_queue.contains("NOT ENOUGH CREDITS FOR FUEL"));
         let queue = s.message_queue.clone();
         assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Insufficient(10));
         assert_eq!(s.message_queue, queue); // pas de nouveau message
         // munitions : coût différent (6) → message distinct
         assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Insufficient(6));
-        assert!(s.message_queue.contains("NOT ENOUGH MINERALS FOR AMMO"));
-        // minerais obtenus : chaque achat est accepté et le manque effacé
+        assert!(s.message_queue.contains("NOT ENOUGH CREDITS FOR AMMO"));
+        // crédits obtenus : chaque achat est accepté et le manque effacé
         // (assez pour les deux : plein de carburant 10 + recharge 6)
-        s.resources.minerals = 16;
+        s.resources.credits = 16;
         assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Purchased(10));
         assert_eq!(s.supplies_shortage_cost, 0);
         assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Purchased(6));
@@ -2707,10 +2850,10 @@ mod tests {
         // le ravitaillement s'achète **à la quantité** (ligne FUEL / AMMO du
         // magasin, curseur) : tout achat paie au moins un paquet de la
         // ressource (10 carburant, le paquet de l'arme pour les munitions) -
-        // même avec peu de minerais, on peut toujours s'en sortir (ex 3
-        // minerais → 30 carburant) sans devoir financer un plein complet
+        // même avec peu de crédits, on peut toujours s.en sortir (ex 3
+        // crédits → 30 carburant) sans devoir financer un plein complet
         let mut s = progression_state();
-        s.resources.minerals = 3;
+        s.resources.credits = 3;
         s.resources.fuel = 0.0;
         s.resources.weapon_ammo[0] = 0;
         // carburant : 1 minerai par paquet de 10 - 30 unités = 3 paquets,
@@ -2723,57 +2866,57 @@ mod tests {
         assert_eq!(fuel_qty_cost(&s, 0.0), 0);
         assert_eq!(buy_fuel_qty(&mut s, 30.0), SupplyOutcome::Purchased(3));
         assert_eq!(s.resources.fuel, 30.0);
-        assert_eq!(s.resources.minerals, 0);
+        assert_eq!(s.resources.credits, 0);
         assert!(s.message_queue.contains("FUEL PURCHASED"));
         // munitions : paquets de 5 à 1 minerai (ARME 1) - 7 unités = 2
         // paquets, et le carburant acheté reste intact
-        s.resources.minerals = 5;
+        s.resources.credits = 5;
         assert_eq!(ammo_pack_count(&s, 0, 7), 2);
         assert_eq!(ammo_qty_cost(&s, 0, 7), 2);
         assert_eq!(buy_ammo_qty(&mut s, 0, 7), SupplyOutcome::Purchased(2));
         assert_eq!(s.resources.weapon_ammo[0], 7);
-        assert_eq!(s.resources.minerals, 3);
+        assert_eq!(s.resources.credits, 3);
         assert_eq!(s.resources.fuel, 30.0);
         assert!(s.message_queue.contains("AMMO PURCHASED"));
         // quantité nulle : rien à payer ; quantité au-delà du manque : bornée
         assert_eq!(buy_fuel_qty(&mut s, 0.0), SupplyOutcome::Full);
         assert_eq!(buy_ammo_qty(&mut s, 0, 0), SupplyOutcome::Full);
-        s.resources.minerals = 10;
+        s.resources.credits = 10;
         assert_eq!(buy_fuel_qty(&mut s, 999.0), SupplyOutcome::Purchased(7)); // 70 manquants
         assert_eq!(s.resources.fuel, fuel_capacity(&s));
-        assert_eq!(s.resources.minerals, 3);
+        assert_eq!(s.resources.credits, 3);
     }
 
     #[test]
     fn shop_sliders_clamp_to_affordable() {
         // les curseurs du magasin sont bornés au **manque** des réservoirs et
-        // à ce que les minerais permettent : jamais une quantité dont le coût
-        // dépasserait les minerais - 4 minerais → 40 carburant (4 paquets de
-        // 10), 3 minerais → 15 munitions (3 paquets de 5)
+        // à ce que les crédits permettent : jamais une quantité dont le coût
+        // dépasserait les crédits - 4 crédits → 40 carburant (4 paquets de
+        // 10), 3 crédits → 15 munitions (3 paquets de 5)
         let mut s = progression_state();
-        s.resources.minerals = 4;
+        s.resources.credits = 4;
         s.resources.fuel = 0.0;
         assert_eq!(affordable_fuel_qty(&s), 40.0);
         s.shop_fuel_qty = 100.0; // au-delà de l'achetable
         clamp_shop_quantities(&mut s);
         assert_eq!(s.shop_fuel_qty, 40.0);
         // le curseur ne dépasse jamais le manque du réservoir
-        s.resources.minerals = 100;
+        s.resources.credits = 100;
         s.resources.fuel = 90.0;
         assert_eq!(affordable_fuel_qty(&s), 10.0);
         s.shop_fuel_qty = 50.0;
         clamp_shop_quantities(&mut s);
         assert_eq!(s.shop_fuel_qty, 10.0);
-        // munitions : paquets de 5 → 3 minerais = 15 unités
-        s.resources.minerals = 3;
+        // munitions : paquets de 5 → 3 crédits = 15 unités
+        s.resources.credits = 3;
         s.resources.fuel = 0.0;
         s.resources.weapon_ammo[0] = 0;
         assert_eq!(affordable_ammo_qty(&s, 0), 15);
         s.shop_ammo_qty[0] = 30.0;
         clamp_shop_quantities(&mut s);
         assert_eq!(s.shop_ammo_qty[0], 15.0);
-        // sans minerais : plus rien d'achetable, curseurs à zéro
-        s.resources.minerals = 0;
+        // sans crédits : plus rien d.achetable, curseurs à zéro
+        s.resources.credits = 0;
         assert_eq!(affordable_fuel_qty(&s), 0.0);
         assert_eq!(affordable_ammo_qty(&s, 0), 0);
         s.shop_fuel_qty = 20.0;
@@ -2799,14 +2942,14 @@ mod tests {
 
         // curseur FUEL : 27 (entre 2 et 3 paquets) → aimanté à 30
         let mut s = progression_state();
-        s.resources.minerals = 5;
+        s.resources.credits = 5;
         s.resources.fuel = 50.0; // manque 50 → paquets de 10
         s.shop_fuel_qty = 27.0;
         clamp_shop_quantities(&mut s);
         assert_eq!(s.shop_fuel_qty, 30.0);
         // manque non multiple (85) : les paquets s'aimantent, le plein (85,
         // 9 paquets - le dernier partiel pris en entier) reste atteignable
-        s.resources.minerals = 1000;
+        s.resources.credits = 1000;
         s.resources.fuel = 15.0;
         s.shop_fuel_qty = 84.0;
         clamp_shop_quantities(&mut s);
@@ -2821,21 +2964,21 @@ mod tests {
 
     #[test]
     fn progression_save_and_restore_round_trips() {
-        // une partie Progression (minerais, modes payés, réputation) est
+        // une partie Progression (crédits, modes payés, réputation) est
         // enregistrée puis restaurée sur un départ neuf du scénario - les
         // réservoirs, eux, repartent pleins (non persistés)
         let p = temp_path("roundtrip.cfg");
         let _ = std::fs::remove_file(&p);
         let mut s = progression_state();
-        s.resources.minerals = 42;
+        s.resources.credits = 42;
         s.resources.reputation = 3.5;
         s.unlocked_modes = [true, true, false, true];
         save_progression_to(&p, &s).unwrap();
 
         let mut fresh = progression_state();
-        assert_eq!(fresh.resources.minerals, 0); // départ neuf
+        assert_eq!(fresh.resources.credits, 0); // départ neuf
         load_progression_from(&p, &mut fresh);
-        assert_eq!(fresh.resources.minerals, 42);
+        assert_eq!(fresh.resources.credits, 42);
         assert_eq!(fresh.resources.reputation, 3.5);
         assert_eq!(fresh.unlocked_modes, [true, true, false, true]);
         assert_eq!(fresh.resources.fuel, PROGRESSION_SCENARIO.start_fuel);
@@ -2845,7 +2988,7 @@ mod tests {
 
     #[test]
     fn reset_progression_clears_saved_progression() {
-        // RESET PROGRESSION : une progression (minerais, modes payés,
+        // RESET PROGRESSION : une progression (crédits, modes payés,
         // réputation, extensions, mode choisi) est remise à zéro - les clés
         // `prog_*` et `moving_mode` du fichier sont supprimées et l'état
         // repart sur les règles de départ du scénario (REALISTIC seul
@@ -2853,7 +2996,7 @@ mod tests {
         let p = temp_path("resetprog.cfg");
         let _ = std::fs::remove_file(&p);
         let mut s = progression_state();
-        s.resources.minerals = 77;
+        s.resources.credits = 77;
         s.resources.reputation = 50.0;
         s.resources.fuel_level = 2;
         s.unlocked_modes = [true, true, true, true];
@@ -2862,9 +3005,9 @@ mod tests {
         set_i32_to(&p, "moving_mode", MOVING_MODE_4_WAYS).unwrap();
 
         reset_progression_from(&p, &mut s);
-        // état remis au départ : minerais 0, réputation nulle, extensions 0,
+        // état remis au départ : crédits 0, réputation nulle, extensions 0,
         // seul REALISTIC (gratuit) débloqué, mode de départ
-        assert_eq!(s.resources.minerals, 0);
+        assert_eq!(s.resources.credits, 0);
         assert_eq!(s.resources.reputation, 0.0);
         assert_eq!(s.resources.fuel_level, 0);
         assert_eq!(s.unlocked_modes, [false, false, false, true]);
@@ -2882,7 +3025,7 @@ mod tests {
         assert_eq!(get_i32_from(&p, "moving_mode"), None);
         let mut fresh = progression_state();
         load_progression_from(&p, &mut fresh);
-        assert_eq!(fresh.resources.minerals, 0);
+        assert_eq!(fresh.resources.credits, 0);
         assert_eq!(fresh.unlocked_modes, [false, false, false, true]);
         let _ = std::fs::remove_file(&p);
     }
@@ -2890,13 +3033,13 @@ mod tests {
     #[test]
     fn refuel_spent_minerals_are_persisted() {
         // un ravitaillement (carburant + munitions achetés au magasin)
-        // déduit des minerais : la sauvegarde doit conserver la valeur
+        // déduit des crédits : la sauvegarde doit conserver la valeur
         // déduite - pas de ravitaillement gratuit au lancement suivant (le
         // jeu écrit la progression après chaque achat)
         let p = temp_path("refuel.cfg");
         let _ = std::fs::remove_file(&p);
         let mut s = progression_state();
-        s.resources.minerals = 100;
+        s.resources.credits = 100;
         s.resources.fuel = 50.0;
         s.resources.weapon_ammo[0] = 10;
         let cost_fuel = match purchase_fuel(&mut s) {
@@ -2908,12 +3051,12 @@ mod tests {
             _ => panic!("munitions attendues"),
         };
         let cost = cost_fuel + cost_ammo;
-        assert_eq!(s.resources.minerals, 100 - cost);
+        assert_eq!(s.resources.credits, 100 - cost);
         save_progression_to(&p, &s).unwrap();
 
         let mut fresh = progression_state();
         load_progression_from(&p, &mut fresh);
-        assert_eq!(fresh.resources.minerals, 100 - cost); // dépense conservée
+        assert_eq!(fresh.resources.credits, 100 - cost); // dépense conservée
         let _ = std::fs::remove_file(&p);
     }
 
@@ -2924,15 +3067,30 @@ mod tests {
         let p = temp_path("freeplay.cfg");
         let _ = std::fs::remove_file(&p);
         let mut prog = progression_state();
-        prog.resources.minerals = 77;
+        prog.resources.credits = 77;
         save_progression_to(&p, &prog).unwrap();
 
         let free = GameState::new(); // jeu libre
         save_progression_to(&p, &free).unwrap();
         assert_eq!(get_i32_from(&p, "scenario"), Some(0));
-        assert_eq!(get_i32_from(&p, "prog_minerals"), Some(77)); // conservés
+        assert_eq!(get_i32_from(&p, "prog_credits"), Some(77)); // conservés
         // seul REALISTIC est débloqué au départ (INERTIAL est payant)
         assert_eq!(get_i32_from(&p, "prog_modes"), Some(0b1000));
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn load_legacy_prog_minerals_key_as_credits() {
+        // compatibilité ascendante : une sauvegarde créée avant le renommage
+        // (clé `prog_minerals`) doit charger ses crédits malgré tout
+        let p = temp_path("legacycredits.cfg");
+        let _ = std::fs::remove_file(&p);
+        set_i32_to(&p, "scenario", 1).unwrap();
+        set_i32_to(&p, "prog_minerals", 55).unwrap(); // ancienne clé seule
+
+        let mut fresh = progression_state();
+        load_progression_from(&p, &mut fresh);
+        assert_eq!(fresh.resources.credits, 55);
         let _ = std::fs::remove_file(&p);
     }
 
@@ -2951,9 +3109,9 @@ mod tests {
         // clés existent mais aux valeurs du départ - toujours pas de sauvegarde
         save_progression_to(&p, &fresh).unwrap();
         assert!(!has_saved_progression_from(&p, &fresh));
-        // joué (minerais gagnés) : la sauvegarde est réelle
+        // joué (crédits gagnés) : la sauvegarde est réelle
         let mut played = fresh.clone();
-        played.resources.minerals = 42;
+        played.resources.credits = 42;
         save_progression_to(&p, &played).unwrap();
         assert!(has_saved_progression_from(&p, &played));
         // détectée aussi sur l'état restauré (ex écran titre après relance)
@@ -3015,12 +3173,12 @@ mod tests {
         let p = temp_path("freeload.cfg");
         let _ = std::fs::remove_file(&p);
         let mut prog = progression_state();
-        prog.resources.minerals = 55;
+        prog.resources.credits = 55;
         save_progression_to(&p, &prog).unwrap();
 
         let mut free = GameState::new();
         load_progression_from(&p, &mut free);
-        assert_eq!(free.resources.minerals, 0);
+        assert_eq!(free.resources.credits, 0);
         assert!(free.unlocked_modes.iter().all(|&u| u));
         let _ = std::fs::remove_file(&p);
     }
@@ -3045,11 +3203,11 @@ mod tests {
     #[test]
     fn survival_save_does_not_clobber_progression() {
         // enregistrer une partie Survival écrit ses clés (vies, bouclier)
-        // sans réécrire celles de Progression (minerais, modes, réputation)
+        // sans réécrire celles de Progression (crédits, modes, réputation)
         let p = temp_path("survival.cfg");
         let _ = std::fs::remove_file(&p);
         let mut prog = progression_state();
-        prog.resources.minerals = 33;
+        prog.resources.credits = 33;
         save_progression_to(&p, &prog).unwrap();
 
         let mut surv = survival_state();
@@ -3059,7 +3217,7 @@ mod tests {
         assert_eq!(get_i32_from(&p, "scenario"), Some(2));
         assert_eq!(get_i32_from(&p, "prog_lives"), Some(2));
         assert_eq!(get_i32_from(&p, "prog_shield"), Some(15)); // 1,5 × 10
-        assert_eq!(get_i32_from(&p, "prog_minerals"), Some(33)); // conservés
+        assert_eq!(get_i32_from(&p, "prog_credits"), Some(33)); // conservés
         let _ = std::fs::remove_file(&p);
     }
 
@@ -3152,18 +3310,18 @@ mod tests {
 
     #[test]
     fn buy_upgrade_purchases_and_extends_capacity() {
-        // l'extension de réservoir paie en minerais, monte le niveau et le
+        // l'extension de réservoir paie en crédits, monte le niveau et le
         // réservoir repart plein à la nouvelle capacité ; la soute s'agrandit
         // immédiatement
         let mut s = progression_state();
-        s.resources.minerals = 50;
+        s.resources.credits = 50;
         assert_eq!(fuel_capacity(&s), 100.0);
         assert_eq!(
             buy_upgrade(&mut s, UpgradeTrackId::Fuel),
             UpgradeOutcome::Purchased(10)
         );
         assert_eq!(s.resources.fuel_level, 1);
-        assert_eq!(s.resources.minerals, 40);
+        assert_eq!(s.resources.credits, 40);
         assert_eq!(fuel_capacity(&s), 130.0);
         assert_eq!(s.resources.fuel, 130.0); // plein à la nouvelle capacité
         assert!(s.message_queue.contains("PURCHASED"));
@@ -3176,18 +3334,18 @@ mod tests {
 
     #[test]
     fn buy_upgrade_refuses_without_minerals_and_maxes_out() {
-        // pas assez de minerais : refus, niveau et minerais inchangés ; au
+        // pas assez de crédits : refus, niveau et crédits inchangés ; au
         // niveau max : plus d'achat ; hors scénario à économie : pas d'atelier
         let mut s = progression_state();
-        s.resources.minerals = 5;
+        s.resources.credits = 5;
         assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Fuel), UpgradeOutcome::Insufficient(10));
         assert_eq!(s.resources.fuel_level, 0);
-        assert!(s.message_queue.contains("NOT ENOUGH MINERALS"));
+        assert!(s.message_queue.contains("NOT ENOUGH CREDITS"));
 
-        s.resources.minerals = 1000;
+        s.resources.credits = 1000;
         s.resources.fuel_level = 3;
         assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Fuel), UpgradeOutcome::Maxed);
-        assert_eq!(s.resources.minerals, 1000);
+        assert_eq!(s.resources.credits, 1000);
 
         let mut f = GameState::new(); // jeu libre : pas d'atelier
         assert_eq!(buy_upgrade(&mut f, UpgradeTrackId::Fuel), UpgradeOutcome::Maxed);
@@ -3239,7 +3397,7 @@ mod tests {
         s.resources.reputation = 50.0;
         s.bullets_fired = 10;
         s.bullets_lost = 0; // 30 % de remise
-        s.resources.minerals = 1000;
+        s.resources.credits = 1000;
         let outcome = buy_upgrade(&mut s, UpgradeTrackId::Ammo);
         assert_eq!(outcome, UpgradeOutcome::Purchased(7)); // 10 × 70 % = 7
     }
@@ -3261,13 +3419,13 @@ mod tests {
         // rang ACE (−15 %) : la remise s'applique à tous les coûts de la
         // station - atelier, ravitaillement et déblocage des modes
         let mut s = progression_state();
-        s.resources.minerals = 1000;
+        s.resources.credits = 1000;
         s.resources.reputation = 50.0;
 
         // atelier : extension de réservoir 10 → 8 (10 × 85 % = 8,5 → 8), et
         // l'atelier affiche le prix remisé
         assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Fuel), UpgradeOutcome::Purchased(8));
-        assert_eq!(s.resources.minerals, 992);
+        assert_eq!(s.resources.credits, 992);
         let line = upgrade_line(&s, UpgradeTrackId::Ammo);
         assert_eq!(line.next.map(|u| u.cost), Some(8), "prix affiché remisé (10 → 8)");
 
@@ -3280,15 +3438,15 @@ mod tests {
         assert_eq!(ammo_refill_cost(&s), 5); // 6 × 85 % = 5,1 → 5
         assert_eq!(purchase_fuel(&mut s), SupplyOutcome::Purchased(11));
         assert_eq!(purchase_ammo(&mut s), SupplyOutcome::Purchased(5));
-        assert_eq!(s.resources.minerals, 976);
+        assert_eq!(s.resources.credits, 976);
 
         // modes payants : 4 WAYS 30 → 25 (tarif de base et prix remisé
         // exposés pour l'affichage du magasin)
         assert_eq!(locked_cost(&s, MOVING_MODE_4_WAYS), Some(25));
         assert_eq!(mode_unlock_prices(&s, MOVING_MODE_4_WAYS), Some((30, 25)));
-        s.resources.minerals = 1000;
+        s.resources.credits = 1000;
         assert!(try_select_mode(&mut s, MOVING_MODE_4_WAYS));
-        assert_eq!(s.resources.minerals, 975);
+        assert_eq!(s.resources.credits, 975);
     }
 
     #[test]
@@ -3297,7 +3455,7 @@ mod tests {
         // remplit la nouvelle capacité (et le prix est recalculé sur ce
         // qu'il manque)
         let mut s = progression_state();
-        s.resources.minerals = 200;
+        s.resources.credits = 200;
         assert_eq!(buy_upgrade(&mut s, UpgradeTrackId::Ammo), UpgradeOutcome::Purchased(10));
         assert_eq!(ammo_capacity(&s), 40);
         s.resources.weapon_ammo[0] = 20;
@@ -3316,7 +3474,7 @@ mod tests {
         let p = temp_path("upgrades.cfg");
         let _ = std::fs::remove_file(&p);
         let mut s = progression_state();
-        s.resources.minerals = 77;
+        s.resources.credits = 77;
         s.resources.fuel_level = 2;
         s.resources.ammo_level = 1;
         s.resources.cargo_level = 1;
@@ -3333,7 +3491,7 @@ mod tests {
         assert_eq!(t.resources.fuel, 170.0); // 100 + 30 + 40
         assert_eq!(total_ammo(&t), 40); // 30 + 10
         assert_eq!(t.player.cargo_size, 7); // 5 + 2
-        assert_eq!(t.resources.minerals, 77);
+        assert_eq!(t.resources.credits, 77);
 
         std::fs::write(&p, "prog_up_fuel=99\n").unwrap();
         let mut u = progression_state();

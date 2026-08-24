@@ -13,6 +13,7 @@ use macroquad::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::config::{VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
+use crate::font::{draw_text, measure_text};
 
 /// Interface tactile active ? (case TOUCH UI de l'écran de paramétrage,
 /// persistée - clé `touch_ui`, voir `main.rs` et `handle_settings_input`).
@@ -143,9 +144,9 @@ fn rgba(r: f32, g: f32, b: f32, a: f32) -> Color {
     Color::new(r, g, b, a)
 }
 
-/// Petit triangle directionnel (▲/▼/◀/▶ - la police par défaut n'a pas ces
-/// glyphes, ils sont dessinés) : pointe à `len` px de `center` le long de
-/// `dir` (vecteur unitaire), base 16 px en retrait, demi-largeur 6 px.
+/// Petit triangle directionnel (▲/▼/◀/▶ - dessinés plutôt qu'affichés en
+/// texte pour une taille/forme contrôlée) : pointe à `len` px de `center` le
+/// long de `dir` (vecteur unitaire), base 16 px en retrait, demi-largeur 6 px.
 fn draw_arrow(center: Vec2, dir: Vec2, len: f32, color: Color) {
     let tip = center + dir * len;
     let back = center + dir * (len - 16.0);

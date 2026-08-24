@@ -6,13 +6,13 @@ Réimplémentation fidèle du jeu QB64 « Meteors Mining » (première version j
 ## Le jeu
 
 Pilotez votre vaisseau dans un champ de météores, détruisez-les au tir et
-ramassez les gemmes minérales qu'ils laissent derrière eux. Remplissez la
-soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
+ramassez les minerais qu'ils laissent derrière eux. Remplissez la
+soute, puis revenez à la station pour décharger et gagner des crédits.
 
 - **Monde torique** : l'espace se reboucle sur lui-même (3960 × 3540), aucun bord.
 - **Météores destructibles** : 6 à 16 triangles par météore, générés
   procéduralement, avec choc élastique entre eux et débris à chaque impact.
-- **Minage** : les triangles minéraux (or, fer…) laissent des gemmes à ramasser.
+- **Minage** : les triangles minéraux (or, fer…) laissent des minerais à ramasser.
 - **Soute** : 5 éléments maximum - pleine, il faut décharger à la station.
 - **Station** : au lancement (et après respawn) le vaisseau est **à quai**
   au centre de la base, **tenu par 4 liens néon** (mire cachée) ; dès qu'on
@@ -43,13 +43,13 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
 - **Météores en continu** : génération automatique (limite 150) ou à la demande.
 - **Minerais dans les météores** : chaque météore contient une quantité de
   minerai (un par triangle minéralisé - or, fer, eau - au départ, plus un
-  par gemme absorbée). Le minerai n'est **jamais détruit** quand son météore
+  par minerai absorbé). Le minerai n'est **jamais détruit** quand son météore
   l'est : qu'il soit détruit par un **autre météore** ou par un **missile du
-  vaisseau**, ses minerais sont **libérés en gemmes** à sa position. Le seul
-  cas de destruction de minerai : un **missile touche directement la gemme**
-  (elle est détruite, sans nouvelle gemme). Si un **météor percute une
-  gemme**, il l'**absorbe** (elle disparaît, sa quantité de minerai augmente)
-  sans être endommagé - les gemmes qu'il a mangées sont récupérables en le
+  vaisseau**, ses minerais sont **libérés en minerais** à sa position. Le seul
+  cas de destruction de minerai : un **missile touche directement le minerai**
+  (il est détruit, sans nouveau minerai). Si un **météor percute un
+  minerai**, il l'**absorbe** (il disparaît, sa quantité de minerai augmente)
+  sans être endommagé - les minerais qu'il a mangés sont récupérables en le
   détruisant (missile ou collision).
 - **Cosmonaute de secours** : quand le vaisseau est détruit (jeu libre ou
   Progression), le pilote est **éjecté** - un petit **cosmonaute EVA** (le
@@ -65,10 +65,10 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   (flamme animée orange/jaune, vacillante, visible quand il pousse) et des
   **membres animés** : bras et jambes **s'agitent** (bascule autour des
   épaules/hanches) pendant la poussée puis retombent au repos. Il peut
-  **ramasser les gemmes** par proximité (même soute que le vaisseau -
-  déchargée en minerais à la station). Au crash, les minerais collectés
-  sont **rejetés autour** du vaisseau détruit (une gemme par minerai,
-  éparpillée à proximité, soute vidée) - le cosmonaute, ou le vaisseau
+  **ramasser les minerais** par proximité (même soute que le vaisseau -
+  déchargée en crédits à la station). Au crash, les minerais collectés
+  sont **rejetés autour** du vaisseau détruit (un minerai par unité,
+  éparpillé à proximité, soute vidée) - le cosmonaute, ou le vaisseau
   ressuscité en Survival, peut les ramasser à nouveau. Son **seul
   objectif** : **rejoindre la base** - dès qu'il atteint la zone d'accostage au centre de la
   station, la **récupération** s'anime : un **cordon orange** jaillit de
@@ -78,7 +78,7 @@ soute, puis revenez à la station pour décharger et faire réparer le vaisseau.
   au centre de la station, liens attachés** (la caméra glisse de l'anneau
   vers le centre). En Survival, la destruction reste gérée par les
   vies/bouclier (respawn à la station).
-- **Audio** : ambiance, musique, moteur avant/recul, tirs, gemmes et
+- **Audio** : ambiance, musique, moteur avant/recul, tirs, minerais et
   explosions à volume selon la distance au vaisseau.
 
 ## Compilation et lancement
@@ -128,7 +128,7 @@ upx --best --lzma target/release/rust-meteors-mining
 | Shift (gauche ou droit) | Tirer |
 | P | Pause |
 | S | Aide (liste des touches, fermeture au clic sur CLOSE) |
-| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS, volume (barre horizontale cliquable/glissable) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en Progression/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - minerais, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
+| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS, volume (barre horizontale cliquable/glissable) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en Progression/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - crédits, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
 | G | Générer un météore près du vaisseau |
 | A | Activer/désactiver la génération automatique des météores |
 | C | Créer un alien |
@@ -145,7 +145,7 @@ centre de la station passe du rouge au vert avec la vitesse (vert = prêt,
 `DOCK: IN RANGE` au HUD) pour ouvrir la boîte DOCK STATION
 (UNLOAD / SHOP / CLOSE) : UNLOAD décharge
 la soute, SHOP ouvre le **magasin de la station** (section « MOVING MODE » :
-choisir un mode de déplacement, ou le débloquer contre minerais en scénario
+choisir un mode de déplacement, ou le débloquer contre crédits en scénario
 à économie - dans tous les scénarios ; en Progression, s'y ajoutent les
 lignes d'extension de vaisseau et le **ravitaillement** - carburant et
 munitions achetés indépendamment, **à la quantité** : chaque ligne porte un
@@ -165,7 +165,7 @@ Survival (coûts, vies, bouclier, dégâts, rangs) - pour faire ressortir ce
 qui change au basculement ; juste après un changement (N/B/1-3), toute la
 ligne **clignote dans cette couleur** ~1,2 s pour attirer l'œil) et la
 **progression enregistrée** du scénario (`[ SAVE : … ]`,
-minerais/modes/réputation ou vies/bouclier, avec les **valeurs en
+crédits/modes/réputation ou vies/bouclier, avec les **valeurs en
 surbrillance** dans la couleur du scénario elles aussi -
 `scenario::save_summary_segments`)) encapsulent des règles de jeu en
 **données +
@@ -173,18 +173,20 @@ points d'accroche purs** (`src/scenario.rs`) - la boucle (`game.rs`) ne fait
 qu'appeler des fonctions testables sans macroquad :
 
 - **FREE PLAY** (défaut) - le comportement historique : aucun coût, tous les
-  modes de déplacement disponibles, carburant et munitions illimités.
+  modes de déplacement disponibles, carburant et munitions illimités, et le
+  **radar** (minimap globale des météores) **allumé par défaut** - il ne
+  s'achète qu'en scénario à économie (Progression / custom).
 - **PROGRESSION** - l'exemple d'économie :
   - le vaisseau démarre gratuitement en mode **REALISTIC**, identique à
     **INERTIAL** pour la poussée vectorielle ; ses propulseurs latéraux
     accélèrent progressivement la rotation, le relâchement la conserve et la
     poussée opposée permet de la compenser jusqu'à l'arrêt ; seuls les modes
     dont le coût configuré (outil) est nul sont débloqués au départ
-    (REALISTIC par défaut) ; les modes payants - **INERTIAL** (15 minerais),
+    (REALISTIC par défaut) ; les modes payants - **INERTIAL** (15 crédits),
     **4 WAYS** (30) et **DIRECTIONAL** (45) - se débloquent dans le
     **magasin de la station** (bouton SHOP de la boîte DOCK STATION) en
-    payant des minerais (coût affiché à côté du mode) ;
-  - les minerais s'obtiennent en minant : chaque gemme déchargée à la station
+    payant des crédits (coût affiché à côté du mode) ;
+  - les crédits s'obtiennent en minant : chaque minerai déchargé à la station
     vaut selon son élément (or 5, fer 3, eau 2) ;
   - **carburant** et **munitions** sont payants : chaque poussée consomme du
     carburant (moteur éteint, plus de poussée - rotations libres), chaque tir
@@ -192,33 +194,38 @@ qu'appeler des fonctions testables sans macroquad :
     RAVITAILLEMENT), **indépendamment** et **à la quantité** : un **curseur**
     par ressource (glisser à la souris, molette = ± un paquet) choisit les
     unités à acheter - tout achat paie au moins un paquet (10 carburant = 1
-    minerai ; les munitions par **paquet** propre à chaque arme, ex 1 minerai
+    crédit ; les munitions par **paquet** propre à chaque arme, ex 1 crédit
     pour 5 munitions, via une ligne AMMO par arme possédée) ; le curseur
-    part d'office sur le **maximum achetable** avec les minerais courants,
+    part d'office sur le **maximum achetable** avec les crédits courants,
     pour ne jamais rester bloqué faute d'un plein complet - plus d'achat
     automatique au déchargement ;
   - les **armes du catalogue** s'achètent au magasin (bouton SHOP) : une
-    arme payante (coût en minerais, 0 = arme de base toujours équipée) ne
+    arme payante (coût en crédits, 0 = arme de base toujours équipée) ne
     tire et ne s'affiche sur le vaisseau qu'une fois achetée ; chaque arme a
     son propre stock de munitions (un tir consomme 1 munition de chaque arme
     qui tire ; une arme à court de munitions s'arrête, les autres
     continuent) et son propre paquet de ravitaillement ;
   - **le magasin** (bouton SHOP de la boîte DOCK STATION - la place de
-    marché/atelier) permet d'acheter contre minerais des extensions
+    marché/atelier) permet d'acheter contre crédits des extensions
     de vaisseau, persistées avec la progression : **réservoir** (100 de base,
     3 extensions de +50 → 250 max), **chargeur** (30 de base, 3 extensions
     → 70 max) et **soute** (5 emplacements de base, 2 extensions → 10 max) ;
     à l'achat, le réservoir/chargeur repart plein à la nouvelle capacité et
     la soute s'agrandit immédiatement ; le HUD affiche les capacités courantes
     (`FUEL:50/150 AMMO:20/45`) ;
+  - le **radar de bord** (la minimap globale qui affiche la position des
+    météores et des autres formes sur une carte au centre de l'écran) est
+    **éteint par défaut** : il s'achète au magasin (onglet ÉQUIPEMENT, 20
+    crédits, ligne RADAR sous les armes) et s'allume dès l'achat
+    (persisté avec la progression) ;
   - la **réputation** croît à chaque astéroïde détruit, d'autant plus que la
     précision de tir est bonne (gain × (1 + 2 × précision)) - affichée au HUD
-    avec FUEL / AMMO / MINERALS ; elle débloque des **rangs** (paliers
+    avec FUEL / AMMO / CREDITS ; elle débloque des **rangs** (paliers
     affichés au HUD, ex `REPUTATION:37 (ACE)`) : CADET (0) → PILOT (10) →
     VETERAN (25) → ACE (50), chaque palier franchi est annoncé (« RANK UP:
     PILOT ») ;
 - **SURVIVAL** - preuve que le système s'étend hors de l'économie : ni
-  minerais ni verrous (tous les modes disponibles), mais le vaisseau a des
+  crédits ni verrous (tous les modes disponibles), mais le vaisseau a des
   **vies** (3) et un **bouclier** qui absorbe les impacts (3 points) ; quand
   il est percé, l'impact suivant détruit le vaisseau - une vie est perdue et
   il respawne à la station (bouclier rechargé + **2 s d'invulnérabilité**, le
@@ -232,13 +239,14 @@ Les coûts, capacités et formules sont des constantes (`FREE_PLAY_SCENARIO`,
 nouvelle constante + les accroches qu'il lui faut. La progression d'une
 partie est **persistée** dans le fichier de config (clés `scenario` +
 `prog_*`) et restaurée au lancement suivant (le dernier scénario joué reprend
-automatiquement) : minerais, modes payés et réputation en Progression
-(`prog_minerals`, `prog_modes`, `prog_reputation`), **vies et bouclier en
+automatiquement) : crédits, modes payés et réputation en Progression
+(`prog_credits`, `prog_modes`, `prog_reputation`), **vies et bouclier en
 Survival** (`prog_lives`, `prog_shield` - bornés aux capacités du scénario,
 une sauvegarde à 0 vie repart au départ complet) ; chaque scénario n'écrit
 que ses propres clés, sans écraser la sauvegarde de l'autre. Le carburant et
 les munitions (par arme), eux, repartent pleins à chaque lancement ; les
-armes achetées, elles, sont persistées (`prog_weapons`).
+armes achetées, elles, sont persistées (`prog_weapons`), de même que le
+**radar de bord** (`prog_radar`).
 
 ## Outil de gestion : la place de marché
 
@@ -257,13 +265,13 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
 
 - **éditer les trois lignes d'amélioration** (réservoir `FUEL TANK`, chargeur
   `MAGAZINE`, soute `CARGO BAY`) : libellé Rust, capacité de base et
-  extensions successives (nom, coût en minerais, bonus de capacité), avec
+  extensions successives (nom, coût en crédits, bonus de capacité), avec
   ajout / suppression / réordonnancement des extensions ;
 - **suivre la mise au point en direct** : pour chaque ligne, la progression
-  des capacités par niveau, le coût cumulé et l'efficacité (minerais par
+  des capacités par niveau, le coût cumulé et l'efficacité (crédits par
   unité de bonus) ; en synthèse, le coût total pour tout maxer (converti en
-  gemmes d'or/fer/eau à ramasser) et les capacités finales ;
-- **éditer l'économie de la station** : valeur des gemmes en minerais
+  minerais d'or/fer/eau à ramasser) et les capacités finales ;
+- **éditer l'économie de la station** : valeur des minerais en crédits
   (`ELEMENT_VALUES` : or/fer/eau), modes de déplacement (`MOVING_MODES` :
   nom, description et coût de déblocage de chaque mode, vendus au magasin de
   la station - `MODE_COSTS` en est dérivé ; seuls les modes à coût nul
@@ -432,6 +440,13 @@ du serveur, y est masquée).
   étirée, letterbox) ou **natif** (rendu direct à la définition réelle de
   l'écran) ; la bascule EWMH passe par `src/x11.rs` (ClientMessage
   `_NET_WM_STATE` direct, sans outil externe).
+- **Police embarquée** (`src/font.rs`) : DejaVu Sans Mono est intégrée au
+  binaire (`include_bytes!`, licences dans
+  `assets/fonts/LICENSE-DejaVuSansMono.txt`) - aucune dépendance aux polices
+  du système, portable sur toutes les plateformes. Elle est rendue à
+  l'échelle 0.831 pour conserver la grille 8 px du HUD et les lignes de
+  16 px, et apporte un jeu de caractères étendu (Latin-1 accentué, `→`, `✓`
+  …) que la police par défaut de macroquad ne possède pas.
 - Réglages persistants (`meteors_mining.cfg`, dossier de configuration
   utilisateur - norme XDG, ex `~/.config/meteors-mining/meteors_mining.cfg`) :
   mode de déplacement (choisi au magasin de la station, bouton SHOP de la
@@ -462,7 +477,7 @@ Une **application dédiée à la création de scénarios et d'enchaînements d'o
 
 - **Édition visuelle en graphe DAG** : création, glisser-déplacer de nœuds d'objectifs et tracé interactif de liens de dépendances (flèches SVG Bézier) entre prérequis et étapes suivantes ;
 - **Détection automatique de cycles & validation** : vérification en temps réel de l'acyclicité du graphe (algorithme DFS), identification des nœuds orphelins et validation des identifiants ;
-- **Inspecteur d'objectifs complet** : paramétrage fin des conditions de réussite (*Détruire météores, Collecter minerais, Atteindre réputation, Accostages station, Amélioration atelier, Mode de vol, Survie chronométrée, Tir de précision*) et des récompenses associées (*Minerais, Réputation, Carburant, Munitions, Victoire*) ;
+- **Inspecteur d'objectifs complet** : paramétrage fin des conditions de réussite (*Détruire météores, Collecter crédits, Atteindre réputation, Accostages station, Amélioration atelier, Mode de vol, Survie chronométrée, Tir de précision*) et des récompenses associées (*Crédits, Réputation, Carburant, Munitions, Victoire*) ;
 - **Double vue** : vue Graphe DAG interactif + vue Séquence / Chronologie des étapes ;
 - **Export Rust autonome & Persistance JSON** : enregistrement des scénarios au format `.scenario.json` dans le dossier `scenarios/` et génération du module Rust `src/scenario_objectives.rs` compilé directement par `cargo test` / `cargo run` ;
 - **Lancement rapide** :

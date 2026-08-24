@@ -34,6 +34,7 @@
 //! Listes vides = tous les plans (repli sûr).
 
 use serde::Deserialize;
+use std::sync::OnceLock;
 
 use crate::config::{argb32, PLAYER_INDEX, TEXTURE_NONE, WHOIAM_PLAYER};
 use crate::geom::{Point, Triangle};
@@ -144,9 +145,11 @@ fn rgba_to_argb(rgba: [f32; 4]) -> u32 {
     argb32(byte(rgba[3]), byte(rgba[0]), byte(rgba[1]), byte(rgba[2]))
 }
 
-/// Charge le fichier mesh embarqué (une fois, à chaque construction).
-fn vaisseau_file() -> VaisseauFile {
-    serde_json::from_str(VAISSEAU_JSON).expect("mesh du vaisseau : JSON invalide")
+/// Charge le fichier mesh embarqué (une seule fois, en cache `OnceLock`).
+fn vaisseau_file() -> &'static VaisseauFile {
+    static VAISSEAU_FILE: OnceLock<VaisseauFile> = OnceLock::new();
+    VAISSEAU_FILE
+        .get_or_init(|| serde_json::from_str(VAISSEAU_JSON).expect("mesh du vaisseau : JSON invalide"))
 }
 
 /// Parse un mesh « meshes-designer » embarqué (arme ou munition du catalogue
@@ -366,6 +369,73 @@ fn vaisseau_weapons_with(
             (*w, local)
         })
         .collect()
+}
+
+/// Un triangle d'**aperçu d'arme** (magasin de la station, onglet
+/// ÉQUIPEMENT) : trois sommets en **coordonnées locales du vaisseau**
+/// (position 0,0, orientation 0 - l'arme posée sur son emplacement) et la
+/// couleur ARGB de la face.
+pub struct WeaponPreviewTriangle {
+    pub a: Point,
+    pub b: Point,
+    pub c: Point,
+    pub color: u32,
+}
+
+/// Meshes d'aperçu du catalogue d'armes, parsés **une seule fois** (le
+/// magasin affiche l'aperçu à chaque frame - pas de re-parsing JSON en
+/// boucle). Chaque arme : ses triangles locaux (`WeaponPreviewTriangle`),
+/// construits comme sur le vaisseau (`write_weapon`).
+static WEAPON_PREVIEWS: OnceLock<Vec<Vec<WeaponPreviewTriangle>>> = OnceLock::new();
+
+fn weapon_previews() -> &'static [Vec<WeaponPreviewTriangle>] {
+    WEAPON_PREVIEWS.get_or_init(|| {
+        vaisseau_weapons()
+            .iter()
+            .map(|(weapon, spawn)| build_weapon_preview(weapon, *spawn))
+            .collect()
+    })
+}
+
+/// Triangles d'aperçu d'une arme du catalogue (index dans `VAISSEAU_WEAPONS`)
+/// en coordonnées locales du vaisseau - `None` hors catalogue (repli sûr).
+pub fn weapon_preview_triangles(index: usize) -> Option<&'static [WeaponPreviewTriangle]> {
+    weapon_previews().get(index).map(|t| t.as_slice())
+}
+
+/// Construit les triangles d'aperçu d'une arme (même transformation que
+/// `write_weapon`) : échelle `weapon.scale`, rotation de
+/// `−weapon.orientation_degrees` autour du centre de la boîte englobante,
+/// axe y retourné, puis pivot de l'arme posé sur `spawn` (point local).
+fn build_weapon_preview(weapon: &VaisseauWeapon, spawn: Point) -> Vec<WeaponPreviewTriangle> {
+    let file = parse_mesh(weapon.mesh);
+    let comp = vec![true; file.planes.len()]; // toute l'arme visible
+    let (pivot, pt) = mesh_transform(
+        &file,
+        &comp,
+        weapon.scale,
+        weapon.orientation_degrees,
+        Point::new(50.0, 50.0),
+    );
+    // translation : le pivot de l'arme posé sur l'emplacement
+    let dx = spawn.x - pivot.x;
+    let dy = spawn.y - pivot.y;
+    let mut out = Vec::new();
+    for plane in &file.planes {
+        for face in &plane.faces {
+            let [i, j, l] = face.v;
+            let p1 = pt(plane.verts[i]);
+            let p2 = pt(plane.verts[j]);
+            let p3 = pt(plane.verts[l]);
+            out.push(WeaponPreviewTriangle {
+                a: Point::new(p1.x + dx, p1.y + dy),
+                b: Point::new(p2.x + dx, p2.y + dy),
+                c: Point::new(p3.x + dx, p3.y + dy),
+                color: rgba_to_argb(face.color),
+            });
+        }
+    }
+    out
 }
 
 /// Boîte englobante de la composition (repère de l'éditeur, y vers le haut) :

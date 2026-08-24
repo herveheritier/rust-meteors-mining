@@ -2,7 +2,7 @@
 //!
 //! Portage des fonctions de génération de `meteorsMining.bas` :
 //! `generateShape`, `createShape`, `createAlien`, `createStation`,
-//! `createGem`, `fireBullet` et `prepare`.
+//! `createMineral`, `fireBullet` et `prepare`.
 
 use rand::Rng;
 use std::f64::consts::TAU;
@@ -188,7 +188,7 @@ pub fn create_shape(
     shape.rotation = 0.01 - 0.02 * rng.gen::<f64>();
     shape.texture = TEXTURE_METEOR;
     // minerais contenus : un par triangle minéralisé (or/fer/eau) - la
-    // quantité libérée en gemmes si le météore est détruit par la collision
+    // quantité libérée en minerais si le météore est détruit par la collision
     // d'un autre météore (voir `release_meteor_minerals`)
     shape.minerals = (shape.first_triangle..=shape.last_triangle)
         .filter(|&i| triangles[i].element > 0)
@@ -199,10 +199,10 @@ pub fn create_shape(
 }
 
 /// Libère les minerais d'un météore détruit par la collision d'un autre
-/// météore : une gemme par unité de minerai, à la position du météore (ex
-/// `createGem` en boucle). Appelé par `game.rs` quand un météore meurt sous
+/// météore : un minerai par unité de minerai, à la position du météore (ex
+/// `createMineral` en boucle). Appelé par `game.rs` quand un météore meurt sous
 /// un autre météore - le minerai n'est alors pas perdu (les triangles
-/// minéralisés détruits par collision ne donnent pas de gemme, contrairement
+/// minéralisés détruits par collision ne donnent pas de minerai, contrairement
 /// à ceux détruits par une balle).
 pub fn release_meteor_minerals(
     shapes: &mut Vec<Shape>,
@@ -218,16 +218,16 @@ pub fn release_meteor_minerals(
     shapes[meteor_index].minerals = 0;
     let center = shapes[meteor_index].center;
     for _ in 0..minerals {
-        // une gemme par unité de minerai, à la position du météore : on
+        // un minerai par unité de minerai, à la position du météore : on
         // fabrique un triangle source factice (élément aléatoire) pour
-        // réutiliser `create_gem` - `center = centre du météore` fait
-        // tomber la gemme sur la position du météore (rotation autour de
+        // réutiliser `create_mineral` - `center = centre du météore` fait
+        // tomber le minerai sur la position du météore (rotation autour de
         // lui-même = lui-même)
         let mut source = Triangle::default();
         source.element = 1 + (rng.gen::<f64>() * 3.0) as i32; // 1..=3 (or/fer/eau)
         source.shape_index = meteor_index as i32;
         source.center = center;
-        create_gem(shapes, triangles, elements, &source, rng);
+        create_mineral(shapes, triangles, elements, &source, rng);
     }
 }
 
@@ -280,8 +280,8 @@ pub fn create_station(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
     // (SAT) qui décide de la collision avec la base.
 }
 
-/// Crée une gemme à partir d'un triangle détruit (ex `createGem`).
-pub fn create_gem(
+/// Crée un minerai à partir d.un triangle détruit (ex `createMineral`).
+pub fn create_mineral(
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
     elements: &[Element],
@@ -289,18 +289,18 @@ pub fn create_gem(
     rng: &mut impl Rng,
 ) {
     let mut shape = Shape::default();
-    let _idx = meshes_to_shape(&mut shape, shapes, triangles, GEM_MESH);
+    let _idx = meshes_to_shape(&mut shape, shapes, triangles, MINERAL_MESH);
     for i in shape.first_triangle..=shape.last_triangle {
         triangles[i].element = source_triangle.element;
     }
-    shape.who_i_am = WHOIAM_GEM;
+    shape.who_i_am = WHOIAM_MINERAL;
     shape.is_collider = true;
     shape.element = source_triangle.element;
-    // gemme libérée par un météore détruit : reste absorbable par un autre
+    // minerai libéré par un météore détruit : reste absorbable par un autre
     // météore (rejette explicitement le drapeau - le slot peut être réutilisé)
     shape.ejected_cargo = false;
     if shape.element < 1 || shape.element as usize >= elements.len() {
-        eprintln!("createGem: element hors limites: {}", shape.element);
+        eprintln!("createMineral: element hors limites: {}", shape.element);
     } else {
         shape.shape_color = elements[shape.element as usize].color;
     }
@@ -324,11 +324,11 @@ pub fn create_gem(
     shapes[id] = shape;
 }
 
-/// Crée une gemme d'élément donné à une **position imposée** (ex éjection de
-/// la soute du vaisseau détruit - `eject_cargo_gems`) : même mesh, même
-/// élément et même couleur qu'`create_gem`, mais position, direction et
+/// Crée un minerai d.élément donné à une **position imposée** (ex éjection de
+/// la soute du vaisseau détruit - `eject_cargo_minerals`) : même mesh, même
+/// élément et même couleur qu'`create_mineral`, mais position, direction et
 /// vitesse données (au lieu d'être dérivées du triangle source).
-fn create_gem_at(
+fn create_mineral_at(
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
     elements: &[Element],
@@ -338,18 +338,18 @@ fn create_gem_at(
     velocity: f64,
 ) {
     let mut shape = Shape::default();
-    let _idx = meshes_to_shape(&mut shape, shapes, triangles, GEM_MESH);
+    let _idx = meshes_to_shape(&mut shape, shapes, triangles, MINERAL_MESH);
     for i in shape.first_triangle..=shape.last_triangle {
         triangles[i].element = element;
     }
-    shape.who_i_am = WHOIAM_GEM;
+    shape.who_i_am = WHOIAM_MINERAL;
     shape.is_collider = true;
     shape.element = element;
-    // gemme de soute (rejetée au crash) : les météores ne l'absorbent pas -
-    // elle doit rester ramassable par le cosmonaute / le vaisseau ressuscité
+    // minerai de soute (rejeté au crash) : les météores ne l'absorbent pas -
+    // il doit rester ramassable par le cosmonaute / le vaisseau ressuscité
     shape.ejected_cargo = true;
     if element < 1 || element as usize >= elements.len() {
-        eprintln!("createGem: element hors limites: {}", element);
+        eprintln!("createMineral: element hors limites: {}", element);
     } else {
         shape.shape_color = elements[element as usize].color;
     }
@@ -366,14 +366,14 @@ fn create_gem_at(
 }
 
 /// Le vaisseau vient d'être détruit : les minerais collectés dans la soute
-/// sont **rejetés autour** du crash - une gemme par minerai, éparpillée dans
+/// sont **rejetés autour** du crash - un minerai par unité, éparpillée dans
 /// un cercle autour du vaisseau détruit (rayon `CARGO_EJECT_SPREAD`) avec une
 /// petite vitesse de dérive aléatoire - et la soute est vidée. Le cosmonaute
 /// EVA (jeu libre/Progression) ou le vaisseau ressuscité (Survival) peuvent
 /// les ramasser à nouveau : le minerai n'est pas perdu avec le vaisseau.
 /// Sans effet quand la soute est vide. Appelé par `game.rs` quand le
 /// vaisseau meurt (tous scénarios).
-pub fn eject_cargo_gems(
+pub fn eject_cargo_minerals(
     state: &mut GameState,
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
@@ -384,7 +384,7 @@ pub fn eject_cargo_gems(
         return;
     }
     // position du crash : le vaisseau détruit reste sur place (triangles
-    // morts) - les gemmes jaillissent autour de lui
+    // morts) - les minerais jaillissent autour de lui
     let crash = shapes[PLAYER_INDEX].position;
     for e in 1..elements.len() {
         let count = elements[e].count;
@@ -396,7 +396,7 @@ pub fn eject_cargo_gems(
             let ang = rng.gen::<f64>() * TAU;
             let dist = CARGO_EJECT_SPREAD * rng.gen::<f64>();
             let pos = Point::new(crash.x + ang.cos() * dist, crash.y + ang.sin() * dist);
-            create_gem_at(
+            create_mineral_at(
                 shapes,
                 triangles,
                 elements,
@@ -657,7 +657,7 @@ mod tests {
     #[test]
     fn meteor_creation_counts_mineral_triangles_as_minerals() {
         // un météore créé contient un minerai par triangle minéralisé (or,
-        // fer, eau - `element > 0`) : c'est la quantité libérée en gemmes
+        // fer, eau - `element > 0`) : c.est la quantité libérée en minerais
         // quand deux météores se percutent et se détruisent
         let mut rng = seed();
         let mut shapes = Vec::new();
@@ -674,9 +674,9 @@ mod tests {
     }
 
     #[test]
-    fn release_meteor_minerals_spawns_one_gem_per_mineral() {
+    fn release_meteor_minerals_spawns_one_mineral_per_unit() {
         // un météore détruit par un autre météore libère ses minerais : une
-        // gemme par unité, à sa position, et son compteur passe à 0
+        // minerai par unité, à sa position, et son compteur passe à 0
         let mut rng = seed();
         let mut shapes = vec![test_meteor(3)]; // 3 minerais, 3 triangles
         let mut triangles = Vec::new();
@@ -688,19 +688,19 @@ mod tests {
         release_meteor_minerals(&mut shapes, &mut triangles, &elements, 0, &mut rng);
 
         assert_eq!(shapes[0].minerals, 0);
-        let gems = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).count();
-        assert_eq!(gems, 3);
-        // chaque gemme a un élément valide (1..=3) et se trouve près du météore
-        for s in shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM) {
+        let minerals = shapes.iter().filter(|s| s.who_i_am == WHOIAM_MINERAL).count();
+        assert_eq!(minerals, 3);
+        // chaque minerai a un élément valide (1..=3) et se trouve près du météore
+        for s in shapes.iter().filter(|s| s.who_i_am == WHOIAM_MINERAL) {
             assert!((1..=3).contains(&s.element));
             let d = (s.position.x - 0.0).hypot(s.position.y - 0.0);
-            assert!(d < 50.0, "gemme trop loin du météore : {d}");
+            assert!(d < 50.0, "minerai trop loin du météore : {d}");
         }
     }
 
     #[test]
     fn release_meteor_minerals_without_minerals_is_a_noop() {
-        // pas de minerai → aucune gemme, compteur inchangé (rien à libérer)
+        // pas de minerai → aucun minerai, compteur inchangé (rien à libérer)
         let mut rng = seed();
         let mut shapes = vec![test_meteor(0)];
         let mut triangles = Vec::new();
@@ -709,13 +709,13 @@ mod tests {
         release_meteor_minerals(&mut shapes, &mut triangles, &elements, 0, &mut rng);
 
         assert_eq!(shapes[0].minerals, 0);
-        assert!(!shapes.iter().any(|s| s.who_i_am == WHOIAM_GEM));
+        assert!(!shapes.iter().any(|s| s.who_i_am == WHOIAM_MINERAL));
     }
 
     #[test]
-    fn eject_cargo_gems_spawns_one_gem_per_mineral_around_the_crash() {
+    fn eject_cargo_minerals_spawns_one_mineral_per_unit_around_the_crash() {
         // le vaisseau est détruit : les minerais de la soute sont rejetés en
-        // gemmes éparpillées autour du crash et la soute est vidée (le
+        // minerais éparpillés autour du crash et la soute est vidée (le
         // cosmonaute EVA ou le vaisseau ressuscité pourront les ramasser)
         let mut rng = seed();
         // vaisseau joueur (index 0) au point du crash
@@ -731,29 +731,29 @@ mod tests {
         let mut state = GameState::new();
         state.player.cargo_qty = 4;
 
-        eject_cargo_gems(&mut state, &mut shapes, &mut triangles, &mut elements, &mut rng);
+        eject_cargo_minerals(&mut state, &mut shapes, &mut triangles, &mut elements, &mut rng);
 
         assert_eq!(state.player.cargo_qty, 0, "la soute doit être vidée");
         assert!(elements.iter().all(|e| e.count == 0), "les compteurs doivent être remis à zéro");
-        let gems: Vec<&Shape> = shapes.iter().filter(|s| s.who_i_am == WHOIAM_GEM).collect();
-        assert_eq!(gems.len(), 4, "une gemme par minerai de la soute");
-        // répartition par élément conservée (2 or, 1 fer, 1 eau) et gemmes
+        let minerals: Vec<&Shape> = shapes.iter().filter(|s| s.who_i_am == WHOIAM_MINERAL).collect();
+        assert_eq!(minerals.len(), 4, "un minerai par unité de la soute");
+        // répartition par élément conservée (2 or, 1 fer, 1 eau) et minerais
         // éparpillées dans le cercle de rayon CARGO_EJECT_SPREAD autour du crash
         let mut gold = 0;
-        for s in &gems {
-            assert!((1..=3).contains(&s.element), "élément de gemme invalide");
+        for s in &minerals {
+            assert!((1..=3).contains(&s.element), "élément de minerai invalide");
             if s.element == 1 {
                 gold += 1;
             }
             let d = (s.position.x - 100.0).hypot(s.position.y - 100.0);
-            assert!(d < CARGO_EJECT_SPREAD + 1.0, "gemme trop loin du crash : {d}");
+            assert!(d < CARGO_EJECT_SPREAD + 1.0, "minerai trop loin du crash : {d}");
         }
         assert_eq!(gold, 2);
     }
 
     #[test]
-    fn eject_cargo_gems_with_empty_cargo_is_a_noop() {
-        // soute vide → aucune gemme rejetée, rien ne change
+    fn eject_cargo_minerals_with_empty_cargo_is_a_noop() {
+        // soute vide → aucun minerai rejeté, rien ne change
         let mut rng = seed();
         let mut player = Shape::default();
         player.who_i_am = WHOIAM_PLAYER;
@@ -763,10 +763,10 @@ mod tests {
         let mut elements = default_elements();
         let mut state = GameState::new();
 
-        eject_cargo_gems(&mut state, &mut shapes, &mut triangles, &mut elements, &mut rng);
+        eject_cargo_minerals(&mut state, &mut shapes, &mut triangles, &mut elements, &mut rng);
 
         assert_eq!(state.player.cargo_qty, 0);
-        assert!(!shapes.iter().any(|s| s.who_i_am == WHOIAM_GEM));
+        assert!(!shapes.iter().any(|s| s.who_i_am == WHOIAM_MINERAL));
     }
 
     #[test]

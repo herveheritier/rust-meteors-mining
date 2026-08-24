@@ -2,7 +2,7 @@
 //!
 //! Correspondance avec l'original :
 //! - `sh1&`  = mis4.ogg     - tir de balle (`_sndplay` à chaque tir)
-//! - `sh5&`  = gem1.ogg     - ramassage d'une gemme (volume 0.05)
+//! - `sh5&`  = gem1.ogg     - ramassage d.un minerai (volume 0.05)
 //! - `shexp` = exp11..20.ogg - explosion d'un triangle, volume selon la
 //!   distance au vaisseau (`v! = (1 − dist/diag)^3`, un son au hasard)
 //! - `sh6&`  = bruitDeFond.ogg - ambiance en boucle (`_sndloop`)
@@ -19,7 +19,7 @@ use ::rand::Rng;
 /// Sons chargés au démarrage (ex les `_sndopen` de `meteorsMining.bas`).
 pub struct Sounds {
     bullet: Sound,
-    gem: Sound,
+    mineral: Sound,
     explosions: Vec<Sound>,
     engine: Sound,
     reverse: Sound,
@@ -68,7 +68,7 @@ impl Sounds {
 
         Sounds {
             bullet: load(include_bytes!("../assets/mis4.ogg"), "assets/mis4.ogg").await,
-            gem: load(include_bytes!("../assets/gem1.ogg"), "assets/gem1.ogg").await,
+            mineral: load(include_bytes!("../assets/gem1.ogg"), "assets/gem1.ogg").await,
             explosions,
             engine: load(include_bytes!("../assets/fffff.ogg"), "assets/fffff.ogg").await,
             reverse: load(include_bytes!("../assets/fffff.ogg"), "assets/fffff.ogg").await,
@@ -141,10 +141,10 @@ impl Sounds {
         );
     }
 
-    /// Ramassage d'une gemme (ex `_sndplay sh5&`, volume 0.05 × maître).
-    pub fn play_gem(&self) {
+    /// Ramassage d'un minerai (ex `_sndplay sh5&`, volume 0.05 × maître).
+    pub fn play_mineral(&self) {
         audio::play_sound(
-            &self.gem,
+            &self.mineral,
             PlaySoundParams {
                 looped: false,
                 volume: 0.05 * self.volume,

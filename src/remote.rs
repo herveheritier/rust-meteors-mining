@@ -6,7 +6,7 @@
 //!
 //! - `GET /`      - page de contrôle (HTML/JS embarqué, sans fichier externe)
 //! - `POST /cmd`  - commandes `{"up":0|1,"down":..,"left":..,"right":..,"fire":..}`
-//! - `GET /state` - état du jeu en JSON (FPS, carburant, munitions, minerais,
+//! - `GET /state` - état du jeu en JSON (FPS, carburant, munitions, crédits,
 //!                  réputation, vies/bouclier, pause…)
 //!
 //! Le serveur tourne dans un thread dédié (`start`, appelé au lancement par
@@ -43,7 +43,7 @@ pub struct RemoteState {
     pub game_over: bool,
     /// Vaisseau à quai (liens d'accostage attachés).
     pub docked: bool,
-    /// Scénario à économie actif (carburant/munitions/minerais affichés).
+    /// Scénario à économie actif (carburant/munitions/crédits affichés).
     pub economy: bool,
     /// Scénario Survival actif (vies/bouclier affichés).
     pub survival: bool,
@@ -51,7 +51,7 @@ pub struct RemoteState {
     pub fuel_cap: f64,
     pub ammo: i32,
     pub ammo_cap: i32,
-    pub minerals: i32,
+    pub credits: i32,
     pub reputation: i32,
     /// Rang courant du scénario à économie (ex CADET → PILOT → ACE).
     pub rank: Option<&'static str>,
@@ -81,7 +81,7 @@ impl RemoteState {
             fuel_cap: 0.0,
             ammo: 0,
             ammo_cap: 0,
-            minerals: 0,
+            credits: 0,
             reputation: 0,
             rank: None,
             lives: 0,
@@ -221,7 +221,7 @@ fn snapshot(state: &GameState) -> RemoteState {
     s.fuel_cap = crate::scenario::fuel_capacity(state);
     s.ammo = crate::scenario::total_ammo(state);
     s.ammo_cap = crate::scenario::total_ammo_capacity(state);
-    s.minerals = state.resources.minerals;
+    s.credits = state.resources.credits;
     s.reputation = if economy {
         state.resources.reputation as i32
     } else {
@@ -264,7 +264,7 @@ fn state_json_from(s: &RemoteState) -> String {
         "fuel_cap": s.fuel_cap,
         "ammo": s.ammo,
         "ammo_cap": s.ammo_cap,
-        "minerals": s.minerals,
+        "credits": s.credits,
         "reputation": s.reputation,
         "rank": s.rank,
         "lives": s.lives,
@@ -386,7 +386,7 @@ setInterval(async () => {
     if (s.economy) {
       lines.push('FUEL ' + s.fuel.toFixed(0) + '/' + s.fuel_cap +
                  '   AMMO ' + s.ammo + '/' + s.ammo_cap +
-                 '   MIN ' + s.minerals);
+                 '   CR ' + s.credits);
       lines.push('REPUTATION ' + s.reputation + (s.rank ? ' (' + s.rank + ')' : ''));
     } else if (s.survival) {
       lines.push('LIVES ' + s.lives + '   SHIELD ' + s.shield.toFixed(0));

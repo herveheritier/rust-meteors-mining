@@ -643,7 +643,7 @@
   </p>
   <div class="badges">
     <span class="badge">Scénario : <b>PROGRESSION</b></span>
-    <span class="badge" id="badge-monnaie">Monnaie : <b>minerais</b> (or 5, fer 3, eau 2)</span>
+    <span class="badge" id="badge-monnaie">Monnaie : <b>crédits</b> (or 5, fer 3, eau 2)</span>
     <span class="badge">Sauvegarde : <b>automatique</b> (localStorage)</span>
   </div>
 </header>
@@ -811,7 +811,7 @@ const DEFAULT_DATA = {
     // (index MOVING_MODE_* du jeu) - l'export écrit le catalogue dans
     // l'ordre des id, car `MOVING_MODES` est indexé par MOVING_MODE_*. Nom
     // et description s'affichent au magasin de la station (bouton SHOP de la
-    // boîte DOCK STATION), coût de déblocage en minerais (0 = déjà débloqué
+    // boîte DOCK STATION), coût de déblocage en crédits (0 = déjà débloqué
     // au départ - seul REALISTIC est gratuit par défaut ; les autres modes,
     // INERTIAL compris, sont payants s'ils ont un coût).
     modes: [
@@ -820,10 +820,11 @@ const DEFAULT_DATA = {
       { id: 1, name: "4 WAYS", description: "ARROWS PUSH IN CURRENT DIR", cost: 30 },
       { id: 2, name: "DIRECTIONAL", description: "ACCELERATE / BRAKE, TURN L/R", cost: 45 },
     ],
-    fuelPrice: 1, // minerais par pas de ravitaillement
+    fuelPrice: 1, // crédits par pas de ravitaillement
     fuelStep: 10, // unités de carburant par plein facturé
     ammoPrice: 1,
     ammoStep: 5,
+    radarPrice: 20, // RADAR_COST - coût du radar de bord (minimap globale)
   },
   gameplay: {
     // collisions météore / station
@@ -878,8 +879,8 @@ const DEFAULT_DATA = {
     // emplacement de tir (`spawnIndex` dans bulletSpawns - liste contrainte,
     // la position de l'arme sur le vaisseau) et tire sa propre munition
     // (mesh de la munition). Chaque arme porte son **coût d'achat** au magasin
-    // (minerais ; 0 = arme de base, toujours équipée) et le prix/taille de
-    // son **paquet de munitions** (magasin : `ammoPrice` minerais par
+    // (crédits ; 0 = arme de base, toujours équipée) et le prix/taille de
+    // son **paquet de munitions** (magasin : `ammoPrice` crédits par
     // paquet de `ammoPack` munitions, par arme). Toutes les armes possédées
     // tirent ensemble au Shift, chacune tant que son stock n'est pas vide.
     // Vide = tir classique (une balle rouge par emplacement, repli).
@@ -893,8 +894,8 @@ const DEFAULT_DATA = {
       //   ammoAsset: "assets/laser.json", // mesh de la munition
       //   ammoScalePercent: 100,
       //   ammoOrientationDeg: 0,
-      //   cost: 30, // minerais d'achat au magasin (0 = arme de base)
-      //   ammoPrice: 2, // minerais par paquet de munitions
+      //   cost: 30, // crédits d'achat au magasin (0 = arme de base)
+      //   ammoPrice: 2, // crédits par paquet de munitions
       //   ammoPack: 5, // munitions par paquet
       // },
     ],
@@ -1184,7 +1185,7 @@ function trackCard(track) {
 
   card.appendChild(el("p", "desc",
     "Capacité de base + extensions achetées dans l'ordre : " + track.base + " → " + total.max +
-    " " + track.unit + " (max). Coût total : " + total.cost + " minerais."));
+    " " + track.unit + " (max). Coût total : " + total.cost + " crédits."));
 
   // paramètres de la ligne
   const grid = el("div", "field-grid");
@@ -1223,7 +1224,7 @@ function trackCard(track) {
     tdName.appendChild(nameInput);
     tr.appendChild(tdName);
 
-    tr.appendChild(numTd(tier, "cost", "Coût (minerais)", track.id + "-tier-" + i + "-cost"));
+    tr.appendChild(numTd(tier, "cost", "Coût (crédits)", track.id + "-tier-" + i + "-cost"));
     tr.appendChild(numTd(tier, "bonus", "Bonus de capacité", track.id + "-tier-" + i + "-bonus"));
 
     const tdEff = el("td", "num");
@@ -2757,8 +2758,8 @@ function weaponsSection(cfg, opts) {
         meshNumberInput(w, opts.prefix + "-w" + i + "-ammo", "ammoScalePercent", 1, 1000)));
       row.appendChild(field("Munition Orientation (°)", opts.prefix + "-weapon-" + i + "-ammoorient",
         meshNumberInput(w, opts.prefix + "-w" + i + "-ammo", "ammoOrientationDeg", -360, 360)));
-      // économie : coût d'achat de l'arme (minerais, 0 = arme de base) et
-      // paquet de munitions (prix en minerais + taille en munitions) - lus
+      // économie : coût d'achat de l'arme (crédits, 0 = arme de base) et
+      // paquet de munitions (prix en crédits + taille en munitions) - lus
       // par le jeu (magasin de la station, section RAVITAILLEMENT) ;
       // libellés courts pour garder des champs compacts
       row.appendChild(field("Coût d'achat", opts.prefix + "-weapon-" + i + "-cost",
@@ -2959,7 +2960,7 @@ function summaryCard() {
   const totalCost = fuel.cost + ammo.cost + cargo.cost;
   const eco = data.economy;
 
-  // coût total pour tout maxer, converti en gemmes (valeur éditée par ligne)
+  // coût total pour tout maxer, converti en minerais (valeur éditée par ligne)
   const gemDefs = [
     { label: "or", value: eco.gems.gold },
     { label: "fer", value: eco.gems.iron },
@@ -2968,7 +2969,7 @@ function summaryCard() {
   const gemText = gemDefs
     .map(g => {
       const n = Math.ceil(totalCost / g.value);
-      return n + " gemme" + (n > 1 ? "s" : "") + " d'" + g.label;
+      return n + " minerai" + (n > 1 ? "s" : "") + " d'" + g.label;
     })
     .join(" · ");
 
@@ -2977,11 +2978,11 @@ function summaryCard() {
   const fullAmmo = Math.ceil(ammo.max / eco.ammoStep) * eco.ammoPrice;
 
   const items = [
-    { k: "Coût total (tout maxer)", v: totalCost + " minerais", cls: "", sub: gemDefs.length > 0 ? "soit " + gemText : "gemmes sans valeur (0)" },
-    { k: "Réservoir max", v: fuel.max + " unités", cls: "", sub: fuel.count + " extension" + (fuel.count > 1 ? "s" : "") + " · " + fuel.cost + " minerais" },
-    { k: "Chargeur max", v: ammo.max + " munitions", cls: "", sub: ammo.count + " extension" + (ammo.count > 1 ? "s" : "") + " · " + ammo.cost + " minerais" },
-    { k: "Soute max", v: cargo.max + " emplacements", cls: "orange", sub: cargo.count + " extension" + (cargo.count > 1 ? "s" : "") + " · " + cargo.cost + " minerais" },
-    { k: "Plein complet (max)", v: (fullFuel + fullAmmo) + " minerais", cls: "", sub: "carburant " + fullFuel + " + munitions " + fullAmmo + " · " + eco.fuelPrice + " m/" + eco.fuelStep + " u, " + eco.ammoPrice + " m/" + eco.ammoStep + " mun." },
+    { k: "Coût total (tout maxer)", v: totalCost + " crédits", cls: "", sub: gemDefs.length > 0 ? "soit " + gemText : "minerais sans valeur (0)" },
+    { k: "Réservoir max", v: fuel.max + " unités", cls: "", sub: fuel.count + " extension" + (fuel.count > 1 ? "s" : "") + " · " + fuel.cost + " crédits" },
+    { k: "Chargeur max", v: ammo.max + " munitions", cls: "", sub: ammo.count + " extension" + (ammo.count > 1 ? "s" : "") + " · " + ammo.cost + " crédits" },
+    { k: "Soute max", v: cargo.max + " emplacements", cls: "orange", sub: cargo.count + " extension" + (cargo.count > 1 ? "s" : "") + " · " + cargo.cost + " crédits" },
+    { k: "Plein complet (max)", v: (fullFuel + fullAmmo) + " crédits", cls: "", sub: "carburant " + fullFuel + " + munitions " + fullAmmo + " · " + eco.fuelPrice + " c/" + eco.fuelStep + " u, " + eco.ammoPrice + " c/" + eco.ammoStep + " mun." },
   ];
   // coût pour tout maxer avec la remise de réputation de chaque rang - la
   // précision de tir amplifie la remise (jusqu'à ×(1 + poids) à 100 %)
@@ -2992,9 +2993,9 @@ function summaryCard() {
     const discountedMax = discountedCost(totalCost, boosted);
     items.push({
       k: "Maxer à " + r.name + " (−" + r.discountPercent + " %)",
-      v: discounted + " minerais",
+      v: discounted + " crédits",
       cls: r.discountPercent > 0 ? "orange" : "",
-      sub: "seuil " + r.threshold + " · économie " + (totalCost - discounted) + " minerais" +
+      sub: "seuil " + r.threshold + " · économie " + (totalCost - discounted) + " crédits" +
         (r.discountPercent > 0 && boosted > r.discountPercent
           ? " · 100 % de précision → −" + boosted + " % (" + discountedMax + ")"
           : ""),
@@ -3044,15 +3045,15 @@ function economyCard() {
   const intSetter = (obj, key) => v => { obj[key] = int(v); };
   const floatSetter = (obj, key) => v => { obj[key] = pos(v); };
 
-  // valeur des gemmes (minerais par gemme déchargée à la station)
+  // valeur des minerais (crédits par minerai déchargé à la station)
   const gems = el("div", "eco-group");
-  gems.appendChild(el("h4", "", "Valeur des gemmes (minerais)"));
+  gems.appendChild(el("h4", "", "Valeur des minerais (éléments)"));
   const gGrid = el("div", "field-grid");
   gGrid.appendChild(field("GOLD (or)", "eco-gold", economyNumber("eco-gold", intSetter(eco.gems, "gold"), eco.gems.gold, 0, "1")));
   gGrid.appendChild(field("IRON (fer)", "eco-iron", economyNumber("eco-iron", intSetter(eco.gems, "iron"), eco.gems.iron, 0, "1")));
   gGrid.appendChild(field("WATER (eau)", "eco-water", economyNumber("eco-water", intSetter(eco.gems, "water"), eco.gems.water, 0, "1")));
   gems.appendChild(gGrid);
-  gems.appendChild(el("p", "hint", "Prix d'une gemme déchargée à la station (ELEMENT_VALUES)."));
+  gems.appendChild(el("p", "hint", "Prix d'un minerai déchargé à la station (ELEMENT_VALUES)."));
   host.appendChild(gems);
 
   // modes de déplacement : comme les autres extensions de l'économie, chaque
@@ -3064,8 +3065,8 @@ function economyCard() {
   const mTable = el("table");
   const mHead = el("thead");
   const mHr = el("tr");
-  for (const thText of ["Nom", "Description", "Coût (minerais)"]) {
-    const th = el("th", thText === "Coût (minerais)" ? "num" : "", thText);
+  for (const thText of ["Nom", "Description", "Coût (crédits)"]) {
+    const th = el("th", thText === "Coût (crédits)" ? "num" : "", thText);
     mHr.appendChild(th);
   }
   mHead.appendChild(mHr);
@@ -3098,7 +3099,7 @@ function economyCard() {
       mode.cost,
       0,
       "1",
-      "Coût de déblocage en minerais (0 = déjà débloqué au départ - seul REALISTIC est gratuit par défaut ; les autres modes, INERTIAL compris, sont payants s'ils ont un coût)."
+      "Coût de déblocage en crédits (0 = déjà débloqué au départ - seul REALISTIC est gratuit par défaut ; les autres modes, INERTIAL compris, sont payants s'ils ont un coût)."
     ));
     tr.appendChild(tdCost);
     mBody.appendChild(tr);
@@ -3113,9 +3114,9 @@ function economyCard() {
   const refuel = el("div", "eco-group");
   refuel.appendChild(el("h4", "", "Ravitaillement à la station"));
   const rGrid = el("div", "field-grid");
-  rGrid.appendChild(field("Carburant - prix (minerais)", "eco-fuel-price", economyNumber("eco-fuel-price", intSetter(eco, "fuelPrice"), eco.fuelPrice, 0, "1")));
+  rGrid.appendChild(field("Carburant - prix (crédits)", "eco-fuel-price", economyNumber("eco-fuel-price", intSetter(eco, "fuelPrice"), eco.fuelPrice, 0, "1")));
   rGrid.appendChild(field("Carburant - pas (unités)", "eco-fuel-step", economyNumber("eco-fuel-step", floatSetter(eco, "fuelStep"), eco.fuelStep, 1, "any")));
-  rGrid.appendChild(field("Munitions - prix (minerais)", "eco-ammo-price", economyNumber("eco-ammo-price", intSetter(eco, "ammoPrice"), eco.ammoPrice, 0, "1")));
+  rGrid.appendChild(field("Munitions - prix (crédits)", "eco-ammo-price", economyNumber("eco-ammo-price", intSetter(eco, "ammoPrice"), eco.ammoPrice, 0, "1")));
   rGrid.appendChild(field("Munitions - pas (munitions)", "eco-ammo-step", economyNumber("eco-ammo-step", floatSetter(eco, "ammoStep"), eco.ammoStep, 1, "any")));
   refuel.appendChild(rGrid);
   // coût d'un plein complet aux capacités maximales (mise au point) - les
@@ -3124,13 +3125,24 @@ function economyCard() {
   const byId = Object.fromEntries(data.tracks.map(t => [t.id, t]));
   const fullFuel = Math.ceil(trackTotals(byId.fuel).max / eco.fuelStep) * eco.fuelPrice;
   const fullAmmo = Math.ceil(trackTotals(byId.ammo).max / eco.ammoStep) * eco.ammoPrice;
-  refuel.appendChild(el("p", "hint", "Plein complet (capacités max, catalogue vide) : " + fullFuel + " + " + fullAmmo + " = " + (fullFuel + fullAmmo) + " minerais - carburant " + eco.fuelPrice + " m/" + eco.fuelStep + " u ; munitions " + eco.ammoPrice + " m/" + eco.ammoStep + " mun. (paquets par arme sinon)."));
+  refuel.appendChild(el("p", "hint", "Plein complet (capacités max, catalogue vide) : " + fullFuel + " + " + fullAmmo + " = " + (fullFuel + fullAmmo) + " crédits - carburant " + eco.fuelPrice + " c/" + eco.fuelStep + " u ; munitions " + eco.ammoPrice + " c/" + eco.ammoStep + " mun. (paquets par arme sinon)."));
   host.appendChild(refuel);
 
-  // badge d'en-tête (monnaie et valeur des gemmes)
+  // équipement de bord : le radar (minimap globale) - éteint par défaut en
+  // économie, acheté au magasin (onglet ÉQUIPEMENT) ; hors économie il est
+  // toujours allumé (gratuit, historique)
+  const equip = el("div", "eco-group");
+  equip.appendChild(el("h4", "", "Équipement de bord"));
+  const eGrid = el("div", "field-grid");
+  eGrid.appendChild(field("Radar - coût (crédits)", "eco-radar-price", economyNumber("eco-radar-price", intSetter(eco, "radarPrice"), eco.radarPrice, 0, "1")));
+  equip.appendChild(eGrid);
+  equip.appendChild(el("p", "hint", "Le radar (RADAR_COST) affiche la minimap globale - position des météores et des autres formes. Éteint par défaut en scénario à économie, allumé d'office en jeu libre / Survival."));
+  host.appendChild(equip);
+
+  // badge d'en-tête (monnaie et valeur des minerais)
   const badge = document.getElementById("badge-monnaie");
   if (badge) {
-    badge.innerHTML = "Monnaie : <b>minerais</b> (or " + eco.gems.gold + ", fer " + eco.gems.iron + ", eau " + eco.gems.water + ")";
+    badge.innerHTML = "Monnaie : <b>crédits</b> (or " + eco.gems.gold + ", fer " + eco.gems.iron + ", eau " + eco.gems.water + ")";
   }
   card.appendChild(host);
   return card;
@@ -3272,8 +3284,8 @@ function reputationCard() {
   const table = el("table");
   const thead = el("thead");
   const hr = el("tr");
-  for (const thText of ["", "Seuil", "Nom (HUD)", "Remise %", "Ex. 20 minerais", ""]) {
-    const th = el("th", thText === "Seuil" || thText === "Remise %" || thText === "Ex. 20 minerais" ? "num" : "", thText);
+  for (const thText of ["", "Seuil", "Nom (HUD)", "Remise %", "Ex. 20 crédits", ""]) {
+    const th = el("th", thText === "Seuil" || thText === "Remise %" || thText === "Ex. 20 crédits" ? "num" : "", thText);
     hr.appendChild(th);
   }
   thead.appendChild(hr);
@@ -3361,9 +3373,9 @@ function reputationCard() {
   });
   group.appendChild(addBtn);
 
-  // aperçu de la courbe de remise : coût remisé d'un achat à 100 minerais
+  // aperçu de la courbe de remise : coût remisé d'un achat à 100 crédits
   const curve = el("p", "hint");
-  curve.textContent = "Aperçu - coût remisé d'un achat à 100 minerais : " +
+  curve.textContent = "Aperçu - coût remisé d'un achat à 100 crédits : " +
     ranks.map(r => r.name + " " + r.threshold + " (" + r.discountPercent + " % → " +
       discountedCost(100, r.discountPercent) + ")").join(" · ") || "-";
   group.appendChild(curve);
@@ -3385,7 +3397,7 @@ function moveRank(ranks, i, dir) {
 /* ─── Export du code Rust ─────────────────────────────────────────────────── */
 
 // En-tête du fichier généré src/marketplace.rs : documentation de module et
-// imports (CARGO_SIZE, MOVING_MODE_COUNT). L'économie (gemmes, modes,
+// imports (CARGO_SIZE, MOVING_MODE_COUNT). L'économie (minerais, modes,
 // ravitaillement) est produite par economyConsts, les types par RUST_TYPES
 // et les trois lignes d'atelier par tierConst/trackConst - voir exportRust.
 const RUST_HEADER = `//! Place de marché de la station - extensions de vaisseau et modes de
@@ -3403,7 +3415,7 @@ use crate::config::{CARGO_SIZE, MOVING_MODE_COUNT};
 // Définitions des types d'atelier (partie stable du fichier généré).
 const RUST_TYPES = `/// Un mode de déplacement du vaisseau (index \`MOVING_MODE_*\` du jeu) : nom
 /// et description affichés (magasin de la station, messages du scénario) et
-/// coût de déblocage en minerais (0 = déjà débloqué au départ). Généré par
+/// coût de déblocage en crédits (0 = déjà débloqué au départ). Généré par
 /// l'outil de gestion.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MovingMode {
@@ -3411,7 +3423,7 @@ pub struct MovingMode {
     pub name: &'static str,
     /// Courte description (magasin de la station).
     pub description: &'static str,
-    /// Coût en minerais pour débloquer (0 = gratuit au départ).
+    /// Coût en crédits pour débloquer (0 = gratuit au départ).
     pub cost: i32,
 }
 
@@ -3425,13 +3437,12 @@ pub fn mode_label(mode: i32) -> &'static str {
 }
 
 /// Une extension de vaisseau achetable à l'atelier de la station (scénario
-/// Progression, bouton SHOP de la boîte DOCK STATION) : ajoute de la
-/// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en minerais.
+/// Progression, bouton SHOP de la boîte DOCK STATION) : ajoute de la    /// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en crédits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShipUpgrade {
     /// Nom de l'extension (atelier, HUD).
     pub name: &'static str,
-    /// Coût en minerais.
+    /// Coût en crédits.
     pub cost: i32,
     /// Capacité ajoutée (carburant, munitions ou soute).
     pub bonus: i32,
@@ -3528,10 +3539,10 @@ pub struct VaisseauWeapon {
     /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
     /// l'éditeur - la munition part nez en avant.
     pub ammo_orientation_degrees: f64,
-    /// Coût d'achat de l'arme au magasin de la station (minerais ; 0 = arme
+    /// Coût d'achat de l'arme au magasin de la station (crédits ; 0 = arme
     /// de base, toujours équipée au départ en Progression).
     pub cost: i32,
-    /// Prix (minerais) d'un **paquet** de munitions de l'arme (magasin,
+    /// Prix (crédits) d'un **paquet** de munitions de l'arme (magasin,
     /// section RAVITAILLEMENT).
     pub ammo_price: i32,
     /// Taille d'un paquet de munitions de l'arme (munitions par paquet).
@@ -3574,7 +3585,7 @@ pub struct VaisseauThruster {
 }
 `;
 
-// Constantes économiques du scénario Progression (valeur des gemmes, coûts
+// Constantes économiques du scénario Progression (valeur des minerais, coûts
 // des modes de déplacement, prix du ravitaillement).
 // Formate un nombre flottant pour l'export Rust (1 → « 1.0 », 12.5 → « 12.5 »).
 function fmtFloat(n) {
@@ -3858,36 +3869,42 @@ function economyConsts() {
     .join("\n");
   const modeCosts = ordered.map(m => int(m.cost)).join(", ");
   return [
-    "/// Valeur en minerais d'une gemme par élément (index 1..3 = GOLD, IRON,",
+    "/// Valeur en crédits d'un minerai par élément (index 1..3 = GOLD, IRON,",
     "/// WATER - voir `default_elements` ; 0 = sans valeur).",
     "pub const ELEMENT_VALUES: [i32; 4] = [0, " + g.gold + ", " + g.iron + ", " + g.water + "];",
     "",
     "/// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre",
     "/// historique - l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :",
     "/// nom et description affichés (magasin de la station, messages du scénario)",
-    "/// et coût de déblocage en minerais (0 = déjà débloqué au départ). Générés",
+    "/// et coût de déblocage en crédits (0 = déjà débloqué au départ). Générés",
     "/// par l'outil de gestion.",
     "pub const MOVING_MODES: &[MovingMode] = &[",
     modeRows,
     "];",
     "",
-    "/// Coût en minerais pour débloquer chaque mode de déplacement (index",
+    "/// Coût en crédits pour débloquer chaque mode de déplacement (index",
     "/// `MOVING_MODE_*` ; 0 = déjà débloqué) - dérivé de `MOVING_MODES`. Seuls",
     "/// les modes à coût nul sont débloqués au départ en Progression (REALISTIC",
     "/// par défaut) ; les autres s'achètent au magasin.",
     "pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [" + modeCosts + "];",
     "",
-    "/// Prix (minerais) d'un plein de carburant par pas de `fuel_step` unités.",
+    "/// Prix (crédits) d'un plein de carburant par pas de `fuel_step` unités.",
     "pub const FUEL_PRICE: i32 = " + e.fuelPrice + ";",
     "",
     "/// Pas de ravitaillement en carburant (unités par plein facturé).",
     "pub const FUEL_STEP: f64 = " + (Number.isInteger(e.fuelStep) ? e.fuelStep + ".0" : String(e.fuelStep)) + ";",
     "",
-    "/// Prix (minerais) d'un plein de munitions par pas de `ammo_step` unités.",
+    "/// Prix (crédits) d'un plein de munitions par pas de `ammo_step` unités.",
     "pub const AMMO_PRICE: i32 = " + e.ammoPrice + ";",
     "",
     "/// Pas de ravitaillement en munitions.",
     "pub const AMMO_STEP: i32 = " + e.ammoStep + ";",
+    "",
+    "/// Coût en crédits du **radar de bord** (minimap globale affichée en scénario",
+    "/// à économie - éteinte par défaut, achetée au magasin, onglet ÉQUIPEMENT).",
+    "/// Hors économie le radar est toujours allumé (gratuit, comportement",
+    "/// historique). Généré par l'outil de gestion.",
+    "pub const RADAR_COST: i32 = " + e.radarPrice + ";",
   ].join("\n");
 }
 
@@ -4337,10 +4354,12 @@ function parseRust(text) {
   const fuelStep = price("FUEL_STEP");
   const ammoPrice = price("AMMO_PRICE");
   const ammoStep = price("AMMO_STEP");
+  const radarPrice = price("RADAR_COST");
   if (fuelPrice !== null) out.economy.fuelPrice = fuelPrice;
   if (fuelStep !== null) out.economy.fuelStep = fuelStep;
   if (ammoPrice !== null) out.economy.ammoPrice = ammoPrice;
   if (ammoStep !== null) out.economy.ammoStep = ammoStep;
+  if (radarPrice !== null) out.economy.radarPrice = radarPrice;
 
   // ── gameplay (collisions avec la station, génération des météores) ──
   const restitution = price("METEOR_STATION_RESTITUTION");
@@ -4740,7 +4759,7 @@ function normalize(parsed) {
           : 100,
         ammoOrientationDeg: Number.isFinite(w && w.ammoOrientationDeg) ? w.ammoOrientationDeg : 0,
         // économie : coût d'achat (0 = arme de base) et paquet de munitions
-        // (prix en minerais, taille en munitions)
+        // (prix en crédits, taille en munitions)
         cost: int(w && w.cost),
         ammoPrice: int(w && w.ammoPrice),
         ammoPack: Math.max(1, int(w && w.ammoPack) || 5),

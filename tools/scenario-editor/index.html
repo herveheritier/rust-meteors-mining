@@ -419,8 +419,8 @@
         <input type="number" id="scen-ammo" class="form-control" value="30" onchange="updateScenarioMeta()">
       </div>
       <div class="form-group">
-        <label>Minerais de Départ</label>
-        <input type="number" id="scen-minerals" class="form-control" value="0" onchange="updateScenarioMeta()">
+        <label>Crédits de Départ</label>
+        <input type="number" id="scen-credits" class="form-control" value="0" onchange="updateScenarioMeta()">
       </div>
       <div class="form-group">
         <label>Vies (0 = Illimité)</label>
@@ -533,7 +533,7 @@ let currentScenario = {
   name: "CAMPAGNE DE PROSPECTION",
   description: "Séquence d'objectifs guidée pour devenir un prospecteur chevronné.",
   rules_color: "0xFF39FF88",
-  initial_state: { start_fuel: 100, start_ammo: 30, start_minerals: 0, start_reputation: 0, start_mode: 0, lives: 0, shield_capacity: 0, start_pos_x: 0, start_pos_y: 0, start_orientation: 0, start_velocity: 0 },
+  initial_state: { start_fuel: 100, start_ammo: 30, start_credits: 0, start_reputation: 0, start_mode: 0, lives: 0, shield_capacity: 0, start_pos_x: 0, start_pos_y: 0, start_orientation: 0, start_velocity: 0 },
   objectives: []
 };
 
@@ -633,7 +633,7 @@ function createNewScenario() {
     initial_state: {
       start_fuel: 100,
       start_ammo: 30,
-      start_minerals: 0,
+      start_credits: 0,
       start_reputation: 0.0,
       start_mode: 0,
       lives: 0,
@@ -650,7 +650,7 @@ function createNewScenario() {
         description: "Action initiale à accomplir.",
         prerequisites: [],
         condition: { type: "DestroyAsteroids", required: 5 },
-        reward: { type: "Minerals", amount: 10 },
+        reward: { type: "Credits", amount: 10 },
         position: { x: 100, y: 150 }
       }
     ]
@@ -742,6 +742,17 @@ async function loadScenario(filename) {
     const res = await fetch('/api/scenarios/' + filename);
     if (!res.ok) return;
     currentScenario = await res.json();
+    // normalisation du protocole : les anciens fichiers (avant le renommage
+    // monnaie « minerais » → « crédits ») sont convertis au protocole courant
+    const ist = currentScenario.initial_state || {};
+    if (ist.start_credits === undefined && ist.start_minerals !== undefined) {
+      ist.start_credits = ist.start_minerals;
+      delete ist.start_minerals;
+    }
+    (currentScenario.objectives || []).forEach(obj => {
+      if (obj.condition && obj.condition.type === 'CollectMinerals') obj.condition.type = 'CollectCredits';
+      if (obj.reward && obj.reward.type === 'Minerals') obj.reward.type = 'Credits';
+    });
     populateFormMeta();
     validateDAG();
     renderGraph();
@@ -759,7 +770,7 @@ function populateFormMeta() {
   document.getElementById('scen-color').value = currentScenario.rules_color || '0xFF39FF88';
   document.getElementById('scen-fuel').value = currentScenario.initial_state?.start_fuel ?? 100;
   document.getElementById('scen-ammo').value = currentScenario.initial_state?.start_ammo ?? 30;
-  document.getElementById('scen-minerals').value = currentScenario.initial_state?.start_minerals ?? 0;
+  document.getElementById('scen-credits').value = currentScenario.initial_state?.start_credits ?? 0;
   document.getElementById('scen-lives').value = currentScenario.initial_state?.lives ?? 0;
   document.getElementById('scen-shield').value = currentScenario.initial_state?.shield_capacity ?? 0.0;
   document.getElementById('scen-pos-x').value = currentScenario.initial_state?.start_pos_x ?? 0;
@@ -777,7 +788,7 @@ function updateScenarioMeta() {
   currentScenario.initial_state = {
     start_fuel: parseFloat(document.getElementById('scen-fuel').value) || 0,
     start_ammo: parseInt(document.getElementById('scen-ammo').value) || 0,
-    start_minerals: parseInt(document.getElementById('scen-minerals').value) || 0,
+    start_credits: parseInt(document.getElementById('scen-credits').value) || 0,
     start_reputation: 0.0,
     start_mode: 0,
     lives: parseInt(document.getElementById('scen-lives').value) || 0,
@@ -1017,7 +1028,7 @@ function formatConditionText(cond) {
   if (!cond) return "Aucune condition";
   switch (cond.type) {
     case 'DestroyAsteroids': return `${cond.required} météores détruits`;
-    case 'CollectMinerals': return `${cond.required} minerais récoltés`;
+    case 'CollectCredits': return `${cond.required} crédits récoltés`;
     case 'ReachReputation': return `${cond.required} pts de réputation`;
     case 'DockAtStation': return `${cond.required} accostages station`;
     case 'BuyUpgrade': return `Atelier ${cond.track} niveau ${cond.level}`;
@@ -1035,7 +1046,7 @@ function formatConditionText(cond) {
 function formatRewardText(rew) {
   if (!rew || rew.type === 'None') return null;
   switch (rew.type) {
-    case 'Minerals': return `+${rew.amount} Minerais`;
+    case 'Credits': return `+${rew.amount} Crédits`;
     case 'Reputation': return `+${rew.amount} Réputation`;
     case 'Fuel': return `+${rew.amount} Carburant`;
     case 'Ammo': return `+${rew.amount} Munitions`;
@@ -1119,7 +1130,7 @@ function renderInspector() {
   }
 
   const cond = obj.condition || { type: 'DestroyAsteroids', required: 10 };
-  const rew = obj.reward || { type: 'Minerals', amount: 10 };
+  const rew = obj.reward || { type: 'Credits', amount: 10 };
 
   container.innerHTML = `
     <div class="form-group">
@@ -1142,7 +1153,7 @@ function renderInspector() {
       <label>Type de Condition</label>
       <select class="form-control" onchange="updateObjConditionType(this.value)">
         <option value="DestroyAsteroids" ${cond.type==='DestroyAsteroids'?'selected':''}>Détruire Météores</option>
-        <option value="CollectMinerals" ${cond.type==='CollectMinerals'?'selected':''}>Collecter Minerais</option>
+        <option value="CollectCredits" ${cond.type==='CollectCredits'?'selected':''}>Collecter Crédits</option>
         <option value="ReachReputation" ${cond.type==='ReachReputation'?'selected':''}>Atteindre Réputation</option>
         <option value="DockAtStation" ${cond.type==='DockAtStation'?'selected':''}>Accostages Station</option>
         <option value="BuyUpgrade" ${cond.type==='BuyUpgrade'?'selected':''}>Amélioration Atelier</option>
@@ -1159,7 +1170,7 @@ function renderInspector() {
     <div class="form-group">
       <label>Type de Récompense</label>
       <select class="form-control" onchange="updateObjRewardType(this.value)">
-        <option value="Minerals" ${rew.type==='Minerals'?'selected':''}>Minerais</option>
+        <option value="Credits" ${rew.type==='Credits'?'selected':''}>Crédits</option>
         <option value="Reputation" ${rew.type==='Reputation'?'selected':''}>Réputation</option>
         <option value="Fuel" ${rew.type==='Fuel'?'selected':''}>Carburant</option>
         <option value="Ammo" ${rew.type==='Ammo'?'selected':''}>Munitions</option>
@@ -1190,7 +1201,7 @@ function renderInspector() {
 function renderConditionInputs(cond) {
   switch (cond.type) {
     case 'DestroyAsteroids':
-    case 'CollectMinerals':
+    case 'CollectCredits':
     case 'DockAtStation':
       return `
         <div class="form-group">
@@ -1311,7 +1322,7 @@ function createNewObjective() {
     description: "Description des actions à accomplir.",
     prerequisites: [],
     condition: { type: "DestroyAsteroids", required: 10 },
-    reward: { type: "Minerals", amount: 10 },
+    reward: { type: "Credits", amount: 10 },
     position: { x: 200 + Math.random() * 200, y: 150 + Math.random() * 150 }
   };
   currentScenario.objectives.push(newObj);
@@ -1443,7 +1454,7 @@ function generateRustCode() {
 #[allow(dead_code)]
 pub enum ObjectiveCondition {
     DestroyAsteroids { required: u32 },
-    CollectMinerals { required: u32 },
+    CollectCredits { required: u32 },
     ReachReputation { required: f64 },
     DockAtStation { required: u32 },
     BuyUpgrade { track: &'static str, level: i32 },
@@ -1455,7 +1466,7 @@ pub enum ObjectiveCondition {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(dead_code)]
 pub enum ObjectiveReward {
-    Minerals(i32),
+    Credits(i32),
     Reputation(f64),
     Fuel(f64),
     Ammo(i32),
@@ -1519,7 +1530,7 @@ function formatConditionRust(cond) {
   if (!cond) return `ObjectiveCondition::DestroyAsteroids { required: 1 }`;
   switch (cond.type) {
     case 'DestroyAsteroids': return `ObjectiveCondition::DestroyAsteroids { required: ${cond.required || 10} }`;
-    case 'CollectMinerals': return `ObjectiveCondition::CollectMinerals { required: ${cond.required || 10} }`;
+    case 'CollectCredits': return `ObjectiveCondition::CollectCredits { required: ${cond.required || 10} }`;
     case 'ReachReputation': return `ObjectiveCondition::ReachReputation { required: ${cond.required || 25}.0 }`;
     case 'DockAtStation': return `ObjectiveCondition::DockAtStation { required: ${cond.required || 1} }`;
     case 'UnlockMovementMode': return `ObjectiveCondition::UnlockMovementMode { mode: ${cond.mode || 1} }`;
@@ -1531,7 +1542,7 @@ function formatConditionRust(cond) {
 function formatRewardRust(rew) {
   if (!rew || rew.type === 'None') return `ObjectiveReward::None`;
   switch (rew.type) {
-    case 'Minerals': return `ObjectiveReward::Minerals(${rew.amount || 10})`;
+    case 'Credits': return `ObjectiveReward::Credits(${rew.amount || 10})`;
     case 'Reputation': return `ObjectiveReward::Reputation(${rew.amount || 10}.0)`;
     case 'Fuel': return `ObjectiveReward::Fuel(${rew.amount || 50}.0)`;
     case 'Ammo': return `ObjectiveReward::Ammo(${rew.amount || 30})`;

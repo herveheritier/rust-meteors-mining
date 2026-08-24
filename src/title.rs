@@ -11,6 +11,7 @@ use macroquad::prelude::*;
 
 use crate::audio::Sounds;
 use crate::config::{ATTEMPT_FPS, VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
+use crate::font::{draw_text, measure_text};
 use crate::game;
 use crate::geom::Point;
 use crate::render::{
@@ -421,6 +422,8 @@ fn draw_objectives_list(state: &crate::state::GameState, start_y: f64) -> f64 {
     }
 
     for obj in all_objectives.iter() {
+        // « ✓ » (complété) et « → » (débloqué) : la police embarquée (DejaVu
+        // Sans Mono) possède ces glyphes - « · » (U+00B7) est en Latin-1
         let (symbol, color) = if completed_ids.contains(&obj.id) {
             ("✓", 0xFF39FF88u32) // vert néon = complété
         } else if unlocked_set.contains(&obj.id) {

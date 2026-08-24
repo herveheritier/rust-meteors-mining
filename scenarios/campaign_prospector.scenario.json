@@ -6,7 +6,7 @@
   "initial_state": {
     "start_fuel": 100,
     "start_ammo": 30,
-    "start_minerals": 0,
+    "start_credits": 0,
     "start_reputation": 0,
     "start_mode": 0,
     "lives": 0,
@@ -27,7 +27,7 @@
         "required": 1
       },
       "reward": {
-        "type": "Minerals",
+        "type": "Credits",
         "amount": 5
       },
       "position": {
@@ -43,11 +43,11 @@
         "step_first_dock"
       ],
       "condition": {
-        "type": "CollectMinerals",
+        "type": "CollectCredits",
         "required": 10
       },
       "reward": {
-        "type": "Minerals",
+        "type": "Credits",
         "amount": 10
       },
       "position": {

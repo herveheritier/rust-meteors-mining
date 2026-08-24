@@ -178,6 +178,17 @@ pub struct GameState {
     /// `Some(1 + i)` = munitions de l'arme `i`) - `None` = aucun. La valeur
     /// suit le pointeur tant que le bouton est maintenu (`game.rs`).
     pub shop_drag: Option<usize>,
+    /// Onglet actif du magasin de la station (bouton SHOP de la boîte DOCK
+    /// STATION) : RAVITAILLEMENT, ÉQUIPEMENT, ATELIER ou MODE DE VOL
+    /// (`SHOP_TAB_*`, défaut = RAVITAILLEMENT).
+    pub shop_tab: u8,
+    /// Dernier retour d'action du magasin (achat confirmé ou refus) affiché
+    /// en bas de la fenêtre - vide si rien à afficher. Texte + drapeau
+    /// succès/échec (`shop_feedback_ok`) pour la couleur (vert / rouge).
+    pub shop_feedback: String,
+    /// `true` = succès (vert), `false` = refus (rouge) pour
+    /// `shop_feedback`.
+    pub shop_feedback_ok: bool,
     /// Pause (touche P) : gèle déplacements et collisions, mais pas le rendu
     /// ni l'input (voir `docs/PORTAGE.md` §6).
     pub paused: bool,
@@ -357,6 +368,9 @@ impl GameState {
             shop_fuel_qty: 0.0,
             shop_ammo_qty: [0.0; WEAPON_SLOTS],
             shop_drag: None,
+            shop_tab: crate::config::SHOP_TAB_SUPPLIES,
+            shop_feedback: String::new(),
+            shop_feedback_ok: true,
             paused: false,
             game_over: false,
             invulnerable: 0.0,

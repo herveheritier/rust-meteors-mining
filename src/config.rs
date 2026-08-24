@@ -47,7 +47,7 @@ pub const TAU: f64 = TAU_F64;
 pub const WHOIAM_METEOR: i32 = 0;
 pub const WHOIAM_BULLET: i32 = 1;
 pub const WHOIAM_PLAYER: i32 = 2;
-pub const WHOIAM_GEM: i32 = 3;
+pub const WHOIAM_MINERAL: i32 = 3;
 pub const WHOIAM_STATION: i32 = 4;
 pub const WHOIAM_ALIEN: i32 = 5;
 /// Cosmonaute décoratif chargé depuis `assets/cosmonaute.json` (export
@@ -86,6 +86,18 @@ pub const MOVING_MODE_ORDER: [i32; MOVING_MODE_COUNT as usize] = [
     MOVING_MODE_4_WAYS,
     MOVING_MODE_DIRECTIONAL,
 ];
+
+/// Onglets du magasin de la station (bouton SHOP de la boîte DOCK STATION) :
+/// le contenu de la fenêtre est affiché un onglet à la fois (RAVITAILLEMENT
+/// par défaut) pour garder une fenêtre compacte et compréhensible -
+/// `state.shop_tab` porte l'onglet actif.
+pub const SHOP_TAB_SUPPLIES: u8 = 0;
+/// Onglet ÉQUIPEMENT : achat des armes du catalogue (`VAISSEAU_WEAPONS`).
+pub const SHOP_TAB_WEAPONS: u8 = 1;
+/// Onglet ATELIER : extensions de capacité (réservoir, chargeur, soute).
+pub const SHOP_TAB_WORKSHOP: u8 = 2;
+/// Onglet MODE DE VOL : sélection / déblocage des modes de déplacement.
+pub const SHOP_TAB_MODES: u8 = 3;
 
 /// Styles de rendu des triangles (écran de paramétrage, touche O).
 pub const RENDER_STYLE_TEXTURED: i32 = 0;
@@ -152,9 +164,14 @@ pub fn window_size_label(index: i32) -> String {
 /// debug devenues **runtime** dans le port (touches I/D) ; `NO_MUSIC`
 /// documente l'absence de musique. Conservées telles quelles pour la
 /// fidélité à la référence.
+///
+/// La **minimap globale** (ex `SHOW_GLOBAL_MAP`, points de toutes les formes
+/// sur une carte au centre de l'écran) n'est plus une option de compilation :
+/// c'est désormais un équipement **radar** acheté au magasin de la station en
+/// scénario à économie (`scenario::has_radar`, voir `src/scenario.rs`) - allumé
+/// par défaut en jeu libre / Survival (comportement historique).
 #[allow(dead_code)]
 pub const SHOW_INFOS: bool = false;
-pub const SHOW_GLOBAL_MAP: bool = true;
 #[allow(dead_code)]
 pub const SHOW_RADIUS: bool = false;
 #[allow(dead_code)]
@@ -198,16 +215,17 @@ pub const CARGO_SIZE: i32 = 5;
 /// station (voir `render::draw_docking_marker`).
 pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 
-/// Rayon (unités monde) de ramassage des gemmes par le **cosmonaute EVA**
-/// (vaisseau détruit) : il est non-collider, les gemmes le traversent - il
-/// les ramasse par proximité (voir `game::eva_collect_gems`) et les rapporte
-/// à la station. Rayon du cosmonaute (~13) + marge généreuse.
+/// Rayon (unités monde) de ramassage des minerais par le **cosmonaute EVA**
+/// (vaisseau détruit) : il est non-collider, les minerais le traversent - il
+/// les ramasse par proximité (voir `game::eva_collect_minerals`) et les
+/// rapporte à la station. Rayon du cosmonaute (~13) + marge généreuse.
 pub const EVA_PICKUP_RADIUS: f64 = 20.0;
 
 /// Rayon (unités monde) du cercle d'éparpillement des minerais de la soute
-/// quand le vaisseau est détruit (`generate::eject_cargo_gems`) : les gemmes
-/// rejetées jaillissent dans un cercle de ce rayon autour du crash (au-delà
-/// du rayon de ramassage du cosmonaute, pour qu'elles restent à ramasser).
+/// quand le vaisseau est détruit (`generate::eject_cargo_minerals`) : les
+/// minerais rejetés jaillissent dans un cercle de ce rayon autour du crash
+/// (au-delà du rayon de ramassage du cosmonaute, pour qu'ils restent à
+/// ramasser).
 pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 
 /// Durée (secondes) de la **récupération** du cosmonaute EVA par la station

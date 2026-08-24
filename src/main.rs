@@ -12,12 +12,13 @@
 //!   voir `docs/PORTAGE.md` §4.1).
 //! - **Phases 3-4** (jalons M2 à M5 faits) : boucle de jeu - `game.rs`
 //!   (input, 4 modes de déplacement, pause, plein écran, météores : G + auto,
-//!   collisions SAT + élastique, débris, messages, tirs, gemmes, accostage,
+//!   collisions SAT + élastique, débris, messages, tirs, minerais, accostage,
 //!   aide S, debug D/I), `title.rs` (écran titre).
 
 mod audio;
 mod config;
 mod cosmonaut;
+mod font;
 mod game;
 mod garbage;
 mod generate;
@@ -96,6 +97,10 @@ async fn main() {
     // L'état initial (monde torique, joueur, étoiles, station) est construit
     // par `prepare`, exactement comme le `prepare` du jeu QB64.
     let mut state = GameState::new();
+    // police embarquée (DejaVu Sans Mono, `include_bytes!`) : définie comme
+    // police par défaut dès le démarrage - tous les textes utilisent son jeu
+    // de caractères étendu (Latin-1, flèches, coches) à l'échelle 8 px
+    crate::font::init();
     // réglages persistés (fichier de config utilisateur, norme XDG - ex
     // `~/.config/meteors-mining/meteors_mining.cfg`) : le mode de
     // déplacement choisi au magasin de la station (bouton SHOP de la
@@ -630,10 +635,13 @@ async fn main() {
         // (bouton SHOP), fenêtre d'aide (touche S) et écran de
         // paramétrage (touche O) par-dessus le jeu
         if state.dock_box {
-            render::draw_choice_box();
+            render::draw_choice_box(&state);
         }
         if state.shop_box {
-            render::draw_shop_box(&state);
+            // aperçu du vaisseau équipé dans l'onglet ÉQUIPEMENT : le mesh
+            // réel du vaisseau (et des armes survolées) est redessiné à
+            // l'échelle dans la fenêtre
+            render::draw_shop_box(&state, &shapes, &triangles);
         }
         if state.help_box {
             render::draw_help_box();

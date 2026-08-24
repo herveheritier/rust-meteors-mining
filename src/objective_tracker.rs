@@ -304,7 +304,11 @@ pub fn resolve_target_mode(cond: &crate::scenario_loader::JsonCondition, title: 
 fn evaluate_condition(obj: &TrackedObjective, state: &GameState) -> bool {
     match obj.condition.condition_type.as_str() {
         "DestroyAsteroids" => state.meteors_destroyed >= obj.condition.required as i32,
-        "CollectMinerals" => state.resources.minerals >= obj.condition.required as i32,
+        "CollectCredits" | "CollectMinerals" => {
+            // `CollectMinerals` (ancien nom) reste accepté pour les scénarios
+            // écrits avant le renommage minerais → crédits
+            state.resources.credits >= obj.condition.required as i32
+        }
         "ReachReputation" => state.resources.reputation >= obj.condition.required as f64,
         "DockAtStation" => state.docking_count >= obj.condition.required as i32,
         "UnlockMovementMode" => {
@@ -405,17 +409,17 @@ mod tests {
     }
 
     #[test]
-    fn evaluate_collect_minerals() {
+    fn evaluate_collect_credits() {
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
         crate::scenario::apply_start(&mut state);
         let cond = JsonCondition {
-            condition_type: "CollectMinerals".to_string(),
+            condition_type: "CollectCredits".to_string(),
             required: 10,
             ..Default::default()
         };
         assert!(!evaluate_condition(&make_test_obj(cond.clone()), &state));
-        state.resources.minerals = 10;
+        state.resources.credits = 10;
         assert!(evaluate_condition(&make_test_obj(cond), &state));
     }
 
@@ -460,7 +464,7 @@ mod tests {
                 description: "desc a".to_string(),
                 prerequisites: vec![],
                 condition: JsonCondition {
-                    condition_type: "CollectMinerals".to_string(),
+                    condition_type: "CollectCredits".to_string(),
                     required: 10,
                     ..Default::default()
                 },
@@ -474,7 +478,7 @@ mod tests {
                 description: "desc b".to_string(),
                 prerequisites: vec!["a".to_string()],
                 condition: JsonCondition {
-                    condition_type: "CollectMinerals".to_string(),
+                    condition_type: "CollectCredits".to_string(),
                     required: 0, // toujours vrai une fois débloqué
                     ..Default::default()
                 },
@@ -502,7 +506,7 @@ mod tests {
         // **déjà rempli au moment où il est désigné** : il est marqué comme
         // réalisé dans la même passe, puis on passe à l'objectif suivant.
         // Les deux bannières sont mises en file (une à la fois).
-        state.resources.minerals = 10;
+        state.resources.credits = 10;
         let results = tracker.update(&state, 0.0);
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, "a");
@@ -533,7 +537,7 @@ mod tests {
             description: "desc".to_string(),
             prerequisites: vec![],
             condition: JsonCondition {
-                condition_type: "CollectMinerals".to_string(),
+                condition_type: "CollectCredits".to_string(),
                 required: 10,
                 ..Default::default()
             },
@@ -547,14 +551,14 @@ mod tests {
         crate::scenario::apply_start(&mut state);
 
         // le joueur a déjà 12 minerais quand l'objectif est désigné
-        state.resources.minerals = 12;
+        state.resources.credits = 12;
         let results = tracker.update(&state, 0.0);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "mine");
         assert!(tracker.completed_ids.contains("mine"));
 
         // puis il dépense 10 minerais au magasin : l'objectif reste réalisé
-        state.resources.minerals = 2;
+        state.resources.credits = 2;
         let results = tracker.update(&state, 0.0);
         assert_eq!(results.len(), 0);
         assert!(tracker.completed_ids.contains("mine"));

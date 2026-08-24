@@ -9,14 +9,14 @@
 
 use crate::config::{CARGO_SIZE, MOVING_MODE_COUNT};
 
-/// Valeur en minerais d'une gemme par élément (index 1..3 = GOLD, IRON,
+/// Valeur en crédits d.un minerai par élément (index 1..3 = GOLD, IRON,
 /// WATER - voir `default_elements` ; 0 = sans valeur).
 pub const ELEMENT_VALUES: [i32; 4] = [0, 5, 3, 2];
 
 /// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre
 /// historique - l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :
 /// nom et description affichés (magasin de la station, messages du scénario)
-/// et coût de déblocage en minerais (0 = déjà débloqué au départ). Générés
+/// et coût de déblocage en crédits (0 = déjà débloqué au départ). Générés
 /// par l'outil de gestion.
 pub const MOVING_MODES: &[MovingMode] = &[
     MovingMode { name: "INERTIAL", description: "THRUST / REVERSE, TURN L/R", cost: 15 },
@@ -25,23 +25,29 @@ pub const MOVING_MODES: &[MovingMode] = &[
     MovingMode { name: "REALISTIC", description: "INERTIAL + ROTATION DRIFT", cost: 0 },
 ];
 
-/// Coût en minerais pour débloquer chaque mode de déplacement (index
+/// Coût en crédits pour débloquer chaque mode de déplacement (index
 /// `MOVING_MODE_*` ; 0 = déjà débloqué) - dérivé de `MOVING_MODES`. Seuls
 /// les modes à coût nul sont débloqués au départ en Progression (REALISTIC
 /// par défaut) ; les autres s'achètent au magasin.
 pub const MODE_COSTS: [i32; MOVING_MODE_COUNT as usize] = [15, 30, 45, 0];
 
-/// Prix (minerais) d'un plein de carburant par pas de `fuel_step` unités.
+/// Prix (crédits) d'un plein de carburant par pas de `fuel_step` unités.
 pub const FUEL_PRICE: i32 = 1;
 
 /// Pas de ravitaillement en carburant (unités par plein facturé).
 pub const FUEL_STEP: f64 = 10.0;
 
-/// Prix (minerais) d'un plein de munitions par pas de `ammo_step` unités.
+/// Prix (crédits) d'un plein de munitions par pas de `ammo_step` unités.
 pub const AMMO_PRICE: i32 = 1;
 
 /// Pas de ravitaillement en munitions.
 pub const AMMO_STEP: i32 = 5;
+
+/// Coût en crédits du **radar de bord** (minimap globale affichée en scénario
+/// à économie - éteinte par défaut, achetée au magasin, onglet ÉQUIPEMENT).
+/// Hors économie le radar est toujours allumé (gratuit, comportement
+/// historique). Généré par l'outil de gestion.
+pub const RADAR_COST: i32 = 20;
 
 /// Météores - collisions avec la station et génération (mise au point).
 /// Données générées par l'outil de gestion : lues par `src/game.rs`
@@ -275,7 +281,7 @@ pub const COSMONAUTE_PLANES: &[usize] = &[];
 
 /// Un mode de déplacement du vaisseau (index `MOVING_MODE_*` du jeu) : nom
 /// et description affichés (magasin de la station, messages du scénario) et
-/// coût de déblocage en minerais (0 = déjà débloqué au départ). Généré par
+/// coût de déblocage en crédits (0 = déjà débloqué au départ). Généré par
 /// l'outil de gestion.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MovingMode {
@@ -283,7 +289,7 @@ pub struct MovingMode {
     pub name: &'static str,
     /// Courte description (magasin de la station).
     pub description: &'static str,
-    /// Coût en minerais pour débloquer (0 = gratuit au départ).
+    /// Coût en crédits pour débloquer (0 = gratuit au départ).
     pub cost: i32,
 }
 
@@ -298,12 +304,12 @@ pub fn mode_label(mode: i32) -> &'static str {
 
 /// Une extension de vaisseau achetable à l'atelier de la station (scénario
 /// Progression, bouton SHOP de la boîte DOCK STATION) : ajoute de la
-/// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en minerais.
+/// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en crédits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShipUpgrade {
     /// Nom de l'extension (atelier, HUD).
     pub name: &'static str,
-    /// Coût en minerais.
+    /// Coût en crédits.
     pub cost: i32,
     /// Capacité ajoutée (carburant, munitions ou soute).
     pub bonus: i32,
@@ -400,10 +406,10 @@ pub struct VaisseauWeapon {
     /// Orientation de la munition (degrés) : angle de l'avant du mesh dans
     /// l'éditeur - la munition part nez en avant.
     pub ammo_orientation_degrees: f64,
-    /// Coût d'achat de l'arme au magasin de la station (minerais ; 0 = arme
+    /// Coût d'achat de l'arme au magasin de la station (crédits ; 0 = arme
     /// de base, toujours équipée au départ en Progression).
     pub cost: i32,
-    /// Prix (minerais) d'un **paquet** de munitions de l'arme (magasin,
+    /// Prix (crédits) d'un **paquet** de munitions de l'arme (magasin,
     /// section RAVITAILLEMENT).
     pub ammo_price: i32,
     /// Taille d'un paquet de munitions de l'arme (munitions par paquet).

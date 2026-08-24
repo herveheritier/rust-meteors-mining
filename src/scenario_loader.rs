@@ -50,8 +50,10 @@ pub struct InitialState {
     pub start_fuel: f64,
     #[serde(default)]
     pub start_ammo: i32,
-    #[serde(default)]
-    pub start_minerals: i32,
+    /// Crédits de départ (monnaie). `start_minerals` (ancien nom) reste
+    /// accepté pour les scénarios écrits avant le renommage.
+    #[serde(default, alias = "start_minerals")]
+    pub start_credits: i32,
     #[serde(default)]
     pub start_reputation: f64,
     #[serde(default = "default_start_mode")]
@@ -83,7 +85,7 @@ impl Default for InitialState {
         Self {
             start_fuel: 100.0,
             start_ammo: 30,
-            start_minerals: 0,
+            start_credits: 0,
             start_reputation: 0.0,
             start_mode: crate::config::MOVING_MODE_REALISTIC,
             lives: 0,
@@ -236,7 +238,7 @@ fn load_one_scenario(path: &Path) -> Result<LoadedScenario, String> {
     let rules = Scenario {
         name: Box::leak(json.name.clone().into_boxed_str()),
         description: Box::leak(json.description.clone().into_boxed_str()),
-        has_economy: ist.start_minerals > 0 || ist.start_fuel > 0.0 || ist.start_ammo > 0,
+        has_economy: ist.start_credits > 0 || ist.start_fuel > 0.0 || ist.start_ammo > 0,
         ranks: PROGRESSION_RANKS,
         start_fuel: ist.start_fuel,
         fuel_per_second: 2.0, // défaut raisonnable (~50 s de poussée avec 100 carburant)
