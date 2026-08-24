@@ -312,6 +312,45 @@ pub fn draw_message(state: &mut GameState) {
     }
 }
 
+/// Écran **PAUSE** (touche P) : le monde est gelé mais rien ne distingue
+/// l'état d'une frame normale - l'overlay assombrit le cadre (le monde gelé
+/// reste perceptible) et affiche un bandeau central + le rappel de la touche
+/// de reprise. Appelé par la boucle de rendu quand `state.paused`, tant
+/// qu'aucune fenêtre (accostage, magasin, aide, paramétrage) ne recouvre
+/// l'écran.
+pub fn draw_pause_overlay() {
+    // assombrissement léger : le monde gelé derrière reste lisible
+    draw_rectangle(
+        0.0,
+        0.0,
+        VIEWPORT_WIDTH as f32,
+        VIEWPORT_HEIGHT as f32,
+        Color::new(0.0, 0.0, 0.0, 0.35),
+    );
+    // bandeau central (ombre portée pour le détacher du fond)
+    let label = "PAUSE";
+    let font_size = 48.0;
+    let w = measure_text(label, None, font_size as u16, 1.0).width;
+    draw_text_shadow(
+        label,
+        (VIEWPORT_WIDTH as f32 - w) / 2.0,
+        VIEWPORT_HEIGHT as f32 * 0.40,
+        font_size,
+        argb_to_color(BOX_FG),
+    );
+    // rappel de la touche de reprise + état du radar (équipement - l'overlay
+    // couvre la minimap, mais le rappel de reprise est l'essentiel)
+    let hint = "APPUYER SUR P POUR REPRENDRE";
+    let hw = measure_text(hint, None, 16, 1.0).width;
+    draw_text_shadow(
+        hint,
+        (VIEWPORT_WIDTH as f32 - hw) / 2.0,
+        VIEWPORT_HEIGHT as f32 * 0.40 + 64.0,
+        16.0,
+        argb_to_color(BOX_FG_DIM),
+    );
+}
+
 /// Découpe `text` en plusieurs lignes qui tiennent dans `max_width` pixels à
 /// la taille de police `font_size` (coupure aux espaces, sans couper les
 /// mots). Permet d'afficher un objectif de scénario en entier, sans troncature.

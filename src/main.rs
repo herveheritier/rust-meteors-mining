@@ -633,6 +633,13 @@ async fn main() {
         // Objectifs DAG (scénarios custom) : panneau dans le coin supérieur droit
         render::draw_objectives_hud(&state);
 
+        // Écran PAUSE (touche P) : le monde est gelé - l'overlay rend l'état
+        // visible (assombrissement + bandeau) tant qu'aucune fenêtre ne
+        // recouvre l'écran (les boîtes, dessinées plus bas, passent par-dessus)
+        if state.paused && !state.dock_box && !state.shop_box && !state.help_box && !state.settings_box {
+            render::draw_pause_overlay();
+        }
+
         // affichages de debug (touches D et I)
         if state.show_info {
             render::draw_info(&state, &shapes, &triangles, &garbages, &elements);
