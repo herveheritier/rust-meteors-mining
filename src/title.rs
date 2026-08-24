@@ -559,10 +559,10 @@ fn draw_frame(
     // (ex titleLoop : `_printstring` de chaque caractère)
     let banner_rows = BANNER.len();
     let banner_cols = BANNER[0].len();
-    for j in 0..banner_rows {
-        for i in 0..banner_cols {
-            let ch = BANNER[j].as_bytes()[i] as char;
-            let x = (VIEWPORT_WIDTH as f64 / banner_cols as f64) * i as f64;
+    for (j, row) in BANNER.iter().enumerate() {
+        for (i, ch) in row.bytes().enumerate() {
+            let ch = ch as char;
+            let x = (VIEWPORT_WIDTH / banner_cols as f64) * i as f64;
             let y = 10.0 * (8.0 + j as f64);
             let color = banner_colors[banner_cols - 1 - i];
             draw_text(&ch.to_string(), x as f32, y as f32, 8.0, argb_to_color(color));

@@ -83,7 +83,7 @@ fn joystick_vector() -> Option<Vec2> {
         if dist > JOY_TOUCH_RADIUS {
             continue;
         }
-        if best.map_or(true, |(bd, _)| dist < bd) {
+        if best.is_none_or(|(bd, _)| dist < bd) {
             best = Some((dist, d));
         }
     }

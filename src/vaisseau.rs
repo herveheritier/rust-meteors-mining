@@ -107,7 +107,7 @@ pub fn weapons_face_count() -> usize {
 #[cfg(test)]
 pub fn vaisseau_face_count() -> usize {
     let file = vaisseau_file();
-    let comp = composition_mask(&file);
+    let comp = composition_mask(file);
     let planes = file
         .planes
         .iter()
@@ -253,10 +253,10 @@ fn vaisseau_bullet_spawns_with(
     center_percent: Point,
 ) -> Vec<Point> {
     let file = vaisseau_file();
-    let comp = composition_mask(&file);
-    let (minx, miny, maxx, maxy) = composition_bbox(&file, &comp);
+    let comp = composition_mask(file);
+    let (minx, miny, maxx, maxy) = composition_bbox(file, &comp);
     let (pivot, pt) =
-        mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
+        mesh_transform(file, &comp, scale, orientation_degrees, center_percent);
     if spawns.is_empty() {
         return vec![pivot]; // repli : un seul emplacement au centre de rotation
     }
@@ -299,10 +299,10 @@ fn vaisseau_thrusters_with(
         return Vec::new();
     }
     let file = vaisseau_file();
-    let comp = composition_mask(&file);
-    let (minx, miny, maxx, maxy) = composition_bbox(&file, &comp);
+    let comp = composition_mask(file);
+    let (minx, miny, maxx, maxy) = composition_bbox(file, &comp);
     let (_pivot, pt) =
-        mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
+        mesh_transform(file, &comp, scale, orientation_degrees, center_percent);
     thrusters
         .iter()
         .map(|t| {
@@ -344,10 +344,10 @@ fn vaisseau_weapons_with(
         return Vec::new();
     }
     let file = vaisseau_file();
-    let comp = composition_mask(&file);
-    let (minx, miny, maxx, maxy) = composition_bbox(&file, &comp);
+    let comp = composition_mask(file);
+    let (minx, miny, maxx, maxy) = composition_bbox(file, &comp);
     let (pivot, pt) =
-        mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
+        mesh_transform(file, &comp, scale, orientation_degrees, center_percent);
     // points locaux des emplacements (même conversion que les emplacements de
     // tir - une liste vide n'a qu'un emplacement : le pivot)
     let spawn_locals: Vec<Point> = if spawns.is_empty() {
@@ -737,10 +737,10 @@ pub fn create_player_vaisseau(
     )
 }
 
-/// Armes du catalogue **possédées** (masque par index, `scenario::weapon_owned`
-/// - hors économie toutes les armes sont équipées ; en Progression seules
+/// Armes du catalogue **possédées** (masque par index, `scenario::weapon_owned`) :
+/// hors économie toutes les armes sont équipées ; en Progression seules
 /// celles achetées au magasin, les armes de base à coût nul étant équipées
-/// d'office). Le mesh d'une arme non possédée n'est pas construit sur le
+/// d'office. Le mesh d'une arme non possédée n'est pas construit sur le
 /// vaisseau (elle ne tire pas non plus).
 fn weapons_mask(state: &GameState) -> Vec<bool> {
     (0..VAISSEAU_WEAPONS.len())
@@ -775,7 +775,7 @@ fn build_vaisseau(
     weapons_mask: &[bool],
 ) -> usize {
     let file = vaisseau_file();
-    let comp = composition_mask(&file);
+    let comp = composition_mask(file);
     // nombre de triangles alloués : la composition maximale (toujours + liés)
     // + toutes les armes du catalogue (les propulseurs ne font pas partie du
     // maillage : leur mesh est dessiné dynamiquement quand ils tirent)
@@ -788,7 +788,7 @@ fn build_vaisseau(
         .sum::<usize>()
         + weapons_face_count();
     let (pivot, pt) =
-        mesh_transform(&file, &comp, scale, orientation_degrees, center_percent);
+        mesh_transform(file, &comp, scale, orientation_degrees, center_percent);
     // seules les armes possédées sont dessinées (masque par index du
     // catalogue - les armes à acheter n'apparaissent qu'après l'achat)
     let weapons: Vec<(VaisseauWeapon, Point)> =
@@ -828,7 +828,7 @@ fn build_vaisseau(
     shape.rotation = 0.0;
 
     write_vaisseau(
-        &file,
+        file,
         shapes,
         triangles,
         shape_index,
@@ -863,10 +863,10 @@ pub fn rebuild_player_vaisseau(
     triangles: &mut [Triangle],
 ) {
     let file = vaisseau_file();
-    let comp = composition_mask(&file);
+    let comp = composition_mask(file);
     let visible = plane_visibility(state);
     let (pivot, pt) = mesh_transform(
-        &file,
+        file,
         &comp,
         VAISSEAU_SCALE,
         VAISSEAU_ORIENTATION_DEGREES,
@@ -885,11 +885,11 @@ pub fn rebuild_player_vaisseau(
     // reconstruction en place : toute la plage réservée est tuée puis
     // réécrite (les triangles des plans non visibles restent morts)
     let shape = &shapes[PLAYER_INDEX];
-    for i in shape.first_triangle..=shape.last_triangle {
-        triangles[i].life = 0;
+    for t in &mut triangles[shape.first_triangle..=shape.last_triangle] {
+        t.life = 0;
     }
     write_vaisseau(
-        &file,
+        file,
         shapes,
         triangles,
         PLAYER_INDEX,
@@ -904,14 +904,9 @@ pub fn rebuild_player_vaisseau(
     shape.center = pivot;
     // positions réelles recalculées avec les cinématiques courantes (le
     // vaisseau est à quai pendant l'atelier ; le respawn vient de le poser)
-    for i in shape.first_triangle..=shape.last_triangle {
-        if triangles[i].life > 0 {
-            compute_real_positions(
-                &mut triangles[i],
-                shape.position,
-                shape.center,
-                shape.orientation,
-            );
+    for t in &mut triangles[shape.first_triangle..=shape.last_triangle] {
+        if t.life > 0 {
+            compute_real_positions(t, shape.position, shape.center, shape.orientation);
         }
     }
 }
@@ -1003,8 +998,7 @@ mod tests {
         assert!(s.is_collider);
         assert_eq!(s.texture, TEXTURE_NONE);
         let mut seen = 0;
-        for i in s.first_triangle..=s.last_triangle {
-            let t = &triangles[i];
+        for t in &triangles[s.first_triangle..=s.last_triangle] {
             if t.life > 0 {
                 seen += 1;
                 assert_eq!(t.shape_index, idx as i32);
@@ -1083,8 +1077,8 @@ mod tests {
         // bien présent dans cette boîte, avec l'axe y retourné et le nez à
         // droite, sans figer les extensions ajoutées par le catalogue.
         let file = vaisseau_file();
-        let comp = composition_mask(&file);
-        let (minx, miny, maxx, maxy) = composition_bbox(&file, &comp);
+        let comp = composition_mask(file);
+        let (minx, miny, maxx, maxy) = composition_bbox(file, &comp);
         let scale = VAISSEAU_SCALE;
         let tol = 0.05 + 0.001 * (maxx - minx) * scale;
         assert!(s.top_left.y <= -maxy * scale + tol, "haut : {}", s.top_left.y);
@@ -1130,12 +1124,12 @@ mod tests {
             &weapons_mask(&state),
         );
         let small = &small_shapes[0];
-        let full = &full_shapes[0];
+        let _full = &full_shapes[0];
         // Les armes ont leur propre échelle et ne suivent pas celle du
         // vaisseau : on compare uniquement les faces de base, écrites en tête
         // de la plage de triangles.
         let file = vaisseau_file();
-        let comp = composition_mask(&file);
+        let comp = composition_mask(file);
         let visible = plane_visibility(&state);
         let base_faces: usize = file
             .planes
@@ -1144,13 +1138,13 @@ mod tests {
             .filter(|(i, _)| visible.get(*i).copied().unwrap_or(false) && comp.get(*i).copied().unwrap_or(false))
             .map(|(_, p)| p.faces.len())
             .sum();
-        let base_bbox = |shape: &Shape, triangles: &[Triangle]| {
+        let base_bbox = |triangles: &[Triangle]| {
             let mut minx = f64::INFINITY;
             let mut maxx = f64::NEG_INFINITY;
             let mut miny = f64::INFINITY;
             let mut maxy = f64::NEG_INFINITY;
-            for i in shape.first_triangle..shape.first_triangle + base_faces {
-                for p in [triangles[i].a, triangles[i].b, triangles[i].c] {
+            for t in &triangles[..base_faces] {
+                for p in [t.a, t.b, t.c] {
                     minx = minx.min(p.x);
                     maxx = maxx.max(p.x);
                     miny = miny.min(p.y);
@@ -1159,8 +1153,8 @@ mod tests {
             }
             (maxx - minx, maxy - miny)
         };
-        let (small_width, small_height) = base_bbox(small, &small_triangles);
-        let (full_width, full_height) = base_bbox(full, &full_triangles);
+        let (small_width, small_height) = base_bbox(&small_triangles);
+        let (full_width, full_height) = base_bbox(&full_triangles);
         assert!((small_width / full_width - 0.5).abs() < 1e-9);
         assert!((small_height / full_height - 0.5).abs() < 1e-9);
         assert!(small.bottom_right.x > 0.0, "nez à droite : {}", small.bottom_right.x);
@@ -1191,8 +1185,8 @@ mod tests {
         assert!(s.top_left.y < 0.0, "tuyère en haut : {}", s.top_left.y);
         assert!(s.width > s.height, "boîte pivotée : {} > {}", s.width, s.height);
         let file = vaisseau_file();
-        let comp = composition_mask(&file);
-        let (pivot, _) = mesh_transform(&file, &comp, 1.0, 90.0, Point::new(50.0, 50.0));
+        let comp = composition_mask(file);
+        let (pivot, _) = mesh_transform(file, &comp, 1.0, 90.0, Point::new(50.0, 50.0));
         assert!((s.target_center.x - pivot.x).abs() < 1e-9, "pivot x {}", s.target_center.x);
         assert!((s.target_center.y - pivot.y).abs() < 1e-9, "pivot y {}", s.target_center.y);
     }
@@ -1216,8 +1210,8 @@ mod tests {
         );
         let s = &shapes[0];
         let file = vaisseau_file();
-        let comp = composition_mask(&file);
-        let (expected, _) = mesh_transform(&file, &comp, 1.0, 0.0, Point::new(0.0, 0.0));
+        let comp = composition_mask(file);
+        let (expected, _) = mesh_transform(file, &comp, 1.0, 0.0, Point::new(0.0, 0.0));
         assert!(
             (s.target_center.x - expected.x).abs() < 1e-9
                 && (s.target_center.y - expected.y).abs() < 1e-9,
@@ -1238,7 +1232,7 @@ mod tests {
             &weapons_mask(&state),
         );
         let s = &shapes[0];
-        let (expected, _) = mesh_transform(&file, &comp, 1.0, 0.0, Point::new(100.0, 100.0));
+        let (expected, _) = mesh_transform(file, &comp, 1.0, 0.0, Point::new(100.0, 100.0));
         assert!(
             (s.target_center.x - expected.x).abs() < 1e-9
                 && (s.target_center.y - expected.y).abs() < 1e-9,
@@ -1291,10 +1285,10 @@ mod tests {
         let s = &shapes[idx];
         assert_eq!(s.life as usize, vaisseau_visible_face_count(&state));
         let mut visible = 0;
-        for i in s.first_triangle..=s.last_triangle {
-            if triangles[i].life > 0 {
+        for t in &triangles[s.first_triangle..=s.last_triangle] {
+            if t.life > 0 {
                 visible += 1;
-                assert_ne!(triangles[i].color, 0, "chaque face visible doit porter une couleur");
+                assert_ne!(t.color, 0, "chaque face visible doit porter une couleur");
             }
         }
         assert_eq!(visible, s.life as usize);
@@ -1403,8 +1397,8 @@ mod tests {
             // chaque emplacement reste dans la boîte englobante (aucun point
             // ne s'échappe - la conversion % → point local est bornée)
             let file = vaisseau_file();
-            let comp = composition_mask(&file);
-            let (minx, miny, maxx, maxy) = composition_bbox(&file, &comp);
+            let comp = composition_mask(file);
+            let (minx, miny, maxx, maxy) = composition_bbox(file, &comp);
             for s in &spawns {
                 assert!(
                     s.x >= minx * VAISSEAU_SCALE && s.x <= maxx * VAISSEAU_SCALE,

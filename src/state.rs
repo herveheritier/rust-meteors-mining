@@ -215,11 +215,13 @@ pub struct GameState {
     pub window_size: i32,
     /// Anticrénelage MSAA 4× (écran de paramétrage) : appliqué à la **création
     /// de la fenêtre** (macroquad ne permet pas de le changer à chaud) - la
+    /// Anticrénelage MSAA 4× (écran de paramétrage) : appliqué à la **création
+    /// de la fenêtre** (macroquad ne permet pas de le changer à chaud) - la
     /// valeur prend effet au prochain lancement.
     pub antialias: bool,
     /// Interface tactile affichée et active (case TOUCH UI de l'écran de
     /// paramétrage, persistée - clé `touch_ui`) : joystick virtuel bas-gauche
-    /// + bouton de tir bas-droite (`touch.rs`). Masquée (et inopérante) quand
+    /// et bouton de tir bas-droite (`touch.rs`). Masquée (et inopérante) quand
     /// le réglage est éteint - le jeu se pilote alors au clavier seul.
     pub touch_ui: bool,
     /// Valeur d'anticrénelage effectivement appliquée par la fenêtre au

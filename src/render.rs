@@ -437,8 +437,8 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
     let tab_w = (w - 2.0 * pad - 3.0 * tab_gap) / 4.0;
     let tabs_top = top + 40.0;
     let mut tabs = [Rect::new(0.0, 0.0, 0.0, 0.0); 4];
-    for i in 0..4 {
-        tabs[i] = Rect::new(
+    for (i, tab) in tabs.iter_mut().enumerate() {
+        *tab = Rect::new(
             left + pad + i as f32 * (tab_w + tab_gap),
             tabs_top,
             tab_w,
@@ -734,6 +734,7 @@ fn draw_shop_supplies_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2) {
 /// au-dessus de la piste (vert si abordable, rouge sinon), bouton ACHETER à
 /// droite (PLEIN quand rien ne manque). `qty`/`cost` portent la quantité du
 /// curseur et son coût.
+#[allow(clippy::too_many_arguments)]
 fn draw_supply_row(
     state: &GameState,
     row: Rect,
@@ -798,7 +799,7 @@ fn draw_shop_weapons_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2, shapes: 
         }
         let spec = scenario::weapon_spec(i);
         let owned = scenario::weapon_owned(state, i);
-        draw_text_shadow(&spec.name, rect.x + 4.0, rect.y + 14.0, 15.0, argb_to_color(BOX_FG));
+        draw_text_shadow(spec.name, rect.x + 4.0, rect.y + 14.0, 15.0, argb_to_color(BOX_FG));
         draw_text_shadow(
             &format!("MUNITIONS : {} CR / {} u", spec.ammo_price, spec.ammo_pack),
             rect.x + 4.0,
@@ -878,8 +879,7 @@ fn draw_ship_preview(
     let mut maxx = f64::MIN;
     let mut maxy = f64::MIN;
     let mut any = false;
-    for t in ship.first_triangle..=ship.last_triangle {
-        let tri = &triangles[t];
+    for tri in &triangles[ship.first_triangle..=ship.last_triangle] {
         if tri.life <= 0 {
             continue;
         }
@@ -911,8 +911,7 @@ fn draw_ship_preview(
     draw_rectangle_lines(panel.x, panel.y, panel.w, panel.h, 1.0, argb_to_color(BOX_BORDER));
 
     // vaisseau réel (armes possédées + extensions)
-    for t in ship.first_triangle..=ship.last_triangle {
-        let tri = &triangles[t];
+    for tri in &triangles[ship.first_triangle..=ship.last_triangle] {
         if tri.life <= 0 {
             continue;
         }
@@ -1002,8 +1001,8 @@ fn draw_shop_workshop_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2) {
     }
 }
 
-/// Onglet MODE DE VOL : une ligne par mode (ordre `MOVING_MODE_ORDER`) - nom
-/// + description, et bouton SÉLECTIONNÉ / DÉBLOQUER {prix} / GRATUIT à
+/// Onglet MODE DE VOL : une ligne par mode (ordre `MOVING_MODE_ORDER`) avec
+/// nom, description et bouton SÉLECTIONNÉ / DÉBLOQUER {prix} / GRATUIT à
 /// droite (vert si le déblocage est abordable, rouge sinon).
 fn draw_shop_modes_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2) {
     for (i, rect) in l.modes.iter().enumerate() {
@@ -1633,6 +1632,7 @@ fn screen_point(p: Point, camera: Point, world: &World) -> Vec2 {
 ///
 /// Les UV sont normalisés dans [0,1] et repliés par modulo (`rem_euclid`),
 /// ce qui reproduit le wrapping `_seamless` (voir `docs/PORTAGE.md` §6).
+#[allow(clippy::too_many_arguments)]
 pub fn draw_triangle_texture(
     texture: &Texture2D,
     v1: Vec2,
@@ -1682,6 +1682,7 @@ fn draw_dashed_line(a: Vec2, b: Vec2, color: Color) {
 /// enchaîné de la récupération EVA : le cosmonaute s'efface pendant que le
 /// vaisseau reconstruit apparaît (`main.rs`). 1.0 pour toutes les autres
 /// formes.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_shape(
     state: &GameState,
     assets: &Assets,
@@ -1723,8 +1724,7 @@ pub fn draw_shape(
         draw_circle(x as f32, y as f32, 1.0, argb_to_color(shape.shape_color));
     }
 
-    for i in shape.first_triangle..=shape.last_triangle {
-        let t = &triangles[i];
+    for t in &triangles[shape.first_triangle..=shape.last_triangle] {
         let p = screen_point(t.real_center, camera, &state.world);
         if shape.show_all_parts
             || (t.life > 0
@@ -2781,16 +2781,14 @@ pub fn draw_info(
     // formes vivantes : au moins un triangle vivant (ex boucle de dessin de
     // `mainLoop`, sans le nettoyage)
     let mut alive_shapes = 0;
-    for i in 1..shapes.len() {
-        if shapes[i].life <= 0 {
+    for s in shapes.iter().skip(1) {
+        if s.life <= 0 {
             continue;
         }
-        let mut t = 0;
-        for j in shapes[i].first_triangle..=shapes[i].last_triangle {
-            if triangles[j].life > 0 {
-                t += 1;
-            }
-        }
+        let t = triangles[s.first_triangle..=s.last_triangle]
+            .iter()
+            .filter(|tri| tri.life > 0)
+            .count();
         if t > 0 {
             alive_shapes += 1;
         }
@@ -3357,7 +3355,7 @@ mod tests {
         // longueur du lien = 1 - r : tendu au largage, replié à la fin
         for r in [0.0f64, 0.25, 0.5, 0.75, 1.0] {
             let length = 1.0 - r;
-            assert!(length >= 0.0 && length <= 1.0, "longueur hors borne");
+            assert!((0.0..=1.0).contains(&length), "longueur hors borne");
         }
         // enveloppe : maximale au largage (r = 0), nulle une fois rentré
         // (r = 1), strictement entre les deux (relâchement par à-coups)

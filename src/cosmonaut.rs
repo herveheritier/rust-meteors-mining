@@ -268,7 +268,7 @@ fn build_cosmonaut(
                 for v in &plane.verts {
                     let p = Point::new(v[0], v[1]);
                     let d = (p.x - figure_center.x).hypot(p.y - figure_center.y);
-                    if best.map_or(true, |(_, bd)| d < bd) {
+                    if best.is_none_or(|(_, bd)| d < bd) {
                         best = Some((p, d));
                     }
                 }
@@ -341,8 +341,7 @@ pub fn animate_eva_cosmonaut(
     if step.abs() < 1e-9 {
         return;
     }
-    for i in shape.first_triangle..=shape.last_triangle {
-        let t = &mut triangles[i];
+    for t in &mut triangles[shape.first_triangle..=shape.last_triangle] {
         let amp = match t.limb {
             1 => step,                         // bras : balancement complet
             2 => step * SWING_LEGS_FACTOR,     // jambes : plus court
@@ -375,15 +374,14 @@ mod tests {
         assert_eq!(s.life, 91);
         assert_eq!(s.last_triangle - s.first_triangle + 1, 91);
         assert!(!s.is_collider);
-        for i in s.first_triangle..=s.last_triangle {
-            let t = &triangles[i];
+        for t in &triangles[s.first_triangle..=s.last_triangle] {
             assert_eq!(t.life, 1);
             assert_eq!(t.shape_index, idx as i32);
             assert_ne!(t.color, 0, "chaque face doit porter sa couleur");
         }
         // les couleurs du fichier : la combinaison claire et la visière sombre
         let colors: std::collections::HashSet<u32> =
-            (s.first_triangle..=s.last_triangle).map(|i| triangles[i].color).collect();
+            triangles[s.first_triangle..=s.last_triangle].iter().map(|t| t.color).collect();
         assert!(colors.len() >= 2, "{} couleurs distinctes attendues", colors.len());
     }
 
@@ -420,8 +418,7 @@ mod tests {
         let mut arms = 0;
         let mut legs = 0;
         let mut fixed = 0;
-        for i in s.first_triangle..=s.last_triangle {
-            let t = &triangles[i];
+        for t in &triangles[s.first_triangle..=s.last_triangle] {
             match t.limb {
                 1 => {
                     arms += 1;
@@ -451,8 +448,9 @@ mod tests {
         let mut arm_tri = None;
         let mut leg_tri = None;
         let mut fixed_tri = None;
-        for i in s.first_triangle..=s.last_triangle {
-            match triangles[i].limb {
+        for (i, t) in triangles[s.first_triangle..=s.last_triangle].iter().enumerate() {
+            let i = s.first_triangle + i;
+            match t.limb {
                 1 if arm_tri.is_none() => arm_tri = Some(i),
                 2 if leg_tri.is_none() => leg_tri = Some(i),
                 0 if fixed_tri.is_none() => fixed_tri = Some(i),

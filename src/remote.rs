@@ -5,9 +5,9 @@
 //! jeu en direct.
 //!
 //! - `GET /`      - page de contrôle (HTML/JS embarqué, sans fichier externe)
-//! - `POST /cmd`  - commandes `{"up":0|1,"down":..,"left":..,"right":..,"fire":..}`
+//! - `POST /cmd/` - commandes `{"up":0|1,"down":..,"left":..,"right":..,"fire":..}`
 //! - `GET /state` - état du jeu en JSON (FPS, carburant, munitions, crédits,
-//!                  réputation, vies/bouclier, pause…)
+//!   réputation, vies/bouclier, pause…)
 //!
 //! Le serveur tourne dans un thread dédié (`start`, appelé au lancement par
 //! `main.rs`), sans authentification - réseau local uniquement. Les commandes

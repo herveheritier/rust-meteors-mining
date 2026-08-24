@@ -26,6 +26,9 @@ use crate::state::{default_elements, Element, GameState};
 ///
 /// Renvoie l'index de la forme créée (réutilise une forme détruite ayant le
 /// même nombre de triangles quand c'est possible).
+// Signature historique (les paramètres de génération sont nombreux) :
+// `#[allow]` ciblé plutôt qu'un regroupement en struct.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_shape(
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
@@ -223,10 +226,12 @@ pub fn release_meteor_minerals(
         // réutiliser `create_mineral` - `center = centre du météore` fait
         // tomber le minerai sur la position du météore (rotation autour de
         // lui-même = lui-même)
-        let mut source = Triangle::default();
-        source.element = 1 + (rng.gen::<f64>() * 3.0) as i32; // 1..=3 (or/fer/eau)
-        source.shape_index = meteor_index as i32;
-        source.center = center;
+        let source = Triangle {
+            element: 1 + (rng.gen::<f64>() * 3.0) as i32, // 1..=3 (or/fer/eau)
+            shape_index: meteor_index as i32,
+            center,
+            ..Triangle::default()
+        };
         create_mineral(shapes, triangles, elements, &source, rng);
     }
 }
@@ -290,8 +295,8 @@ pub fn create_mineral(
 ) {
     let mut shape = Shape::default();
     let _idx = meshes_to_shape(&mut shape, shapes, triangles, MINERAL_MESH);
-    for i in shape.first_triangle..=shape.last_triangle {
-        triangles[i].element = source_triangle.element;
+    for t in &mut triangles[shape.first_triangle..=shape.last_triangle] {
+        t.element = source_triangle.element;
     }
     shape.who_i_am = WHOIAM_MINERAL;
     shape.is_collider = true;
@@ -339,8 +344,8 @@ fn create_mineral_at(
 ) {
     let mut shape = Shape::default();
     let _idx = meshes_to_shape(&mut shape, shapes, triangles, MINERAL_MESH);
-    for i in shape.first_triangle..=shape.last_triangle {
-        triangles[i].element = element;
+    for t in &mut triangles[shape.first_triangle..=shape.last_triangle] {
+        t.element = element;
     }
     shape.who_i_am = WHOIAM_MINERAL;
     shape.is_collider = true;
@@ -489,6 +494,7 @@ pub fn fire_bullet(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>, fired
 /// autour de `(cx, cy)` de `orientation` - comme les sommets du mesh,
 /// `compute_real_positions`). Appelée par `fire_bullet` quand le catalogue
 /// est rempli (les tests l'utilisent aussi avec des armes factices).
+#[allow(clippy::too_many_arguments)]
 fn fire_bullet_with(
     shapes: &mut Vec<Shape>,
     triangles: &mut Vec<Triangle>,
@@ -592,25 +598,28 @@ mod tests {
 
     /// Météore de test avec `n` triangles consécutifs et `n` minerais.
     fn test_meteor(n: i32) -> Shape {
-        let mut s = Shape::default();
-        s.who_i_am = WHOIAM_METEOR;
-        s.is_collider = true;
-        s.first_triangle = 0;
-        s.last_triangle = (n - 1).max(0) as usize;
-        s.life = n;
-        s.minerals = n;
-        s.radius = 10.0;
-        s.position = Point::new(0.0, 0.0);
-        s
+        Shape {
+            who_i_am: WHOIAM_METEOR,
+            is_collider: true,
+            first_triangle: 0,
+            last_triangle: (n - 1).max(0) as usize,
+            life: n,
+            minerals: n,
+            radius: 10.0,
+            position: Point::new(0.0, 0.0),
+            ..Shape::default()
+        }
     }
 
     /// Triangle de test rattaché à la forme `shape_index`, avec un élément
     /// minéral (or) et une position `(x, y)`.
     fn test_mineral_triangle(id: i32, shape_index: i32, x: f64, y: f64) -> Triangle {
-        let mut t = Triangle::default();
-        t.id = id;
-        t.shape_index = shape_index;
-        t.element = 1; // GOLD
+        let mut t = Triangle {
+            id,
+            shape_index,
+            element: 1, // GOLD
+            ..Triangle::default()
+        };
         t.create(Point::new(0.0, 0.0), Point::new(10.0, 0.0), Point::new(0.0, 10.0));
         t.position = Point::new(x, y);
         t.real_a = Point::new(t.a.x + x, t.a.y + y);
@@ -631,23 +640,23 @@ mod tests {
         // plage cohérente : life = nombre de triangles vivants
         let n = shape.last_triangle - shape.first_triangle + 1;
         assert_eq!(shape.life as usize, n);
-        assert!(n >= 1 && n <= 8);
-        for i in shape.first_triangle..=shape.last_triangle {
-            assert_eq!(triangles[i].life, 1);
-            assert_eq!(triangles[i].shape_index, idx as i32);
+        assert!((1..=8).contains(&n));
+        for t in &triangles[shape.first_triangle..=shape.last_triangle] {
+            assert_eq!(t.life, 1);
+            assert_eq!(t.shape_index, idx as i32);
         }
 
         // nb d'arêtes libres = n + 2 (polygone simple triangulé, sans trou)
         get_border_segments(shape, &mut triangles);
         let mut border = 0;
-        for i in shape.first_triangle..=shape.last_triangle {
-            if triangles[i].a_shape_border {
+        for t in &triangles[shape.first_triangle..=shape.last_triangle] {
+            if t.a_shape_border {
                 border += 1;
             }
-            if triangles[i].b_shape_border {
+            if t.b_shape_border {
                 border += 1;
             }
-            if triangles[i].c_shape_border {
+            if t.c_shape_border {
                 border += 1;
             }
         }
@@ -681,7 +690,7 @@ mod tests {
         let mut shapes = vec![test_meteor(3)]; // 3 minerais, 3 triangles
         let mut triangles = Vec::new();
         for i in 0..3 {
-            triangles.push(test_mineral_triangle(i as i32, 0, i as f64, 0.0));
+            triangles.push(test_mineral_triangle(i, 0, i as f64, 0.0));
         }
         let elements = default_elements();
 
@@ -719,9 +728,11 @@ mod tests {
         // cosmonaute EVA ou le vaisseau ressuscité pourront les ramasser)
         let mut rng = seed();
         // vaisseau joueur (index 0) au point du crash
-        let mut player = Shape::default();
-        player.who_i_am = WHOIAM_PLAYER;
-        player.position = Point::new(100.0, 100.0);
+        let player = Shape {
+            who_i_am: WHOIAM_PLAYER,
+            position: Point::new(100.0, 100.0),
+            ..Shape::default()
+        };
         let mut shapes = vec![player];
         let mut triangles = Vec::new();
         let mut elements = default_elements();
@@ -755,9 +766,11 @@ mod tests {
     fn eject_cargo_minerals_with_empty_cargo_is_a_noop() {
         // soute vide → aucun minerai rejeté, rien ne change
         let mut rng = seed();
-        let mut player = Shape::default();
-        player.who_i_am = WHOIAM_PLAYER;
-        player.position = Point::new(100.0, 100.0);
+        let player = Shape {
+            who_i_am: WHOIAM_PLAYER,
+            position: Point::new(100.0, 100.0),
+            ..Shape::default()
+        };
         let mut shapes = vec![player];
         let mut triangles = Vec::new();
         let mut elements = default_elements();

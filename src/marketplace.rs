@@ -49,11 +49,11 @@ pub const AMMO_STEP: i32 = 5;
 /// historique). Généré par l'outil de gestion.
 pub const RADAR_COST: i32 = 20;
 
-/// Météores - collisions avec la station et génération (mise au point).
-/// Données générées par l'outil de gestion : lues par `src/game.rs`
-/// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et
-/// `src/state.rs` (génération et population).
-
+/// Météores - collisions avec la station et génération (mise au point) : les
+/// constantes ci-dessous sont générées par l'outil de gestion et lues par
+/// `src/game.rs` (réaction à la base), `src/garbage.rs` (débris),
+/// `src/generate.rs` et `src/state.rs` (génération et population).
+///
 /// Force de réaction d'un météore qui percute la **station** : le triangle
 /// qui collisionne explose et le météore est repoussé - sa composante de
 /// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,
@@ -156,7 +156,7 @@ pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[
         orientation_degrees: 0.0,
         position: (-15.0, 50.0),
         ejection_angle_degrees: 180.0,
-        color: 0xFFf79e02,
+        color: 0xFFFF7902,
     },
     VaisseauThruster {
         name: "AVANT",
@@ -174,7 +174,7 @@ pub const VAISSEAU_THRUSTERS: &[VaisseauThruster] = &[
         orientation_degrees: 90.0,
         position: (88.0, 75.0),
         ejection_angle_degrees: 90.0,
-        color: 0xFF97d3c4,
+        color: 0xFF97D3C4,
     },
     VaisseauThruster {
         name: "DROITE",

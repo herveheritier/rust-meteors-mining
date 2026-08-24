@@ -240,7 +240,7 @@ impl Segment {
         // paramètres d'intersection
         let t1 = ((other.a.x - self.a.x) * dy2 - (other.a.y - self.a.y) * dx2) / det;
         let t2 = ((other.a.x - self.a.x) * dy1 - (other.a.y - self.a.y) * dx1) / det;
-        if t1 >= 0.0 && t1 <= 1.0 && t2 >= 0.0 && t2 <= 1.0 {
+        if (0.0..=1.0).contains(&t1) && (0.0..=1.0).contains(&t2) {
             SegmentIntersection::Crossing
         } else {
             SegmentIntersection::None
@@ -403,15 +403,15 @@ pub fn triangles_collide(a: &Triangle, b: &Triangle) -> bool {
 
             let mut min_a = INF;
             let mut max_a = -INF;
-            for j in 0..3 {
-                let proj = verts_a[j].dot(axis);
+            for &p in &verts_a {
+                let proj = p.dot(axis);
                 min_a = min_a.min(proj);
                 max_a = max_a.max(proj);
             }
             let mut min_b = INF;
             let mut max_b = -INF;
-            for j in 0..3 {
-                let proj = verts_b[j].dot(axis);
+            for &p in &verts_b {
+                let proj = p.dot(axis);
                 min_b = min_b.min(proj);
                 max_b = max_b.max(proj);
             }

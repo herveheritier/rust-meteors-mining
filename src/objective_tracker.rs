@@ -15,7 +15,7 @@ use crate::scenario_loader::{JsonCondition, JsonReward, JsonScenario, loaded_sce
 use crate::state::GameState;
 
 /// État d'un objectif individuel pendant la partie.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TrackedObjective {
     /// Identifiant unique (ex. `"step_first_dock"`).
     pub id: String,
@@ -456,8 +456,8 @@ mod tests {
     #[test]
     fn already_met_objective_completes_at_assignment() {
         // Un objectif avec un prérequis non complété n'est pas débloqué
-        let mut tracker = ObjectiveTracker::default();
-        tracker.objectives = vec![
+        let mut tracker = ObjectiveTracker {
+            objectives: vec![
             TrackedObjective {
                 id: "a".to_string(),
                 title: "A".to_string(),
@@ -469,8 +469,7 @@ mod tests {
                     ..Default::default()
                 },
                 reward: JsonReward::default(),
-                completed: false,
-                active_time: 0.0,
+                ..Default::default()
             },
             TrackedObjective {
                 id: "b".to_string(),
@@ -483,10 +482,11 @@ mod tests {
                     ..Default::default()
                 },
                 reward: JsonReward::default(),
-                completed: false,
-                active_time: 0.0,
+                ..Default::default()
             },
-        ];
+        ],
+            ..ObjectiveTracker::default()
+        };
 
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
@@ -530,8 +530,8 @@ mod tests {
         // qu'un objectif (déjà satisfait à l'assignation) a été complété.
         // L'évaluation se fait à l'assignation, pas plus tard : la dépense
         // ultérieure ne doit pas empêcher la complétion.
-        let mut tracker = ObjectiveTracker::default();
-        tracker.objectives = vec![TrackedObjective {
+        let mut tracker = ObjectiveTracker {
+            objectives: vec![TrackedObjective {
             id: "mine".to_string(),
             title: "Mine".to_string(),
             description: "desc".to_string(),
@@ -542,15 +542,16 @@ mod tests {
                 ..Default::default()
             },
             reward: JsonReward::default(),
-            completed: false,
-            active_time: 0.0,
-        }];
+            ..Default::default()
+        }],
+            ..ObjectiveTracker::default()
+        };
 
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
         crate::scenario::apply_start(&mut state);
 
-        // le joueur a déjà 12 minerais quand l'objectif est désigné
+        // le joueur a déjà 12 crédits quand l'objectif est désigné
         state.resources.credits = 12;
         let results = tracker.update(&state, 0.0);
         assert_eq!(results.len(), 1);
@@ -566,8 +567,8 @@ mod tests {
 
     #[test]
     fn completed_objectives_are_not_recounted() {
-        let mut tracker = ObjectiveTracker::default();
-        tracker.objectives = vec![TrackedObjective {
+        let mut tracker = ObjectiveTracker {
+            objectives: vec![TrackedObjective {
             id: "x".to_string(),
             title: "X".to_string(),
             description: "desc x".to_string(),
@@ -578,9 +579,10 @@ mod tests {
                 ..Default::default()
             },
             reward: JsonReward::default(),
-            completed: false,
-            active_time: 0.0,
-        }];
+            ..Default::default()
+        }],
+            ..ObjectiveTracker::default()
+        };
 
         let state = GameState::new();
         let r1 = tracker.update(&state, 0.0);
@@ -591,8 +593,8 @@ mod tests {
 
     #[test]
     fn evaluate_survive_time_tracks_duration_and_resets_on_death() {
-        let mut tracker = ObjectiveTracker::default();
-        tracker.objectives = vec![TrackedObjective {
+        let mut tracker = ObjectiveTracker {
+            objectives: vec![TrackedObjective {
             id: "surv".to_string(),
             title: "Survive Test".to_string(),
             description: "desc".to_string(),
@@ -603,9 +605,10 @@ mod tests {
                 ..Default::default()
             },
             reward: JsonReward::default(),
-            completed: false,
-            active_time: 0.0,
-        }];
+            ..Default::default()
+        }],
+            ..ObjectiveTracker::default()
+        };
 
         let mut state = GameState::new();
 
@@ -630,9 +633,9 @@ mod tests {
 
     #[test]
     fn evaluate_unlock_movement_mode_validates_when_unlocked_or_active() {
-        let mut tracker = ObjectiveTracker::default();
-        tracker.objectives = vec![TrackedObjective {
-            id: "mode_inertial".to_string(),
+        let mut tracker = ObjectiveTracker {
+            objectives: vec![TrackedObjective {
+                id: "mode_inertial".to_string(),
             title: "Nouveau Mode de Vol".to_string(),
             description: "Achetez le mode de déplacement Inerte au magasin.".to_string(),
             prerequisites: vec![],
@@ -642,9 +645,10 @@ mod tests {
                 ..Default::default()
             },
             reward: JsonReward::default(),
-            completed: false,
-            active_time: 0.0,
-        }];
+                ..Default::default()
+            }],
+            ..ObjectiveTracker::default()
+        };
 
         let mut state = GameState::new();
         state.scenario = crate::scenario::ScenarioId::Progression;
@@ -655,7 +659,8 @@ mod tests {
         let res = tracker.update(&state, 0.0);
         assert_eq!(res.len(), 0);
 
-        // Le joueur achète le mode INERTIAL (0) au magasin -> unlocked_modes[0] = true
+        // Le mode débloqué -> INERTIAL (0) : objectif rempli
+        state.unlocked_modes[crate::config::MOVING_MODE_INERTIAL as usize] = true;
         state.unlocked_modes[crate::config::MOVING_MODE_INERTIAL as usize] = true;
         let res = tracker.update(&state, 0.0);
         assert_eq!(res.len(), 1);

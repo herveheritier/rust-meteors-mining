@@ -79,6 +79,10 @@ pub fn pilot_index(state: &GameState) -> usize {
 /// remise à zéro des indicateurs de collision → déplacements (formes gelées
 /// en pause, débris toujours actifs - comportement de l'original) →
 /// collisions → caméra → génération automatique.
+// Signature volontairement plate (miroir de l'original QB64) : tous les
+// vecteurs du monde sont passés par la boucle principale - `#[allow]`
+// ciblé plutôt qu'un refactor risqué en struct.
+#[allow(clippy::too_many_arguments)]
 pub fn update(
     state: &mut GameState,
     shapes: &mut Vec<Shape>,
@@ -601,6 +605,7 @@ pub fn update(
 /// rétraction des liens, fondu enchaîné du secours EVA), les météores
 /// continuent de dériver mais le vaisseau est **protégé** : aucune collision
 /// avec lui n'est détectée. Le monde ne se fige que sur la touche P (pause).
+#[allow(clippy::too_many_arguments)]
 fn collisions(
     state: &mut GameState,
     shapes: &mut Vec<Shape>,
@@ -618,8 +623,8 @@ fn collisions(
 
     // déplace les formes (gelées en pause) puis les débris (toujours actifs)
     if !state.paused {
-        for i in 0..shapes.len() {
-            moving_shape(&mut shapes[i], triangles, &state.world, dt);
+        for s in shapes.iter_mut() {
+            moving_shape(s, triangles, &state.world, dt);
         }
     }
     for g in garbages.iter_mut() {
@@ -666,8 +671,8 @@ fn collisions(
                 - shapes[j].center.y)
                 .abs();
             let sum_radius = shapes[i].radius + shapes[j].radius;
-            if x_dist <= sum_radius && y_dist <= sum_radius {
-                if detect_collision(&shapes[i], &shapes[j], i, j, triangles) {
+            if x_dist <= sum_radius && y_dist <= sum_radius
+                && detect_collision(&shapes[i], &shapes[j], i, j, triangles) {
                     // pas de choc élastique entre un minerai et (vaisseau ou
                     // météore), ni avec la station
                     let no_elastic = (shapes[i].who_i_am == WHOIAM_MINERAL
@@ -680,7 +685,6 @@ fn collisions(
                         elastic_pairs.push((i, j));
                     }
                 }
-            }
         }
     }
 
@@ -777,8 +781,8 @@ fn collisions(
                     shapes[meteor].minerals += 1;
                 }
                 shapes[shape_index].life = 0;
-                for j in shapes[shape_index].first_triangle..=shapes[shape_index].last_triangle {
-                    triangles[j].life = 0;
+                for t in &mut triangles[shapes[shape_index].first_triangle..=shapes[shape_index].last_triangle] {
+                    t.life = 0;
                 }
             }
         } else if collid_by_who == WHOIAM_MINERAL && who == WHOIAM_METEOR {
@@ -794,8 +798,8 @@ fn collisions(
             // ne refont rien)
             if shapes[shape_index].life > 0 {
                 shapes[shape_index].life = 0;
-                for j in shapes[shape_index].first_triangle..=shapes[shape_index].last_triangle {
-                    triangles[j].life = 0;
+                for t in &mut triangles[shapes[shape_index].first_triangle..=shapes[shape_index].last_triangle] {
+                    t.life = 0;
                 }
                 state.send_message("YOUR SPACESHIP IS DAMAGED, THE STATION CAN CARRY OUT REPAIRS");
                 state.send_message("REPAIRS ARE NOT FREE OF CHARGE");
@@ -898,8 +902,8 @@ fn collisions(
                 let bullet_idx = collid_by as usize;
                 if bullet_idx < shapes.len() && shapes[bullet_idx].who_i_am == WHOIAM_BULLET {
                     shapes[bullet_idx].life = 0;
-                    for t in shapes[bullet_idx].first_triangle..=shapes[bullet_idx].last_triangle {
-                        triangles[t].life = 0;
+                    for t in &mut triangles[shapes[bullet_idx].first_triangle..=shapes[bullet_idx].last_triangle] {
+                        t.life = 0;
                     }
                 }
             }
@@ -920,15 +924,14 @@ fn collisions(
             // un minerai, lui, le détruit - pas de nouveau minerai : c.est le
             // seul cas de destruction de minerai (`who == WHOIAM_MINERAL` n'entre
             // pas ici).
-            if triangles[i].element > 0 && who == WHOIAM_METEOR {
-                if collid_by_who == WHOIAM_BULLET && triangles[i].element > 0 {
+            if triangles[i].element > 0 && who == WHOIAM_METEOR
+                && collid_by_who == WHOIAM_BULLET && triangles[i].element > 0 {
                     let source = triangles[i];
                     create_mineral(shapes, triangles, elements, &source, rng);
                     if shapes[shape_index].minerals > 0 {
                         shapes[shape_index].minerals -= 1;
                     }
                 }
-            }
             // le météore est détruit (par un autre météore ou par un missile
             // du vaisseau) : ses minerais restants - absorbés de minerais
             // mangés - sont libérés en minerais à sa position, jamais détruits
@@ -961,9 +964,9 @@ fn collisions(
 }
 
 /// Ramassage des minerais par le **cosmonaute EVA** : chaque minerai dont le
-/// centre entre dans le rayon `EVA_PICKUP_RADIUS` du cosmonaute est ramassée
-/// - détruite, son élément est compté dans la **même soute que le vaisseau**
-/// (déchargée en crédits à la station après le secours). Soute pleine, plus
+/// centre entre dans le rayon `EVA_PICKUP_RADIUS` du cosmonaute est ramassé
+/// (détruit, son élément est compté dans la **même soute que le vaisseau** -
+/// déchargée en crédits à la station après le secours). Soute pleine, plus
 /// de ramassage. Sans effet quand le vaisseau est intact (`cosmonaut_active`
 /// faux) : le cosmonaute garé ne ramasse rien.
 fn eva_collect_minerals(
@@ -1001,8 +1004,8 @@ fn eva_collect_minerals(
         }
         state.player.cargo_qty += 1;
         shapes[g].life = 0;
-        for j in shapes[g].first_triangle..=shapes[g].last_triangle {
-            triangles[j].life = 0;
+        for t in &mut triangles[shapes[g].first_triangle..=shapes[g].last_triangle] {
+            t.life = 0;
         }
         if let Some(sounds) = sounds.as_mut() {
             sounds.play_mineral();
@@ -1025,7 +1028,7 @@ fn nearest_meteor(shapes: &[Shape], pos: Point) -> Option<usize> {
             continue;
         }
         let d = (s.position.x - pos.x).hypot(s.position.y - pos.y);
-        if best.map_or(true, |(_, bd)| d < bd) {
+        if best.is_none_or(|(_, bd)| d < bd) {
             best = Some((i, d));
         }
     }
@@ -1037,18 +1040,18 @@ fn nearest_meteor(shapes: &[Shape], pos: Point) -> Option<usize> {
 /// dessin de `mainLoop`. Le vaisseau (index 0) n'est ni compté ni nettoyé.
 fn count_alive_shapes(shapes: &mut [Shape], triangles: &[Triangle]) -> i32 {
     let mut alive = 0;
-    for i in 1..shapes.len() {
-        if shapes[i].life <= 0 {
+    for s in shapes.iter_mut().skip(1) {
+        if s.life <= 0 {
             continue;
         }
         let mut t = 0;
-        for j in shapes[i].first_triangle..=shapes[i].last_triangle {
-            if triangles[j].life > 0 {
+        for tri in &triangles[s.first_triangle..=s.last_triangle] {
+            if tri.life > 0 {
                 t += 1;
             }
         }
         if t == 0 {
-            shapes[i].life = 0;
+            s.life = 0;
             continue;
         }
         alive += 1;
@@ -1104,8 +1107,8 @@ fn activate_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &m
     c.velocity = 0.0;
     c.orientation = 0.0;
     c.rotation = 0.0;
-    for j in c.first_triangle..=c.last_triangle {
-        compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
+    for t in &mut triangles[c.first_triangle..=c.last_triangle] {
+        compute_real_positions(t, c.position, c.center, c.orientation);
     }
     state.cosmonaut_active = true;
     state.docking_guide = true; // la mire guide le retour
@@ -1125,8 +1128,8 @@ fn rescue_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &mut
     c.velocity = 0.0;
     c.orientation = 0.0;
     c.rotation = 0.0;
-    for j in c.first_triangle..=c.last_triangle {
-        compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
+    for t in &mut triangles[c.first_triangle..=c.last_triangle] {
+        compute_real_positions(t, c.position, c.center, c.orientation);
     }
     state.cosmonaut_active = false;
     state.send_message("RESCUED - THE STATION REBUILT YOUR SHIP");
@@ -1167,8 +1170,8 @@ fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &m
     c.velocity = 0.0;
     c.direction = 0.0;
     c.rotation = 0.0;
-    for j in c.first_triangle..=c.last_triangle {
-        compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
+    for t in &mut triangles[c.first_triangle..=c.last_triangle] {
+        compute_real_positions(t, c.position, c.center, c.orientation);
     }
     state.player.thrusted = 0; // flamme coupée : plus de poussée
     state.player.revert_thrusted = 0;
@@ -1215,8 +1218,8 @@ fn advance_eva_recovery(
     }
     c.velocity = 0.0;
     c.rotation = 0.0;
-    for j in c.first_triangle..=c.last_triangle {
-        compute_real_positions(&mut triangles[j], c.position, c.center, c.orientation);
+    for t in &mut triangles[c.first_triangle..=c.last_triangle] {
+        compute_real_positions(t, c.position, c.center, c.orientation);
     }
     if state.eva_recovery <= 0.0 {
         state.eva_recovery = 0.0;
@@ -1381,8 +1384,8 @@ fn advance_dock_animation(
     p.velocity = 0.0;
     p.rotation = 0.0;
     // recalcule les positions réelles des triangles du vaisseau
-    for i in p.first_triangle..=p.last_triangle {
-        compute_real_positions(&mut triangles[i], p.position, p.center, p.orientation);
+    for t in &mut triangles[p.first_triangle..=p.last_triangle] {
+        compute_real_positions(t, p.position, p.center, p.orientation);
     }
     if state.dock_anim <= 0.0 {
         state.dock_anim = 0.0;
@@ -1504,8 +1507,8 @@ fn advance_dock_retract(
     p.velocity = 0.0;
     p.rotation = 0.0;
     // recalcule les positions réelles des triangles du vaisseau
-    for i in p.first_triangle..=p.last_triangle {
-        compute_real_positions(&mut triangles[i], p.position, p.center, p.orientation);
+    for t in &mut triangles[p.first_triangle..=p.last_triangle] {
+        compute_real_positions(t, p.position, p.center, p.orientation);
     }
     if state.dock_retract <= 0.0 {
         state.dock_retract = 0.0;
@@ -1543,8 +1546,8 @@ fn delete_out_of_range_bullets(
             pt.normalize_world(&state.world);
             if pt.x < DRAW_MINX || pt.x > DRAW_MAXX || pt.y < DRAW_MINY || pt.y > DRAW_MAXY {
                 shapes[i].life = 0;
-                for j in shapes[i].first_triangle..=shapes[i].last_triangle {
-                    triangles[j].life = 0;
+                for t in &mut triangles[shapes[i].first_triangle..=shapes[i].last_triangle] {
+                    t.life = 0;
                     state.bullets_lost += 1;
                 }
             }
@@ -1775,8 +1778,8 @@ fn shop_update(state: &mut GameState) {
 /// (achat / refus) s'affiche dans le pied de la fenêtre (`shop_feedback`).
 fn buy_weapon_and_save(
     state: &mut GameState,
-    shapes: &mut Vec<Shape>,
-    triangles: &mut Vec<Triangle>,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
     i: usize,
 ) {
     match scenario::buy_weapon(state, i) {
@@ -1822,8 +1825,8 @@ fn buy_radar_and_save(state: &mut GameState) {
 /// résultat (achat / refus) s'affiche dans le pied de la fenêtre.
 fn buy_upgrade_and_save(
     state: &mut GameState,
-    shapes: &mut Vec<Shape>,
-    triangles: &mut Vec<Triangle>,
+    shapes: &mut [Shape],
+    triangles: &mut [Triangle],
     track: scenario::UpgradeTrackId,
 ) {
     match scenario::buy_upgrade(state, track) {
@@ -2043,7 +2046,7 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
         let m = mouse_to_game();
         if l.volume_track.contains(m) {
             set_volume_fraction(
-                sounds.as_deref_mut(),
+                sounds,
                 ((m.x - l.volume_track.x) / l.volume_track.w).clamp(0.0, 1.0),
             );
         }
@@ -2205,12 +2208,11 @@ fn apply_view_mode(state: &mut GameState, target: ViewMode) {
         (ViewMode::Zoomed, ViewMode::Native) | (ViewMode::Native, ViewMode::Zoomed) => {}
         // plein écran → fenêtré : REMOVE EWMH (repli : redimensionnement à
         // la définition choisie)
-        (_, ViewMode::Windowed) => {
-            if !crate::x11::set_fullscreen(false) {
+        (_, ViewMode::Windowed)
+            if !crate::x11::set_fullscreen(false) => {
                 let (w, h) = window_size_dims(state.window_size);
                 request_new_screen_size(w, h);
             }
-        }
         _ => {}
     }
     state.view_mode = target;
@@ -2535,23 +2537,26 @@ mod tests {
 
     /// Construit une forme simple à `n` triangles (index `first..=last`).
     fn test_shape(who: i32, first: usize, last: usize, x: f64, y: f64) -> Shape {
-        let mut s = Shape::default();
-        s.who_i_am = who;
-        s.is_collider = true;
-        s.first_triangle = first;
-        s.last_triangle = last;
-        s.life = (last - first + 1) as i32;
-        s.radius = 10.0;
-        s.position = Point::new(x, y);
-        s
+        Shape {
+            who_i_am: who,
+            is_collider: true,
+            first_triangle: first,
+            last_triangle: last,
+            life: (last - first + 1) as i32,
+            radius: 10.0,
+            position: Point::new(x, y),
+            ..Shape::default()
+        }
     }
 
     /// Construit un triangle simple (sommets locaux fixes) rattaché à une
     /// forme, avec ses positions réelles calculées.
     fn test_triangle(id: i32, shape_index: i32, x: f64, y: f64) -> Triangle {
-        let mut t = Triangle::default();
-        t.id = id;
-        t.shape_index = shape_index;
+        let mut t = Triangle {
+            id,
+            shape_index,
+            ..Triangle::default()
+        };
         t.create(Point::new(0.0, 0.0), Point::new(10.0, 0.0), Point::new(0.0, 10.0));
         t.position = Point::new(x, y);
         // positions réelles : sommet local + position de la forme (forme à
@@ -2583,18 +2588,22 @@ mod tests {
 
     #[test]
     fn thrust_vector_recomputes_polar() {
-        let mut player = Shape::default();
-        player.direction = 0.0;
-        player.velocity = 1.0;
+        let mut player = Shape {
+            direction: 0.0,
+            velocity: 1.0,
+            ..Shape::default()
+        };
         // poussée le long de l'orientation (0 = +x), sx=1, sy=-1
         thrust_vector(&mut player, 0.05, 0.0, 1.0, -1.0);
         assert!((player.velocity - 1.05).abs() < 1e-12);
         assert_eq!(player.direction, 0.0);
 
         // orientation perpendiculaire : la direction dévie (signe -sin)
-        let mut player = Shape::default();
-        player.direction = 0.0;
-        player.velocity = 1.0;
+        let mut player = Shape {
+            direction: 0.0,
+            velocity: 1.0,
+            ..Shape::default()
+        };
         thrust_vector(&mut player, 0.05, std::f64::consts::FRAC_PI_2, 1.0, -1.0);
         assert!((player.velocity - 1.0f64.hypot(0.05)).abs() < 1e-12);
         assert!(player.direction < 0.0); // atan2(-0.05, 1)
@@ -2604,14 +2613,18 @@ mod tests {
     fn directional_deceleration_clamps_at_zero() {
         // vérifie la sémantique du bloc Down du mode directionnel : à vitesse
         // nulle, la décélération ne passe pas en négatif.
-        let mut player = Shape::default();
-        player.velocity = 0.0;
-        if player.velocity > 0.0 {
-            player.velocity -= PLAYER_ACCELERATION * 60.0 * (1.0 / 60.0);
-        } else {
-            player.velocity = 0.0;
+        let step = PLAYER_ACCELERATION * 60.0 * (1.0 / 60.0);
+        // décélération depuis une vitesse positive : converge vers 0 sans
+        // jamais passer en négatif (le bloc `else` de l'original force 0)
+        let mut v = 1.0;
+        for _ in 0..1000 {
+            v = if v > 0.0 { (v - step).max(0.0) } else { 0.0 };
         }
-        assert_eq!(player.velocity, 0.0);
+        assert_eq!(v, 0.0);
+        // vitesse nulle : reste à 0 (pas de décélération négative)
+        let mut v = 0.0;
+        v = if v > 0.0 { (v - step).max(0.0) } else { 0.0 };
+        assert_eq!(v, 0.0);
     }
 
     #[test]
@@ -2757,8 +2770,8 @@ mod tests {
             m.position = Point::new(140.0, 0.0);
         }
         // sans élément minéral : pas de minerai créé, test ciblé sur la collision
-        for i in shapes[idx].first_triangle..=shapes[idx].last_triangle {
-            triangles[i].element = 0;
+        for t in &mut triangles[shapes[idx].first_triangle..=shapes[idx].last_triangle] {
+            t.element = 0;
         }
         compute_shape_center(&mut shapes[idx], &triangles);
         let initial_life = shapes[idx].life;

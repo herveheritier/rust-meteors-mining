@@ -59,7 +59,7 @@ fn window_conf() -> Conf {
     // taille de fenêtre persistée : la taille **réelle** (redimensionnement à
     // la main, clés `win_w`/`win_h`) prime sur l'index du réglage SIZE
     let (win_w, win_h) = persist::load_window_px_size()
-        .or_else(|| persist::load_window_size())
+        .or_else(persist::load_window_size)
         .unwrap_or((VIEWPORT_WIDTH as i32, VIEWPORT_HEIGHT as i32));
     let antialias = persist::get_bool("antialias").unwrap_or(false);
     Conf {
@@ -251,11 +251,10 @@ async fn main() {
         // liés aux extensions désormais perdues
         vaisseau::rebuild_player_vaisseau(&state, &mut shapes, &mut triangles);
     }
-    if title_restart {
-        if restart_process() {
+    if title_restart
+        && restart_process() {
             return;
         }
-    }
 
     // Appliquer la position / orientation / vitesse initiales du vaisseau
     // (scénarios custom, valeurs de l'éditeur de scénarios) : appliquées au
@@ -433,14 +432,14 @@ async fn main() {
         // plan**, après le vaisseau (c'est le pilote quand le vaisseau est
         // détruit ; garé, il est cullé)
         let eva = state.eva_cosmonaut as usize;
-        for i in 1..shapes.len() {
+        for (i, shape) in shapes.iter().enumerate().skip(1) {
             if i == eva {
                 continue;
             }
             render::draw_shape(
                 &state,
                 &assets,
-                &shapes[i],
+                shape,
                 &mut triangles,
                 camera,
                 &elements,

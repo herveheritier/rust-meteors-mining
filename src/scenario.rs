@@ -795,16 +795,14 @@ pub fn try_fire(state: &mut GameState) -> [bool; WEAPON_SLOTS] {
     let mut fired = [false; WEAPON_SLOTS];
     if !s.has_economy {
         // jeu libre / Survival : toutes les armes du catalogue tirent
-        for i in 0..weapon_slot_count() {
-            fired[i] = true;
-        }
+        fired[..weapon_slot_count()].fill(true);
         return fired;
     }
     let total_before = total_ammo(state);
-    for i in 0..weapon_slot_count() {
+    for (i, slot) in fired.iter_mut().enumerate().take(weapon_slot_count()) {
         if weapon_owned(state, i) && state.resources.weapon_ammo[i] >= s.ammo_per_shot {
             state.resources.weapon_ammo[i] -= s.ammo_per_shot;
-            fired[i] = true;
+            *slot = true;
         }
     }
     if total_before > 0 && total_ammo(state) == 0 {
@@ -935,8 +933,8 @@ pub fn buy_weapon(state: &mut GameState, i: usize) -> WeaponOutcome {
 
 // ─── Radar de bord (minimap globale) ────────────────────────────────────────
 
-/// Coût en crédits du **radar de bord** (`RADAR_COST` de `src/marketplace.rs`)
-/// - acheté au magasin (onglet ÉQUIPEMENT) en scénario à économie ; hors
+/// Coût en crédits du **radar de bord** (`RADAR_COST` de `src/marketplace.rs`) :
+/// acheté au magasin (onglet ÉQUIPEMENT) en scénario à économie ; hors
 /// économie le radar est toujours allumé (gratuit, historique).
 pub fn radar_price(state: &GameState) -> Option<(i32, i32)> {
     if !has_economy(state) || state.resources.radar_owned {
@@ -1035,8 +1033,10 @@ pub fn on_meteor_destroyed(state: &mut GameState) {
     // un palier de réputation franchi débloque le rang suivant : annoncé au
     // HUD (ex « RANK UP: PILOT »)
     let after = rank_at(s.ranks, state.resources.reputation);
-    if after.is_some() && after != before {
-        state.send_message(&format!("RANK UP: {}", after.unwrap().name));
+    if let (Some(after), Some(before)) = (after, before) {
+        if after != before {
+            state.send_message(&format!("RANK UP: {}", after.name));
+        }
     }
 }
 
@@ -1044,7 +1044,7 @@ pub fn on_meteor_destroyed(state: &mut GameState) {
 /// haut palier dont le seuil est franchi - `None` si la table est vide (jeu
 /// libre). Fonction pure (tests). La durée de vie du rang renvoyé est celle
 /// de la table passée (`PROGRESSION_RANKS` est `'static`).
-pub fn rank_at<'a>(ranks: &'a [ReputationRank], reputation: f64) -> Option<&'a ReputationRank> {
+pub fn rank_at(ranks: &[ReputationRank], reputation: f64) -> Option<&ReputationRank> {
     ranks.iter().rev().find(|r| reputation >= r.threshold)
 }
 
@@ -1178,8 +1178,10 @@ pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
         let before = rank_at(s.ranks, state.resources.reputation);
         state.resources.reputation += gained as f64 * s.reputation_per_mineral;
         let after = rank_at(s.ranks, state.resources.reputation);
-        if after.is_some() && after != before {
-            state.send_message(&format!("RANK UP: {}", after.unwrap().name));
+        if let (Some(after), Some(before)) = (after, before) {
+            if after != before {
+                state.send_message(&format!("RANK UP: {}", after.name));
+            }
         }
     }
 }
@@ -2021,18 +2023,17 @@ pub fn has_saved_progression_from(path: &Path, state: &GameState) -> bool {
     let mut fresh = GameState::new();
     fresh.scenario = state.scenario;
     apply_start(&mut fresh);
-    if s.has_economy {
-        if state.resources.credits != fresh.resources.credits
+    if s.has_economy
+        && (state.resources.credits != fresh.resources.credits
             || (state.resources.reputation - fresh.resources.reputation).abs() > 1e-9
             || state.resources.fuel_level != fresh.resources.fuel_level
             || state.resources.ammo_level != fresh.resources.ammo_level
             || state.resources.cargo_level != fresh.resources.cargo_level
             || state.unlocked_modes != fresh.unlocked_modes
-            || state.resources.weapon_owned != fresh.resources.weapon_owned
+            || state.resources.weapon_owned != fresh.resources.weapon_owned)
         {
             return true;
         }
-    }
     if s.lives > 0 {
         // une vie perdue ou un bouclier entamé : le joueur a joué
         if state.resources.lives < s.lives || (state.resources.shield - s.shield_capacity).abs() > 1e-9 {

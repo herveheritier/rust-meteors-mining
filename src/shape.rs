@@ -265,11 +265,11 @@ impl Default for Shape {
 /// (`shapes[0]`) n'est jamais réutilisé.
 pub fn free_shape(shapes: &[Shape], nbr: usize) -> Option<usize> {
     if shapes.len() > 3 {
-        for i in 1..shapes.len() {
-            if shapes[i].life > 0 {
+        for (i, s) in shapes.iter().enumerate().skip(1) {
+            if s.life > 0 {
                 continue;
             }
-            if shapes[i].last_triangle - shapes[i].first_triangle + 1 == nbr {
+            if s.last_triangle - s.first_triangle + 1 == nbr {
                 return Some(i);
             }
         }
@@ -402,8 +402,8 @@ pub fn moving_shape(shape: &mut Shape, triangles: &mut [Triangle], world: &World
     shape.center.x += (shape.target_center.x - shape.center.x) / 100.0;
     shape.center.y += (shape.target_center.y - shape.center.y) / 100.0;
     shape.orientation += 60.0 * shape.rotation * dt;
-    for i in shape.first_triangle..=shape.last_triangle {
-        compute_real_positions(&mut triangles[i], shape.position, shape.center, shape.orientation);
+    for t in &mut triangles[shape.first_triangle..=shape.last_triangle] {
+        compute_real_positions(t, shape.position, shape.center, shape.orientation);
     }
 }
 
@@ -439,28 +439,29 @@ pub fn compute_shape_center(shape: &mut Shape, triangles: &[Triangle]) {
     if shape.life <= 0 {
         return;
     }
+    let slice = &triangles[shape.first_triangle..=shape.last_triangle];
     let mut d = 0i32;
     let mut x = 0.0;
     let mut y = 0.0;
-    for i in shape.first_triangle..=shape.last_triangle {
-        if triangles[i].life <= 0 {
+    for tri in slice {
+        if tri.life <= 0 {
             continue;
         }
         d += 1;
-        x += (triangles[i].a.x + triangles[i].b.x + triangles[i].c.x) / 3.0;
-        y += (triangles[i].a.y + triangles[i].b.y + triangles[i].c.y) / 3.0;
+        x += (tri.a.x + tri.b.x + tri.c.x) / 3.0;
+        y += (tri.a.y + tri.b.y + tri.c.y) / 3.0;
     }
     let p = Point::new(x / d as f64, y / d as f64);
     shape.target_center = p;
 
     let mut radius: f64 = 0.0;
-    for i in shape.first_triangle..=shape.last_triangle {
-        if triangles[i].life <= 0 {
+    for tri in slice {
+        if tri.life <= 0 {
             continue;
         }
-        let h = (triangles[i].center.x - shape.target_center.x)
-            .hypot(triangles[i].center.y - shape.target_center.y)
-            + triangles[i].hauteur;
+        let h = (tri.center.x - shape.target_center.x)
+            .hypot(tri.center.y - shape.target_center.y)
+            + tri.hauteur;
         radius = radius.max(h);
     }
     shape.radius = radius;
@@ -468,23 +469,23 @@ pub fn compute_shape_center(shape: &mut Shape, triangles: &[Triangle]) {
     // boîte englobante
     shape.top_left = Point::new(f64::MAX, f64::MAX);
     shape.bottom_right = Point::new(f64::MIN, f64::MIN);
-    for i in shape.first_triangle..=shape.last_triangle {
-        if triangles[i].life <= 0 {
+    for tri in slice {
+        if tri.life <= 0 {
             continue;
         }
-        let minx = triangles[i].a.x.min(triangles[i].b.x).min(triangles[i].c.x);
+        let minx = tri.a.x.min(tri.b.x).min(tri.c.x);
         if shape.top_left.x > minx {
             shape.top_left.x = minx;
         }
-        let miny = triangles[i].a.y.min(triangles[i].b.y).min(triangles[i].c.y);
+        let miny = tri.a.y.min(tri.b.y).min(tri.c.y);
         if shape.top_left.y > miny {
             shape.top_left.y = miny;
         }
-        let maxx = triangles[i].a.x.max(triangles[i].b.x).max(triangles[i].c.x);
+        let maxx = tri.a.x.max(tri.b.x).max(tri.c.x);
         if shape.bottom_right.x < maxx {
             shape.bottom_right.x = maxx;
         }
-        let maxy = triangles[i].a.y.max(triangles[i].b.y).max(triangles[i].c.y);
+        let maxy = tri.a.y.max(tri.b.y).max(tri.c.y);
         if shape.bottom_right.y < maxy {
             shape.bottom_right.y = maxy;
         }
@@ -499,49 +500,45 @@ pub fn compute_shape_center(shape: &mut Shape, triangles: &[Triangle]) {
 /// NB : à appeler uniquement quand la forme change (l'original la recalcule à
 /// chaque frame dans `drawShape`, inutile - voir `docs/PORTAGE.md` §6).
 pub fn get_border_segments(shape: &Shape, triangles: &mut [Triangle]) {
-    for i in shape.first_triangle..=shape.last_triangle {
-        if triangles[i].life <= 0 {
+    // les segments de chaque triangle vivant sont lus depuis la tranche
+    // avant de muter les drapeaux (emprunt séparé)
+    let range = shape.first_triangle..=shape.last_triangle;
+    let segs: Vec<[Segment; 3]> = triangles[range.clone()]
+        .iter()
+        .map(|t| {
+            [
+                Segment { a: t.a, b: t.b },
+                Segment { a: t.b, b: t.c },
+                Segment { a: t.c, b: t.a },
+            ]
+        })
+        .collect();
+
+    for (i, s) in segs.iter().enumerate() {
+        let ti = shape.first_triangle + i;
+        if triangles[ti].life <= 0 {
             continue;
         }
-        triangles[i].a_shape_border = false;
-        triangles[i].b_shape_border = false;
-        triangles[i].c_shape_border = false;
-
-        let s = [
-            Segment {
-                a: triangles[i].a,
-                b: triangles[i].b,
-            },
-            Segment {
-                a: triangles[i].b,
-                b: triangles[i].c,
-            },
-            Segment {
-                a: triangles[i].c,
-                b: triangles[i].a,
-            },
-        ];
-
-        for j in 0..3 {
+        for (j, seg) in s.iter().enumerate() {
             let mut shared = false;
             // une arête commune avec un autre triangle n'est pas un bord libre
-            for k in shape.first_triangle..=shape.last_triangle {
-                if k == i || triangles[k].life <= 0 {
+            for (k, other) in triangles[range.clone()].iter().enumerate() {
+                let k = shape.first_triangle + k;
+                if k == ti || other.life <= 0 {
                     continue;
                 }
-                shared = is_segment_shared(&s[j], &triangles[k]);
+                shared = is_segment_shared(seg, other);
                 if shared {
                     break;
                 }
             }
-            if j == 0 && !shared {
-                triangles[i].a_shape_border = true;
-            }
-            if j == 1 && !shared {
-                triangles[i].b_shape_border = true;
-            }
-            if j == 2 && !shared {
-                triangles[i].c_shape_border = true;
+            if !shared {
+                let t = &mut triangles[ti];
+                match j {
+                    0 => t.a_shape_border = true,
+                    1 => t.b_shape_border = true,
+                    _ => t.c_shape_border = true,
+                }
             }
         }
     }
@@ -569,24 +566,15 @@ pub fn is_triangle_valid(shape: &Shape, triangles: &[Triangle], triangle: &Trian
         },
     ];
 
-    for i in shape.first_triangle..=shape.last_triangle {
+    for tri in &triangles[shape.first_triangle..=shape.last_triangle] {
         let s1 = [
-            Segment {
-                a: triangles[i].a,
-                b: triangles[i].b,
-            },
-            Segment {
-                a: triangles[i].b,
-                b: triangles[i].c,
-            },
-            Segment {
-                a: triangles[i].c,
-                b: triangles[i].a,
-            },
+            Segment { a: tri.a, b: tri.b },
+            Segment { a: tri.b, b: tri.c },
+            Segment { a: tri.c, b: tri.a },
         ];
-        for k in 0..3 {
-            for l in 0..3 {
-                if s1[k].intersects(&s2[l]) == SegmentIntersection::Crossing {
+        for a in &s1 {
+            for b in &s2 {
+                if a.intersects(b) == SegmentIntersection::Crossing {
                     return false;
                 }
             }
@@ -597,12 +585,9 @@ pub fn is_triangle_valid(shape: &Shape, triangles: &[Triangle], triangle: &Trian
 
 /// Vérifie si un sommet est à l'intérieur de la forme (ex `isVertexInnerShape`).
 pub fn is_vertex_in_shape(shape: &Shape, triangles: &[Triangle], vertex: Point) -> bool {
-    for i in shape.first_triangle..=shape.last_triangle {
-        if is_vertex_in_triangle(&triangles[i], vertex) {
-            return true;
-        }
-    }
-    false
+    triangles[shape.first_triangle..=shape.last_triangle]
+        .iter()
+        .any(|t| is_vertex_in_triangle(t, vertex))
 }
 
 /// Sélectionne un bord libre (bit 0 du bitmask) et le marque utilisé
@@ -722,8 +707,7 @@ pub fn create_specific_shape(
 
 /// Redimensionne tous les triangles d'une forme (ex `resizeShape`).
 pub fn resize_shape(resize_factor: f64, shape: &mut Shape, triangles: &mut [Triangle]) {
-    for i in shape.first_triangle..=shape.last_triangle {
-        let t = &mut triangles[i];
+    for t in &mut triangles[shape.first_triangle..=shape.last_triangle] {
         t.a.x *= resize_factor;
         t.a.y *= resize_factor;
         t.b.x *= resize_factor;
@@ -747,17 +731,21 @@ mod tests {
 
     #[test]
     fn moving_shape_applies_velocity() {
-        let mut shape = Shape::default();
-        shape.direction = 0.0;
-        shape.velocity = 1.0;
-        let mut t = Triangle::default();
+        let mut shape = Shape {
+            direction: 0.0,
+            velocity: 1.0,
+            ..Shape::default()
+        };
+        let mut t = Triangle {
+            id: 0,
+            shape_index: 0,
+            ..Triangle::default()
+        };
         t.create(
             Point::new(0.0, 0.0),
             Point::new(10.0, 0.0),
             Point::new(5.0, 8.0),
         );
-        t.id = 0;
-        t.shape_index = 0;
         let mut triangles = vec![t];
         shape.first_triangle = 0;
         shape.last_triangle = 0;
@@ -847,26 +835,30 @@ mod tests {
 
     #[test]
     fn free_shape_reuses_dead_shape_with_same_triangle_count() {
-        let mut shapes = Vec::new();
-        // joueur (index 0, vivant), station (index 1, vivante)
-        let mut s0 = Shape::default();
-        s0.life = 1;
-        let mut s1 = Shape::default();
-        s1.life = 34;
-        shapes.push(s0);
-        shapes.push(s1);
-        // forme morte de 8 triangles (index 2)
-        let mut dead = Shape::default();
-        dead.life = 0;
-        dead.first_triangle = 2;
-        dead.last_triangle = 9;
-        shapes.push(dead);
-        // forme morte de 3 triangles (index 3)
-        let mut dead3 = Shape::default();
-        dead3.life = 0;
-        dead3.first_triangle = 10;
-        dead3.last_triangle = 12;
-        shapes.push(dead3);
+        // joueur (index 0, vivant), station (index 1, vivante), forme morte
+        // de 8 triangles (index 2), forme morte de 3 triangles (index 3)
+        let shapes = vec![
+            Shape {
+                life: 1,
+                ..Shape::default()
+            },
+            Shape {
+                life: 34,
+                ..Shape::default()
+            },
+            Shape {
+                life: 0,
+                first_triangle: 2,
+                last_triangle: 9,
+                ..Shape::default()
+            },
+            Shape {
+                life: 0,
+                first_triangle: 10,
+                last_triangle: 12,
+                ..Shape::default()
+            },
+        ];
 
         assert_eq!(free_shape(&shapes, 8), Some(2));
         assert_eq!(free_shape(&shapes, 3), Some(3));
@@ -881,12 +873,10 @@ mod tests {
         let idx = meshes_to_shape(&mut shape, &mut shapes, &mut triangles, STATION_MESH);
         assert_eq!(idx, 0);
         assert_eq!(shape.life, 66); // points_qty (fidèle à l'original)
-        let mut alive = 0;
-        for i in shape.first_triangle..=shape.last_triangle {
-            if triangles[i].life > 0 {
-                alive += 1;
-            }
-        }
+        let alive = triangles[shape.first_triangle..=shape.last_triangle]
+            .iter()
+            .filter(|t| t.life > 0)
+            .count();
         assert_eq!(alive, 64);
         // ids séquentiels, partant de first_triangle
         assert_eq!(triangles[shape.first_triangle].id as usize, shape.first_triangle);
