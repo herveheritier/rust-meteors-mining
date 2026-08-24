@@ -30,6 +30,16 @@ pub struct Sounds {
     /// Volume maître (0.0..=1.0), réglable dans l'écran de paramétrage
     /// (touche O) et persisté dans le fichier de config.
     pub volume: f32,
+    /// Sous-volume de la musique (0.0..=1.0), réglable dans l'écran de
+    /// paramétrage et persisté (clé `music_volume`). Multiplié au maître.
+    pub music_volume: f32,
+    /// Sous-volume des effets (tirs, explosions, minerais, moteurs)
+    /// (0.0..=1.0), réglable dans l'écran de paramétrage et persisté (clé
+    /// `effects_volume`). Multiplié au maître.
+    pub effects_volume: f32,
+    /// Sous-volume de l'ambiance (0.0..=1.0), réglable dans l'écran de
+    /// paramétrage et persisté (clé `ambient_volume`). Multiplié au maître.
+    pub ambient_volume: f32,
     engine_on: bool,
     reverse_on: bool,
     ambient_on: bool,
@@ -76,23 +86,39 @@ impl Sounds {
             music: load(include_bytes!("../assets/music1.ogg"), "assets/music1.ogg").await,
             music_on: false,
             volume: 1.0,
+            music_volume: 1.0,
+            effects_volume: 1.0,
+            ambient_volume: 1.0,
             engine_on: false,
             reverse_on: false,
             ambient_on: false,
         }
     }
 
+    /// Volume effectif d'une boucle : maître × sous-volume du canal, puis
+    /// atténuation propre à la source (la musique joue à 0.1 comme l'original).
+    fn loop_gain(&self, channel: f32, source_gain: f32) -> f32 {
+        (self.volume * channel * source_gain).clamp(0.0, 1.0)
+    }
+
     /// Applique le volume maître (0.0..=1.0) à tous les sons. Les boucles en
     /// cours (ambiance, musique, moteurs) sont relancées au nouveau volume.
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
+        self.apply_gains();
+    }
+
+    /// Rejoue les boucles en cours avec les volumes actuels (maître × sous-
+    /// volumes). Appelé après un changement de sous-volume (écran de
+    /// paramétrage) pour appliquer la nouvelle valeur sans toucher au maître.
+    pub fn apply_gains(&mut self) {
         if self.ambient_on {
             audio::stop_sound(&self.ambient);
             audio::play_sound(
                 &self.ambient,
                 PlaySoundParams {
                     looped: true,
-                    volume: self.volume,
+                    volume: self.ambient_gain(),
                 },
             );
         }
@@ -102,7 +128,7 @@ impl Sounds {
                 &self.music,
                 PlaySoundParams {
                     looped: true,
-                    volume: 0.1 * self.volume,
+                    volume: self.music_gain(),
                 },
             );
         }
@@ -112,7 +138,7 @@ impl Sounds {
                 &self.engine,
                 PlaySoundParams {
                     looped: true,
-                    volume: self.volume,
+                    volume: self.effects_gain(),
                 },
             );
         }
@@ -122,45 +148,63 @@ impl Sounds {
                 &self.reverse,
                 PlaySoundParams {
                     looped: true,
-                    volume: self.volume,
+                    volume: self.effects_gain(),
                 },
             );
         }
     }
 
+    /// Gain de l'ambiance (`maître × ambient_volume`).
+    pub fn ambient_gain(&self) -> f32 {
+        self.loop_gain(self.ambient_volume, 1.0)
+    }
+
+    /// Gain de la musique (`0.1 × maître × music_volume`, le 0.1 vient de
+    /// l'original).
+    pub fn music_gain(&self) -> f32 {
+        self.loop_gain(self.music_volume, 0.1)
+    }
+
+    /// Gain des effets (moteurs, tirs, explosions, minerais) : `maître ×
+    /// effects_volume`.
+    pub fn effects_gain(&self) -> f32 {
+        self.loop_gain(self.effects_volume, 1.0)
+    }
+
     // ─── Effets ponctuels ───────────────────────────────────────────────────
 
-    /// Tir de balle (ex `_sndplay sh1&`), au volume maître.
+    /// Tir de balle (ex `_sndplay sh1&`), au volume maître × effets.
     pub fn play_bullet(&self) {
         audio::play_sound(
             &self.bullet,
             PlaySoundParams {
                 looped: false,
-                volume: self.volume,
+                volume: self.effects_gain(),
             },
         );
     }
 
-    /// Ramassage d'un minerai (ex `_sndplay sh5&`, volume 0.05 × maître).
+    /// Ramassage d'un minerai (ex `_sndplay sh5&`, volume 0.05 × maître ×
+    /// effets).
     pub fn play_mineral(&self) {
         audio::play_sound(
             &self.mineral,
             PlaySoundParams {
                 looped: false,
-                volume: 0.05 * self.volume,
+                volume: 0.05 * self.effects_gain(),
             },
         );
     }
 
     /// Explosion d'un triangle (ex `shexp(s%)` aléatoire) au volume donné
-    /// (déjà calculé selon la distance au vaisseau) × volume maître.
+    /// (déjà calculé selon la distance au vaisseau) × volume maître × effets.
     pub fn play_explosion(&self, rng: &mut impl Rng, volume: f32) {
         let idx = rng.gen_range(0..self.explosions.len());
         audio::play_sound(
             &self.explosions[idx],
             PlaySoundParams {
                 looped: false,
-                volume: (volume * self.volume).max(0.0),
+                volume: (volume * self.effects_gain()).max(0.0),
             },
         );
     }
@@ -177,7 +221,7 @@ impl Sounds {
             &self.ambient,
             PlaySoundParams {
                 looped: true,
-                volume: self.volume,
+                volume: self.ambient_gain(),
             },
         );
     }
@@ -194,7 +238,7 @@ impl Sounds {
                 &self.engine,
                 PlaySoundParams {
                     looped: true,
-                    volume: self.volume,
+                    volume: self.effects_gain(),
                 },
             );
         } else {
@@ -214,7 +258,7 @@ impl Sounds {
                 &self.reverse,
                 PlaySoundParams {
                     looped: true,
-                    volume: self.volume,
+                    volume: self.effects_gain(),
                 },
             );
         } else {
@@ -233,7 +277,7 @@ impl Sounds {
                 &self.music,
                 PlaySoundParams {
                     looped: true,
-                    volume: 0.1 * self.volume,
+                    volume: self.music_gain(),
                 },
             );
             self.music_on = true;

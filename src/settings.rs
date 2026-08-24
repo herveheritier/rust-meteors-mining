@@ -19,7 +19,14 @@ pub enum SettingsClick {
     None,
     Music,
     AutoGenerate,
+    /// Clic sur la barre du volume maître (fraction 0..1 demandée).
     Volume(f32),
+    /// Clic sur la barre du sous-volume MUSIQUE (fraction 0..1 demandée).
+    MusicVolume(f32),
+    /// Clic sur la barre du sous-volume EFFETS (fraction 0..1 demandée).
+    EffectsVolume(f32),
+    /// Clic sur la barre du sous-volume AMBIANCE (fraction 0..1 demandée).
+    AmbientVolume(f32),
     RenderStyle,
     WindowMode,
     WindowSize,
@@ -56,6 +63,19 @@ pub fn settings_box_click(state: &GameState) -> SettingsClick {
     }
     if l.volume_track.contains(m) {
         return SettingsClick::Volume(((m.x - l.volume_track.x) / l.volume_track.w).clamp(0.0, 1.0));
+    }
+    if l.music_volume_track.contains(m) {
+        return SettingsClick::MusicVolume(((m.x - l.music_volume_track.x) / l.music_volume_track.w).clamp(0.0, 1.0));
+    }
+    if l.effects_volume_track.contains(m) {
+        return SettingsClick::EffectsVolume(
+            ((m.x - l.effects_volume_track.x) / l.effects_volume_track.w).clamp(0.0, 1.0),
+        );
+    }
+    if l.ambient_volume_track.contains(m) {
+        return SettingsClick::AmbientVolume(
+            ((m.x - l.ambient_volume_track.x) / l.ambient_volume_track.w).clamp(0.0, 1.0),
+        );
     }
     if l.render.contains(m) {
         return SettingsClick::RenderStyle;
@@ -122,6 +142,27 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             state.auto_generate = !state.auto_generate;
         }
         SettingsClick::Volume(fraction) => set_volume_fraction(sounds.as_deref_mut(), fraction),
+        SettingsClick::MusicVolume(fraction) => {
+            if let Some(snd) = sounds.as_deref_mut() {
+                snd.music_volume = fraction.clamp(0.0, 1.0);
+                let _ = persist::set_i32("music_volume", (snd.music_volume * 100.0).round() as i32);
+                snd.apply_gains();
+            }
+        }
+        SettingsClick::EffectsVolume(fraction) => {
+            if let Some(snd) = sounds.as_deref_mut() {
+                snd.effects_volume = fraction.clamp(0.0, 1.0);
+                let _ = persist::set_i32("effects_volume", (snd.effects_volume * 100.0).round() as i32);
+                snd.apply_gains();
+            }
+        }
+        SettingsClick::AmbientVolume(fraction) => {
+            if let Some(snd) = sounds.as_deref_mut() {
+                snd.ambient_volume = fraction.clamp(0.0, 1.0);
+                let _ = persist::set_i32("ambient_volume", (snd.ambient_volume * 100.0).round() as i32);
+                snd.apply_gains();
+            }
+        }
         SettingsClick::RenderStyle => {
             state.render_style = next_render_style(state.render_style);
             let _ = persist::save_render_style(state.render_style as i32);
@@ -176,16 +217,36 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
         SettingsClick::Close => close_and_persist(state),
         SettingsClick::None => {}
     }
-    // glisser sur la barre de volume (bouton maintenu) : réglage continu
-    // tant que le pointeur reste sur la piste
+    // glisser sur une barre de volume (bouton maintenu) : réglage continu
+    // tant que le pointeur reste sur la piste (maître, musique, effets,
+    // ambiance)
     if is_mouse_button_down(MouseButton::Left) {
         let l = settings_box_layout();
         let m = mouse_to_game();
+        let frac = |track: Rect| ((m.x - track.x) / track.w).clamp(0.0, 1.0);
         if l.volume_track.contains(m) {
-            set_volume_fraction(
-                sounds,
-                ((m.x - l.volume_track.x) / l.volume_track.w).clamp(0.0, 1.0),
-            );
+            set_volume_fraction(sounds, frac(l.volume_track));
+        } else if l.music_volume_track.contains(m) {
+            let f = frac(l.music_volume_track);
+            if let Some(snd) = sounds {
+                snd.music_volume = f;
+                let _ = persist::set_i32("music_volume", (f * 100.0).round() as i32);
+                snd.apply_gains();
+            }
+        } else if l.effects_volume_track.contains(m) {
+            let f = frac(l.effects_volume_track);
+            if let Some(snd) = sounds {
+                snd.effects_volume = f;
+                let _ = persist::set_i32("effects_volume", (f * 100.0).round() as i32);
+                snd.apply_gains();
+            }
+        } else if l.ambient_volume_track.contains(m) {
+            let f = frac(l.ambient_volume_track);
+            if let Some(snd) = sounds {
+                snd.ambient_volume = f;
+                let _ = persist::set_i32("ambient_volume", (f * 100.0).round() as i32);
+                snd.apply_gains();
+            }
         }
     }
     // Saisie du PIN de la télécommande : les chiffres remplissent le tampon
@@ -287,6 +348,11 @@ pub fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
     }
     if let Some(sounds) = sounds {
         sounds.set_volume(1.0);
+        // sous-volumes : retour à 100 % (les clés sont supprimées ci-dessous)
+        sounds.music_volume = 1.0;
+        sounds.effects_volume = 1.0;
+        sounds.ambient_volume = 1.0;
+        sounds.apply_gains();
         if !sounds.music_on {
             sounds.toggle_music();
         }
@@ -298,6 +364,9 @@ pub fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
         "music",
         "auto_generate",
         "volume",
+        "music_volume",
+        "effects_volume",
+        "ambient_volume",
         "render_style",
         "window_size",
         "antialias",

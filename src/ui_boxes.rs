@@ -85,9 +85,18 @@ pub struct SettingsLayout {
     pub music: Rect,
     /// Ligne cliquable de la case AUTO GENERATE.
     pub auto_generate: Rect,
-    /// Barre horizontale du volume (ascenseur) : zone cliquable/glissable de
-    /// 22 px de haut, avec la piste de 6 px centrée à l'intérieur.
+    /// Barre horizontale du volume maître (ascenseur) : zone
+    /// cliquable/glissable de 22 px de haut, avec la piste de 6 px centrée à
+    /// l'intérieur.
     pub volume_track: Rect,
+    /// Barre du sous-volume MUSIQUE (ascenseur, même géométrie que
+    /// `volume_track`).
+    pub music_volume_track: Rect,
+    /// Barre du sous-volume EFFETS (ascenseur - tirs, explosions, minerais,
+    /// moteurs).
+    pub effects_volume_track: Rect,
+    /// Barre du sous-volume AMBIANCE (ascenseur - boucle de fond).
+    pub ambient_volume_track: Rect,
     /// Panneau des options graphiques (fond + bordure + libellé « GRAPHICS »).
     pub graphics_panel: Rect,
     /// Ligne RENDER : style de rendu des triangles (clic = cycle TEXTURED →
@@ -123,28 +132,35 @@ pub struct SettingsLayout {
 /// Calcule la géométrie de l'écran de paramétrage (voir `SettingsLayout`).
 pub fn settings_box_layout() -> SettingsLayout {
     let w = 560.0;
-    let h = 300.0;
+    let h = 380.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
     let col_w = 250.0;
     let col_left = left + 20.0;
     let col_right = left + w - 20.0 - col_w;
 
-    // colonne gauche : cases audio + volume + bouton RESET PROGRESSION
+    // colonne gauche : cases audio + 4 barres de volume (maître + musique /
+    // effets / ambiance) + RESET PROGRESSION + TOUCH UI + REMOTE PIN
     let music = Rect::new(col_left, top + 44.0, col_w, 26.0);
     let auto_generate = Rect::new(col_left, top + 76.0, col_w, 26.0);
     // volume : barre horizontale (ascenseur) sur la majeure partie de la
-    // ligne, après le libellé VOLUME ; zone de clic de 22 px de haut
-    let volume_track = Rect::new(col_left + 100.0, top + 108.0, col_w - 104.0, 22.0);
-    // RESET PROGRESSION : bouton pleine largeur de la colonne gauche, sous le
-    // volume (remet à zéro la progression du scénario courant)
-    let reset_progress = Rect::new(col_left, top + 154.0, col_w, 26.0);
+    // ligne, après le libellé ; zone de clic de 22 px de haut
+    let track = |y: f32| Rect::new(col_left + 100.0, y, col_w - 104.0, 22.0);
+    // espacement 32 px : la valeur en % (dessinée sous la barre, 26 px sous
+    // le haut) ne doit pas chevaucher la piste suivante
+    let volume_track = track(top + 108.0);
+    let music_volume_track = track(top + 140.0);
+    let effects_volume_track = track(top + 172.0);
+    let ambient_volume_track = track(top + 204.0);
+    // RESET PROGRESSION : bouton pleine largeur de la colonne gauche, sous les
+    // barres (remet à zéro la progression du scénario courant)
+    let reset_progress = Rect::new(col_left, top + 240.0, col_w, 26.0);
     // TOUCH UI : case à cocher sous RESET PROGRESSION (interface tactile
     // joystick + bouton de tir, `touch.rs`)
-    let touch_ui = Rect::new(col_left, top + 180.0, col_w, 26.0);
-    // REMOTE PIN : ligne cliquable sous TOUCH UI (télécommande HTTP - le
+    let touch_ui = Rect::new(col_left, top + 270.0, col_w, 26.0);
+    // REMOTE PIN : ligne à cliquable sous TOUCH UI (télécommande HTTP - le
     // code est saisi au clavier après le clic, voir `game.rs`)
-    let pin_edit = Rect::new(col_left, top + 206.0, col_w, 26.0);
+    let pin_edit = Rect::new(col_left, top + 300.0, col_w, 26.0);
 
     // colonne droite : panneau des options graphiques
     let graphics_panel = Rect::new(col_right, top + 44.0, col_w, 176.0);
@@ -174,6 +190,9 @@ pub fn settings_box_layout() -> SettingsLayout {
         music,
         auto_generate,
         volume_track,
+        music_volume_track,
+        effects_volume_track,
+        ambient_volume_track,
         graphics_panel,
         render,
         window_mode,
@@ -192,9 +211,34 @@ pub fn settings_box_layout() -> SettingsLayout {
 /// deux colonnes (audio + RESET PROGRESSION à gauche, panneau « GRAPHICS » à
 /// droite) et les boutons RESET / CLOSE (ex `windowUtils`). `sounds` fournit
 /// l'état musique et le volume courant.
+/// Dessine une barre de volume (maître ou sous-volume) : libellé à gauche,
+/// piste + remplissage + curseur à droite, valeur en % centrée sous la
+/// barre. `value` est la fraction 0..1 affichée ; `label` est posé au bord
+/// gauche de la colonne.
+pub fn draw_volume_bar(track: Rect, label: &str, value: f32, m: Vec2) {
+    let color = argb_to_color(if track.contains(m) { BOX_HOVER } else { BOX_FG });
+    draw_text(label, track.x - 96.0, track.y + 15.0, 16.0, color);
+    let bar_y = track.y + (track.h - 6.0) / 2.0;
+    let fill = track.w * value.clamp(0.0, 1.0);
+    draw_rectangle(track.x, bar_y, track.w, 6.0, argb_to_color(0x601AB2FF));
+    draw_rectangle(track.x, bar_y, fill, 6.0, color);
+    // curseur (ascenseur) : barre verticale de 14 px, centrée sur la piste
+    let thumb_x = (track.x + fill - 2.0).clamp(track.x, track.x + track.w - 4.0);
+    draw_rectangle(thumb_x, bar_y - 4.0, 4.0, 14.0, color);
+    let value = format!("{}%", (value * 100.0).round() as i32);
+    let value_w = measure_text(&value, None, 16, 1.0).width;
+    draw_text(
+        &value,
+        track.x + (track.w - value_w) / 2.0,
+        track.y + track.h + 4.0,
+        16.0,
+        argb_to_color(BOX_FG_DIM),
+    );
+}
+
 pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     let w = 560.0;
-    let h = 300.0;
+    let h = 380.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
 
@@ -214,29 +258,13 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     draw_checkbox(layout.music, sounds.music_on, "MUSIC", m);
     draw_checkbox(layout.auto_generate, state.auto_generate, "AUTO GENERATE", m);
 
-    // volume : barre horizontale (ascenseur) - piste, remplissage selon le
-    // volume et curseur vertical ; valeur en % centrée sous la barre (hover
-    // blanc sur toute la zone)
-    let track = layout.volume_track;
-    let vol_pct = (sounds.volume * 100.0).round() as i32;
-    let color = argb_to_color(if track.contains(m) { BOX_HOVER } else { BOX_FG });
-    draw_text("VOLUME", layout.music.x + 4.0, track.y + 15.0, 16.0, color);
-    let bar_y = track.y + (track.h - 6.0) / 2.0;
-    let fill = track.w * sounds.volume.clamp(0.0, 1.0);
-    draw_rectangle(track.x, bar_y, track.w, 6.0, argb_to_color(0x601AB2FF));
-    draw_rectangle(track.x, bar_y, fill, 6.0, color);
-    // curseur (ascenseur) : barre verticale de 14 px, centrée sur la piste
-    let thumb_x = (track.x + fill - 2.0).clamp(track.x, track.x + track.w - 4.0);
-    draw_rectangle(thumb_x, bar_y - 4.0, 4.0, 14.0, color);
-    let value = format!("{}%", vol_pct);
-    let value_w = measure_text(&value, None, 16, 1.0).width;
-    draw_text(
-        &value,
-        track.x + (track.w - value_w) / 2.0,
-        track.y + track.h + 4.0,
-        16.0,
-        argb_to_color(BOX_FG_DIM),
-    );
+    // volumes : barre maître puis trois sous-volumes (musique, effets,
+    // ambiance) - piste, remplissage selon la valeur et curseur vertical,
+    // valeur en % centrée sous la barre (hover blanc sur toute la zone)
+    draw_volume_bar(layout.volume_track, "VOLUME", sounds.volume, m);
+    draw_volume_bar(layout.music_volume_track, "MUSIC", sounds.music_volume, m);
+    draw_volume_bar(layout.effects_volume_track, "EFFECTS", sounds.effects_volume, m);
+    draw_volume_bar(layout.ambient_volume_track, "AMBIENT", sounds.ambient_volume, m);
 
     // panneau GRAPHICS : fond + bordure + libellé en tête, puis les lignes
     // RENDER / WINDOW / SIZE (valeurs cyclables dans un cadre) et la case
@@ -302,7 +330,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
         draw_text(
             &format!("REMOTE: {url}"),
             layout.music.x + 4.0,
-            top + 240.0,
+            top + 326.0,
             13.0,
             argb_to_color(BOX_FG_DIM),
         );

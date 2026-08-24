@@ -236,6 +236,18 @@ async fn main() {
     if let Some(pct) = persist::get_i32("volume") {
         sounds.set_volume(pct as f32 / 100.0);
     }
+    // sous-volumes persistés (musique / effets / ambiance - clés
+    // `music_volume`, `effects_volume`, `ambient_volume`) : appliqués avant
+    // le démarrage des boucles
+    if let Some(pct) = persist::get_i32("music_volume") {
+        sounds.music_volume = (pct as f32 / 100.0).clamp(0.0, 1.0);
+    }
+    if let Some(pct) = persist::get_i32("effects_volume") {
+        sounds.effects_volume = (pct as f32 / 100.0).clamp(0.0, 1.0);
+    }
+    if let Some(pct) = persist::get_i32("ambient_volume") {
+        sounds.ambient_volume = (pct as f32 / 100.0).clamp(0.0, 1.0);
+    }
     if persist::get_bool("music").unwrap_or(true) {
         sounds.start_music();
     }
