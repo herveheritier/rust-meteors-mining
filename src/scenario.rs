@@ -459,8 +459,8 @@ fn mode_costs_pairs(s: &Scenario) -> Vec<(&'static str, i32)> {
     s.mode_costs
         .iter()
         .enumerate()
-        .filter(|(_, &cost)| cost > 0)
-        .map(|(i, &cost)| (mode_label(i as i32), cost))
+        .filter(|(_, cost)| **cost > 0)
+        .map(|(i, cost)| (mode_label(i as i32), *cost))
         .collect()
 }
 

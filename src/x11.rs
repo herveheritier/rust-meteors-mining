@@ -63,7 +63,7 @@ struct XEvent {
 
 #[cfg(target_os = "linux")]
 #[link(name = "X11")]
-extern "C" {
+unsafe extern "C" {
     fn XOpenDisplay(name: *const c_char) -> *mut Display;
     fn XCloseDisplay(display: *mut Display) -> c_int;
     fn XDefaultRootWindow(display: *mut Display) -> Window;

@@ -132,9 +132,9 @@ fn build_star_layers() -> Vec<StarLayer> {
 
         let mut stars = Vec::with_capacity(n);
         for _ in 0..n {
-            let x = (rng.gen::<f64>() * STAR_TILE as f64) as f32;
-            let y = (rng.gen::<f64>() * STAR_TILE as f64) as f32;
-            let alpha = (127.0 + rng.gen::<f64>() * 128.0) as f32;
+            let x = (rng.r#gen::<f64>() * STAR_TILE as f64) as f32;
+            let y = (rng.r#gen::<f64>() * STAR_TILE as f64) as f32;
+            let alpha = (127.0 + rng.r#gen::<f64>() * 128.0) as f32;
             stars.push((x, y, alpha));
         }
         layers.push(StarLayer { stars });

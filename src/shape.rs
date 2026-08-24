@@ -598,7 +598,7 @@ pub fn is_vertex_in_shape(shape: &Shape, triangles: &[Triangle], vertex: Point) 
 pub fn choose_border_segment(shape: &mut Shape, rng: &mut impl Rng) -> usize {
     let len = shape.border_len;
     let l = len + 1;
-    let mut i = (rng.gen::<f64>() * l as f64) as usize;
+    let mut i = (rng.r#gen::<f64>() * l as f64) as usize;
     loop {
         if i < len && shape.border_mask & (1 << i) == 0 {
             shape.border_mask |= 1 << i;

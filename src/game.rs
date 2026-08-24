@@ -537,7 +537,7 @@ pub fn update(
     // génération automatique : 5 % de chance par frame tant que la limite
     // n'est pas atteinte (ex `mainLoop`) - non gelée par la pause, comme
     // l'original.
-    if state.auto_generate && alive_shapes < state.max_meteor_shapes && rng.gen::<f64>() > 0.95 {
+    if state.auto_generate && alive_shapes < state.max_meteor_shapes && rng.r#gen::<f64>() > 0.95 {
         create_shape(state, shapes, triangles, camera, elements, rng);
     }
 

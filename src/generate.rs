@@ -75,9 +75,9 @@ pub fn generate_shape(
     shape.border_len = 3;
     shape.shape_color = argb32(
         64,
-        (127.0 + rng.gen::<f64>() * 128.0) as u32,
-        (127.0 + rng.gen::<f64>() * 128.0) as u32,
-        (127.0 + rng.gen::<f64>() * 128.0) as u32,
+        (127.0 + rng.r#gen::<f64>() * 128.0) as u32,
+        (127.0 + rng.r#gen::<f64>() * 128.0) as u32,
+        (127.0 + rng.r#gen::<f64>() * 128.0) as u32,
     );
 
     // triangles supplémentaires sur les bords libres
@@ -103,7 +103,7 @@ pub fn generate_shape(
                 pt1,
                 pt2,
                 pt3,
-                hauteur_max as f64 - rng.gen::<f64>() * (hauteur_max as f64 - hauteur_min as f64),
+                hauteur_max as f64 - rng.r#gen::<f64>() * (hauteur_max as f64 - hauteur_min as f64),
             );
             if !is_vertex_in_shape(&shape, triangles, pt0) || cnt <= 0 {
                 break;
@@ -114,10 +114,10 @@ pub fn generate_shape(
         t.create(pt1, pt2, pt0);
         if is_triangle_valid(&shape, triangles, &t) {
             // 15 % des triangles contiennent un élément minéral
-            if rng.gen::<f64>() > 0.85 {
+            if rng.r#gen::<f64>() > 0.85 {
                 // ex `int(rnd * (ubound(elements) + 1))` : ubound = len-1, donc
                 // valeurs 0..len-1 (0 = pas d'élément)
-                t.element = (rng.gen::<f64>() * elements.len() as f64) as i32;
+                t.element = (rng.r#gen::<f64>() * elements.len() as f64) as i32;
             }
             t.shape_index = shape_index as i32;
             if reuse {
@@ -154,7 +154,7 @@ pub fn create_shape(
     rng: &mut impl Rng,
 ) -> usize {
     let nbr = (TRIANGLES_IN_SHAPE_MIN as f64
-        + (TRIANGLES_IN_SHAPE_MAX - TRIANGLES_IN_SHAPE_MIN) as f64 * rng.gen::<f64>())
+        + (TRIANGLES_IN_SHAPE_MAX - TRIANGLES_IN_SHAPE_MIN) as f64 * rng.r#gen::<f64>())
         as usize;
     let shape_index = generate_shape(
         shapes,
@@ -170,8 +170,8 @@ pub fn create_shape(
 
     // position aléatoire dans le monde, hors de la vue actuelle
     let (x, y) = loop {
-        let x = WORLD_WIDTH * rng.gen::<f64>() + WORLD_MINX;
-        let y = WORLD_HEIGHT * rng.gen::<f64>() + WORLD_MINY;
+        let x = WORLD_WIDTH * rng.r#gen::<f64>() + WORLD_MINX;
+        let y = WORLD_HEIGHT * rng.r#gen::<f64>() + WORLD_MINY;
         let mut p = Point::new(x + camera.x, y + camera.y);
         p.normalize_world(&state.world);
         let inside_view =
@@ -185,10 +185,10 @@ pub fn create_shape(
     shape.who_i_am = WHOIAM_METEOR;
     shape.is_collider = true;
     shape.position = Point::new(x, y);
-    shape.direction = TAU * rng.gen::<f64>();
-    shape.velocity = METEOR_VELOCITY_MAX * rng.gen::<f64>();
+    shape.direction = TAU * rng.r#gen::<f64>();
+    shape.velocity = METEOR_VELOCITY_MAX * rng.r#gen::<f64>();
     shape.orientation = 0.0;
-    shape.rotation = 0.01 - 0.02 * rng.gen::<f64>();
+    shape.rotation = 0.01 - 0.02 * rng.r#gen::<f64>();
     shape.texture = TEXTURE_METEOR;
     // minerais contenus : un par triangle minéralisé (or/fer/eau) - la
     // quantité libérée en minerais si le météore est détruit par la collision
@@ -227,7 +227,7 @@ pub fn release_meteor_minerals(
         // tomber le minerai sur la position du météore (rotation autour de
         // lui-même = lui-même)
         let source = Triangle {
-            element: 1 + (rng.gen::<f64>() * 3.0) as i32, // 1..=3 (or/fer/eau)
+            element: 1 + (rng.r#gen::<f64>() * 3.0) as i32, // 1..=3 (or/fer/eau)
             shape_index: meteor_index as i32,
             center,
             ..Triangle::default()
@@ -319,8 +319,8 @@ pub fn create_mineral(
         center.y + shapes[source_shape_index].position.y,
     );
     shape.direction =
-        shapes[source_shape_index].direction + rng.gen::<f64>() * TAU / 4.0 - TAU / 8.0;
-    shape.velocity = shapes[source_shape_index].velocity * rng.gen::<f64>() * 2.0 - 1.0;
+        shapes[source_shape_index].direction + rng.r#gen::<f64>() * TAU / 4.0 - TAU / 8.0;
+    shape.velocity = shapes[source_shape_index].velocity * rng.r#gen::<f64>() * 2.0 - 1.0;
     shape.orientation = shapes[source_shape_index].orientation;
     shape.rotation = shapes[source_shape_index].rotation;
     shape.center = Point::new(0.0, 0.0);
@@ -398,8 +398,8 @@ pub fn eject_cargo_minerals(
             // position éparpillée dans un cercle autour du crash + petite
             // vitesse de dérive : le chargement « se renverse » autour du
             // vaisseau détruit
-            let ang = rng.gen::<f64>() * TAU;
-            let dist = CARGO_EJECT_SPREAD * rng.gen::<f64>();
+            let ang = rng.r#gen::<f64>() * TAU;
+            let dist = CARGO_EJECT_SPREAD * rng.r#gen::<f64>();
             let pos = Point::new(crash.x + ang.cos() * dist, crash.y + ang.sin() * dist);
             create_mineral_at(
                 shapes,
@@ -407,8 +407,8 @@ pub fn eject_cargo_minerals(
                 elements,
                 e as i32,
                 pos,
-                rng.gen::<f64>() * TAU,            // direction de dérive aléatoire
-                0.15 + 0.35 * rng.gen::<f64>(), // vitesse : lent (facile à ramasser)
+                rng.r#gen::<f64>() * TAU,            // direction de dérive aléatoire
+                0.15 + 0.35 * rng.r#gen::<f64>(), // vitesse : lent (facile à ramasser)
             );
         }
     }
@@ -558,8 +558,8 @@ pub fn prepare(
     for i in 0..STARS_COUNT {
         let plan = ((i as i32 + 1) % STARS_LAYERS) + 1;
         stars.push(Point::new(
-            rng.gen::<f64>() * WORLD_WIDTH * plan as f64,
-            rng.gen::<f64>() * WORLD_HEIGHT * plan as f64,
+            rng.r#gen::<f64>() * WORLD_WIDTH * plan as f64,
+            rng.r#gen::<f64>() * WORLD_HEIGHT * plan as f64,
         ));
     }
 

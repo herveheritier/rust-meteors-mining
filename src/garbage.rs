@@ -62,11 +62,11 @@ pub fn generate_garbages(
     for _ in 0..GARBAGE_PER_TRIANGLE {
         let g = Garbage {
             position: t.real_center,
-            radius: rng.gen::<f64>() * 2.0,
-            direction: rng.gen::<f64>() * TAU,
-            velocity: shape_velocity * (1.0 + rng.gen::<f64>() * 3.0),
-            orientation: rng.gen::<f64>() * TAU,
-            life: ((rng.gen::<f64>() * 255.0) as i32) / 7,
+            radius: rng.r#gen::<f64>() * 2.0,
+            direction: rng.r#gen::<f64>() * TAU,
+            velocity: shape_velocity * (1.0 + rng.r#gen::<f64>() * 3.0),
+            orientation: rng.r#gen::<f64>() * TAU,
+            life: ((rng.r#gen::<f64>() * 255.0) as i32) / 7,
             rgba_color: 0xFFFFFFFF,
             ..Default::default()
         };

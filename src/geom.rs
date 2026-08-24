@@ -364,12 +364,12 @@ impl Triangle {
         hauteur_max: i32,
         rng: &mut impl Rng,
     ) {
-        let bas = base_max as f64 - rng.gen::<f64>() * (base_max as f64 - base_min as f64);
-        let angle = rng.gen::<f64>() * TAU;
+        let bas = base_max as f64 - rng.r#gen::<f64>() * (base_max as f64 - base_min as f64);
+        let angle = rng.r#gen::<f64>() * TAU;
         self.a = Point::new(0.0, 0.0);
         self.b = Point::new(angle.cos() * bas, -angle.sin() * bas);
         let hauteur =
-            hauteur_max as f64 - rng.gen::<f64>() * (hauteur_max as f64 - hauteur_min as f64);
+            hauteur_max as f64 - rng.r#gen::<f64>() * (hauteur_max as f64 - hauteur_min as f64);
         self.demibase = Point::new(self.b.x / 2.0, self.b.y / 2.0);
         self.c = Point::new(
             self.demibase.x + (angle + TAU / 4.0).cos() * hauteur,

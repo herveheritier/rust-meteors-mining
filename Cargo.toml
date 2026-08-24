@@ -1,7 +1,8 @@
 [package]
 name = "rust-meteors-mining"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 description = "Portage en Rust de « Meteors Mining » (jeu QB64) - voir docs/PORTAGE.md"
 
 [dependencies]
