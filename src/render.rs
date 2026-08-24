@@ -187,10 +187,22 @@ fn star_screen_pos(sx: f32, sy: f32, camera: Point, plan: f32) -> Option<(f32, f
     Some((x, y))
 }
 
-pub fn draw_stars(assets: &Assets, camera: Point) {
+/// Dessine les étoiles de fond. `reduced` diminue la densité d'un facteur
+/// `STAR_DENSITY_REDUCTION` : utilisé quand une fenêtre modale (magasin,
+/// paramètres, aide, boîte DOCK) couvre l'écran - le monde continue de
+/// tourner derrière (monde vivant), mais l'œil est sur la fenêtre : la
+/// densité réduite est imperceptible et économise la part GPU du fond
+/// (~50 % du temps de frame sur GPU lents, ex virtio - voir la doc de
+/// `StarLayer`). L'échantillonnage régulier (`step_by`) garde une répartition
+/// uniforme des étoiles restantes.
+pub fn draw_stars(assets: &Assets, camera: Point, reduced: bool) {
+    let step = if reduced { STAR_DENSITY_REDUCTION } else { 1 };
     for (layer, plan_layer) in assets.star_layers.iter().enumerate() {
         let plan = (layer + 1) as f32;
-        for &(sx, sy, alpha) in &plan_layer.stars {
+        for (i, &(sx, sy, alpha)) in plan_layer.stars.iter().enumerate() {
+            if i % step != 0 {
+                continue;
+            }
             // position écran : (étoile + caméra) × plan, rebouclée dans la
             // tuile (torique), comme le `normalizePlanPosition` de l'original ;
             // on élimine les étoiles hors viewport.

@@ -435,7 +435,11 @@ async fn main() {
             ViewMode::Native => set_camera(&render::native_camera()),
         }
         clear_background(BLACK);
-        render::draw_stars(&assets, camera);
+        // fenêtre modale ouverte (magasin, paramètres, aide, DOCK) : le monde
+        // continue de tourner derrière mais l'œil est sur la fenêtre - la
+        // densité d'étoiles est réduite (gain GPU, imperceptible)
+        let modal_overlay = state.dock_box || state.shop_box || state.help_box || state.settings_box;
+        render::draw_stars(&assets, camera, modal_overlay);
 
         // formes (météores, station…) puis le vaisseau joueur par-dessus - le
         // cosmonaute EVA est retiré de la boucle : il est dessiné **au premier

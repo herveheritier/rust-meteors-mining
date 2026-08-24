@@ -36,6 +36,11 @@ pub const DRAW_MAXY: f64 = WORLD_MAXY - EXTERNAL_BORDER + 100.0; // 640
 /// Étoiles de fond (parallaxe).
 pub const STARS_COUNT: usize = 100_000;
 pub const STARS_LAYERS: i32 = 15;
+/// Division de la densité d'étoiles quand une fenêtre modale couvre l'écran
+/// (magasin, paramètres, aide, boîte DOCK - `render::draw_stars`,
+/// paramètre `reduced`) : 1 étoile sur 3 est dessinée, en échantillonnage
+/// régulier (répartition uniforme conservée).
+pub const STAR_DENSITY_REDUCTION: usize = 3;
 
 /// FPS visé par la boucle QB64 (le rendu plafonne bien plus bas).
 pub const ATTEMPT_FPS: i32 = 600;

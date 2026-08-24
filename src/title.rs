@@ -552,7 +552,7 @@ fn draw_frame(
 
     // fond noir + étoiles (caméra qui dérive vers le bas, ex titleLoop)
     clear_background(BLACK);
-    draw_stars(assets, camera);
+    draw_stars(assets, camera, false);
 
     // bannière : un caractère par colonne, chaque colonne colorée
     // (ex titleLoop : `_printstring` de chaque caractère)
