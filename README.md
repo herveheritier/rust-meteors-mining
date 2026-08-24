@@ -126,9 +126,10 @@ upx --best --lzma target/release/rust-meteors-mining
 | ← / → | Tourner |
 | ↓ | Décélérer |
 | Shift (gauche ou droit) | Tirer |
-| P | Pause |
+| Manette (stick gauche / croix / A ou gâchette droite) | Déplacement / Tir (en plus du clavier, du tactile et de la télécommande) |
+| P | Pause (overlay PAUSE + rappel de la touche P) |
 | S | Aide (liste des touches, fermeture au clic sur CLOSE) |
-| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS, volume (barre horizontale cliquable/glissable) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en Progression/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - crédits, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
+| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS / TOUCH UI / SAVE POSITION, volume maître + sous-volumes MUSIQUE / EFFETS / AMBIENCE (barres horizontales cliquables/glissables), ligne REMOTE PIN (code de la télécommande) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en PROGRESSION/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - crédits, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
 | G | Générer un météore près du vaisseau |
 | A | Activer/désactiver la génération automatique des météores |
 | C | Créer un alien |
@@ -450,10 +451,13 @@ du serveur, y est masquée).
 - Réglages persistants (`meteors_mining.cfg`, dossier de configuration
   utilisateur - norme XDG, ex `~/.config/meteors-mining/meteors_mining.cfg`) :
   mode de déplacement (choisi au magasin de la station, bouton SHOP de la
-  boîte DOCK STATION), musique (touche M), volume, style de rendu, mode
-  d'affichage, définition de fenêtre et anticrénelage - modifiables dans
-  l'écran de paramétrage (touche O) ou par les touches M/A, rechargés au
-  lancement suivant. NB : la génération automatique des météores (touche A ou
+  boîte DOCK STATION), musique (touche M), volume maître + sous-volumes
+  MUSIQUE / EFFETS / AMBIANCE, style de rendu, mode d'affichage, définition
+  de fenêtre, anticrénelage, interface tactile (TOUCH UI), PIN de la
+  télécommande (REMOTE PIN) et option SAVE POSITION (le vaisseau repart de
+  sa dernière position à la sortie) - modifiables dans l'écran de
+  paramétrage (touche O) ou par les touches M/A, rechargés au lancement
+  suivant. NB : la génération automatique des météores (touche A ou
   case AUTO GENERATE) n'est **pas** persistée - elle repart **toujours
   active** à chaque lancement, pour que le monde ne soit jamais vide au
   démarrage. S'y ajoutent le scénario choisi et la progression d'une partie à
