@@ -336,4 +336,26 @@ mod tests {
         // doit être cohérent avec le vecteur
         assert_eq!(loaded_count(), loaded_scenarios().len());
     }
+
+    #[test]
+    fn every_loaded_scenario_has_name_rules_and_initial_state() {
+        // « Round-trip » des fichiers .scenario.json embarqués : chaque
+        // scénario chargé doit exposer un nom, des règles (économie ou survie
+        // ou libre) et un état initial cohérent - le parseur a réussi pour
+        // tous, sinon le chargement même échouerait (include_str + parse)
+        for s in loaded_scenarios() {
+            assert!(!s.rules.name.is_empty(), "scénario sans nom");
+            // un état initial cohérent (carburant ou crédits ou vies)
+            let init = &s.data.json.initial_state;
+            assert!(
+                init.start_fuel > 0.0 || init.start_credits > 0 || init.lives > 0,
+                "état initial incohérent pour {}",
+                s.rules.name
+            );
+            assert!(
+                s.data.json.objectives.iter().all(|o| !o.id.is_empty()),
+                "objectif sans id"
+            );
+        }
+    }
 }

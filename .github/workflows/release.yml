@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Binaire ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            artifact: rust-meteors-mining-linux-x86_64
+          - name: windows-x86_64
+            os: windows-latest
+            artifact: rust-meteors-mining-windows-x86_64.exe
+          - name: macos-x86_64
+            os: macos-13
+            artifact: rust-meteors-mining-macos-x86_64
+          - name: macos-aarch64
+            os: macos-14
+            artifact: rust-meteors-mining-macos-aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release
+        run: cargo build --release --locked
+      - name: Préparer l'artefact
+        shell: bash
+        run: |
+          set -e
+          BIN=target/release/rust-meteors-mining
+          # Windows produit un .exe
+          if [ -f "$BIN.exe" ]; then BIN="$BIN.exe"; fi
+          mkdir -p dist
+          cp "$BIN" "dist/${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+
+  wasm:
+    name: Binaire WebAssembly (.wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Build wasm
+        run: cargo build --release --target wasm32-unknown-unknown --locked
+      - name: Préparer l'artefact
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/wasm32-unknown-unknown/release/rust-meteors-mining.wasm \
+             dist/rust-meteors-mining.wasm
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-meteors-mining-wasm
+          path: dist/*
+          if-no-files-found: error
