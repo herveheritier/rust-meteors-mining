@@ -13,35 +13,49 @@
 
 #![allow(non_snake_case, non_camel_case_types, dead_code)]
 
+#[cfg(target_os = "linux")]
 use std::ffi::{c_char, c_int, c_long, c_uint, c_ulong, c_void, CStr};
+#[cfg(not(target_os = "linux"))]
+#[allow(unused_imports)] // XFree etc. ne sont utilisés que sous Linux
+use std::ffi::{c_int, c_void};
 
+#[cfg(target_os = "linux")]
 use crate::config::WINDOW_TITLE;
 
-// ─── Types X11 (opaques) ─────────────────────────────────────────────────────
-
+// ─── Types X11 (opaques, Linux uniquement) ───────────────────────────────────
+#[cfg(target_os = "linux")]
 type Display = c_void;
+#[cfg(target_os = "linux")]
 type Window = c_ulong;
+#[cfg(target_os = "linux")]
 type Atom = c_ulong;
-
 /// Valeurs `Bool` X11.
+#[cfg(target_os = "linux")]
 const FALSE: c_int = 0;
+#[cfg(target_os = "linux")]
 const TRUE: c_int = 1;
 
 /// `ClientMessage` (événement X11 type 33) : porté à la root window, c'est le
 /// mécanisme standard EWMH pour demander un changement d'état au WM.
+#[cfg(target_os = "linux")]
 const CLIENT_MESSAGE: c_int = 33;
 
 /// Masques d'événement pour `XSendEvent` vers la root (EWMH).
+#[cfg(target_os = "linux")]
 const SUBSTRUCTURE_REDIRECT_MASK: c_long = 1 << 20;
+#[cfg(target_os = "linux")]
 const SUBSTRUCTURE_NOTIFY_MASK: c_long = 1 << 19;
 
 /// Actions `_NET_WM_STATE`.
+#[cfg(target_os = "linux")]
 const NET_WM_STATE_REMOVE: c_long = 0;
+#[cfg(target_os = "linux")]
 const NET_WM_STATE_ADD: c_long = 1;
 
 /// `XClientMessageEvent` (ABI libX11, `xlib.h`) - ordre des champs identique
 /// à la déclaration de miniquad (`libx11.rs`).
 #[repr(C)]
+#[cfg(target_os = "linux")]
 struct XClientMessageEvent {
     type_: c_int,
     serial: c_ulong,
@@ -57,6 +71,7 @@ struct XClientMessageEvent {
 /// est plus petite que l'union, ce qui est sans danger (Xlib lit selon le
 /// champ `type`).
 #[repr(C)]
+#[cfg(target_os = "linux")]
 struct XEvent {
     xclient: XClientMessageEvent,
 }
@@ -97,6 +112,7 @@ unsafe extern "C" {
 /// Ouvre le display par défaut et exécute `f` dessus, puis le ferme.
 ///
 /// Retourne `None` si le display n'est pas ouvrable (pas de serveur X11).
+#[cfg(target_os = "linux")]
 fn with_display<T>(f: impl FnOnce(*mut Display) -> T) -> Option<T> {
     #[cfg(not(target_os = "linux"))]
     {
@@ -120,6 +136,7 @@ fn with_display<T>(f: impl FnOnce(*mut Display) -> T) -> Option<T> {
 /// (`add = false`) via le ClientMessage `_NET_WM_STATE` (EWMH).
 ///
 /// Retourne `true` si le message a été envoyé au WM (le WM fait le reste).
+#[cfg(target_os = "linux")]
 pub fn set_fullscreen(add: bool) -> bool {
     with_display(|display| unsafe { send_fullscreen_message(display, add) }).unwrap_or(false)
 }
@@ -128,6 +145,7 @@ pub fn set_fullscreen(add: bool) -> bool {
 /// la racine X) via `XTranslateCoordinates` - utilisée pour persister et
 /// restaurer la position de la fenêtre fenêtrée. `None` si indisponible (pas
 /// de serveur X11 ou fenêtre introuvable).
+#[cfg(target_os = "linux")]
 pub fn window_position() -> Option<(i32, i32)> {
     with_display(|display| unsafe {
         let window = find_game_window(display)?;
@@ -147,6 +165,7 @@ pub fn window_position() -> Option<(i32, i32)> {
 /// Déplace la fenêtre du jeu à la position donnée (coin supérieur gauche,
 /// relatif à la racine X). Retourne `false` si indisponible (pas de serveur
 /// X11 ou fenêtre introuvable).
+#[cfg(target_os = "linux")]
 pub fn move_window(x: i32, y: i32) -> bool {
     with_display(|display| unsafe {
         let Some(window) = find_game_window(display) else {
@@ -155,6 +174,30 @@ pub fn move_window(x: i32, y: i32) -> bool {
         XMoveWindow(display, window, x, y) != 0
     })
     .unwrap_or(false)
+}
+
+// ─── repli hors Linux (macOS, Windows, wasm) ───────────────────────────────
+// Les mêmes fonctions existent en no-op pour que le reste du jeu (appels non
+// gated dans main.rs / render.rs) compile partout : plein écran = sans effet
+// (retourne false, l'appelant garde son mode fenêtré), position absente,
+// déplacement sans effet.
+
+/// Plein écran hors Linux : sans effet (retourne `false`).
+#[cfg(not(target_os = "linux"))]
+pub fn set_fullscreen(_add: bool) -> bool {
+    false
+}
+
+/// Position de la fenêtre hors Linux : toujours `None` (indisponible).
+#[cfg(not(target_os = "linux"))]
+pub fn window_position() -> Option<(i32, i32)> {
+    None
+}
+
+/// Déplacement de la fenêtre hors Linux : sans effet (retourne `false`).
+#[cfg(not(target_os = "linux"))]
+pub fn move_window(_x: i32, _y: i32) -> bool {
+    false
 }
 
 /// Envoie le ClientMessage `_NET_WM_STATE` avec l'action ADD/REMOVE de

@@ -16,20 +16,24 @@
 //! chaque frame (`publish_state`). La section critique (`STATE`) n'est jamais
 //! tenue pendant une requête réseau : le verrou est court des deux côtés.
 //!
-use std::sync::Mutex;
-
-use macroquad::prelude::info;
-use tiny_http::{Header, Method, Response, Server};
-
 use crate::state::GameState;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Mutex;
+#[cfg(not(target_arch = "wasm32"))]
+use macroquad::prelude::info;
+#[cfg(not(target_arch = "wasm32"))]
+use tiny_http::{Header, Method, Response, Server};
 
 /// Port d'écoute du serveur de contrôle (le jeu écoute sur toutes les
 /// interfaces : joignable depuis le réseau local).
+#[cfg(not(target_arch = "wasm32"))]
 pub const REMOTE_PORT: u16 = 8642;
 
 /// État partagé entre le thread du serveur (requêtes `/cmd` et `/state`) et
 /// la boucle de jeu (lecture des commandes, publication de l'état du jeu).
 #[derive(Debug, Clone)]
+#[cfg(not(target_arch = "wasm32"))]
 pub struct RemoteState {
     /// Commandes reçues du téléphone (joystick + tir).
     pub up: bool,
@@ -65,8 +69,9 @@ pub struct RemoteState {
     pub pin: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl RemoteState {
-    /// État initial - `const` : sert de valeur au `static STATE` (std ne
+    /// État initial - `const` : sert de valeur au niveau `static STATE` (std ne
     /// permet que des expressions constantes dans les statiques).
     const fn new() -> Self {
         RemoteState {
@@ -96,6 +101,7 @@ impl RemoteState {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Default for RemoteState {
     fn default() -> Self {
         RemoteState::new()
@@ -103,41 +109,86 @@ impl Default for RemoteState {
 }
 
 /// État partagé (std `Mutex` const - valable en `static`).
+#[cfg(not(target_arch = "wasm32"))]
 static STATE: Mutex<RemoteState> = Mutex::new(RemoteState::new());
 
 /// URL de la page de contrôle (remplie par `start`) - affichée par l'écran de
 /// paramétrage (`render.rs`) pour que le joueur la retrouve à tout moment.
+#[cfg(not(target_arch = "wasm32"))]
 static URL: Mutex<Option<String>> = Mutex::new(None);
 
 /// URL de la page de contrôle (ex `http://192.168.1.42:8642/`), `None` si le
-/// serveur n'a pas démarré.
+/// serveur n'a pas démarré - toujours `None` sur wasm (télécommande
+/// désactivée : pas de réseau dans le bac à sable navigateur).
 pub fn url() -> Option<String> {
-    URL.lock().unwrap().clone()
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        URL.lock().unwrap().clone()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
 }
 
-/// Commande « poussée avant » reçue du téléphone.
+/// Commande « poussée avant » reçue du téléphone (`false` sur wasm).
 pub fn up() -> bool {
-    STATE.lock().unwrap().up
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        STATE.lock().unwrap().up
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
 }
 
-/// Commande « poussée arrière / frein » reçue du téléphone.
+/// Commande « poussée arrière / frein » reçue du téléphone (`false` sur wasm).
 pub fn down() -> bool {
-    STATE.lock().unwrap().down
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        STATE.lock().unwrap().down
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
 }
 
-/// Commande « rotation gauche » reçue du téléphone.
+/// Commande « rotation gauche » reçue du téléphone (`false` sur wasm).
 pub fn left() -> bool {
-    STATE.lock().unwrap().left
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        STATE.lock().unwrap().left
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
 }
 
-/// Commande « rotation droite » reçue du téléphone.
+/// Commande « rotation droite » reçue du téléphone (`false` sur wasm).
 pub fn right() -> bool {
-    STATE.lock().unwrap().right
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        STATE.lock().unwrap().right
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
 }
 
-/// Commande « tir » reçue du téléphone.
+/// Commande « tir » reçue du téléphone (`false` sur wasm).
 pub fn fire() -> bool {
-    STATE.lock().unwrap().fire
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        STATE.lock().unwrap().fire
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
 }
 
 /// Démarre le serveur de contrôle dans un thread dédié et renvoie l'URL à
@@ -146,20 +197,28 @@ pub fn fire() -> bool {
 /// local ou un hotspot créé sur le PC.
 ///
 /// En cas d'échec (port occupé…), renvoie l'erreur - le jeu continue sans
-/// télécommande.
+/// télécommande. Sur wasm : toujours une erreur (télécommande désactivée).
 pub fn start() -> Result<String, String> {
-    let server = Server::http(format!("0.0.0.0:{}", REMOTE_PORT)).map_err(|e| e.to_string())?;
-    let ip = lan_ip().unwrap_or_else(|| "localhost".to_string());
-    info!("Remote control listening on {ip}");
-    let url = format!("http://{}:{}/", ip, REMOTE_PORT);
-    *URL.lock().unwrap() = Some(url.clone());
-    std::thread::spawn(move || serve(server));
-    Ok(url)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let server = Server::http(format!("0.0.0.0:{}", REMOTE_PORT)).map_err(|e| e.to_string())?;
+        let ip = lan_ip().unwrap_or_else(|| "localhost".to_string());
+        info!("Remote control listening on {ip}");
+        let url = format!("http://{}:{}/", ip, REMOTE_PORT);
+        *URL.lock().unwrap() = Some(url.clone());
+        std::thread::spawn(move || serve(server));
+        Ok(url)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        Err("télécommande indisponible sur wasm".to_string())
+    }
 }
 
 /// Boucle du thread serveur : traite chaque requête HTTP (page, commandes,
 /// état). Le serveur vit aussi longtemps que le processus - aucune
 /// fermeture propre nécessaire à la sortie du jeu.
+#[cfg(not(target_arch = "wasm32"))]
 fn serve(server: Server) {
     for mut request in server.incoming_requests() {
         match (request.method(), request.url()) {
@@ -208,6 +267,7 @@ fn serve(server: Server) {
 }
 
 /// Répond à une requête avec un corps et un type de contenu (200).
+#[cfg(not(target_arch = "wasm32"))]
 fn respond(request: tiny_http::Request, content_type: &str, body: &str) {
     let header = Header::from_bytes(b"Content-Type", content_type.as_bytes()).unwrap();
     let _ = request.respond(Response::from_string(body.to_string()).with_header(header));
@@ -216,6 +276,7 @@ fn respond(request: tiny_http::Request, content_type: &str, body: &str) {
 /// Taille maximale (octets) du corps d'un `POST /cmd` : 5 booléens + un PIN
 /// de 4 chiffres = quelques dizaines d'octets - 4 Ko laissent une marge
 /// confortable tout en rejetant les corps démesurés.
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_CMD_BODY: u64 = 4096;
 
 /// Applique des commandes reçues (`POST /cmd`, JSON) à un état - un corps
@@ -223,6 +284,7 @@ const MAX_CMD_BODY: u64 = 4096;
 ///
 /// Renvoie `false` si la commande est refusée : PIN incorrect (la
 /// télécommande est protégée par `s.pin`) ou corps illisible.
+#[cfg(not(target_arch = "wasm32"))]
 fn apply_cmd_to(s: &mut RemoteState, body: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
         return false;
@@ -245,6 +307,7 @@ fn apply_cmd_to(s: &mut RemoteState, body: &str) -> bool {
 
 /// Applique des commandes reçues à l'état partagé (`POST /cmd`). Renvoie
 /// `false` si la commande est refusée (PIN incorrect ou corps illisible).
+#[cfg(not(target_arch = "wasm32"))]
 fn apply_cmd(body: &str) -> bool {
     apply_cmd_to(&mut STATE.lock().unwrap(), body)
 }
@@ -252,6 +315,7 @@ fn apply_cmd(body: &str) -> bool {
 /// Snapshot de l'état du jeu à publier (champs du HUD + ressources). Pur
 /// (testable sans global). NB : les commandes (`up/down/…`) ne sont **pas**
 /// touchées - seul le `POST /cmd` les modifie.
+#[cfg(not(target_arch = "wasm32"))]
 fn snapshot(state: &GameState) -> RemoteState {
     let economy = crate::scenario::has_economy(state);
     let mut s = RemoteState::new();
@@ -283,20 +347,29 @@ fn snapshot(state: &GameState) -> RemoteState {
 /// Appelé à chaque frame par `game::update`. Les commandes reçues du
 /// téléphone (`up/down/left/right/fire`) sont préservées : seuls les champs
 /// HUD et ressources sont mis à jour, pour que les boutons du téléphone
-/// restent « enfoncés » entre deux envois `POST /cmd`.
+/// restent « enfoncés » entre deux envois `POST /cmd`. Sans effet sur wasm.
 pub fn publish_state(state: &GameState) {
-    let mut guard = STATE.lock().unwrap();
-    // conserver les commandes reçues du téléphone
-    let (up, down, left, right, fire) = (guard.up, guard.down, guard.left, guard.right, guard.fire);
-    *guard = snapshot(state);
-    guard.up = up;
-    guard.down = down;
-    guard.left = left;
-    guard.right = right;
-    guard.fire = fire;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut guard = STATE.lock().unwrap();
+        // conserver les commandes reçues du téléphone
+        let (up, down, left, right, fire) =
+            (guard.up, guard.down, guard.left, guard.right, guard.fire);
+        *guard = snapshot(state);
+        guard.up = up;
+        guard.down = down;
+        guard.left = left;
+        guard.right = right;
+        guard.fire = fire;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = state;
+    }
 }
 
 /// Sérialise un snapshot en JSON (`GET /state`) pour la page de contrôle.
+#[cfg(not(target_arch = "wasm32"))]
 fn state_json_from(s: &RemoteState) -> String {
     serde_json::json!({
         "fps": s.fps,
@@ -321,6 +394,7 @@ fn state_json_from(s: &RemoteState) -> String {
 }
 
 /// Sérialise l'état partagé en JSON (`GET /state`).
+#[cfg(not(target_arch = "wasm32"))]
 fn state_json() -> String {
     state_json_from(&STATE.lock().unwrap())
 }
@@ -328,6 +402,7 @@ fn state_json() -> String {
 /// Adresse IP locale (celle de la route par défaut) : astuce std - connecter
 /// une socket UDP ne **jamais** envoyée (bind local uniquement) renseigne
 /// l'adresse locale choisie pour joindre 8.8.8.8. `None` si indisponible.
+#[cfg(not(target_arch = "wasm32"))]
 fn lan_ip() -> Option<String> {
     let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     sock.connect("8.8.8.8:80").ok()?;
@@ -343,6 +418,7 @@ fn lan_ip() -> Option<String> {
 /// Événements Pointer (unifie doigt et souris, multi-touch : chaque bouton
 /// capture son propre doigt), commandes envoyées par `POST /cmd` au plus
 /// toutes les 33 ms quand un état a changé.
+#[cfg(not(target_arch = "wasm32"))]
 const PAGE: &str = r##"<!doctype html>
 <html lang="fr">
 <head>
@@ -507,7 +583,7 @@ setInterval(async () => {
 </html>
 "##;
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

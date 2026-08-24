@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Vérifs (clippy + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      # Clippy : zéro warning toléré (les signatures historiques portent des
+      # #[allow] ciblés et commentés, voir src/game.rs / generate.rs / render.rs)
+      - name: Clippy (zéro warning)
+        run: cargo clippy --all-targets -- -D warnings
+      # Tests unitaires (physique, collisions, minage, accostage, scénarios…)
+      - name: Tests
+        run: cargo test --all-targets
+      # Validation syntaxique des pages des outils (HTML+JS autonomes) :
+      # `node --check` extrait le JS inline. Nécessite node (préinstallé).
+      - name: Synthaxe JS des éditeurs
+        run: |
+          set -e
+          for f in tools/marketplace-editor/index.html tools/scenario-editor/index.html; do
+            echo "→ $f"
+            # extrait chaque bloc <script>…</script> dans un fichier temporaire
+            # et le valide (les scripts externes style type=module sont ignorés)
+            node - "$f" <<'NODE'
+              const fs = require('fs');
+              const file = process.argv[2];
+              const html = fs.readFileSync(file, 'utf8');
+              const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
+              if (scripts.length === 0) { console.log('  (aucun script inline)'); process.exit(0); }
+              scripts.forEach((m, i) => {
+                const tmp = `${file}.${i}.js`;
+                fs.writeFileSync(tmp, m[1]);
+                try { new Function(m[1]); console.log(`  script ${i + 1}: OK`); }
+                finally { fs.unlinkSync(tmp); }
+              });
+            NODE
+          done
+      # Build release complet (binaire autonome) : compile au moins une fois
+      # avec le profil release (lto + strip)
+      - name: Build release
+        run: cargo build --release
+
+  wasm:
+    name: Compilation WebAssembly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      # La cible wasm ne peut pas compiler le module x11 (libc X11) ni le
+      # serveur HTTP de télécommande : ils sont exclus par cfg, voir
+      # `src/x11.rs` / `src/remote.rs`.
+      - name: Build wasm
+        run: cargo build --release --target wasm32-unknown-unknown

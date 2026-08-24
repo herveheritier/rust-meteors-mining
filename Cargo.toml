@@ -20,6 +20,13 @@ image = { version = "0.24", default-features = false, features = ["jpeg"] }
 # le vaisseau depuis une page web servie par le jeu (voir src/remote.rs).
 tiny_http = { version = "0.12", default-features = false }
 
+# getrandom 0.2 (via rand 0.8) : sur wasm32-unknown-unknown, le tirage
+# aléatoire doit passer par `window.crypto` (feature `js`) - sans elle la
+# compilation échoue (compile_error! de getrandom). Dépendance cible :
+# n'affecte pas les builds natifs.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
 [profile.release]
 opt-level = 3
 lto = true

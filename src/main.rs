@@ -36,6 +36,7 @@ mod state;
 mod title;
 mod touch;
 mod vaisseau;
+mod wasm_audio_shims; // no-op audio sur wasm (silencieux) - vide sur le natif
 mod x11;
 
 use macroquad::prelude::*;
