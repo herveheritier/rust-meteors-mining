@@ -217,7 +217,7 @@ pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 
 /// Rayon (unités monde) de ramassage des minerais par le **cosmonaute EVA**
 /// (vaisseau détruit) : il est non-collider, les minerais le traversent - il
-/// les ramasse par proximité (voir `game::eva_collect_minerals`) et les
+/// les ramasse par proximité (voir `eva::eva_collect_minerals`) et les
 /// rapporte à la station. Rayon du cosmonaute (~13) + marge généreuse.
 pub const EVA_PICKUP_RADIUS: f64 = 20.0;
 
@@ -231,19 +231,19 @@ pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 /// Durée (secondes) de la **récupération** du cosmonaute EVA par la station
 /// (vaisseau détruit, il a rejoint la zone d'accostage) : un cordon jaillit
 /// de l'anneau jusqu'à lui puis le ramène sur l'anneau - le monde continue
-/// de tourner (voir `game::advance_eva_recovery` et
+/// de tourner (voir `eva::advance_eva_recovery` et
 /// `render::draw_eva_recovery_cable`).
 pub const EVA_RECOVERY_DURATION: f64 = 2.5;
 /// Fraction de `EVA_RECOVERY_DURATION` consacrée au **déploiement** du cordon
 /// de récupération : pendant cette première phase le cosmonaute reste sur
 /// place et le cordon jaillit de l'anneau jusqu'à lui ; une fois
 /// complètement déployé (tendu), il le ramène sur l'anneau (voir
-/// `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
+/// `eva::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
 pub const EVA_CABLE_DEPLOY_FRACTION: f64 = 0.3;
 /// Durée (secondes) du **fondu enchaîné** après la récupération : le
 /// cosmonaute ramené sur l'anneau s'efface pendant que le vaisseau
 /// reconstruit apparaît au centre de la station, liens attachés (voir
-/// `game::advance_eva_crossfade`).
+/// `eva::advance_eva_crossfade`).
 pub const EVA_CROSSFADE_DURATION: f64 = 2.0;
 /// Couleur (ARGB) du cordon de récupération du cosmonaute EVA : orange néon,
 /// distincte des liens d'accostage verts (voir
@@ -255,14 +255,14 @@ pub const EVA_RECOVERY_CABLE_COLOR: u32 = 0xFFFFA040;
 /// se recentrant exactement au centre de la station, et 4 traits néon
 /// relient le bord intérieur de la station aux côtés du vaisseau - le monde
 /// continue de tourner (voir `render::draw_docking_line` et
-/// `game::advance_dock_animation`).
+/// `docking::advance_dock_animation`).
 pub const DOCK_ANIMATION_DURATION: f64 = 3.0;
 
 /// Durée (secondes) de la rétraction des liens d'accostage au départ
 /// (bouton CLOSE de la boîte DOCK STATION) : le vaisseau reste au centre,
 /// les 4 traits néon se rétractent du vaisseau vers le bord intérieur de
 /// l'anneau, puis le vaisseau est libre - le monde continue de tourner (voir
-/// `render::draw_docking_line` et `game::advance_dock_retract`).
+/// `render::draw_docking_line` et `docking::advance_dock_retract`).
 pub const DOCK_RETRACT_DURATION: f64 = 1.5;
 
 /// Rayon intérieur (unités monde) de l'anneau de la station (bord intérieur

@@ -345,7 +345,7 @@ pub struct ShopBoxLayout {
     /// Rectangle de la fenêtre complète (fond, bordure, coordonnées).
     pub window: Rect,
     /// Onglets (RAVITAILLEMENT, ÉQUIPEMENT, ATELIER, MODE DE VOL) - clic =
-    /// bascule de `state.shop_tab` (`game::shop_update`).
+    /// bascule de `state.shop_tab` (`shop::shop_update`).
     pub tabs: [Rect; 4],
     /// Ligne « carburant » du ravitaillement (étiquette à gauche, curseur au
     /// centre) - rectangle vide hors économie.
@@ -619,7 +619,7 @@ pub fn draw_shop_box(state: &GameState, shapes: &[Shape], triangles: &[Triangle]
 }
 
 /// Dessine la rangée d'onglets du magasin : onglet actif rempli + vert,
-/// survol blanc, autres en bleu clair (clic = bascule, `game::shop_update`).
+/// survol blanc, autres en bleu clair (clic = bascule, `shop::shop_update`).
 fn draw_shop_tabs(state: &GameState, l: &ShopBoxLayout) {
     let labels = ["RAVITAILLEMENT", "ÉQUIPEMENT", "ATELIER", "MODE DE VOL"];
     let m = mouse_to_game();
@@ -2136,7 +2136,7 @@ pub fn draw_thruster_gas(
 /// du cosmonaute (dans l'axe `orientation + π`, comme la flamme du vaisseau -
 /// le dos est opposé au déplacement), dessinée quand il pousse (`thrusted`).
 /// Le cosmonaute n'a qu'**un seul propulseur** (pas de marche arrière - voir
-/// `game::cosmonaut_controls`) : une flamme extérieure orange semi-transparente
+/// `input::cosmonaut_controls`) : une flamme extérieure orange semi-transparente
 /// et un cœur jaune, dont la longueur et la largeur **vacillent** (sinus
 /// rapide + bruit) pour un effet de combustion animé.
 pub fn draw_cosmonaut_thruster(shape: &Shape, camera: Point, world: &World) {
@@ -2345,7 +2345,7 @@ const DOCK_LINE_SHIP_ANCHOR: f64 = 5.0;
 
 /// La mire d'accostage est-elle visible ? Elle n'est affichée **que lors du
 /// retour à la base** (`state.docking_guide`, posé par
-/// `game::update_docking_guide` quand le vaisseau recroise la limite
+/// `docking::update_docking_guide` quand le vaisseau recroise la limite
 /// extérieure en entrant) : jamais pendant que le vaisseau quitte
 /// l'accostage, à quai, pendant l'animation d'accostage (il est tiré vers le
 /// centre), tant que la boîte DOCK STATION / l'atelier est ouvert (accosté)

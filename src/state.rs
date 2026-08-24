@@ -235,7 +235,7 @@ pub struct GameState {
     /// avant d'ouvrir la boîte DOCK STATION, le vaisseau pivote vers la droite
     /// (orientation 0) tout en se recentrant au centre de la station, pendant
     /// `DOCK_ANIMATION_DURATION` - le monde continue de tourner (voir
-    /// `game::advance_dock_animation` et `render::draw_docking_line`).
+    /// `docking::advance_dock_animation` et `render::draw_docking_line`).
     pub dock_anim: f64,
     /// Position du vaisseau au début de l'animation d'accostage (interpolée
     /// vers le centre de la station).
@@ -247,28 +247,28 @@ pub struct GameState {
     /// aucune) : au départ (bouton CLOSE de la boîte DOCK STATION), le vaisseau
     /// reste au centre et les 4 traits néon se rétractent vers le bord
     /// intérieur de l'anneau pendant `DOCK_RETRACT_DURATION` - le monde
-    /// continue de tourner (voir `game::advance_dock_retract` et
+    /// continue de tourner (voir `docking::advance_dock_retract` et
     /// `render::draw_docking_line`).
     pub dock_retract: f64,
     /// Liens d'accostage **attachés à quai** : vrai au lancement et après un
     /// respawn (le vaisseau démarre à la station) - les 4 traits néon sont
     /// tendus jusqu'au vaisseau au centre, la mire est cachée. Dès que le
-    /// joueur donne une commande de mouvement, `game::release_links` les
+    /// joueur donne une commande de mouvement, `docking::release_links` les
     /// rétracte (comme au départ après CLOSE) puis le vaisseau est libre.
     pub dock_links: bool,
     /// Guide d'accostage (la mire) **affiché lors du retour à la base** : vrai
     /// quand le vaisseau a quitté la base puis a **recroisé sa limite
-    /// extérieure en entrant** (voir `game::update_docking_guide`) - jamais
+    /// extérieure en entrant** (voir `docking::update_docking_guide`) - jamais
     /// pendant qu'il quitte l'accostage ni à quai. Faux dès qu'il accoste
-    /// (`game::docking`) ou quitte la base (`game::release_links`).
+    /// (`docking::docking`) ou quitte la base (`docking::release_links`).
     pub docking_guide: bool,
     /// Le vaisseau était **hors de la limite extérieure** de la base à la
     /// frame précédente : détection du franchissement **en entrant** (retour)
-    /// par `game::update_docking_guide` (front montant de la distance).
+    /// par `docking::update_docking_guide` (front montant de la distance).
     pub dock_was_outside: bool,
     /// Vaisseau détruit, le joueur contrôle le **cosmonaute EVA éjecté** : son
     /// seul objectif est de rejoindre la base (zone d'accostage au centre) où
-    /// il est secouru et le vaisseau reconstruit (voir `game::rescue_cosmonaut`).
+    /// il est secouru et le vaisseau reconstruit (voir `eva::rescue_cosmonaut`).
     /// Pendant ce temps la caméra, la mire et le HUD suivent le cosmonaute.
     pub cosmonaut_active: bool,
     /// Index de la forme « cosmonaute EVA » dans `shapes` (-1 tant qu'elle
@@ -278,7 +278,7 @@ pub struct GameState {
     /// aucune) : vaisseau détruit, il a rejoint la zone d'accostage - un
     /// cordon jaillit de l'anneau jusqu'à lui et le ramène sur l'anneau
     /// pendant `EVA_RECOVERY_DURATION` (le monde continue de tourner, voir
-    /// `game::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
+    /// `eva::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
     pub eva_recovery: f64,
     /// Position du cosmonaute au début de la récupération (interpolée vers
     /// `eva_recovery_to_pos`, le point de l'anneau où le cordon le ramène).
@@ -289,7 +289,7 @@ pub struct GameState {
     /// Fondu enchaîné de la récupération en cours (secondes restantes, 0 =
     /// aucune) : le cosmonaute sur l'anneau s'efface pendant que le vaisseau
     /// reconstruit apparaît au centre de la station, liens attachés, pendant
-    /// `EVA_CROSSFADE_DURATION` (voir `game::advance_eva_crossfade`).
+    /// `EVA_CROSSFADE_DURATION` (voir `eva::advance_eva_crossfade`).
     pub eva_crossfade: f64,
     /// Boîte de choix DOCK STATION ouverte (accostage) - ex la boucle
     /// bloquante de `windowUtils_choiceBox` : tant qu'elle est ouverte, le
@@ -330,7 +330,7 @@ pub struct GameState {
     /// Dernier keycode pressé (affiché par le mode I, ex `keycode = inp(96)`).
     pub last_keycode: i32,
     /// État de la touche F à la frame précédente (front montant de
-    /// `is_key_down` - voir `game::f_pressed`) : détecte la pression même
+    /// `is_key_down` - voir `input::f_pressed`) : détecte la pression même
     /// quand macroquad l'a avalée comme « répétition » (relâchement perdu
     /// pendant la bascule plein écran).
     pub f_was_down: bool,

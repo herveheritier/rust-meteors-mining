@@ -18,11 +18,14 @@
 mod audio;
 mod config;
 mod cosmonaut;
+mod docking;
+mod eva;
 mod font;
 mod game;
 mod garbage;
 mod generate;
 mod geom;
+mod input;
 mod marketplace;
 mod objective_tracker;
 mod persist;
@@ -31,7 +34,9 @@ mod render;
 mod scenario;
 mod scenario_loader;
 mod scenario_objectives;
+mod settings;
 mod shape;
+mod shop;
 mod state;
 mod title;
 mod touch;
@@ -276,7 +281,7 @@ async fn main() {
     // initiale non nulle (scénario custom de l'éditeur) signifie que le
     // vaisseau démarre en vol, hors de la base (pas de liens, pas
     // d'accostage ; la mire réapparaîtra au retour, voir
-    // `game::update_docking_guide`)
+    // `docking::update_docking_guide`)
     let start_docked = crate::scenario::start_docked(&state);
     state.dock_links = start_docked;
     state.player_at_station = if start_docked { -1 } else { 0 };
@@ -450,7 +455,7 @@ async fn main() {
         }
         // le pilote (vaisseau, ou cosmonaute EVA quand il est détruit) guide
         // la mire, le HUD d'accostage et la flamme de poussée
-        let pilot = game::pilot_index(&state);
+        let pilot = crate::input::pilot_index(&state);
         // fondu enchaîné de la récupération EVA : pendant `eva_crossfade`, le
         // cosmonaute ramené sur l'anneau s'efface (`cosmonaut_fade` 1→0)
         // pendant que le vaisseau reconstruit apparaît au centre avec ses

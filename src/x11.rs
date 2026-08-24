@@ -204,6 +204,9 @@ pub fn move_window(_x: i32, _y: i32) -> bool {
 /// `_NET_WM_STATE_FULLSCREEN` à la root window, pour la fenêtre du jeu.
 #[cfg(target_os = "linux")]
 unsafe fn send_fullscreen_message(display: *mut Display, add: bool) -> bool {
+    // édition 2024 : les appels aux fonctions unsafe de la FFI X11 exigent
+    // un bloc `unsafe` explicite, même dans une fonction `unsafe fn`
+    unsafe {
     let wm_state = XInternAtom(display, c"_NET_WM_STATE".as_ptr(), FALSE);
     let wm_fullscreen = XInternAtom(display, c"_NET_WM_STATE_FULLSCREEN".as_ptr(), FALSE);
     if wm_state == 0 || wm_fullscreen == 0 {
@@ -243,12 +246,14 @@ unsafe fn send_fullscreen_message(display: *mut Display, add: bool) -> bool {
     );
     XFlush(display);
     sent != 0
+    }
 }
 
 /// Retrouve la fenêtre du jeu : le focus X (le jeu a le focus quand on presse
 /// F), sinon recherche par titre dans l'arbre des fenêtres.
 #[cfg(target_os = "linux")]
 unsafe fn find_game_window(display: *mut Display) -> Option<Window> {
+    unsafe {
     let mut focus: Window = 0;
     let mut revert_to: c_int = 0;
     // `XGetInputFocus` renvoie 1 (PointerRoot) ou 0 (None) si rien n'a le
@@ -262,11 +267,13 @@ unsafe fn find_game_window(display: *mut Display) -> Option<Window> {
     }
     let root = XDefaultRootWindow(display);
     find_window_by_title(display, root)
+    }
 }
 
 /// Vrai si la fenêtre porte le titre du jeu (`WM_NAME`).
 #[cfg(target_os = "linux")]
 unsafe fn window_has_title(display: *mut Display, window: Window) -> bool {
+    unsafe {
     let mut name: *mut c_char = std::ptr::null_mut();
     if XFetchName(display, window, &mut name) == 0 || name.is_null() {
         return false;
@@ -274,11 +281,13 @@ unsafe fn window_has_title(display: *mut Display, window: Window) -> bool {
     let matches = CStr::from_ptr(name).to_bytes() == WINDOW_TITLE.as_bytes();
     XFree(name as *mut c_void);
     matches
+    }
 }
 
 /// Recherche récursive de la fenêtre portant le titre du jeu.
 #[cfg(target_os = "linux")]
 unsafe fn find_window_by_title(display: *mut Display, window: Window) -> Option<Window> {
+    unsafe {
     if window_has_title(display, window) {
         return Some(window);
     }
@@ -307,4 +316,5 @@ unsafe fn find_window_by_title(display: *mut Display, window: Window) -> Option<
     }
     XFree(children as *mut c_void);
     found
+    }
 }

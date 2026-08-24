@@ -12,7 +12,6 @@ use macroquad::prelude::*;
 use crate::audio::Sounds;
 use crate::config::{ATTEMPT_FPS, VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
 use crate::font::{draw_text, measure_text};
-use crate::game;
 use crate::geom::Point;
 use crate::render::{
     argb_to_color, cycle_view_mode, draw_settings_box, draw_stars, draw_zoomed, native_camera,
@@ -184,7 +183,7 @@ pub async fn title_loop(
         }
         // F : détection robuste (front montant de `is_key_down` - une pression
         // avalée par le filtre de répétition de macroquad après une bascule
-        // plein écran reste comptée, voir `game::f_pressed`)
+        // plein écran reste comptée, voir `input::f_pressed`)
         //
         // NB : on ne fait PAS `continue` ici - `keys_pressed` n'est vidé qu'à
         // `end_frame`, atteint seulement quand la coroutine rend la main à
@@ -192,7 +191,7 @@ pub async fn title_loop(
         // cadre figé, boucle sans rendu). On cède une frame (le keypress est
         // consommé), comme l'original qui relit `inkey$` (consommant) à chaque
         // itération.
-        if game::f_pressed(state) {
+        if crate::input::f_pressed(state) {
             cycle_view_mode(state);
             next_frame().await;
             continue;
@@ -213,7 +212,7 @@ pub async fn title_loop(
                         }
                         last_frame = get_time();
                     }
-                    let result = game::handle_settings_input(state, Some(sounds));
+                    let result = crate::settings::handle_settings_input(state, Some(sounds));
                     if result.progression_reset {
                         progression_reset = true;
                     }

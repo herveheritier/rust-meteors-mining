@@ -749,7 +749,7 @@ pub fn apply_start(state: &mut GameState) {
 /// de 0 (scénario custom de l'éditeur) ou une vitesse initiale non nulle
 /// signifient que le vaisseau démarre en vol, hors de la base - pas de liens,
 /// pas d'accostage (la mire réapparaîtra au retour, voir
-/// `game::update_docking_guide`). Appliquée au lancement de la partie
+/// `docking::update_docking_guide`). Appliquée au lancement de la partie
 /// (`main.rs`), où `dock_links` et `player_at_station` en sont dérivés.
 pub fn start_docked(state: &GameState) -> bool {
     state.initial_ship_x == 0.0 && state.initial_ship_y == 0.0 && state.initial_ship_velocity == 0.0
