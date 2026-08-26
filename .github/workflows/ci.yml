@@ -36,28 +36,13 @@ jobs:
       - name: Tests
         run: cargo test --all-targets
       # Validation syntaxique des pages des outils (HTML+JS autonomes) :
-      # `node --check` extrait le JS inline. Nécessite node (préinstallé).
+      # le script Node extrait et compile chaque bloc <script> inline.
       - name: Synthaxe JS des éditeurs
         run: |
           set -e
-          for f in tools/marketplace-editor/index.html tools/scenario-editor/index.html; do
-            echo "→ $f"
-            # extrait chaque bloc <script>…</script> dans un fichier temporaire
-            # et le valide (les scripts externes style type=module sont ignorés)
-            node - "$f" <<'NODE'
-              const fs = require('fs');
-              const file = process.argv[2];
-              const html = fs.readFileSync(file, 'utf8');
-              const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)];
-              if (scripts.length === 0) { console.log('  (aucun script inline)'); process.exit(0); }
-              scripts.forEach((m, i) => {
-                const tmp = `${file}.${i}.js`;
-                fs.writeFileSync(tmp, m[1]);
-                try { new Function(m[1]); console.log(`  script ${i + 1}: OK`); }
-                finally { fs.unlinkSync(tmp); }
-              });
-            NODE
-          done
+          node .github/scripts/validate-editor-js.mjs \
+            tools/marketplace-editor/index.html \
+            tools/scenario-editor/index.html
       # Build release complet (binaire autonome) : compile au moins une fois
       # avec le profil release (lto + strip)
       - name: Build release
