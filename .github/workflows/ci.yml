@@ -14,6 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Dépendances système du build natif : manette gilrs → libudev-sys (exige
+      # libudev-dev), macroquad → GL/X11 (libgl1-mesa-dev libx11-dev libxi-dev),
+      # audio (quad-snd/ALSA) → libasound2-dev. Sans elles le build-script de
+      # libudev-sys échoue: « Package libudev was not found in the pkg-config
+      # search path ».
+      - name: Dépendances système
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libudev-dev libasound2-dev \
+            libx11-dev libxi-dev libgl1-mesa-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt

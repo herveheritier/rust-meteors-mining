@@ -30,6 +30,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Dépendances système requises par le build : la manette gilrs tire
+      # libudev-sys (libudev-dev), macroquad GL/X11 (libgl1-mesa-dev libx11-dev
+      # libxi-dev) et l'audio ALSA (libasound2-dev) - sans libudev-dev le
+      # build-script de libudev-sys échoue : « Package libudev was not found
+      # in the pkg-config search path » (CI a échoué ici sur main).
+      - name: Dépendances système
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libudev-dev libasound2-dev \
+            libx11-dev libxi-dev libgl1-mesa-dev
+
       - uses: actions/configure-pages@v5
 
       - uses: dtolnay/rust-toolchain@stable
@@ -38,7 +49,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: wasm-release
+          # « wasm-release » a été sauvegardé par un run en échec (deps
+          # système manquantes) : key bumpée en v2 pour invalider ce cache
+          # corrompu et repartir d'un build propre et connu bon.
+          key: wasm-release-v2
 
       - name: Build wasm
         run: cargo build --release --target wasm32-unknown-unknown
