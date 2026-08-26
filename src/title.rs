@@ -19,7 +19,6 @@ use crate::render::{
 };
 use crate::state::ViewMode;
 use crate::state::GameState;
-use std::time::Duration;
 
 /// Bannière « METEORS MINING » en ASCII art (8 lignes × 125 colonnes,
 /// extraite telle quelle de l'original - les caractères `[]`/`[I]` dessinent
@@ -94,19 +93,19 @@ fn rainbow(hue: f64) -> u32 {
 /// Écran titre : boucle jusqu'à une touche (autre que F, O ou N/B/1-3), ex
 /// `titleLoop`. `sounds` sert à l'écran de paramétrage (touche O), accessible
 /// depuis le titre - musique et volume y sont réglables ; N/B ou 1-3 changent
-/// de scénario (jeu libre ↔ Progression ↔ Survival). Renvoie `(restart,
-/// progression_reset)` : `restart` si le bouton RESTART de l'écran de
-/// paramétrage a été cliqué (le jeu doit se relancer), `progression_reset` si
-/// le bouton RESET PROGRESSION a été cliqué depuis le titre (le vaisseau doit
-/// être reconstruit au lancement de la partie - les plans liés aux extensions
-/// remises à zéro ne sont pas visibles à l'écran titre, qui ne dessine pas le
-/// monde).
+/// de scénario (jeu libre ↔ Progression ↔ Survival). Renvoie `(quit, restart,
+/// progression_reset)` : `quit` si ESC a été pressé (l'application doit se
+/// fermer), `restart` si le bouton RESTART de l'écran de paramétrage a été
+/// cliqué (le jeu doit se relancer), `progression_reset` si le bouton RESET
+/// PROGRESSION a été cliqué depuis le titre (le vaisseau doit être reconstruit
+/// au lancement de la partie - les plans liés aux extensions remises à zéro ne
+/// sont pas visibles à l'écran titre, qui ne dessine pas le monde).
 pub async fn title_loop(
     state: &mut GameState,
     assets: &crate::render::Assets,
     rt: &RenderTarget,
     sounds: &mut Sounds,
-) -> (bool, bool) {
+) -> (bool, bool, bool) {
     const COLOR_STEPS: f64 = 48.0;
     const COLOR_SPEED: f64 = 0.3;
     let mut color_step = 0.0;
@@ -129,11 +128,7 @@ pub async fn title_loop(
 
     loop {
         if LIMIT_FPS {
-            let elapsed = get_time() - last_frame;
-            if elapsed < target_frame {
-                std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
-            }
-            last_frame = get_time();
+            crate::frame_pace(target_frame, &mut last_frame);
         }
 
         // fenêtre fenêtrée : persiste position/taille réelles quand elles
@@ -141,11 +136,16 @@ pub async fn title_loop(
         // vérification par seconde (`persist_window_geometry`)
         persist_window_geometry(state);
 
+        // ESC : quitter l'application (invite « [ ESC to quit ] » de l'écran
+        // titre) - les autres touches lancent la partie
+        if is_key_pressed(KeyCode::Escape) {
+            return (true, false, progression_reset);
+        }
+
         // touche F : plein écran ; O : écran de paramétrage ; N/B/1-3 :
         // scénario ; toute autre touche : lancement
         let mut key: Option<KeyCode> = None;
         for k in [
-            KeyCode::Escape,
             KeyCode::Enter,
             KeyCode::Space,
             KeyCode::Key1,
@@ -206,11 +206,7 @@ pub async fn title_loop(
                 state.settings_box = true;
                 while state.settings_box {
                     if LIMIT_FPS {
-                        let elapsed = get_time() - last_frame;
-                        if elapsed < target_frame {
-                            std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
-                        }
-                        last_frame = get_time();
+                        crate::frame_pace(target_frame, &mut last_frame);
                     }
                     let result = crate::settings::handle_settings_input(state, Some(sounds));
                     if result.progression_reset {
@@ -220,7 +216,7 @@ pub async fn title_loop(
                         // ferme l'écran : si la relance échoue (retour de
                         // `main`), la partie démarre sans l'écran ouvert
                         state.settings_box = false;
-                        return (true, progression_reset);
+                        return (false, true, progression_reset);
                     }
                     draw_frame(
                         state,
@@ -293,11 +289,7 @@ pub async fn title_loop(
                 let mut launch = false;
                 'launch_choice: loop {
                     if LIMIT_FPS {
-                        let elapsed = get_time() - last_frame;
-                        if elapsed < target_frame {
-                            std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
-                        }
-                        last_frame = get_time();
+                        crate::frame_pace(target_frame, &mut last_frame);
                     }
                     for k in [
                         KeyCode::Escape,
@@ -346,7 +338,14 @@ pub async fn title_loop(
                     next_frame().await;
                 }
                 if !launch {
-                    continue; // ESC : retour à l'écran titre
+                    // ESC : retour à l'écran titre. La touche ESC est encore
+                    // dans la file d'input (le `break` ne la consomme pas, la
+                    // file n'est vidée qu'à `next_frame`) : on cède une frame
+                    // avant de continuer, sinon la même pression serait relue
+                    // par la boucle du titre et rouvrirait immédiatement cet
+                    // écran de choix (ESC semblait ne pas fermer la boîte).
+                    next_frame().await;
+                    continue;
                 }
             }
             break;
@@ -380,7 +379,7 @@ pub async fn title_loop(
     }
 
     // le `break` ci-dessus quitte la boucle (lancement de la partie)
-    (false, progression_reset)
+    (false, false, progression_reset)
 }
 
 /// Affiche la liste des objectifs DAG d'un scénario custom sur l'écran titre
@@ -461,7 +460,11 @@ fn draw_centered_line_color(line: &str, y: f32, color: Color) {
 /// par-dessus l'écran titre (fond sombre + bordure, comme l'écran de
 /// paramétrage) ; la sous-boucle d'input correspondante est dans `title_loop`.
 fn draw_launch_choice(state: &GameState) {
-    const BG: u32 = 0xD01478DC;
+    // fond opaque et sombre (bleu nuit) : le BOX_BG partagé (0xD0, ~82 %)
+    // laisse transparaître la bannière et les étoiles derrière la boîte, ce
+    // qui gêne la lecture du résumé de sauvegarde et des deux options - un
+    // fond opaque foncé maximise le contraste avec le texte clair
+    const BG: u32 = 0xFF0A1E44;
     const BORDER: u32 = 0xFF1AB2FF;
     const FG: u32 = 0xFFD6EEFF;
     const FG_DIM: u32 = 0xFFC2E4FF;

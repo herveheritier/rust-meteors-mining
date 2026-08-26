@@ -21,8 +21,7 @@ pub use crate::ui_boxes::*;
 
 use macroquad::models::{draw_mesh, Mesh, Vertex};
 use macroquad::prelude::*;
-use ::rand::{Rng, SeedableRng};
-use ::rand_chacha::ChaCha12Rng;
+use ::rand::Rng;
 
 use crate::config::*;
 use crate::font::draw_text;
@@ -125,7 +124,7 @@ impl Assets {
 /// PORTAGE.md préconise cette optimisation). Chaque étoile est stockée par sa
 /// position dans une tuile périodique (équivalent au rebouclage torique).
 fn build_star_layers() -> Vec<StarLayer> {
-    let mut rng = ChaCha12Rng::from_entropy();
+    let mut rng = crate::generate::seeded_rng();
     let mut layers = Vec::with_capacity(STARS_LAYERS as usize);
     for layer in 0..STARS_LAYERS {
         let plan = (layer + 1) as f64;

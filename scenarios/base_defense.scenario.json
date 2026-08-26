@@ -1,0 +1,161 @@
+{
+  "id": "base_defense",
+  "name": "DÉFENSE DE LA BASE",
+  "description": "Des vagues de météores menacent la base : abattez-les avant qu'elles n'atteignent le périmètre, réarmez à la station et tenez jusqu'à la sécurisation complète.",
+  "rules_color": "0xFFFFA028",
+  "initial_state": {
+    "start_fuel": 100,
+    "start_ammo": 30,
+    "start_credits": 0,
+    "start_reputation": 0,
+    "start_mode": 3,
+    "lives": 0,
+    "shield_capacity": 0,
+    "start_pos_x": 0,
+    "start_pos_y": 0,
+    "start_orientation": 0,
+    "start_velocity": 0
+  },
+  "objectives": [
+    {
+      "id": "def_alert",
+      "title": "Alerte Météores",
+      "description": "L'essaim approche de la base : abattez 10 météores avant qu'ils n'atteignent le périmètre.",
+      "prerequisites": [],
+      "condition": {
+        "type": "DestroyAsteroids",
+        "required": 10
+      },
+      "reward": {
+        "type": "Credits",
+        "amount": 10
+      },
+      "position": {
+        "x": 100,
+        "y": 180
+      }
+    },
+    {
+      "id": "def_precision",
+      "title": "Tir de Défense",
+      "description": "Les munitions sont limitées : réussissez 15 tirs au but avec au moins 60 % de précision.",
+      "prerequisites": [
+        "def_alert"
+      ],
+      "condition": {
+        "type": "PrecisionShooting",
+        "hits": 15,
+        "min_precision": 0.6
+      },
+      "reward": {
+        "type": "Fuel",
+        "amount": 50
+      },
+      "position": {
+        "x": 380,
+        "y": 340
+      }
+    },
+    {
+      "id": "def_rearm",
+      "title": "Rotation à la Base",
+      "description": "Revenez à la station pour décharger le minerai et réarmer entre deux vagues.",
+      "prerequisites": [
+        "def_alert"
+      ],
+      "condition": {
+        "type": "DockAtStation",
+        "required": 1
+      },
+      "reward": {
+        "type": "Ammo",
+        "amount": 30
+      },
+      "position": {
+        "x": 100,
+        "y": 340
+      }
+    },
+    {
+      "id": "def_wave2",
+      "title": "Deuxième Vague",
+      "description": "Une nouvelle salve se présente : intensifiez la défense et détruisez 35 météores au total.",
+      "prerequisites": [
+        "def_alert"
+      ],
+      "condition": {
+        "type": "DestroyAsteroids",
+        "required": 35
+      },
+      "reward": {
+        "type": "Credits",
+        "amount": 25
+      },
+      "position": {
+        "x": 380,
+        "y": 180
+      }
+    },
+    {
+      "id": "def_hold",
+      "title": "Tenir la Ligne",
+      "description": "Restez en vol 120 secondes sans vous faire détruire : la défense tient.",
+      "prerequisites": [
+        "def_alert"
+      ],
+      "condition": {
+        "type": "SurviveTime",
+        "seconds": 120
+      },
+      "reward": {
+        "type": "Reputation",
+        "amount": 20
+      },
+      "position": {
+        "x": 660,
+        "y": 340
+      }
+    },
+    {
+      "id": "def_perimeter",
+      "title": "Périmètre Sécurisé",
+      "description": "Les vagues s'enchaînent : gardez le périmètre de la base dégagé en détruisant 70 météores au total.",
+      "prerequisites": [
+        "def_wave2",
+        "def_precision"
+      ],
+      "condition": {
+        "type": "DestroyAsteroids",
+        "required": 70
+      },
+      "reward": {
+        "type": "Reputation",
+        "amount": 40
+      },
+      "position": {
+        "x": 660,
+        "y": 180
+      }
+    },
+    {
+      "id": "def_victory",
+      "title": "Base en Sécurité",
+      "description": "La menace est éliminée : détruisez 100 météores au total pour sécuriser définitivement la base.",
+      "prerequisites": [
+        "def_perimeter",
+        "def_rearm"
+      ],
+      "condition": {
+        "type": "DestroyAsteroids",
+        "required": 100
+      },
+      "reward": {
+        "type": "Victory"
+      },
+      "position": {
+        "x": 940,
+        "y": 180
+      }
+    }
+  ]
+}

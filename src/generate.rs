@@ -4,6 +4,8 @@
 //! `generateShape`, `createShape`, `createAlien`, `createStation`,
 //! `createMineral`, `fireBullet` et `prepare`.
 
+use ::rand::SeedableRng;
+use ::rand_chacha::ChaCha12Rng;
 use rand::Rng;
 use std::f64::consts::TAU;
 
@@ -17,6 +19,31 @@ use crate::marketplace::{
 };
 use crate::shape::*;
 use crate::state::{default_elements, Element, GameState};
+
+/// PRNG seedé pour la génération procédurale (`prepare`, étoiles…).
+///
+/// **Natif** : entropie système (`getrandom`). **Web** (wasm32-unknown-
+/// unknown) : getrandom y exige la glue wasm-bindgen (`__wbg_*`) que le
+/// chargeur web miniquad (`web/gl.js`) ne fournit pas - instancier le wasm
+/// échouerait (`WebAssembly.instantiate: Import "__wbindgen_placeholder__"`,
+/// voir le déploiement GitHub Pages). On seede donc depuis l'horloge
+/// (`get_time`, ms) XOR un compteur : entropie largement suffisante pour un
+/// monde de jeu, et le binaire wasm ne référence plus getrandom du tout.
+pub fn seeded_rng() -> ChaCha12Rng {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        ChaCha12Rng::from_entropy()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        // horloge + compteur : jamais le même départ deux fois dans la session
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEED_CTR: AtomicU64 = AtomicU64::new(0);
+        let ctr = SEED_CTR.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::Relaxed);
+        let ms = (macroquad::time::get_time() * 1000.0) as u64;
+        ChaCha12Rng::seed_from_u64(ms ^ ctr)
+    }
+}
 
 /// Génère un météore (ex `generateShape`).
 ///

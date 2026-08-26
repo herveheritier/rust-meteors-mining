@@ -748,6 +748,8 @@
     <span class="title">Console cargo</span>
     <button id="btn-cargo-test" title="Lance cargo test dans le projet (sortie en direct)">▶ cargo test</button>
     <button id="btn-cargo-run" title="Compile puis lance le jeu (cargo run)">▶ cargo run</button>
+    <button id="btn-cargo-run-release" title="Compile puis lance le jeu en mode release (cargo run --release)">▶ cargo run --release</button>
+    <button id="btn-cargo-wasm" title="Build WASM release puis sert la version web localement (/wasm/)">▶ WASM local</button>
     <button id="btn-cargo-stop" title="Arrête la commande cargo en cours" disabled>■ Arrêter</button>
     <span class="cargo-status" id="cargo-status"></span>
     <button id="btn-cargo-collapse" title="Réduire / agrandir la console">▾</button>
@@ -4812,10 +4814,20 @@ function normalize(parsed) {
 
 /* ─── Console cargo (mode serveur local) ──────────────────────────────────── */
 
-// Lance « cargo test » ou « cargo run » via le serveur local (server.mjs),
-// affiche la sortie en direct dans la console et lit le code de sortie final.
-// Une seule commande à la fois ; « ■ Arrêter » coupe le process en cours.
+// Lance « cargo test », « cargo run », « cargo run --release » ou le build
+// WASM local via le serveur local (server.mjs), affiche la sortie en direct
+// dans la console et lit le code de sortie final. Une seule commande à la
+// fois ; « ■ Arrêter » coupe le process en cours.
 let cargoBusy = false;
+
+// libellés par commande (boutons + statut) - la commande « wasm » build la
+// version web puis le serveur la sert sous /wasm/ (URL affichée au statut)
+const CARGO_LABELS = {
+  test: "cargo test",
+  run: "cargo run",
+  "run-release": "cargo run --release",
+  wasm: "build WASM (web)",
+};
 
 function cargoAppend(text) {
   const out = document.getElementById("cargo-out");
@@ -4830,14 +4842,17 @@ function cargoStatus(text, cls) {
 }
 
 async function runCargo(command) {
-  const testBtn = document.getElementById("btn-cargo-test");
-  const runBtn = document.getElementById("btn-cargo-run");
+  const runButtons = Object.keys(CARGO_LABELS).map(
+    (c) => document.getElementById("btn-cargo-" + c)
+  );
   const stopBtn = document.getElementById("btn-cargo-stop");
+  const label = CARGO_LABELS[command] || command;
   if (cargoBusy) { toast("Une commande cargo est déjà en cours"); return; }
   cargoBusy = true;
-  testBtn.disabled = runBtn.disabled = stopBtn.disabled = false;
+  runButtons.forEach((b) => { b.disabled = true; });
+  stopBtn.disabled = false;
   document.getElementById("cargo-out").textContent = "";
-  cargoStatus(command === "test" ? "cargo test en cours…" : "cargo run en cours…", "busy");
+  cargoStatus(label + " en cours…", "busy");
   try {
     const res = await fetch("api/cargo", {
       method: "POST",
@@ -4859,20 +4874,29 @@ async function runCargo(command) {
     const m = out.textContent.match(/\[code de sortie: (-?\d+)\]\s*$/);
     if (m) out.textContent = out.textContent.replace(/\[code de sortie: -?\d+\]\s*$/, "");
     const code = m ? parseInt(m[1], 10) : null;
-    cargoStatus(
-      code === 0 ? (command === "test" ? "cargo test : OK ✓" : "Jeu terminé ✓") :
-      code !== null ? "Échec (code " + code + ")" : "Terminé (interrompu ?)",
-      code === 0 ? "busy" : "fail"
-    );
-    if (code === 0) toast(command === "test" ? "cargo test : tout passe ✓" : "cargo run terminé ✓");
+    // build WASM réussi : le serveur insère « [WASM prêt : URL] » - extrait
+    // et affiché dans le statut + un toast (URL à ouvrir pour jouer sur le web)
+    const wm = out.textContent.match(/\[WASM prêt : (\S+)\]/);
+    if (wm) out.textContent = out.textContent.replace(/\[WASM prêt : \S+\]\s*/, "");
+    if (code === 0) {
+      if (command === "wasm") {
+        const url = wm ? wm[1] : null;
+        cargoStatus(url ? "WASM prêt — ouvrir " + url : "Build WASM OK ✓", "busy");
+        if (url) toast("Version WASM servie : " + url);
+      } else {
+        cargoStatus(command === "test" ? "cargo test : OK ✓" : "Jeu terminé ✓", "busy");
+        toast(command === "test" ? "cargo test : tout passe ✓" : "cargo run terminé ✓");
+      }
+    } else {
+      cargoStatus(code !== null ? "Échec (code " + code + ")" : "Terminé (interrompu ?)", "fail");
+    }
   } catch (err) {
     cargoStatus("Erreur : " + err.message, "fail");
     cargoAppend("\nErreur : " + err.message + "\n");
   } finally {
     cargoBusy = false;
-    document.getElementById("btn-cargo-test").disabled = false;
-    document.getElementById("btn-cargo-run").disabled = false;
-    document.getElementById("btn-cargo-stop").disabled = true;
+    runButtons.forEach((b) => { b.disabled = false; });
+    stopBtn.disabled = true;
   }
 }
 
@@ -4896,6 +4920,8 @@ document.getElementById("btn-prev").addEventListener("click", () => nextCard(-1)
 document.getElementById("btn-next").addEventListener("click", () => nextCard(+1));
 document.getElementById("btn-cargo-test").addEventListener("click", () => runCargo("test"));
 document.getElementById("btn-cargo-run").addEventListener("click", () => runCargo("run"));
+document.getElementById("btn-cargo-run-release").addEventListener("click", () => runCargo("run-release"));
+document.getElementById("btn-cargo-wasm").addEventListener("click", () => runCargo("wasm"));
 document.getElementById("btn-cargo-stop").addEventListener("click", stopCargo);
 document.getElementById("btn-cargo-collapse").addEventListener("click", () => {
   const c = document.getElementById("cargo-console");

@@ -459,7 +459,9 @@
     <div class="sidebar-section">
       <div class="sidebar-title">Actions & Tests Cargo</div>
       <button class="btn btn-sm" style="width:100%; margin-bottom:6px;" onclick="runCargo('test')">🧪 Lancer Cargo Test</button>
-      <button class="btn btn-sm" style="width:100%;" onclick="runCargo('run')">🚀 Lancer le Jeu (Cargo Run)</button>
+      <button class="btn btn-sm" style="width:100%; margin-bottom:6px;" onclick="runCargo('run')">🚀 Lancer le Jeu (Cargo Run)</button>
+      <button class="btn btn-sm" style="width:100%; margin-bottom:6px;" onclick="runCargo('run-release')">⚡ Lancer le Jeu (Release)</button>
+      <button class="btn btn-sm" style="width:100%;" onclick="runCargo('wasm')">🌐 Test WASM local</button>
     </div>
   </div>
 
@@ -1589,6 +1591,9 @@ async function saveRustCode() {
 }
 
 // CONSOLE CARGO
+// commandes : 'test' (cargo test), 'run' (cargo run), 'run-release'
+// (cargo run --release) et 'wasm' (build WASM release + version web servie
+// sous /wasm/ - l'URL à ouvrir est affichée en fin de console)
 async function runCargo(cmd) {
   const out = document.getElementById('console-output');
   out.textContent = `Execution de cargo ${cmd}...\n`;
@@ -1604,6 +1609,19 @@ async function runCargo(cmd) {
       if (done) break;
       out.textContent += decoder.decode(value);
       out.scrollTop = out.scrollHeight;
+    }
+    // dernières lignes du serveur : « [WASM prêt : URL] » puis « [code de
+    // sortie: N] » - on retire le code de sortie de l'affichage et on met en
+    // évidence l'URL de la version web locale (build wasm réussi)
+    const m = out.textContent.match(/\[code de sortie: (-?\d+)\]\s*$/);
+    if (m) out.textContent = out.textContent.replace(/\[code de sortie: -?\d+\]\s*$/, '');
+    const wm = out.textContent.match(/\[WASM prêt : (\S+)\]/);
+    if (wm) {
+      out.textContent = out.textContent.replace(/\[WASM prêt : \S+\]\s*/, '');
+      out.textContent += `\n▶ Version WASM prête : ${wm[1]}\n`;
+      out.scrollTop = out.scrollHeight;
+    } else if (cmd === 'wasm' && m && parseInt(m[1], 10) === 0) {
+      out.textContent += '\n▶ Build WASM terminé (ouvrir http://localhost:' + location.port + '/wasm/)\n';
     }
   } catch (err) {
     out.textContent += `Erreur: ${err.message}\n`;

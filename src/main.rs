@@ -50,8 +50,6 @@ mod wasm_audio_shims; // no-op audio sur wasm (silencieux) - vide sur le natif
 mod x11;
 
 use macroquad::prelude::*;
-use ::rand::SeedableRng;
-use ::rand_chacha::ChaCha12Rng;
 
 use crate::config::{
     view_mode_message, ATTEMPT_FPS, EVA_CROSSFADE_DURATION, PLAYER_INDEX, STATION_INDEX,
@@ -60,7 +58,6 @@ use crate::config::{
 use crate::geom::Point;
 use crate::state::{GameState, RenderStyle, ViewMode};
 use std::f64::consts::TAU;
-use std::time::Duration;
 
 fn window_conf() -> Conf {
     // options graphiques persistées (écran de paramétrage) : définition de
@@ -88,6 +85,23 @@ fn window_conf() -> Conf {
         },
         ..Default::default()
     }
+}
+
+/// Cadence de boucle (filet anti-fuite, ex `_limit ATTEMPT_FPS` de l'original) :
+/// bloque jusqu'à ce que `target_frame` (s) se soient écoulées depuis la
+/// dernière frame, puis met `last_frame` à jour.
+///
+/// `std::thread::sleep` **panique sur wasm32-unknown-unknown** (« can't
+/// sleep », voir `std::sys::thread::unsupported`) : sur le web on ne dort pas
+/// (le navigateur cadence déjà la boucle via `requestAnimationFrame`, ~60 FPS,
+/// bien sous le plafond - le sleep ne servirait à rien).
+fn frame_pace(target_frame: f64, last_frame: &mut f64) {
+    let elapsed = get_time() - *last_frame;
+    if elapsed < target_frame {
+        #[cfg(not(target_arch = "wasm32"))]
+        std::thread::sleep(std::time::Duration::from_secs_f64(target_frame - elapsed));
+    }
+    *last_frame = get_time();
 }
 
 /// Relance l'exécutable courant (bouton RESTART de l'écran de paramétrage,
@@ -202,7 +216,7 @@ async fn main() {
     let mut triangles = Vec::new();
     let mut stars: Vec<Point> = Vec::new();
     let mut elements = Vec::new();
-    let mut rng = ChaCha12Rng::from_entropy();
+    let mut rng = generate::seeded_rng();
     generate::prepare(&mut state, &mut shapes, &mut triangles, &mut stars, &mut elements, &mut rng);
     // cosmonaute EVA - le pilote contrôlé quand le vaisseau est détruit
     // (`game.rs` : `activate_cosmonaut`/`rescue_cosmonaut`) : chargé depuis
@@ -269,10 +283,15 @@ async fn main() {
 
     // ─── Écran titre (jalon M5, ex `titleLoop`) ─────────────────────────────
     // `sounds` est transmis pour l'écran de paramétrage (touche O) accessible
-    // depuis le titre (musique et volume y sont réglables). `true` en retour :
-    // le bouton RESTART a été cliqué → on relance le jeu immédiatement.
-    let (title_restart, title_progression_reset) =
+    // depuis le titre (musique et volume y sont réglables). Triplet en retour :
+    // ESC → quitter l'application ; `true` en 2e position → le bouton RESTART
+    // a été cliqué → on relance le jeu immédiatement.
+    let (title_quit, title_restart, title_progression_reset) =
         title::title_loop(&mut state, &assets, &render_target, &mut sounds).await;
+    if title_quit {
+        // ESC pressé sur l'écran titre : quitter l'application
+        return;
+    }
     if title_progression_reset {
         // RESET PROGRESSION cliqué depuis l'écran de paramétrage du titre : la
         // progression a été remise à zéro, mais l'écran titre ne dessine pas
@@ -371,11 +390,7 @@ async fn main() {
     let mut pending_fullscreen = state.view_mode != ViewMode::Windowed;
     loop {
         if LIMIT_FPS {
-            let elapsed = get_time() - last_frame;
-            if elapsed < target_frame {
-                std::thread::sleep(Duration::from_secs_f64(target_frame - elapsed));
-            }
-            last_frame = get_time();
+            frame_pace(target_frame, &mut last_frame);
         }
 
         // filet de sécurité : ré-applique le plein écran si le titre a

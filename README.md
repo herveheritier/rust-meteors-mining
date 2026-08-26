@@ -436,10 +436,17 @@ puis ouvrez `http://localhost:8123` - le fichier `src/marketplace.rs` est
 expose aussi la **liste des meshes** (`GET /list-assets`,
 `GET /assets/<fichier>`) pour le choix de l'asset du vaisseau et son aperçu,
 ainsi qu'une **console cargo** (`POST /api/cargo` avec `{ "command": "test"
-| "run" }` - la sortie est renvoyée en flux, terminée par le code de sortie -
-et `POST /api/cargo-stop` pour arrêter) : la barre en bas de la page lance
-`cargo test` (vérifie les constantes exportées) ou `cargo run` (compile puis
-ouvre le jeu) et affiche la sortie en direct, avec « ■ Arrêter » pour couper.
+| "run" | "run-release" | "wasm" }` - la sortie est renvoyée en flux,
+terminée par le code de sortie - et `POST /api/cargo-stop` pour arrêter) : la
+barre en bas de la page lance `cargo test` (vérifie les constantes exportées),
+`cargo run` ou `cargo run --release` (compile puis ouvre le jeu) et affiche la
+sortie en direct, avec « ■ Arrêter » pour couper. Le bouton **WASM local**
+compile la version web (`cargo build --release --target wasm32-unknown-unknown`)
+puis la sert par le même serveur : ouvrez `http://localhost:8123/wasm/` pour
+tester le jeu dans le navigateur. Le serveur **se redémarre tout seul** quand
+`server.mjs` change (watch du fichier, redémarrage à l'identique - désactivable
+avec `AUTO_RESTART=0`) : après une mise à jour de l'outil, un simple
+rechargement de la page suffit.
 C'est la méthode recommandée avec le navigateur intégré de VSCode, qui
 n'expose pas l'API File System Access. En ouvrant la page en fichier local
 (`file://`), Chrome/Edge utilisent l'API File System Access, les autres
@@ -506,7 +513,7 @@ Une **application dédiée à la création de scénarios et d'enchaînements d'o
   ```bash
   tools/scenario-editor/launch-editor.sh
   ```
-  Le serveur local (port 8124) s'exécute et ouvre automatiquement l'application dans le navigateur par défaut.
+  Le serveur local (port 8124) s'exécute et ouvre automatiquement l'application dans le navigateur par défaut. Sa **console cargo** (panneau latéral « Actions & Tests Cargo ») lance `cargo test`, `cargo run`, `cargo run --release` ou le build **WASM local** (`cargo build --release --target wasm32-unknown-unknown` puis version web servie sous `http://localhost:8124/wasm/` pour tester le jeu dans le navigateur). Comme celui de la place de marché, le serveur **se redémarre tout seul** quand `server.mjs` change (`AUTO_RESTART=0` pour désactiver).
 
 ## Structure du projet
 

@@ -489,7 +489,13 @@ pub fn draw_shop_weapons_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2, shap
         if owned {
             draw_shop_pill(l.buy_weapon[i], "POSSÉDÉE", None, m);
         } else {
-            let (_, discounted) = scenario::weapon_prices(state, i).unwrap_or((0, 0));
+            // arme non équipée et non achetable (hors économie - ex jeu
+            // libre où seule l'arme 1 équipe le vaisseau) : pas de prix,
+            // pas d'achat possible
+            let Some((_, discounted)) = scenario::weapon_prices(state, i) else {
+                draw_shop_pill(l.buy_weapon[i], "NON ÉQUIPÉE", None, m);
+                continue;
+            };
             let affordable = discounted <= state.resources.credits;
             let price = format!("{} CR", discounted);
             let pw = measure_text(&price, None, 14, 1.0).width;

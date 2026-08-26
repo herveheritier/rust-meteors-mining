@@ -28,6 +28,11 @@
 //!   Progression - les munitions par arme repartent pleines à chaque lancement)
 //! - `prog_lives` - vies restantes (Survival)
 //! - `prog_shield` - bouclier restant × 10 (entier, Survival)
+//! - `prog_objectives` - objectifs DAG complétés (IDs séparés par virgules,
+//!   scénarios custom)
+//! - `prog_meteors` / `prog_docks` / `prog_bullets_fired` /
+//!   `prog_bullets_lost` / `prog_survive` - compteurs d'avancement des
+//!   conditions d'objectifs (scénarios custom), restaurés au lancement
 //!
 //! Le fichier est lu au lancement du jeu (les valeurs enregistrées remplacent
 //! les défauts) et réécrit à chaque modification d'un réglage ou de la

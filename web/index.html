@@ -45,6 +45,45 @@
     <!-- Runtime web miniquad 0.4.11 (glue GL + chargeur wasm), identique à la
          version embarquée dans le binaire - voir miniquad (MIT/Apache-2.0). -->
     <script src="gl.js"></script>
+    <script>
+        // Glue minimale wasm-bindgen pour le build wasm : `rand 0.8` tire son
+        // entropie via `getrandom` (feature `js`), dont le runtime wasm-bindgen
+        // déclare 4 imports (`__wbindgen_describe`, `__wbg___wbindgen_throw`,
+        // table externref) que le chargeur miniquad (`gl.js`) ne fournit pas -
+        // sans eux `WebAssembly.instantiate` échoue (la page ne charge pas).
+        // getrandom n'étant plus appelé sur wasm (le PRNG est seedé par
+        // l'horloge, voir `generate::seeded_rng`), ces imports ne sont jamais
+        // utilisés : on fournit des implémentations inoffensives.
+        importObject["__wbindgen_placeholder__"] = {
+            // description de types pour l'outillage wasm-bindgen (CLI) :
+            // inutile au runtime
+            __wbindgen_describe: function () {},
+            // panique Rust remontée en exception JS (jamais déclenché ici)
+            __wbg___wbindgen_throw_bb96b2010945f0bc: function (ptr, len) {
+                throw new Error(UTF8ToString(ptr, len));
+            },
+        };
+        // table externref du runtime wasm-bindgen (jamais utilisée : le
+        // binaire ne référence aucune table) - implémentation conforme pour
+        // satisfaire l'instanciation
+        var __wbindgen_externref_table = new WebAssembly.Table({
+            element: "externref",
+            initial: 0,
+            maximum: 4294967295,
+        });
+        importObject["__wbindgen_externref_xform__"] = {
+            __wbindgen_externref_table_grow: function (delta) {
+                try {
+                    return __wbindgen_externref_table.grow(delta);
+                } catch (e) {
+                    return -1;
+                }
+            },
+            __wbindgen_externref_table_set_null: function (idx) {
+                __wbindgen_externref_table.set(idx, null);
+            },
+        };
+    </script>
     <script>load("rust-meteors-mining.wasm");</script>
 </body>
 

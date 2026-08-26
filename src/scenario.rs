@@ -91,8 +91,11 @@ pub struct Resources {
     pub weapon_ammo: [i32; WEAPON_SLOTS],
     /// Armes du catalogue **possédées** (achetées au magasin) : `false` = à
     /// acheter (son mesh n'est pas construit sur le vaisseau et elle ne
-    /// tire pas) ; toujours `true` hors économie et pour les armes de base
-    /// (coût 0). Le canon classique (catalogue vide) est toujours possédé.
+    /// tire pas) ; toujours `true` en Survival (hors économie) et pour les
+    /// armes de base (coût 0). En jeu libre, le vaisseau n'est équipé que
+    /// de l'arme 1 (index 0) - les autres armes du catalogue ne sont pas
+    /// possédées (voir `weapon_owned`). Le canon classique (catalogue vide)
+    /// est toujours possédé.
     pub weapon_owned: [bool; WEAPON_SLOTS],
     /// Radar de bord **possédé** (acheté au magasin) : affiche la minimap
     /// globale (points des météores et des autres formes) - `false` = radar
@@ -614,6 +617,14 @@ pub fn apply_start(state: &mut GameState) {
     let s = scenario(state.scenario);
     state.game_over = false;
     state.invulnerable = 0.0; // pas d'invulnérabilité en début de partie
+    // compteurs d'avancement des objectifs (météores détruits, accostages,
+    // tirs) : remis à zéro pour une nouvelle partie - la progression
+    // enregistrée (clés `prog_*`) est surimposée juste après par
+    // `load_progression` au lancement
+    state.meteors_destroyed = 0;
+    state.docking_count = 0;
+    state.bullets_fired = 0;
+    state.bullets_lost = 0;
     match state.scenario {
         ScenarioId::FreePlay | ScenarioId::Survival => {
             // jeu libre : aucune ressource ; Survival : vies + bouclier pleins
@@ -794,8 +805,12 @@ pub fn try_fire(state: &mut GameState) -> [bool; WEAPON_SLOTS] {
     let s = scenario(state.scenario);
     let mut fired = [false; WEAPON_SLOTS];
     if !s.has_economy {
-        // jeu libre / Survival : toutes les armes du catalogue tirent
-        fired[..weapon_slot_count()].fill(true);
+        // jeu libre / Survival : toutes les armes **possédées** tirent, sans
+        // consommation - en jeu libre, seule l'arme 1 équipe le vaisseau
+        // (masque de `weapon_owned`)
+        for (i, slot) in fired.iter_mut().enumerate().take(weapon_slot_count()) {
+            *slot = weapon_owned(state, i);
+        }
         return fired;
     }
     let total_before = total_ammo(state);
@@ -857,16 +872,23 @@ pub fn weapon_slot_count() -> usize {
     crate::marketplace::VAISSEAU_WEAPONS.len().clamp(1, WEAPON_SLOTS)
 }
 
-/// L'arme `i` est-elle **possédée** (équipée) ? Hors économie : toujours
-/// `true` (toutes les armes du catalogue). En économie : achetée au magasin
-/// (`weapon_owned`), ou coût 0 (arme de base - comme les modes de
-/// déplacement gratuits). Le canon classique (hors catalogue) est toujours
-/// possédé. Pure (tests).
+/// L'arme `i` est-elle **possédée** (équipée) ? Hors économie : en **jeu
+/// libre**, seule l'arme 1 (index 0, `ARME 1`) équipe le vaisseau - les
+/// autres armes du catalogue ne sont ni construites sur le vaisseau ni
+/// tirées ; en Survival (et custom sans économie), toutes les armes du
+/// catalogue. En économie : achetée au magasin (`weapon_owned`), ou coût 0
+/// (arme de base - comme les modes de déplacement gratuits). Le canon
+/// classique (hors catalogue) est toujours possédé. Pure (tests).
 pub fn weapon_owned(state: &GameState, i: usize) -> bool {
-    if !has_economy(state) {
-        return i < weapon_slot_count();
+    match state.scenario {
+        // jeu libre : le vaisseau n'est équipé que de l'arme 1
+        ScenarioId::FreePlay => i == 0,
+        _ if !has_economy(state) => i < weapon_slot_count(),
+        _ => {
+            state.resources.weapon_owned.get(i).copied().unwrap_or(false)
+                || weapon_spec(i).cost == 0
+        }
     }
-    state.resources.weapon_owned.get(i).copied().unwrap_or(false) || weapon_spec(i).cost == 0
 }
 
 /// Tarifs d'achat d'une arme pas encore possédée : tarif de base (prix
@@ -1712,6 +1734,12 @@ pub fn buy_upgrade(state: &mut GameState, track: UpgradeTrackId) -> UpgradeOutco
 ///   pleines à chaque lancement, non persistées)
 /// - `prog_radar`      - radar de bord possédé (0/1, Progression) - la
 ///   minimap globale reste éteinte tant que le radar n'est pas acheté
+/// - `prog_objectives` - objectifs DAG complétés (IDs séparés par virgules,
+///   scénarios custom)
+/// - `prog_meteors` / `prog_docks` / `prog_bullets_fired` /
+///   `prog_bullets_lost` / `prog_survive` - compteurs d'avancement des
+///   conditions d'objectifs (scénarios custom) : restaurés au lancement pour
+///   que l'avancement de la phase en cours soit identique à la sortie
 const SCENARIO_KEY: &str = "scenario";
 const PROG_CREDITS_KEY: &str = "prog_credits";
 /// Ancienne clé (sauvegardes créées avant le renommage minerais → crédits) :
@@ -1727,6 +1755,12 @@ const PROG_UP_CARGO_KEY: &str = "prog_up_cargo";
 const PROG_WEAPONS_KEY: &str = "prog_weapons";
 const PROG_RADAR_KEY: &str = "prog_radar";
 const PROG_OBJECTIVES_KEY: &str = "prog_objectives";
+// compteurs d'avancement des conditions d'objectifs (scénarios custom)
+const PROG_METEORS_KEY: &str = "prog_meteors";
+const PROG_DOCKS_KEY: &str = "prog_docks";
+const PROG_BULLETS_FIRED_KEY: &str = "prog_bullets_fired";
+const PROG_BULLETS_LOST_KEY: &str = "prog_bullets_lost";
+const PROG_SURVIVE_KEY: &str = "prog_survive";
 
 /// Masque binaire des modes de déplacement débloqués (bit i = mode i).
 fn unlocked_mask(state: &GameState) -> i32 {
@@ -1788,10 +1822,30 @@ pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
             (state.resources.shield * 10.0).round() as i32,
         )?;
     }
-    // Objectifs DAG complétés (scénarios custom) : IDs séparés par virgules
+    // Objectifs DAG complétés (scénarios custom) : IDs séparés par virgules,
+    // et compteurs d'avancement des conditions (météores détruits, accostages,
+    // tirs, temps de survie) - restaurés au lancement pour que l'avancement
+    // de la phase en cours soit identique à la sortie
     if crate::scenario::is_custom(state.scenario) && state.objective_tracker.has_objectives() {
         let completed: Vec<&str> = state.objective_tracker.completed_ids.iter().map(|s| s.as_str()).collect();
         crate::persist::set_str_to(path, PROG_OBJECTIVES_KEY, &completed.join(","))?;
+        crate::persist::set_i32_to(path, PROG_METEORS_KEY, state.meteors_destroyed)?;
+        crate::persist::set_i32_to(path, PROG_DOCKS_KEY, state.docking_count)?;
+        crate::persist::set_i32_to(path, PROG_BULLETS_FIRED_KEY, state.bullets_fired)?;
+        crate::persist::set_i32_to(path, PROG_BULLETS_LOST_KEY, state.bullets_lost)?;
+        // temps de survie cumulé par objectif SurviveTime (« id=secondes », …)
+        let survive: Vec<String> = state
+            .objective_tracker
+            .objectives
+            .iter()
+            .filter(|o| o.condition.condition_type == "SurviveTime" && o.active_time > 0.0)
+            .map(|o| format!("{}={:.1}", o.id, o.active_time))
+            .collect();
+        if survive.is_empty() {
+            let _ = crate::persist::delete_key_from(path, PROG_SURVIVE_KEY);
+        } else {
+            crate::persist::set_str_to(path, PROG_SURVIVE_KEY, &survive.join(","))?;
+        }
     }
     Ok(())
 }
@@ -1938,6 +1992,31 @@ pub fn load_progression_from(path: &Path, state: &mut GameState) {
                 }
             }
         }
+        // compteurs d'avancement des conditions (météores détruits, accostages,
+        // tirs, temps de survie) : restaurés pour que l'avancement de la phase
+        // en cours soit identique à la sortie
+        if let Some(v) = crate::persist::get_i32_from(path, PROG_METEORS_KEY) {
+            state.meteors_destroyed = v.max(0);
+        }
+        if let Some(v) = crate::persist::get_i32_from(path, PROG_DOCKS_KEY) {
+            state.docking_count = v.max(0);
+        }
+        if let Some(v) = crate::persist::get_i32_from(path, PROG_BULLETS_FIRED_KEY) {
+            state.bullets_fired = v.max(0);
+        }
+        if let Some(v) = crate::persist::get_i32_from(path, PROG_BULLETS_LOST_KEY) {
+            state.bullets_lost = v.max(0);
+        }
+        // temps de survie cumulé par objectif SurviveTime (« id=secondes », …)
+        if let Some(survive) = crate::persist::get_str_from(path, PROG_SURVIVE_KEY) {
+            for pair in survive.split(',') {
+                let Some((id, secs)) = pair.split_once('=') else { continue; };
+                let Ok(secs) = secs.parse::<f64>() else { continue; };
+                if let Some(obj) = state.objective_tracker.objectives.iter_mut().find(|o| o.id == id) {
+                    obj.active_time = secs.max(0.0);
+                }
+            }
+        }
     }
 }
 
@@ -1976,6 +2055,11 @@ pub fn reset_progression_from(path: &Path, state: &mut GameState) {
         PROG_LIVES_KEY,
         PROG_SHIELD_KEY,
         PROG_OBJECTIVES_KEY,
+        PROG_METEORS_KEY,
+        PROG_DOCKS_KEY,
+        PROG_BULLETS_FIRED_KEY,
+        PROG_BULLETS_LOST_KEY,
+        PROG_SURVIVE_KEY,
         "moving_mode",
     ] {
         let _ = crate::persist::delete_key_from(path, key);
@@ -2015,6 +2099,24 @@ pub fn has_saved_progression_from(path: &Path, state: &GameState) -> bool {
     if is_custom(state.scenario) {
         if let Some(ids) = crate::persist::get_str_from(path, PROG_OBJECTIVES_KEY) {
             if !ids.trim().is_empty() {
+                return true;
+            }
+        }
+        // compteurs d'avancement : une session qui a progressé sans compléter
+        // d'objectif (ex 30 météores détruits sur 50) reste une sauvegarde
+        // réelle - le lancement doit proposer de poursuivre
+        for key in [
+            PROG_METEORS_KEY,
+            PROG_DOCKS_KEY,
+            PROG_BULLETS_FIRED_KEY,
+            PROG_BULLETS_LOST_KEY,
+        ] {
+            if crate::persist::get_i32_from(path, key).unwrap_or(0) > 0 {
+                return true;
+            }
+        }
+        if let Some(survive) = crate::persist::get_str_from(path, PROG_SURVIVE_KEY) {
+            if !survive.trim().is_empty() {
                 return true;
             }
         }
@@ -2387,8 +2489,8 @@ mod tests {
     fn base_weapons_are_owned_and_paid_weapons_are_locked() {
         // au départ en Progression : les armes à coût nul (arme de base) sont
         // équipées et chargées ; les armes payantes sont à acheter (non
-        // équipées, munitions à 0) ; jeu libre : toutes les armes sont
-        // équipées
+        // équipées, munitions à 0) ; jeu libre : seule l'arme 1 équipe le
+        // vaisseau
         let s = progression_state();
         for i in 0..weapon_slot_count() {
             let spec = weapon_spec(i);
@@ -2405,8 +2507,17 @@ mod tests {
             );
             assert_eq!(weapon_cost(&s, i), (spec.cost > 0).then_some(spec.cost));
         }
+        // jeu libre : le vaisseau n'est équipé que de l'arme 1 (index 0),
+        // les autres armes du catalogue ne sont pas possédées
         let f = GameState::new();
-        assert!((0..weapon_slot_count()).all(|i| weapon_owned(&f, i)));
+        assert!(
+            (0..weapon_slot_count()).all(|i| weapon_owned(&f, i) == (i == 0)),
+            "seule l'arme 1 équipe le vaisseau en jeu libre"
+        );
+        // et le tir ne fait partir que l'arme 1 (masque du tir)
+        let mut only_first = [false; WEAPON_SLOTS];
+        only_first[0] = true;
+        assert_eq!(try_fire(&mut f.clone()), only_first);
     }
 
     #[test]
@@ -3028,6 +3139,76 @@ mod tests {
         load_progression_from(&p, &mut fresh);
         assert_eq!(fresh.resources.credits, 0);
         assert_eq!(fresh.unlocked_modes, [false, false, false, true]);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn objective_counters_are_persisted_and_restored() {
+        // l'avancement des conditions d'objectifs (météores détruits,
+        // accostages, tirs, temps de survie) est sauvegardé avec la
+        // progression et restauré : après une sortie en cours de partie, la
+        // phase du scénario reprend là où elle s'est arrêtée (pas de remise à
+        // zéro des compteurs). Test sans objet si aucun scénario custom avec
+        // objectifs n'est chargé (dossier scenarios/ absent).
+        let Some(idx) = crate::scenario_loader::loaded_scenarios()
+            .iter()
+            .position(|ls| !ls.data.json.objectives.is_empty())
+        else {
+            return;
+        };
+        let p = temp_path("objcounters.cfg");
+        let _ = std::fs::remove_file(&p);
+
+        let mut s = GameState::new();
+        s.scenario = ScenarioId::Custom(idx);
+        apply_start(&mut s); // initialise le tracker d'objectifs
+        assert!(s.objective_tracker.has_objectives());
+        s.meteors_destroyed = 37;
+        s.docking_count = 2;
+        s.bullets_fired = 60;
+        s.bullets_lost = 8;
+        // objectif SurviveTime présent ? y accumuler du temps de survie
+        let survive_id = s
+            .objective_tracker
+            .objectives
+            .iter()
+            .find(|o| o.condition.condition_type == "SurviveTime")
+            .map(|o| o.id.clone());
+        if let Some(id) = &survive_id {
+            if let Some(obj) = s.objective_tracker.objectives.iter_mut().find(|o| o.id == *id) {
+                obj.active_time = 12.5;
+            }
+        }
+        save_progression_to(&p, &s).unwrap();
+
+        // nouveau lancement : départ frais (compteurs à zéro) puis
+        // restauration de la progression
+        let mut fresh = GameState::new();
+        fresh.scenario = ScenarioId::Custom(idx);
+        apply_start(&mut fresh);
+        assert_eq!(fresh.meteors_destroyed, 0);
+        load_progression_from(&p, &mut fresh);
+        assert_eq!(fresh.meteors_destroyed, 37);
+        assert_eq!(fresh.docking_count, 2);
+        assert_eq!(fresh.bullets_fired, 60);
+        assert_eq!(fresh.bullets_lost, 8);
+        if let Some(id) = &survive_id {
+            let obj = fresh
+                .objective_tracker
+                .objectives
+                .iter()
+                .find(|o| o.id == *id)
+                .expect("objectif SurviveTime restauré");
+            assert!((obj.active_time - 12.5).abs() < 0.05);
+        }
+        // l'avancement seul (sans objectif complété) constitue une
+        // sauvegarde réelle : le lancement propose de poursuivre
+        assert!(has_saved_progression_from(&p, &fresh));
+
+        // RESET PROGRESSION : compteurs supprimés et remis à zéro
+        reset_progression_from(&p, &mut fresh);
+        assert_eq!(fresh.meteors_destroyed, 0);
+        assert_eq!(fresh.docking_count, 0);
         let _ = std::fs::remove_file(&p);
     }
 

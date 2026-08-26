@@ -120,11 +120,13 @@ pub fn vaisseau_face_count() -> usize {
 
 /// Nombre de faces **visibles aux niveaux d'atelier courants** (plans
 /// toujours visibles + plans liés dont la ligne a atteint le niveau) +
-/// faces du catalogue d'armes - la valeur de `life` du vaisseau construit
-/// avec cet état. Exposé pour les tests d'invariant : un plan lié
-/// (`VAISSEAU_PLANE_LINKS`) n'apparaît qu'à partir de son niveau, `life` ne
-/// vaut `vaisseau_face_count()` (la composition maximale) qu'une fois toutes
-/// les lignes montées.
+/// faces des **armes possédées** (le vaisseau ne construit que les armes
+/// équipées - en jeu libre, seule l'arme 1) - la valeur de `life` du
+/// vaisseau construit avec cet état. Exposé pour les tests d'invariant : un
+/// plan lié (`VAISSEAU_PLANE_LINKS`) n'apparaît qu'à partir de son niveau et
+/// une arme non possédée n'est pas construite, `life` ne vaut
+/// `vaisseau_face_count()` (la composition maximale) qu'avec toutes les
+/// lignes montées et toutes les armes.
 #[cfg(test)]
 pub fn vaisseau_visible_face_count(state: &GameState) -> usize {
     let file = vaisseau_file();
@@ -136,7 +138,24 @@ pub fn vaisseau_visible_face_count(state: &GameState) -> usize {
         .filter(|(i, _)| visible.get(*i).copied().unwrap_or(false))
         .map(|(_, p)| p.faces.len())
         .sum::<usize>();
-    planes + weapons_face_count()
+    planes + owned_weapons_face_count(state)
+}
+
+/// Faces du catalogue d'armes **possédées** (masque `scenario::weapon_owned`) :
+/// le vaisseau ne dessine que les armes équipées (en jeu libre, seule
+/// l'arme 1). Diffère de `weapons_face_count` (toutes les armes - la taille
+/// d'allocation du maillage, qui réserve aussi les armes à acheter).
+#[cfg(test)]
+fn owned_weapons_face_count(state: &GameState) -> usize {
+    VAISSEAU_WEAPONS
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| crate::scenario::weapon_owned(state, *i))
+        .map(|(_, w)| {
+            let file = parse_mesh(w.mesh);
+            file.planes.iter().map(|p| p.faces.len()).sum::<usize>()
+        })
+        .sum()
 }
 
 /// RGBA (flottants 0..1) → ARGB 32 bits au format QB64 (AARRGGBB).
@@ -738,10 +757,11 @@ pub fn create_player_vaisseau(
 }
 
 /// Armes du catalogue **possédées** (masque par index, `scenario::weapon_owned`) :
-/// hors économie toutes les armes sont équipées ; en Progression seules
-/// celles achetées au magasin, les armes de base à coût nul étant équipées
-/// d'office. Le mesh d'une arme non possédée n'est pas construit sur le
-/// vaisseau (elle ne tire pas non plus).
+/// en jeu libre seule l'arme 1 est équipée ; en Survival (hors économie)
+/// toutes les armes le sont ; en Progression seules celles achetées au
+/// magasin, les armes de base à coût nul étant équipées d'office. Le mesh
+/// d'une arme non possédée n'est pas construit sur le vaisseau (elle ne
+/// tire pas non plus).
 fn weapons_mask(state: &GameState) -> Vec<bool> {
     (0..VAISSEAU_WEAPONS.len())
         .map(|i| crate::scenario::weapon_owned(state, i))
@@ -1165,8 +1185,12 @@ mod tests {
         // orientation 90 = le nez du mesh est « vers le haut » dans l'éditeur :
         // le mesh est tourné de −90° autour du centre de rotation - le nez du
         // mesh actuel (qui pointe à droite, orientation réelle 0) passe donc
-        // vers le bas (dans le repère du jeu) et la boîte pivote de 90°
-        let state = GameState::new();
+        // vers le bas (dans le repère du jeu) et la boîte pivote de 90°.
+        // Survival : toutes les armes du catalogue sont équipées - les
+        // assertions de géométrie de la boîte ont été écrites pour la
+        // composition complète (en jeu libre, seule l'arme 1 est équipée)
+        let mut state = GameState::new();
+        state.scenario = crate::scenario::ScenarioId::Survival;
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         build_vaisseau(
