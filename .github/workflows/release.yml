@@ -30,7 +30,7 @@ jobs:
             os: macos-14
             artifact: rust-meteors-mining-macos-aarch64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # Dépendances système du build natif Linux : manette gilrs → libudev-sys
       # (libudev-dev), macroquad GL/X11 (libgl1-mesa-dev libx11-dev libxi-dev),
       # audio ALSA (libasound2-dev). Nécessaire seulement sur ubuntu. Sans
@@ -55,7 +55,7 @@ jobs:
           if [ -f "$BIN.exe" ]; then BIN="$BIN.exe"; fi
           mkdir -p dist
           cp "$BIN" "dist/${{ matrix.artifact }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.artifact }}
           path: dist/*
@@ -65,7 +65,7 @@ jobs:
     name: Binaire WebAssembly (.wasm)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -78,7 +78,7 @@ jobs:
           mkdir -p dist
           cp target/wasm32-unknown-unknown/release/rust-meteors-mining.wasm \
              dist/rust-meteors-mining.wasm
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: rust-meteors-mining-wasm
           path: dist/*

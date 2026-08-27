@@ -13,7 +13,7 @@ jobs:
     name: Vérifs (clippy + tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # Dépendances système du build natif : manette gilrs → libudev-sys (exige
       # libudev-dev), macroquad → GL/X11 (libgl1-mesa-dev libx11-dev libxi-dev),
       # audio (quad-snd/ALSA) → libasound2-dev. Sans elles le build-script de
@@ -52,7 +52,7 @@ jobs:
     name: Compilation WebAssembly
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown

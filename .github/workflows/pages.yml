@@ -28,7 +28,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Dépendances système requises par le build : la manette gilrs tire
       # libudev-sys (libudev-dev), macroquad GL/X11 (libgl1-mesa-dev libx11-dev
@@ -41,7 +41,7 @@ jobs:
           sudo apt-get install -y pkg-config libudev-dev libasound2-dev \
             libx11-dev libxi-dev libgl1-mesa-dev
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -64,7 +64,7 @@ jobs:
           cp target/wasm32-unknown-unknown/release/rust-meteors-mining.wasm site/
           ls -lh site/
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
@@ -76,4 +76,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
