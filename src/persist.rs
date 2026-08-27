@@ -4,6 +4,14 @@
 //! `meteors-mining/meteors_mining.cfg` sous le dossier de configuration
 //! utilisateur (norme XDG : `$XDG_CONFIG_HOME`, ou `~/.config` à défaut).
 //!
+//! **Backend web (wasm32)** : `std::fs` n'a pas de système de fichiers sur
+//! wasm32 - le même contenu texte est stocké dans le **localStorage** du
+//! navigateur (clé `meteors-mining/config`), via deux imports JS bruts
+//! (`env.mmcfg_read` / `env.mmcfg_write`, glue définie dans `web/index.html`,
+//! adossés au localStorage). Même API publique, mêmes clés, même format : la
+//! logique métier (réglages, progression des scénarios) ne voit aucune
+//! différence entre les deux backends.
+//!
 //! Clés actuelles :
 //! - `moving_mode` - mode de déplacement (0..3, au magasin de la station)
 //! - `music` - musique en marche (0/1, touche M)
@@ -40,6 +48,9 @@
 //! dans l'esprit « binaire autonome » du port.
 
 use std::collections::HashMap;
+// `std::fs` n'a pas de système de fichiers sur wasm32 : le backend web
+// (`mod ls` + `read_all`/`write_all` wasm) n'y touche jamais.
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -98,12 +109,73 @@ fn config_dir() -> PathBuf {
 
 // ─── accès générique clé/valeur ─────────────────────────────────────────────
 
-/// Lit toutes les clés du fichier en une table (ignorées : lignes vides,
-/// sans `=`, et clés dupliquées après la première).
-fn read_all(path: &Path) -> HashMap<String, String> {
-    let Ok(content) = fs::read_to_string(path) else {
-        return HashMap::new();
-    };
+/// Backend localStorage (wasm uniquement).
+///
+/// Pas de wasm-bindgen ni de web-sys : deux fonctions importées du module
+/// `env`, définies côté page dans `web/index.html` (`env.mmcfg_read` /
+/// `env.mmcfg_write`, adossées au localStorage). Le chargeur `web/gl.js`
+/// remplace silencieusement les imports `env` qu'il ne connaît pas par des
+/// no-ops : sans la glue de la page, le jeu tourne simplement **sans
+/// persistance** (comportement antérieur), jamais en erreur.
+#[cfg(target_arch = "wasm32")]
+mod ls {
+    use std::io;
+
+    /// Clé localStorage unique : le contenu texte complet de la configuration
+    /// (même format `clé=valeur` que le fichier natif).
+    pub const KEY: &str = "meteors-mining/config";
+
+    // `wasm_import_module = "env"` : sans cet attribut, rustc émet des
+    // symboles indéfinis au lieu d'imports - le lien échoue (même convention
+    // que miniquad, voir `native/wasm.rs`)
+    #[link(wasm_import_module = "env")]
+    unsafe extern "C" {
+        /// Lit la valeur associée à `key` (UTF-8) : copie min(longueur, cap)
+        /// octets dans `buf` et renvoie la **longueur totale** de la valeur,
+        /// -1 si absente ou en erreur. Protocole en deux appels : `cap = 0`
+        /// (buf nul) pour interroger la taille, puis lecture complète.
+        fn mmcfg_read(key: *const u8, key_len: u32, buf: *mut u8, cap: u32) -> i32;
+        /// Écrit `value` (UTF-8) pour `key` : 0 si OK, -1 en erreur (quota
+        /// dépassé, navigation privée…).
+        fn mmcfg_write(key: *const u8, key_len: u32, val: *const u8, val_len: u32) -> i32;
+    }
+
+    /// Lit une valeur du localStorage (absente, vide ou erreur → `None`).
+    pub fn read(key: &str) -> Option<String> {
+        let k = key.as_bytes();
+        // 1er appel : capacité 0, renvoie la taille de la valeur (ou -1)
+        let len = unsafe { mmcfg_read(k.as_ptr(), k.len() as u32, std::ptr::null_mut(), 0) };
+        if len <= 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; len as usize];
+        // 2e appel : lecture complète (la valeur peut avoir rétréci entre les
+        // deux appels - rare et sans gravité, on tronque)
+        let n = unsafe { mmcfg_read(k.as_ptr(), k.len() as u32, buf.as_mut_ptr(), buf.len() as u32) };
+        if n <= 0 {
+            return None;
+        }
+        buf.truncate(n as usize);
+        Some(String::from_utf8_lossy(&buf).into_owned())
+    }
+
+    /// Écrit une valeur dans le localStorage (erreur I/O si l'écriture
+    /// échoue).
+    pub fn write(key: &str, value: &str) -> io::Result<()> {
+        let k = key.as_bytes();
+        let v = value.as_bytes();
+        let ok = unsafe { mmcfg_write(k.as_ptr(), k.len() as u32, v.as_ptr(), v.len() as u32) };
+        if ok == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::other("localStorage indisponible (glue web absente ?)"))
+        }
+    }
+}
+
+/// Analyse le contenu texte (`clé=valeur`, une par ligne ; ignorées : lignes
+/// vides, sans `=`, et clés dupliquées après la première).
+fn parse_config(content: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for line in content.lines() {
         let Some((key, value)) = line.split_once('=') else {
@@ -115,7 +187,41 @@ fn read_all(path: &Path) -> HashMap<String, String> {
     map
 }
 
-/// Écrit toutes les clés (triées) ; crée le dossier parent s'il n'existe pas.
+/// Sérialise une table de configuration en contenu texte (clés triées).
+fn config_content(map: &HashMap<String, String>) -> String {
+    let mut lines: Vec<String> = map
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>();
+    lines.sort();
+    lines.join("\n") + "\n"
+}
+
+/// Lit toutes les clés en une table (wasm : clé localStorage).
+#[cfg(target_arch = "wasm32")]
+fn read_all(_path: &Path) -> HashMap<String, String> {
+    parse_config(&ls::read(ls::KEY).unwrap_or_default())
+}
+
+/// Lit toutes les clés du fichier en une table (natif ; fichier absent →
+/// table vide).
+#[cfg(not(target_arch = "wasm32"))]
+fn read_all(path: &Path) -> HashMap<String, String> {
+    let Ok(content) = fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    parse_config(&content)
+}
+
+/// Écrit toutes les clés (wasm : clé localStorage unique - `setItem` est
+/// atomique côté navigateur).
+#[cfg(target_arch = "wasm32")]
+fn write_all(_path: &Path, map: &HashMap<String, String>) -> io::Result<()> {
+    ls::write(ls::KEY, &config_content(map))
+}
+
+/// Écrit toutes les clés (triées) dans le fichier de configuration ; crée le
+/// dossier parent s'il n'existe pas (natif uniquement).
 ///
 /// Écriture **atomique** : le contenu est d'abord écrit dans un fichier
 /// temporaire du même dossier, puis `rename` par-dessus la cible - une
@@ -125,16 +231,12 @@ fn read_all(path: &Path) -> HashMap<String, String> {
 /// un même système de fichiers, et le fichier temporaire porte un nom
 /// unique par processus (PID) pour que deux instances du jeu ne s'écrasent
 /// pas mutuellement.
+#[cfg(not(target_arch = "wasm32"))]
 fn write_all(path: &Path, map: &HashMap<String, String>) -> io::Result<()> {
-    let mut lines: Vec<String> = map
-        .iter()
-        .map(|(k, v)| format!("{k}={v}"))
-        .collect::<Vec<_>>();
-    lines.sort();
+    let content = config_content(map);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let content = lines.join("\n") + "\n";
     let tmp = path.with_file_name(format!(
         ".{}.{}.tmp",
         path.file_name()
@@ -408,6 +510,23 @@ mod tests {
         save_moving_mode_to(&p, MOVING_MODE_4_WAYS).unwrap();
         assert_eq!(load_moving_mode_from(&p), Some(MOVING_MODE_4_WAYS));
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn parse_and_content_round_trip() {
+        // helpers partagés natif/wasm : analyse puis re-génération du contenu
+        let map = parse_config("foo=bar\n\nmoving_mode=1\npasuneclé\nmoving_mode=0\n");
+        assert_eq!(map.get("foo").map(String::as_str), Some("bar"));
+        // première occurrence d'une clé dupliquée conservée
+        assert_eq!(map.get("moving_mode").map(String::as_str), Some("1"));
+        // ligne sans '=' ignorée
+        assert_eq!(map.get("pasuneclé"), None);
+        let content = config_content(&map);
+        assert_eq!(content, "foo=bar\nmoving_mode=1\n");
+        // aller-retour : le contenu régénéré redonne la même table
+        assert_eq!(parse_config(&content), map);
+        // table vide (comportement historique de write_all : une ligne vide)
+        assert_eq!(config_content(&HashMap::new()), "\n");
     }
 
     #[test]

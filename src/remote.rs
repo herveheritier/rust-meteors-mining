@@ -226,7 +226,7 @@ fn start_on(port: u16) -> Result<String, String> {
         ListenAddr::Unix(_) => port,
     };
     let ip = lan_ip().unwrap_or_else(|| "localhost".to_string());
-    info!("Remote control listening on {ip}");
+    info!("Remote control listening on {}", ip);
     let url = format!("http://{}:{}/", ip, bound);
     *URL.lock().unwrap() = Some(url.clone());
     std::thread::spawn(move || serve(server));

@@ -84,6 +84,49 @@
             },
         };
     </script>
+    <!-- Persistance des réglages et de la progression (persist.rs, backend
+         wasm) : std::fs n'a pas de système de fichiers sur wasm32 - le jeu
+         lit et écrit le fichier de configuration via deux imports JS bruts
+         (`env.mmcfg_read` / `env.mmcfg_write`) adossés au localStorage du
+         navigateur, sous la clé `meteors-mining/config` (même format texte
+         `clé=valeur` que le fichier natif). Protocole de lecture : copie
+         min(longueur, bufCap) octets dans buf et renvoie la longueur TOTALE
+         de la valeur (-1 si absente) - le Rust interroge d'abord la taille
+         (bufCap = 0) puis relit en entier. gl.js ignore les imports `env`
+         inconnus (stubs no-op) : sans ce bloc, le jeu fonctionne simplement
+         sans persistance. -->
+    <script>
+        function mmcfg_decode(ptr, len) {
+            return new TextDecoder().decode(new Uint8Array(wasm_memory.buffer, ptr, len));
+        }
+        importObject["env"]["mmcfg_read"] = function (keyPtr, keyLen, bufPtr, bufCap) {
+            if (!wasm_memory || !window.localStorage) return -1;
+            try {
+                var key = mmcfg_decode(keyPtr, keyLen);
+                var value = window.localStorage.getItem(key);
+                if (value === null) return -1;
+                var bytes = new TextEncoder().encode(value);
+                var n = Math.min(bytes.length, bufCap);
+                if (n > 0) {
+                    new Uint8Array(wasm_memory.buffer, bufPtr, n).set(bytes.subarray(0, n));
+                }
+                return bytes.length;
+            } catch (e) {
+                return -1;
+            }
+        };
+        importObject["env"]["mmcfg_write"] = function (keyPtr, keyLen, valPtr, valLen) {
+            if (!wasm_memory || !window.localStorage) return -1;
+            try {
+                var key = mmcfg_decode(keyPtr, keyLen);
+                var value = mmcfg_decode(valPtr, valLen);
+                window.localStorage.setItem(key, value);
+                return 0;
+            } catch (e) {
+                return -1;
+            }
+        };
+    </script>
     <script>load("rust-meteors-mining.wasm");</script>
 </body>
 

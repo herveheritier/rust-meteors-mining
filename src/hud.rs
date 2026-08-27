@@ -173,7 +173,9 @@ pub fn draw_hud(state: &GameState) -> f32 {
         // jeu libre : pas de ressources - l'accostage suit PRECISION
         HUD_RESOURCES_COL
     };
-    // fin de partie (Survival, dernière vie perdue) : GAME OVER au centre
+    // fin de partie (Survival, dernière vie perdue) : GAME OVER au centre,
+    // rappel des touches et deux boutons cliquables (R = nouvelle partie,
+    // T = écran titre - clic détecté côté `game::game_over_button_click`)
     if state.game_over {
         let msg = "GAME OVER";
         let w = measure_text(msg, None, 32, 1.0).width;
@@ -184,8 +186,38 @@ pub fn draw_hud(state: &GameState) -> f32 {
             32.0,
             argb_to_color(0xFFFF4040),
         );
+        let hint = "R : NEW GAME   -   T : TITLE   -   ESC : QUIT";
+        let hw = measure_text(hint, None, 16, 1.0).width;
+        draw_text(
+            hint,
+            (VIEWPORT_WIDTH as f32 - hw) / 2.0,
+            VIEWPORT_HEIGHT as f32 / 2.0 + 28.0,
+            16.0,
+            argb_to_color(BOX_FG),
+        );
+        let [restart, title] = game_over_buttons_layout();
+        crate::shop_render::draw_box_button("NEW GAME", restart);
+        crate::shop_render::draw_box_button("TITLE", title);
     }
     hud_col_x(dock_col)
+}
+
+/// Géométrie des deux boutons de l'écran GAME OVER (côte à côte sous le
+/// bandeau) : index 0 = NEW GAME (touche R), 1 = TITLE (touche T). Le clic
+/// est détecté côté `game::game_over_button_click` avec ces rectangles.
+pub fn game_over_buttons_layout() -> [Rect; 2] {
+    let labels = ["NEW GAME", "TITLE"];
+    let btn_h = 26.0;
+    let gap = 12.0;
+    // même formule que les boutons de boîte (largeur du libellé + padding,
+    // minimum 60)
+    let widths = labels.map(|l| (l.len() as f32 * 8.0 + 2.0 * BOX_PADDING).max(60.0));
+    let left = (VIEWPORT_WIDTH as f32 - widths[0] - gap - widths[1]) / 2.0;
+    let top = VIEWPORT_HEIGHT as f32 / 2.0 + 44.0;
+    [
+        Rect::new(left, top, widths[0], btn_h),
+        Rect::new(left + widths[0] + gap, top, widths[1], btn_h),
+    ]
 }
 
 /// Affiche les informations de debug (touche I, ex `showInfo` de `mainLoop`) :
@@ -610,5 +642,22 @@ pub fn format_condition_hud(cond: &crate::scenario_loader::JsonCondition, state:
             format!("{}: Lvl {}/{}", cond.track, level, cond.level)
         }
         _ => cond.condition_type.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn game_over_buttons_are_within_viewport_and_disjoint() {
+        // les deux boutons tiennent dans la vue et sont côte à côte, sans
+        // chevauchement (cliquables sans ambiguïté)
+        let [restart, title] = game_over_buttons_layout();
+        for r in [&restart, &title] {
+            assert!(r.x >= 0.0 && r.x + r.w <= VIEWPORT_WIDTH as f32);
+            assert!(r.y >= 0.0 && r.y + r.h <= VIEWPORT_HEIGHT as f32);
+        }
+        assert!(restart.x + restart.w <= title.x);
     }
 }

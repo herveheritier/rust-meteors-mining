@@ -46,6 +46,14 @@ pub enum Action {
     /// un changement d'anticrénelage) : `main.rs` relance l'exécutable puis
     /// quitte.
     Restart,
+    /// GAME OVER (touche R ou bouton NEW GAME du HUD) : repartir du début -
+    /// progression remise à zéro et vaisseau renaît à quai (voir
+    /// `reset_for_new_game`, appelée par `main.rs`). Le monde continue.
+    NewGame,
+    /// GAME OVER (touche T ou bouton TITLE du HUD) : retour à l'écran titre -
+    /// progression sauvegardée, puis l'écran titre repropose poursuivre ou
+    /// repartir au lancement suivant (géré par `main.rs`).
+    BackToTitle,
     Continue,
 }
 
@@ -104,9 +112,21 @@ pub fn update(
     }
 
     // Game over (scénario Survival, dernière vie perdue) : le monde est gelé
-    // - seules les touches de quitter (ESC, ci-dessus) restent actives ; le
-    // HUD affiche GAME OVER.
+    // - seules les fins de partie restent actives : R = nouvelle partie
+    // (progression remise à zéro), T = retour à l'écran titre, ESC = quitter
+    // (ci-dessus) ; les deux boutons cliquables du HUD renvoient aux mêmes
+    // actions (tactile inclus - le toucher génère un clic). Le HUD affiche
+    // GAME OVER + le rappel des touches.
     if state.game_over {
+        if is_key_pressed(KeyCode::R) {
+            return (Action::NewGame, camera);
+        }
+        if is_key_pressed(KeyCode::T) {
+            return (Action::BackToTitle, camera);
+        }
+        if let Some(action) = game_over_button_click() {
+            return (action, camera);
+        }
         return (Action::Continue, camera);
     }
 
@@ -995,6 +1015,42 @@ fn help_box_click() -> bool {
     close_rect.contains(m)
 }
 
+/// Clic sur les boutons de l'écran GAME OVER (NEW GAME / TITLE, dessinés par
+/// le HUD - voir `hud::game_over_buttons_layout`) : renvoie l'action du
+/// bouton visé, ou `None`. Fonctionne aussi au tactile (le toucher génère un
+/// clic souris).
+fn game_over_button_click() -> Option<Action> {
+    if !is_mouse_button_pressed(MouseButton::Left) {
+        return None;
+    }
+    let m = mouse_to_game();
+    let [restart, title] = crate::hud::game_over_buttons_layout();
+    if restart.contains(m) {
+        Some(Action::NewGame)
+    } else if title.contains(m) {
+        Some(Action::BackToTitle)
+    } else {
+        None
+    }
+}
+
+/// Nouvelle partie après un GAME OVER (touche R, bouton NEW GAME) : la
+/// progression du scénario est remise à zéro (clés `prog_*` supprimées,
+/// règles de départ réappliquées - vies et bouclier pleins en Survival,
+/// compteurs d'objectifs à zéro, extensions d'atelier perdues) et le vaisseau
+/// renaît **à quai** au centre de la station, coque reconstruite selon les
+/// niveaux remis à zéro (voir `eva::respawn_player`). Le monde (météores,
+/// débris, minerais) continue de tourner. Appelée par `main.rs` sur
+/// `Action::NewGame`.
+pub fn reset_for_new_game(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
+    // supprime les clés `prog_*` du scénario puis réapplique les règles de
+    // départ (ne renvoie rien - pas d'erreur possible en cas de clé absente)
+    scenario::reset_progression(state);
+    crate::eva::respawn_player(state, shapes, triangles);
+    state.paused = false;
+    state.send_message("NEW GAME");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1788,6 +1844,46 @@ mod tests {
         // à quai : les liens d'accostage se rattachent au vaisseau (mire
         // cachée) jusqu'au départ (rétraction via `release_links`)
         assert!(state.dock_links);
+    }
+
+    #[test]
+    fn new_game_after_game_over_resets_run_and_ship() {
+        // R sur l'écran GAME OVER : progression remise à zéro (ressources et
+        // niveaux d'atelier du départ, partie rejouable) et vaisseau renaît à
+        // quai au centre de la station, coque reconstruite sans les plans
+        // liés aux extensions perdues
+        let mut state = GameState::new();
+        state.scenario = crate::scenario::ScenarioId::Progression;
+        crate::scenario::apply_start(&mut state);
+        // une partie avancée : extensions d'atelier achetées, credits
+        // accumulés, partie terminée, monde en pause
+        state.resources.cargo_level = 2; // le plan lié (index 14) apparaît
+        state.resources.credits = 99;
+        state.game_over = true;
+        state.paused = true;
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
+        let upgraded_faces = shapes[0].life;
+        shapes[0].position = Point::new(300.0, 200.0);
+
+        reset_for_new_game(&mut state, &mut shapes, &mut triangles);
+
+        // progression remise à zéro : partie rejouable, ressources du départ
+        assert!(!state.game_over);
+        assert!(!state.paused);
+        assert_eq!(state.resources.credits, 0);
+        assert_eq!(state.resources.cargo_level, 0);
+        // vaisseau renaît à quai (position station, liens attachés, coque
+        // reconstruite sans le plan lié à l'extension de soute perdue)
+        assert_eq!(shapes[0].position, Point::new(0.0, 0.0));
+        assert!(state.dock_links);
+        assert_eq!(state.player_at_station, -1);
+        assert_eq!(
+            shapes[0].life,
+            crate::vaisseau::vaisseau_visible_face_count(&state) as i32
+        );
+        assert!(shapes[0].life < upgraded_faces);
     }
 
     #[test]

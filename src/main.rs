@@ -56,6 +56,7 @@ use crate::config::{
     VIEWPORT_HEIGHT, VIEWPORT_WIDTH, WINDOW_SIZES, WINDOW_TITLE,
 };
 use crate::geom::Point;
+use crate::shape::Shape;
 use crate::state::{GameState, RenderStyle, ViewMode};
 use std::f64::consts::TAU;
 
@@ -114,6 +115,61 @@ fn restart_process() -> bool {
     };
     let args: Vec<String> = std::env::args().skip(1).collect();
     std::process::Command::new(exe).args(&args).spawn().is_ok()
+}
+
+/// Préparation du lancement d'une partie, après l'écran titre : position et
+/// orientation initiales du vaisseau (scénarios custom, valeurs de l'éditeur
+/// de scénarios ; la dernière position sauvegardée prime avec l'option SAVE
+/// POSITION) puis état d'accostage de départ - à quai si le départ est
+/// immobile au centre de la station. Termine en vidant la file d'input (le
+/// keypress qui a lancé la partie ne doit pas être relu par la première
+/// frame de jeu, ex F → mode d'affichage re-basculé).
+fn launch_setup(state: &mut GameState, shapes: &mut [Shape]) {
+    let mut start_x = state.initial_ship_x;
+    let mut start_y = state.initial_ship_y;
+    let start_orientation = state.initial_ship_orientation.to_radians();
+    let start_velocity = state.initial_ship_velocity;
+    // option SAVE POSITION (case de l'écran de paramétrage) : la dernière
+    // position du vaisseau (sauvegardée à la sortie) écrase la position de
+    // départ - le joueur reprend exactement où il était (position nulle =
+    // à quai, comportement normal)
+    if state.save_position {
+        if let (Some(x), Some(y)) = (persist::get_i32("ship_x"), persist::get_i32("ship_y")) {
+            start_x = x as f64;
+            start_y = y as f64;
+        }
+    }
+    if start_x != 0.0 || start_y != 0.0 || start_orientation != 0.0 || start_velocity != 0.0 {
+        let s = &mut shapes[PLAYER_INDEX];
+        s.position.x = start_x;
+        s.position.y = start_y;
+        s.orientation = start_orientation;
+        s.velocity = start_velocity;
+    }
+    // Le vaisseau démarre à quai (liens d'accostage attachés, statut
+    // « DOCKED ») seulement s'il est **immobile au centre de la station** :
+    // position initiale (0,0) ET vitesse nulle - une position ou une vitesse
+    // initiale non nulle (scénario custom de l'éditeur) signifie que le
+    // vaisseau démarre en vol, hors de la base (pas de liens, pas
+    // d'accostage ; la mire réapparaîtra au retour, voir
+    // `docking::update_docking_guide`)
+    let start_docked = crate::scenario::start_docked(state);
+    state.dock_links = start_docked;
+    state.player_at_station = if start_docked { -1 } else { 0 };
+
+    clear_input_queue();
+}
+
+/// Annonce l'URL de la télécommande (journal + message HUD). NB : la file de
+/// messages du HUD découpe sur '/' (séparateur) - le message affiche
+/// l'adresse sans le schéma `http://` (l'URL complète est visible dans
+/// l'écran de paramétrage, touche O).
+fn announce_remote(state: &mut GameState, url: &str) {
+    // NB : la macro info! de macroquad ne capture pas les identifiants
+    // inline (contrairement à format!) - arguments explicites obligatoires
+    info!("Remote control ready: {}", url);
+    let host_port = url.trim_start_matches("http://").trim_end_matches('/');
+    state.send_message(&format!("REMOTE CONTROL: {host_port}"));
 }
 
 #[macroquad::main(window_conf)]
@@ -281,85 +337,41 @@ async fn main() {
     let render_target = render_target(VIEWPORT_WIDTH as u32, VIEWPORT_HEIGHT as u32);
     render_target.texture.set_filter(FilterMode::Linear);
 
+
+
     // ─── Écran titre (jalon M5, ex `titleLoop`) ─────────────────────────────
     // `sounds` est transmis pour l'écran de paramétrage (touche O) accessible
     // depuis le titre (musique et volume y sont réglables). Triplet en retour :
     // ESC → quitter l'application ; `true` en 2e position → le bouton RESTART
     // a été cliqué → on relance le jeu immédiatement.
-    let (title_quit, title_restart, title_progression_reset) =
+    let (title_quit, title_restart, _title_progression_reset) =
         title::title_loop(&mut state, &assets, &render_target, &mut sounds).await;
     if title_quit {
         // ESC pressé sur l'écran titre : quitter l'application
         return;
     }
-    if title_progression_reset {
-        // RESET PROGRESSION cliqué depuis l'écran de paramétrage du titre : la
-        // progression a été remise à zéro, mais l'écran titre ne dessine pas
-        // le monde - le vaisseau est reconstruit ici pour retirer les plans
-        // liés aux extensions désormais perdues
-        vaisseau::rebuild_player_vaisseau(&state, &mut shapes, &mut triangles);
+    if title_restart && restart_process() {
+        return;
     }
-    if title_restart
-        && restart_process() {
-            return;
-        }
 
-    // Appliquer la position / orientation initiales du vaisseau (scénarios
-    // custom, valeurs de l'éditeur de scénarios) : appliquées au lancement de
-    // la partie, APRÈS l'écran titre - le scénario finalement sélectionné
-    // (persisté ou choisi avec N/B/1-3) est le seul qui compte.
-    let mut start_x = state.initial_ship_x;
-    let mut start_y = state.initial_ship_y;
-    let start_orientation = state.initial_ship_orientation.to_radians();
-    let start_velocity = state.initial_ship_velocity;
-    // option SAVE POSITION (case de l'écran de paramétrage) : la dernière
-    // position du vaisseau (sauvegardée à la sortie) écrase la position de
-    // départ - le joueur reprend exactement où il était (position nulle =
-    // à quai, comportement normal)
-    if state.save_position {
-        if let (Some(x), Some(y)) = (persist::get_i32("ship_x"), persist::get_i32("ship_y")) {
-            start_x = x as f64;
-            start_y = y as f64;
-        }
-    }
-    if start_x != 0.0 || start_y != 0.0 || start_orientation != 0.0 || start_velocity != 0.0 {
-        let s = &mut shapes[PLAYER_INDEX];
-        s.position.x = start_x;
-        s.position.y = start_y;
-        s.orientation = start_orientation;
-        s.velocity = start_velocity;
-    }
-    // Le vaisseau démarre à quai (liens d'accostage attachés, statut
-    // « DOCKED ») seulement s'il est **immobile au centre de la station** :
-    // position initiale (0,0) ET vitesse nulle - une position ou une vitesse
-    // initiale non nulle (scénario custom de l'éditeur) signifie que le
-    // vaisseau démarre en vol, hors de la base (pas de liens, pas
-    // d'accostage ; la mire réapparaîtra au retour, voir
-    // `docking::update_docking_guide`)
-    let start_docked = crate::scenario::start_docked(&state);
-    state.dock_links = start_docked;
-    state.player_at_station = if start_docked { -1 } else { 0 };
-
-    // le keypress qui a lancé la partie (ex F du titre) est encore dans la
-    // file d'input : sans ça, la première frame de jeu le verrait (ex F →
-    // `state.view_mode` re-basculé) et annulerait le redimensionnement.
-    clear_input_queue();
+    // Le vaisseau démarre **à quai** au centre de la station : position,
+    // vitesse et coque remises à zéro (au premier lancement il est déjà
+    // neuf - `prepare` ; au retour de l'écran titre, touche T sur GAME OVER,
+    // il était peut-être détruit - la reconstruction suit les niveaux
+    // d'atelier courants, progression éventuellement remise à zéro par le
+    // bouton RESET PROGRESSION du titre - `_title_progression_reset`).
+    eva::respawn_player(&mut state, &mut shapes, &mut triangles);
+    launch_setup(&mut state, &mut shapes);
 
     // ─── Télécommande HTTP (piloter le jeu depuis un téléphone) ─────────────
     // Le serveur local démarre au lancement (`remote.rs`) : la page de
     // contrôle (joystick + FIRE + état en direct) est servie sur le réseau
     // local - l'URL à ouvrir sur le téléphone est annoncée (message HUD +)
     // et journalisée. En cas d'échec (port occupé…), le jeu continue sans
-    // télécommande.
+    // télécommande. Une seule fois par processus : au retour de l'écran titre
+    // (T sur GAME OVER), le serveur tourne déjà.
     match crate::remote::start() {
-        Ok(url) => {
-            info!("Remote control ready: {url}");
-            // NB : la file de messages du HUD découpe sur '/' (séparateur) -
-            // le message affiche l'adresse sans le schéma `http://` (l'URL
-            // complète est visible dans l'écran de paramétrage, touche O)
-            let host_port = url.trim_start_matches("http://").trim_end_matches('/');
-            state.send_message(&format!("REMOTE CONTROL: {host_port}"));
-        }
+        Ok(url) => announce_remote(&mut state, &url),
         Err(e) => info!("Remote control disabled: {e}"),
     }
 
@@ -447,6 +459,70 @@ async fn main() {
                 if restart_process() {
                     break;
                 }
+            }
+            // R / bouton NEW GAME (écran GAME OVER) : repartir du début - la
+            // progression est remise à zéro (clés `prog_*` supprimées, règles
+            // de départ réappliquées : vies et bouclier pleins en Survival,
+            // compteurs à zéro, extensions d'atelier perdues) et le vaisseau
+            // renaît à quai au centre de la station ; le monde (météores,
+            // débris, minerais) continue de tourner
+            game::Action::NewGame => {
+                game::reset_for_new_game(&mut state, &mut shapes, &mut triangles);
+            }
+            // T / bouton TITLE (écran GAME OVER) : retour à l'écran titre -
+            // progression et position sauvegardées comme à la sortie (ESC),
+            // puis l'écran titre rejoue son choix (poursuivre, repartir du
+            // début, changer de scénario) avant de relancer la partie
+            game::Action::BackToTitle => {
+                let _ = crate::scenario::save_progression(&state);
+                if state.save_position {
+                    let p = shapes[PLAYER_INDEX].position;
+                    let _ = persist::set_i32("ship_x", p.x.round() as i32);
+                    let _ = persist::set_i32("ship_y", p.y.round() as i32);
+                }
+                // ré-applique le scénario (peut être changé au titre) + les
+                // règles de départ + la progression enregistrée : l'état est
+                // propre pour l'écran titre (résumé de sauvegarde) comme pour
+                // la partie qui suit
+                if let Some(id) = crate::scenario::load_scenario() {
+                    state.scenario = id;
+                }
+                crate::scenario::apply_start(&mut state);
+                crate::scenario::load_progression(&mut state);
+                // la touche T (ou le clic) qui a demandé le retour ne doit pas
+                // être relue par l'écran titre (une touche quelconque y lance
+                // la partie)
+                clear_input_queue();
+                let (title_quit, title_restart, _progression_reset) =
+                    title::title_loop(&mut state, &assets, &render_target, &mut sounds).await;
+                if title_quit {
+                    // ESC sur l'écran titre : quitter l'application
+                    break;
+                }
+                if title_restart && restart_process() {
+                    break;
+                }
+                // vaisseau reconstruit à quai (progression éventuellement
+                // remise à zéro au titre, ou partie terminée) puis position
+                // et état d'accostage de départ (mêmes règles qu'au lancement)
+                eva::respawn_player(&mut state, &mut shapes, &mut triangles);
+                launch_setup(&mut state, &mut shapes);
+                // ambiance/musique relancées si le titre les a coupées, et
+                // mode d'affichage ré-annoncé (même message qu'au lancement)
+                sounds.start_ambient();
+                if persist::get_bool("music").unwrap_or(true) {
+                    sounds.start_music();
+                }
+                // l'URL de la télécommande est ré-annoncée dans le HUD (le
+                // serveur tourne déjà - démarré au lancement du processus)
+                if let Some(url) = crate::remote::url() {
+                    announce_remote(&mut state, &url);
+                }
+                state.send_message(view_mode_message(state.view_mode as i32));
+                pending_fullscreen = state.view_mode != ViewMode::Windowed;
+                // la caméra de la frame (calculée avant le titre) est obsolète
+                // : on saute le rendu de cette frame, la suivante repart propre
+                continue;
             }
             game::Action::Continue => {}
         }

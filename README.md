@@ -135,6 +135,11 @@ python3 -m http.server 8000 --directory /tmp/site   # ouvrir http://localhost:80
 
 Sur le web, la télécommande HTTP, la manette et le son sont désactivés
 (compatibilité plateforme) ; restent le clavier et le joystick tactile.
+Les réglages et la progression des scénarios sont **persistés dans le
+navigateur** (localStorage, clé `meteors-mining/config` - le même contenu
+texte `clé=valeur` que le fichier natif, lu et écrit via deux imports JS
+définis dans `web/index.html`) : la partie en ligne reprend le scénario, les
+crédits, vies et réglages du navigateur au lancement suivant.
 
 ## Contrôles
 
@@ -156,6 +161,7 @@ Sur le web, la télécommande HTTP, la manette et le son sont désactivés
 | D | Afficher les données des formes (debug) |
 | I | Afficher les informations (keycode, compteurs, formes/triangles vivants) |
 | ESC | Quitter |
+| R / T (écran GAME OVER, Survival) | Rejouer (progression remise à zéro, vaisseau à quai) / retour à l'écran titre (progression sauvegardée) |
 | N / B / 1-3 (écran titre) | Changer de scénario : N suit le cycle (jeu libre → Progression → Survival → jeu libre), B le parcourt en sens inverse, et 1/2/3 sélectionnent directement (1 = jeu libre, 2 = Progression, 3 = Survival) |
 
 Au démarrage, le vaisseau est à la station : éloignez-vous pour commencer à
@@ -188,7 +194,10 @@ crédits/modes/réputation ou vies/bouclier, avec les **valeurs en
 surbrillance** dans la couleur du scénario elles aussi -
 `scenario::save_summary_segments`)) encapsulent des règles de jeu en
 **données +
-points d'accroche purs** (`src/scenario.rs`) - la boucle (`game.rs`) ne fait
+points d'accroche purs** (`src/scenario.rs` et ses sous-modules
+`scenario/shop.rs` - magasin, `scenario/ranks.rs` - réputation,
+`scenario/workshop.rs` - atelier, `scenario/progression.rs` - persistance) -
+la boucle (`game.rs`) ne fait
 qu'appeler des fonctions testables sans macroquad :
 
 - **FREE PLAY** (défaut) - le comportement historique : aucun coût, tous les
@@ -249,8 +258,10 @@ qu'appeler des fonctions testables sans macroquad :
   il est percé, l'impact suivant détruit le vaisseau - une vie est perdue et
   il respawne à la station (bouclier rechargé + **2 s d'invulnérabilité**, le
   vaisseau clignote), la dernière vie perdue termine la partie (HUD « GAME
-  OVER », seule la touche ESC quitte) ; le **multiplicateur de dégâts**
-  aggrave chaque impact (bouclier vidé plus vite). Le HUD affiche
+  OVER » : **R** relance une partie neuve - progression remise à zéro, **T**
+  revient à l'écran titre, ESC quitte ; deux boutons cliquables NEW GAME /
+  TITLE reprennent les mêmes actions au tactile) ; le **multiplicateur de
+  dégâts** aggrave chaque impact (bouclier vidé plus vite). Le HUD affiche
   `LIVES:3 SHIELD:3`.
 
 Les coûts, capacités et formules sont des constantes (`FREE_PLAY_SCENARIO`,
@@ -536,7 +547,7 @@ rust-meteors-mining/
     ├── generate.rs         ← génération procédurale des météores, prepare
     ├── game.rs             ← boucle de jeu (input, déplacement, collisions, pause)
     ├── render.rs           ← rendu (étoiles, triangles texturés, HUD, aide, debug)
-    ├── scenario.rs         ← scénarios (règles économiques, modes, réputation, atelier d'amélioration)
+    ├── scenario.rs         ← scénarios (définitions, règles affichées, survie) + sous-modules scenario/ (shop.rs, ranks.rs, workshop.rs, progression.rs, tests.rs) - API réexportée depuis scenario.rs
     ├── scenario_objectives.rs ← structures DAG, conditions, récompenses et validation des objectifs
     ├── title.rs            ← écran titre (bannière arc-en-ciel, étoiles, choix du scénario)
     ├── audio.rs            ← sons et musique (ambiance, moteur, explosions)
