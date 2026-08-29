@@ -209,12 +209,13 @@ pub struct Shape {
     /// position du météore quand il est détruit par la collision d'un autre
     /// météore. 0 hors météores.
     pub minerals: i32,
-    /// Minerai **rejeté de la soute** du vaisseau détruit (`eject_cargo_minerals`) :
-    /// les météores ne l'absorbent **pas** (elle doit rester ramassable par le
-    /// cosmonaute EVA, ou le vaisseau ressuscité en Survival) - seule la
-    /// résolution de collision la ramasse (vaisseau) ou la proximité
-    /// (cosmonaute). `false` pour les minerais libérés par un météore détruit
-    /// (`create_gem`), qui, elles, restent absorbables.
+    /// Minerai **relâché de la soute** du vaisseau détruit
+    /// (`eject_cargo_minerals`) : marqueur du relâchement au crash - il suit
+    /// les règles du monde (absorbé par le météore qui le percute, ramassé par
+    /// le vaisseau par collision), mais la **station** ne le détruit pas (il
+    /// reste dans l'espace près de la base, à récupérer au retour du vaisseau
+    /// reconstruit). `false` pour les minerais libérés par un météore détruit
+    /// (`create_gem`), détruits eux par la station.
     pub ejected_cargo: bool,
     /// Angle (radians) de balancement actuel des membres du cosmonaute EVA :
     /// poursuit la cible oscillante pendant la poussée et décroît vers 0 au

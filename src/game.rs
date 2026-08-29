@@ -767,13 +767,12 @@ fn collisions(
             // détruit par un autre météore). Le météore le plus proche de la
             // minerai est celui qui l.a percuté (`collid_by` ne porte que le
             // type, pas l.index). Une seule fois par minerai (tout le minerai
-            // est tué au premier triangle). NB : un minerai **rejeté de la
-            // soute** du vaisseau détruit (`ejected_cargo`) n'est PAS absorbée
-            // - elle doit rester ramassable par le cosmonaute EVA (ou le
-            // vaisseau ressuscité en Survival), le minerai n'est pas perdu
-            // avec le crash ; sans choc élastique (météore/minerai), il
-            // traverse simplement le météore.
-            if shapes[shape_index].life > 0 && !shapes[shape_index].ejected_cargo {
+            // est tué au premier triangle). Un minerai **rejeté de la soute**
+            // du vaisseau détruit est absorbé comme n.importe quel minerai
+            // (il suit les règles du monde - récupérable en détruisant le
+            // météore qui l.a avalé) ; sans choc élastique (météore/minerai),
+            // le minerai traverse simplement le météore.
+            if shapes[shape_index].life > 0 {
                 let mineral_pos = shapes[shape_index].position;
                 if let Some(meteor) = nearest_meteor(shapes, mineral_pos) {
                     shapes[meteor].minerals += 1;
@@ -785,8 +784,7 @@ fn collisions(
             }
         } else if collid_by_who == WHOIAM_MINERAL && who == WHOIAM_METEOR {
             // déjà résolu côté minerai (absorption) : le météore n.est pas
-            // endommagé en avalant le minerai (un minerai de soute, lui,
-            // traverse sans rien faire)
+            // endommagé en avalant le minerai (il le traverse simplement)
         } else if collid_by_who == WHOIAM_STATION
             && who == WHOIAM_MINERAL
             && shapes[shape_index].ejected_cargo
@@ -2477,14 +2475,11 @@ mod tests {
     }
 
     #[test]
-    fn ejected_cargo_minerals_are_not_absorbed_by_meteors() {
-        // REGRESSION : les minerais de la soute rejetés au crash étaient
-        // absorbés par le météore du crash (encore vivant, posé sur le
-        // vaisseau détruit) - le minerai était perdu au lieu de rester dans
-        // l'espace (à récupérer par le vaisseau reconstruit / ressuscité). Un
-        // minerai de soute (`ejected_cargo`) chevauchant un météore doit
-        // **survivre** à la collision, quand une minerai normal (minerai
-        // libéré d.un météore détruit) est absorbé.
+    fn meteors_absorb_minerals_released_from_ship_cargo() {
+        // SPEC : un météore qui percute un minerai l.absorbe - y compris un
+        // minerai **relâché de la soute** au crash : il suit les règles du
+        // monde, la quantité absorbée est récupérable en détruisant le
+        // météore qui l.a avalé.
         let mut state = GameState::new();
         let mut shapes = vec![
             test_shape(WHOIAM_MINERAL, 0, 0, 0.0, 0.0),
@@ -2492,48 +2487,32 @@ mod tests {
         ];
         let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
         triangles[0].element = 1; // GOLD
-        shapes[0].ejected_cargo = true; // minerai de soute (rejeté au crash)
+        shapes[0].ejected_cargo = true; // minerai relâché de la soute au crash
         let mut garbages = Vec::new();
         let mut elements = default_elements();
         let mut rng = seed();
 
         collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
 
-        // le minerai de soute survit (pas absorbé), le météore n.a rien gagné
-        assert_eq!(shapes[0].life, 1, "le minerai de soute ne doit pas être absorbé");
-        assert_eq!(triangles[0].life, 1);
-        assert_eq!(shapes[1].minerals, 0);
-        assert_eq!(shapes[1].life, 1);
-
-        // un minerai NORMAL au même endroit, lui, est absorbé par le météore
-        let mut state = GameState::new();
-        let mut shapes = vec![
-            test_shape(WHOIAM_MINERAL, 0, 0, 0.0, 0.0),
-            test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
-        ];
-        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
-        triangles[0].element = 1; // GOLD
-        // ejected_cargo reste false (défaut) : le minerai est absorbé
-        let mut garbages = Vec::new();
-        let mut elements = default_elements();
-        let mut rng = seed();
-
-        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
-
-        assert_eq!(shapes[0].life, 0, "un minerai normal est absorbé");
-        assert_eq!(shapes[1].minerals, 1);
+        // le minerai relâché de la soute est absorbé par le météore (comme
+        // n.importe quel minerai), sans endommager le météore
+        assert_eq!(shapes[0].life, 0, "le minerai relâché est absorbé par le météore");
+        assert_eq!(triangles[0].life, 0);
+        assert_eq!(shapes[1].minerals, 1, "le météore a absorbé le minerai (récupérable en le détruisant)");
+        assert_eq!(shapes[1].life, 1, "le météore n'est pas endommagé en avalant le minerai");
     }
 
     #[test]
     fn destroyed_ship_releases_all_cargo_minerals_without_destruction() {
         // SPEC : quand le vaisseau est détruit, TOUS les minerais de la soute
         // sont relâchés dans l'espace (un minerai par unité), sans destruction
-        // - la soute est vidée et les minerais relâchés restent vivants
-        // (`ejected_cargo`), **dans l'espace**, jusqu'au retour du vaisseau
-        // reconstruit (le cosmonaute EVA ne les ramasse pas). Le météore du
-        // crash ne les absorbe pas, l'épave (non-collider) ne les re-ramasse
-        // ni ne les détruit, et la station (crash au centre) ne les détruit
-        // pas non plus : les 5 minerais restent tous en place.
+        // au crash - la soute est vidée et les minerais relâchés restent
+        // vivants (`ejected_cargo`), **dans l'espace**, jusqu'au retour du
+        // vaisseau reconstruit (le cosmonaute EVA ne les ramasse pas). Ils
+        // suivent ensuite les règles du monde : absorbés par le météore qui
+        // les percute (récupérables en le détruisant), jamais détruits par
+        // l'épave (non-collider) ni par la station (crash au centre) - rien
+        // n'est perdu.
         let (mut state, mut shapes, mut triangles) = ejection_scene();
         let mut garbages = Vec::new();
         let mut elements = default_elements();
@@ -2561,20 +2540,21 @@ mod tests {
                 .iter()
                 .filter(|s| s.who_i_am == WHOIAM_MINERAL && s.life > 0)
                 .all(|s| s.ejected_cargo),
-            "les minerais relâchés sont marqués ejected_cargo (non absorbables)"
+            "les minerais relâchés sont marqués ejected_cargo (protégés de la station)"
         );
 
         // frames suivantes : le météore du crash chevauche les minerais, la
-        // station est au centre du crash - aucun minerai relâché n'est détruit
-        // et le cosmonaute ne les ramasse pas (il reste vide, les minerais
-        // attendent le retour du vaisseau)
+        // station est au centre du crash - les minerais percutés par le
+        // météore sont **absorbés** (récupérables en le détruisant), les
+        // autres restent dans l'espace ; rien n'est perdu ni détruit (épave
+        // non-collider, station protectrice, cosmonaute qui ne ramasse pas)
         for _ in 0..10 {
             collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
         }
         assert_eq!(
-            state.player.cargo_qty as usize + alive_minerals(&shapes),
+            state.player.cargo_qty as usize + alive_minerals(&shapes) + shapes[2].minerals as usize,
             5,
-            "les minerais relâchés ne sont jamais détruits (météore, épave, station)"
+            "minerais relâchés : soit dans l'espace, soit absorbés par le météore du crash (rien de perdu)"
         );
     }
 

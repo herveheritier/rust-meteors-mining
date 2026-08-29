@@ -223,9 +223,10 @@ pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 /// Rayon (unités monde) du cercle d'éparpillement des minerais de la soute
 /// quand le vaisseau est détruit (`generate::eject_cargo_minerals`) : les
 /// minerais rejetés jaillissent dans un cercle de ce rayon autour du crash et
-/// **restent dans l'espace** - le cosmonaute EVA ne les ramasse pas, seul le
-/// vaisseau reconstruit (ou ressuscité en Survival) les récupérera à son
-/// retour, par collision.
+/// **restent dans l'espace** (le cosmonaute EVA ne les ramasse pas) - ils
+/// suivent les règles du monde : absorbés par le météore qui les percute,
+/// récupérés par le vaisseau reconstruit à son retour, jamais détruits par la
+/// station.
 pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 
 /// Durée (secondes) de la **récupération** du cosmonaute EVA par la station

@@ -377,8 +377,10 @@ fn create_mineral_at(
     shape.who_i_am = WHOIAM_MINERAL;
     shape.is_collider = true;
     shape.element = element;
-    // minerai de soute (rejeté au crash) : les météores ne l'absorbent pas -
-    // il doit rester ramassable par le cosmonaute / le vaisseau ressuscité
+    // minerai relâché de la soute au crash : marqueur `ejected_cargo` - il
+    // suit les règles du monde (absorbé par les météores, ramassé par le
+    // vaisseau) mais la station ne le détruit pas (il reste dans l'espace à
+    // récupérer au retour du vaisseau reconstruit)
     shape.ejected_cargo = true;
     if element < 1 || element as usize >= elements.len() {
         eprintln!("createMineral: element hors limites: {}", element);
