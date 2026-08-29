@@ -223,8 +223,10 @@ pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 /// Rayon (unités monde) de ramassage des minerais par le **cosmonaute EVA**
 /// (vaisseau détruit) : il est non-collider, les minerais le traversent - il
 /// les ramasse par proximité (voir `eva::eva_collect_minerals`) et les
-/// rapporte à la station. Rayon du cosmonaute (~13) + marge généreuse.
-pub const EVA_PICKUP_RADIUS: f64 = 20.0;
+/// rapporte à la station. Large (contact visuel cosmonaute/minerai ~16 + une
+/// marge confortable) : le cosmonaute, à la poussée vectorielle **sans
+/// frein**, doit ramasser sans viser précisément.
+pub const EVA_PICKUP_RADIUS: f64 = 30.0;
 
 /// Rayon (unités monde) du cercle d'éparpillement des minerais de la soute
 /// quand le vaisseau est détruit (`generate::eject_cargo_minerals`) : les

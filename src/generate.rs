@@ -424,7 +424,11 @@ pub fn eject_cargo_minerals(
         for _ in 0..count {
             // position éparpillée dans un cercle autour du crash + petite
             // vitesse de dérive : le chargement « se renverse » autour du
-            // vaisseau détruit
+            // vaisseau détruit. La dérive reste **très lente** (2,5-8
+            // unités/s) : les minerais s'éparpillent visuellement mais
+            // **restent à portée** du cosmonaute EVA (à la poussée
+            // vectorielle sans frein, des minerais qui filent à 30 unités/s
+            // deviendraient inrattrapables - voir `eva_collect_minerals`)
             let ang = rng.r#gen::<f64>() * TAU;
             let dist = CARGO_EJECT_SPREAD * rng.r#gen::<f64>();
             let pos = Point::new(crash.x + ang.cos() * dist, crash.y + ang.sin() * dist);
@@ -434,8 +438,8 @@ pub fn eject_cargo_minerals(
                 elements,
                 e as i32,
                 pos,
-                rng.r#gen::<f64>() * TAU,            // direction de dérive aléatoire
-                0.15 + 0.35 * rng.r#gen::<f64>(), // vitesse : lent (facile à ramasser)
+                rng.r#gen::<f64>() * TAU,          // direction de dérive aléatoire
+                0.04 + 0.10 * rng.r#gen::<f64>(), // vitesse : dérive lente (reste à ramasser)
             );
         }
     }
@@ -785,6 +789,14 @@ mod tests {
             }
             let d = (s.position.x - 100.0).hypot(s.position.y - 100.0);
             assert!(d < CARGO_EJECT_SPREAD + 1.0, "minerai trop loin du crash : {d}");
+            // dérive lente : les minerais doivent **rester à portée** du
+            // cosmonaute EVA (sans frein) - pas de dérive qui les éloigne à
+            // 30 unités/s (inrattrapables), juste un « renversement » visuel
+            assert!(
+                s.velocity <= 0.14,
+                "minerai qui dérive trop vite ({} unités/frame) : inrattrapable par le cosmonaute",
+                s.velocity
+            );
         }
         assert_eq!(gold, 2);
     }
