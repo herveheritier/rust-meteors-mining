@@ -81,6 +81,10 @@ pub fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &m
     // d'atelier - `vaisseau::rebuild_player_vaisseau`, qui recale aussi les
     // positions réelles sur les cinématiques posées ci-dessus)
     crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+    // le vaisseau reconstruit redevient un collider (`activate_cosmonaut`
+    // l'avait coupé dans la destruction EVA) : il ramasse à nouveau les
+    // minerais par collision
+    shapes[PLAYER_INDEX].is_collider = true;
     // flamme et cooldown de tir coupés (le moteur ne brûle plus au respawn)
     state.player.thrusted = 0;
     state.player.revert_thrusted = 0;
@@ -98,12 +102,18 @@ pub fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &m
 /// **cosmonaute éjecté** - il apparaît à la position du crash (le vaisseau
 /// détruit reste invisible sur place, ses triangles sont morts) et doit
 /// rejoindre la base (voir `rescue_cosmonaut`). La caméra, la mire et le HUD
-/// suivent le cosmonaute (`input::pilot_index`).
+/// suivent le cosmonaute (`input::pilot_index`). Le vaisseau détruit cesse
+/// d'être un collider : il ne doit plus **re-ramasser** (ni détruire) les
+/// minerais rejetés autour du crash - seule le cosmonaute les ramasse, par
+/// proximité (`eva_collect_minerals`).
 pub fn activate_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
     let idx = state.eva_cosmonaut as usize;
     if idx >= shapes.len() {
         return; // cosmonaute EVA absent (jamais créé) : rien à éjecter
     }
+    // le vaisseau mort ne doit plus entrer en collision (notamment avec les
+    // minerais éparpillés autour du crash) - restauré par `respawn_player`
+    shapes[PLAYER_INDEX].is_collider = false;
     let crash = shapes[PLAYER_INDEX].position;
     let c = &mut shapes[idx];
     c.position = crash;

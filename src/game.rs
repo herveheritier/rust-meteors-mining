@@ -2590,4 +2590,51 @@ mod tests {
         assert_eq!(shapes[0].life, 0, "un minerai normal est absorbé");
         assert_eq!(shapes[1].minerals, 1);
     }
+
+    #[test]
+    fn destroyed_ship_does_not_reabsorb_scattered_minerals() {
+        // REGRESSION : le vaisseau détruit restait un **collider** - il
+        // « re-ramassait » dans sa soute (et finissait par détruire) les
+        // minerais éparpillés autour du crash, remplissait la soute (fantôme)
+        // et le cosmonaute EVA, limité par une soute pleine, ne pouvait plus
+        // les récupérer par proximité. Le vaisseau mort doit cesser d'être un
+        // collider : les minerais éparpillés restent en place pour le
+        // cosmonaute, la soute reste vide.
+        let mut state = GameState::new();
+        state.cosmonaut_active = true;
+        state.eva_cosmonaut = 1; // cosmonaute présent (garé au loin)
+        state.player.cargo_qty = 0;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0), // vaisseau détruit (mort, non-collider)
+            test_shape(WHOIAM_COSMONAUT, 1, 1, 100.0, 100.0),
+            test_shape(WHOIAM_MINERAL, 2, 2, 3.0, 3.0), // minerai éparpillé, chevauche le crash
+        ];
+        shapes[PLAYER_INDEX].life = 0; // vaisseau mort (triangles tués)
+        shapes[PLAYER_INDEX].is_collider = false; // posé par `activate_cosmonaut`
+        shapes[1].is_collider = false; // le cosmonaute est un non-collider (comme en jeu)
+        let mut triangles = vec![
+            test_triangle(0, PLAYER_INDEX as i32, 0.0, 0.0),
+            test_triangle(1, 1, 100.0, 100.0),
+            test_triangle(2, 2, 3.0, 3.0),
+        ];
+        triangles[2].element = 1; // GOLD
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // le minerai éparpillé survit (ni aspiré ni détruit par le vaisseau
+        // mort) et la soute reste vide pour le ramassage par proximité
+        assert_eq!(shapes[2].life, 1, "le minerai éparpillé reste au sol pour le cosmonaute");
+        assert_eq!(triangles[2].life, 1);
+        assert_eq!(state.player.cargo_qty, 0, "soute vide : pas de re-ramassage par le vaisseau mort");
+
+        // et le cosmonaute proche du minerai le ramasse bien par proximité
+        let eva = state.eva_cosmonaut as usize;
+        shapes[eva].position = Point::new(4.0, 4.0);
+        eva_collect_minerals(&mut state, &mut shapes, &mut triangles, &mut elements, None);
+        assert_eq!(shapes[2].life, 0, "le cosmonaute ramasse le minerai éparpillé");
+        assert_eq!(state.player.cargo_qty, 1);
+    }
 }
