@@ -196,7 +196,8 @@ surbrillance** dans la couleur du scénario elles aussi -
 **données +
 points d'accroche purs** (`src/scenario.rs` et ses sous-modules
 `scenario/shop.rs` - magasin, `scenario/ranks.rs` - réputation,
-`scenario/workshop.rs` - atelier, `scenario/progression.rs` - persistance) -
+`scenario/workshop.rs` - atelier, `scenario/progression.rs` - persistance,
+`scenario/rules.rs` - règles affichées à l'écran titre) -
 la boucle (`game.rs`) ne fait
 qu'appeler des fonctions testables sans macroquad :
 
@@ -547,7 +548,7 @@ rust-meteors-mining/
     ├── generate.rs         ← génération procédurale des météores, prepare
     ├── game.rs             ← boucle de jeu (input, déplacement, collisions, pause)
     ├── render.rs           ← rendu (étoiles, triangles texturés, HUD, aide, debug)
-    ├── scenario.rs         ← scénarios (définitions, règles affichées, survie) + sous-modules scenario/ (shop.rs, ranks.rs, workshop.rs, progression.rs, tests.rs) - API réexportée depuis scenario.rs
+    ├── scenario.rs         ← scénarios (définitions, survie) + sous-modules scenario/ (shop.rs, ranks.rs, workshop.rs, progression.rs, rules.rs, tests.rs) - API réexportée depuis scenario.rs
     ├── scenario_objectives.rs ← structures DAG, conditions, récompenses et validation des objectifs
     ├── title.rs            ← écran titre (bannière arc-en-ciel, étoiles, choix du scénario)
     ├── audio.rs            ← sons et musique (ambiance, moteur, explosions)

@@ -51,17 +51,18 @@ use crate::state::{Element, GameState};
 
 mod progression;
 mod ranks;
+mod rules;
 mod shop;
 mod workshop;
 
 pub use progression::*;
 pub use ranks::*;
+pub use rules::*;
 pub use shop::*;
 pub use workshop::*;
 
 #[cfg(test)]
 mod tests;
-
 
 /// Identifiant d'un scénario (choisi à l'écran titre, touche N).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,9 +134,9 @@ pub struct Resources {
 /// l'éditeur - rien à modifier ici. Réexportés pour l'API publique du module
 /// (types, rangs, trois lignes d'atelier et constantes économiques).
 pub use crate::marketplace::{
-    ReputationRank, ShipUpgrade, UpgradeTrack, DISCOUNT_PRECISION_WEIGHT, PROGRESSION_RANKS,
-    AMMO_UPGRADE_TRACK, CARGO_UPGRADE_TRACK, FUEL_UPGRADE_TRACK, AMMO_PRICE, AMMO_STEP,
-    ELEMENT_VALUES, FUEL_PRICE, FUEL_STEP, MODE_COSTS, mode_label,
+    mode_label, ReputationRank, ShipUpgrade, UpgradeTrack, AMMO_PRICE, AMMO_STEP,
+    AMMO_UPGRADE_TRACK, CARGO_UPGRADE_TRACK, DISCOUNT_PRECISION_WEIGHT, ELEMENT_VALUES, FUEL_PRICE,
+    FUEL_STEP, FUEL_UPGRADE_TRACK, MODE_COSTS, PROGRESSION_RANKS,
 };
 
 /// Ligne d'amélioration du vaisseau à l'atelier (index des trois lignes).
@@ -242,7 +243,8 @@ pub const FREE_PLAY_SCENARIO: Scenario = Scenario {
     start_ammo: 0,
     ammo_per_shot: 0,
     mode_costs: [0; MOVING_MODE_COUNT as usize],
-    reputation_per_asteroid: 0.0,    reputation_precision_weight: 0.0,
+    reputation_per_asteroid: 0.0,
+    reputation_precision_weight: 0.0,
     reputation_per_mineral: 0.0,
     discount_precision_weight: 0.0,
     fuel_price: 0,
@@ -270,7 +272,7 @@ pub const PROGRESSION_SCENARIO: Scenario = Scenario {
     mode_costs: MODE_COSTS, // INERTIAL 15, 4 WAYS 30, DIRECTIONAL 45, REALISTIC gratuit
     reputation_per_asteroid: 1.0,
     reputation_precision_weight: 2.0, // 100 % de précision → ×3 par astéroïde
-    reputation_per_mineral: 0.1, // 10 minerais déchargés → +1 de réputation
+    reputation_per_mineral: 0.1,      // 10 minerais déchargés → +1 de réputation
     discount_precision_weight: DISCOUNT_PRECISION_WEIGHT, // précision sur la remise - src/marketplace.rs
     fuel_price: FUEL_PRICE, // 1 minerai pour 10 unités - src/marketplace.rs
     fuel_step: FUEL_STEP,
@@ -377,214 +379,6 @@ pub fn is_custom(id: ScenarioId) -> bool {
     matches!(id, ScenarioId::Custom(_))
 }
 
-// ─── Règles affichées (écran titre) ─────────────────────────────────────────
-
-/// Segment de la ligne des règles (écran titre) : un libellé discret ou une
-/// valeur chiffrée mise en évidence (coût, vies, bouclier, dégâts, durée,
-/// rang) - colorée à l'affichage de la couleur du scénario (`color`) pour
-/// faire ressortir ce qui change quand on bascule de scénario (N/B/1-3).
-#[derive(Debug, Clone, PartialEq)]
-pub struct RuleSegment {
-    /// Texte du segment.
-    pub text: String,
-    /// Couleur ARGB du segment : `Some` = valeur mise en évidence, dans la
-    /// couleur du scénario (voir `Scenario::rules_color`) ; `None` = texte
-    /// par défaut (blanc).
-    pub color: Option<u32>,
-}
-
-/// Règles du scénario `id`, découpées en segments (voir `RuleSegment`) pour
-/// l'écran titre : dérivées des données du scénario - coûts des modes,
-/// carburant/munitions, vies, bouclier, dégâts, invulnérabilité, rangs. Les
-/// valeurs portent `color = Some(couleur du scénario)`, les libellés `None`.
-/// Fonction pure (tests).
-pub fn scenario_rules(id: ScenarioId) -> Vec<RuleSegment> {
-    let s = scenario(id);
-    let mut out = Vec::new();
-    let label = |out: &mut Vec<RuleSegment>, text: &str| {
-        if !text.is_empty() {
-            out.push(RuleSegment {
-                text: text.to_string(),
-                color: None,
-            });
-        }
-    };
-    let value = |out: &mut Vec<RuleSegment>, text: String| {
-        out.push(RuleSegment {
-            text,
-            color: Some(s.rules_color),
-        });
-    };
-    match id {
-        ScenarioId::FreePlay => {
-            label(&mut out, "aucun coût - carburant/munitions illimités, tous les modes débloqués");
-        }
-        ScenarioId::Custom(_) => {
-            if s.lives > 0 {
-                value(&mut out, s.lives.to_string());
-                label(&mut out, &format!(
-                    " vie{}, bouclier ",
-                    if s.lives > 1 { "s" } else { "" }
-                ));
-                value(&mut out, format!("{}", s.shield_capacity));
-            } else if s.has_economy {
-                label(&mut out, "économie personnalisée");
-            } else {
-                label(&mut out, "mode personnalisé");
-            }
-        }
-        ScenarioId::Progression => {
-            label(&mut out, "modes payants : ");
-            let costs = mode_costs_pairs(&s);
-            for (i, (name, cost)) in costs.iter().enumerate() {
-                if i > 0 {
-                    label(&mut out, ", ");
-                }
-                value(&mut out, format!("{} {}", name, cost));
-            }
-            label(&mut out, " crédits ; carburant/munitions payants ; rangs : ");
-            if let Some(first) = PROGRESSION_RANKS.first() {
-                value(&mut out, first.name.to_string());
-            }
-            // « → » : la police embarquée (DejaVu Sans Mono) possède le glyphe
-            label(&mut out, " → ");
-            if let Some(last) = PROGRESSION_RANKS.last() {
-                value(&mut out, last.name.to_string());
-            }
-        }
-        ScenarioId::Survival => {
-            value(&mut out, s.lives.to_string());
-            label(&mut out, &format!(
-                " vie{}, bouclier ",
-                if s.lives > 1 { "s" } else { "" }
-            ));
-            value(&mut out, format!("{}", s.shield_capacity));
-            label(&mut out, ", dégâts ×");
-            value(&mut out, format!("{}", s.damage_multiplier));
-            label(&mut out, ", ");
-            value(&mut out, format!("{}", s.respawn_invulnerability));
-            label(&mut out, " s d'invulnérabilité après respawn");
-        }
-    }
-    out
-}
-
-/// Texte complet des règles (segments concaténés, sans coloration) - réservé
-/// aux tests (l'écran titre affiche les segments colorés).
-#[cfg(test)]
-pub fn scenario_rules_text(id: ScenarioId) -> String {
-    scenario_rules(id).iter().map(|s| s.text.as_str()).collect()
-}
-
-/// Paires (nom, coût) des modes de déplacement payants (coût > 0).
-fn mode_costs_pairs(s: &Scenario) -> Vec<(&'static str, i32)> {
-    s.mode_costs
-        .iter()
-        .enumerate()
-        .filter(|(_, cost)| **cost > 0)
-        .map(|(i, cost)| (mode_label(i as i32), *cost))
-        .collect()
-}
-
-/// « 4 WAYS 30, DIRECTIONAL 45 crédits » - coûts des modes de déplacement
-/// payants (coût 0 = mode déjà débloqué, omis). Réservé aux tests (les règles
-/// de l'écran titre sont découpées en segments par `scenario_rules`).
-#[cfg(test)]
-fn mode_costs_text(s: &Scenario) -> String {
-    let costs = mode_costs_pairs(s);
-    if costs.is_empty() {
-        "aucun".to_string()
-    } else {
-        costs
-            .iter()
-            .map(|(name, cost)| format!("{} {}", name, cost))
-            .collect::<Vec<_>>()
-            .join(", ")
-            + " crédits"
-    }
-}
-
-/// Résumé segmenté de la progression **enregistrée** du scénario courant,
-/// affiché à l'écran titre sous les règles : `state.resources` contient déjà
-/// la sauvegarde restaurée (voir `load_progression`) - crédits, modes
-/// débloqués et réputation (+ rang) en Progression, vies et bouclier en
-/// Survival ; jeu libre : aucune sauvegarde. Découpé en segments comme
-/// `scenario_rules` : les valeurs (crédits, modes, réputation, rang, vies,
-/// bouclier) portent `color = Some(couleur du scénario)`, les libellés `None`.
-/// Fonction pure (tests).
-pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
-    let color = scenario(state.scenario).rules_color;
-    let value = |text: String| RuleSegment {
-        text,
-        color: Some(color),
-    };
-    let label = |text: &str| RuleSegment {
-        text: text.to_string(),
-        color: None,
-    };
-    match state.scenario {
-        ScenarioId::FreePlay => vec![label("aucune sauvegarde (jeu libre)")],
-        ScenarioId::Custom(_) => {
-            let mut out = vec![];
-            if has_economy(state) {
-                out.push(label("crédits "));
-                out.push(value(state.resources.credits.to_string()));
-            }
-            if has_survival(state) {
-                if !out.is_empty() {
-                    out.push(label(" - "));
-                }
-                out.push(value(state.resources.lives.to_string()));
-                out.push(label(if state.resources.lives > 1 {
-                    " vies - bouclier "
-                } else {
-                    " vie - bouclier "
-                }));
-                out.push(value(format!("{:.1}", state.resources.shield)));
-            }
-            if out.is_empty() {
-                out.push(label("(pas de progression)").to_owned());
-            }
-            out
-        }
-        ScenarioId::Progression => {
-            let unlocked = state.unlocked_modes.iter().filter(|&&u| u).count();
-            let mut out = vec![
-                label("crédits "),
-                value(state.resources.credits.to_string()),
-                label(" - modes "),
-                value(format!("{}/{}", unlocked, MOVING_MODE_COUNT)),
-                label(" - réputation "),
-                value((state.resources.reputation as i32).to_string()),
-            ];
-            if let Some(rank) = current_rank(state) {
-                out.push(value(format!(" ({})", rank)));
-            }
-            out
-        }
-        ScenarioId::Survival => vec![
-            value(state.resources.lives.to_string()),
-            label(if state.resources.lives > 1 {
-                " vies - bouclier "
-            } else {
-                " vie - bouclier "
-            }),
-            value(format!("{:.1}", state.resources.shield)),
-        ],
-    }
-}
-
-/// Texte complet du résumé de sauvegarde (segments concaténés, sans
-/// coloration) - réservé aux tests (l'écran titre affiche les segments
-/// colorés, voir `save_summary_segments`).
-#[cfg(test)]
-pub fn save_summary(state: &GameState) -> String {
-    save_summary_segments(state)
-        .iter()
-        .map(|s| s.text.as_str())
-        .collect()
-}
-
 /// Mode de déplacement de départ du scénario `id` : REALISTIC en Progression,
 /// DIRECTIONAL - le défaut historique - en jeu libre et en Survival. Utilisé
 /// par `apply_start` (et par le magasin, qui ne doit jamais débloquer un mode
@@ -636,10 +430,10 @@ pub fn apply_start(state: &mut GameState) {
     let s = scenario(state.scenario);
     state.game_over = false;
     state.invulnerable = 0.0; // pas d'invulnérabilité en début de partie
-    // compteurs d'avancement des objectifs (météores détruits, accostages,
-    // tirs) : remis à zéro pour une nouvelle partie - la progression
-    // enregistrée (clés `prog_*`) est surimposée juste après par
-    // `load_progression` au lancement
+                              // compteurs d'avancement des objectifs (météores détruits, accostages,
+                              // tirs) : remis à zéro pour une nouvelle partie - la progression
+                              // enregistrée (clés `prog_*`) est surimposée juste après par
+                              // `load_progression` au lancement
     state.meteors_destroyed = 0;
     state.docking_count = 0;
     state.bullets_fired = 0;
@@ -658,12 +452,13 @@ pub fn apply_start(state: &mut GameState) {
             // Scénario custom avec économie : comme Progression (crédits,
             // carburant/munitions payants, armes à acheter). Les valeurs
             // initiales (crédits, réputation) viennent du JSON éditeur.
-            let (json_credits, json_reputation) = crate::scenario_loader
-                ::loaded_data(ci)
-                .map(|d| (
-                    d.json.initial_state.start_credits,
-                    d.json.initial_state.start_reputation,
-                ))
+            let (json_credits, json_reputation) = crate::scenario_loader::loaded_data(ci)
+                .map(|d| {
+                    (
+                        d.json.initial_state.start_credits,
+                        d.json.initial_state.start_reputation,
+                    )
+                })
                 .unwrap_or((0, 0.0));
             state.resources = Resources {
                 fuel: s.start_fuel,
@@ -785,7 +580,6 @@ pub fn start_docked(state: &GameState) -> bool {
     state.initial_ship_x == 0.0 && state.initial_ship_y == 0.0 && state.initial_ship_velocity == 0.0
 }
 
-
 // ─── Survie : vies, bouclier, dégâts ────────────────────────────────────────
 
 /// Résultat d'un impact subi par le vaisseau (scénario Survival) : la décision
@@ -848,7 +642,11 @@ pub fn player_hit(state: &mut GameState, damage: f64) -> PlayerHit {
     state.send_message(&format!(
         "SHIP DESTROYED - {} {} LEFT",
         state.resources.lives,
-        if state.resources.lives > 1 { "LIVES" } else { "LIFE" }
+        if state.resources.lives > 1 {
+            "LIVES"
+        } else {
+            "LIFE"
+        }
     ));
     PlayerHit::Destroyed(state.resources.lives)
 }
