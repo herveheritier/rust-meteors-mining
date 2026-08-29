@@ -92,7 +92,10 @@ La fenêtre 960 × 540 s'ouvre sur l'écran titre - appuyez sur une touche
 libre ou Progression, voir « Scénarios » ci-dessous). Au lancement d'un
 scénario qui a une **progression enregistrée**, le jeu propose de
 **poursuivre** (1/ENTRÉE) ou de **repartir du début** (2/R - la sauvegarde est
-remise à zéro) ; ESC annule et revient à l'écran titre.
+remise à zéro) ; ESC annule et revient à l'écran titre. La **version, le numéro de build, la date et l'empreinte git**
+de l'exécutable sont affichés en **petit** sur l'écran titre (coin
+bas-droit) et dans la fenêtre du **magasin** (coin bas-gauche)
+(ex `v0.1.0 build 52 2026-08-29 a1b2c3d` - voir `src/build_info.rs`).
 
 ### Exécutable autonome
 
@@ -507,9 +510,16 @@ du serveur, y est masquée).
   progression du scénario survit. En fenêtré, une définition plus grande que
   960×540 étire la vue (letterbox) ; l'anticrénelage MSAA est appliqué à la
   création de la fenêtre (effectif au lancement suivant).
-- Le jeu est testé : `cargo test` (103 tests unitaires - physique, collisions,
+- **Version et build** (`src/build_info.rs`, injectés par `build.rs`) : la
+  version sémantique vient de `Cargo.toml` ; le **numéro de build** est le
+  compteur de pipeline CI (`GITHUB_RUN_NUMBER` / `BUILD_NUMBER` /
+  `CI_PIPELINE_IID`) s'il existe, sinon le **nombre total de commits** en
+  développement, sinon `0` ; la **date** (`YYYY-MM-DD`) et l'**empreinte
+  git** (hash court) du commit compilé sont ajoutées quand elles sont
+  disponibles. Ils s'affichent sur l'écran titre.
+- Le jeu est testé : `cargo test` (tests unitaires - physique, collisions,
   minage, accostage, paramétrage, options graphiques, persistance, scénarios,
-  atelier d'amélioration).
+  atelier d'amélioration, informations de build).
 
 
 ### Application d'Édition de Scénarios et Objectifs (DAG)
@@ -532,6 +542,7 @@ Une **application dédiée à la création de scénarios et d'enchaînements d'o
 ```
 rust-meteors-mining/
 ├── Cargo.toml              ← projet Rust (macroquad, rand, image)
+├── build.rs                ← script de build : numéro de build + empreinte git (version/build de l'écran titre)
 ├── assets/                 ← textures (.png/.jpg), sons (.ogg) et meshes (.json) intégrés au binaire
 ├── scenarios/              ← fichiers de scénarios JSON (.scenario.json)
 ├── tools/
@@ -552,6 +563,7 @@ rust-meteors-mining/
     ├── scenario_objectives.rs ← structures DAG, conditions, récompenses et validation des objectifs
     ├── title.rs            ← écran titre (bannière arc-en-ciel, étoiles, choix du scénario)
     ├── audio.rs            ← sons et musique (ambiance, moteur, explosions)
+    ├── build_info.rs       ← version + numéro de build (injectés par build.rs, affichés à l'écran titre)
     ├── cosmonaut.rs        ← cosmonaute EVA (mesh `cosmonaute.json`, couleurs par face)
     ├── vaisseau.rs         ← vaisseau joueur (mesh `vaisseau.json`, couleurs par face)
     └── x11.rs              ← plein écran EWMH (X11)

@@ -648,6 +648,18 @@ fn draw_frame(
         y += 20.0;
     }
 
+    // version + numéro de build (petit, coin bas-droit - voir
+    // `build_info::display`) : discrète, sans perturber les invites centrées
+    let version_text = crate::build_info::display();
+    let v_w = measure_text(&version_text, None, 8, 1.0).width;
+    draw_text(
+        &version_text,
+        VIEWPORT_WIDTH as f32 - v_w - 4.0,
+        VIEWPORT_HEIGHT as f32 - 6.0,
+        8.0,
+        argb_to_color(0xFF6B6B7E),
+    );
+
     // écran de paramétrage par-dessus (touche O)
     if state.settings_box {
         draw_settings_box(state, sounds);

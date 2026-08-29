@@ -295,6 +295,17 @@ pub fn draw_shop_box(state: &GameState, shapes: &[Shape], triangles: &[Triangle]
         );
     }
     draw_box_button("FERMER", l.close);
+
+    // version + numéro de build (petit, coin bas-gauche de la fenêtre - voir
+    // `build_info::display`, même discrétion que l'écran titre)
+    let version_text = crate::build_info::display();
+    draw_text_shadow(
+        &version_text,
+        win.x + BOX_PADDING + 4.0,
+        win.y + win.h - 8.0,
+        8.0,
+        argb_to_color(0x6B6B7E),
+    );
 }
 
 /// Dessine la rangée d'onglets du magasin : onglet actif rempli + vert,

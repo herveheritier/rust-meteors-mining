@@ -16,6 +16,7 @@
 //!   aide S, debug D/I), `title.rs` (écran titre).
 
 mod audio;
+mod build_info;
 mod config;
 mod cosmonaut;
 mod dock_render;
