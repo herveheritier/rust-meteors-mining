@@ -42,32 +42,188 @@ const RULES_FLASH_DURATION: f64 = 1.2;
 /// Fréquence (Hz) du clignotement pendant le flash de la ligne des règles.
 const RULES_FLASH_HZ: f64 = 6.0;
 
-/// Dessine une ligne centrée (invite de l'écran titre), en blanc.
-fn draw_centered_line(line: &str, y: f32) {
-    let w = measure_text(line, None, 16, 1.0).width;
-    draw_text(line, (VIEWPORT_WIDTH as f32 - w) / 2.0, y, 16.0, WHITE);
+/// Pas vertical (px) d'une ligne de texte de l'écran titre.
+const TITLE_LINE_H: f64 = 20.0;
+/// Taille de police (px) des lignes de texte de l'écran titre.
+const TITLE_FONT: u16 = 16;
+/// Largeur maximale (px) d'une ligne de texte avant repli : le viewport moins
+/// une petite marge de chaque côté (au-delà, on insère un saut de ligne).
+const TITLE_TEXT_W: f32 = (VIEWPORT_WIDTH - 8.0) as f32;
+
+/// Découpe un mot en morceaux dont chacun tient dans `max_w` (px) à la taille
+/// `size` - repli d'un **mot seul** trop large (ex une chaîne sans espace).
+fn chunk_word(word: &str, size: u16, max_w: f32) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut cur = String::new();
+    for c in word.chars() {
+        let mut candidate = cur.clone();
+        candidate.push(c);
+        if !cur.is_empty() && measure_text(&candidate, None, size, 1.0).width > max_w {
+            chunks.push(std::mem::take(&mut cur));
+        }
+        cur.push(c);
+    }
+    if !cur.is_empty() {
+        chunks.push(cur);
+    }
+    chunks
+}
+
+/// Un mot de l'écran titre : son texte, la couleur du segment (`RuleSegment`)
+/// dont il provient (`None` = blanc) et s'il doit être précédé d'un espace
+/// (`false` pour un morceau d'un mot trop long découpé - collé au précédent).
+type TitleWord = (String, Option<u32>, bool);
+
+/// Empile des mots en lignes de largeur mesurée ≤ `max_w` (px) à la taille
+/// `size` (`space_w` = largeur d'un espace). Une ligne est coupée quand le
+/// mot suivant ne tient plus. Renvoie les lignes (leurs mots).
+fn pack_words(
+    words: Vec<TitleWord>,
+    size: u16,
+    space_w: f32,
+    max_w: f32,
+) -> Vec<Vec<TitleWord>> {
+    let mut lines: Vec<Vec<TitleWord>> = Vec::new();
+    let mut line: Vec<TitleWord> = Vec::new();
+    let mut line_w = 0.0f32;
+    for (w, col, space_before) in words {
+        let w_w = measure_text(&w, None, size, 1.0).width;
+        let gap = if !line.is_empty() && space_before {
+            space_w
+        } else {
+            0.0
+        };
+        if !line.is_empty() && line_w + gap + w_w > max_w {
+            lines.push(std::mem::take(&mut line));
+            line_w = 0.0;
+        }
+        line_w += if line.is_empty() {
+            w_w
+        } else if space_before {
+            space_w + w_w
+        } else {
+            w_w
+        };
+        line.push((w, col, space_before));
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// Repli d'un texte en lignes de largeur ≤ `max_w` : coupe aux espaces (et
+/// par caractère pour un mot trop large). Les lignes renvoyées s'affichent
+/// centrées (invite, scénario, raccourcis…).
+fn wrap_text(text: &str, size: u16, max_w: f32) -> Vec<String> {
+    let space_w = measure_text(" ", None, size, 1.0).width;
+    pack_words(
+        words_from(text, size, max_w),
+        size,
+        space_w,
+        max_w,
+    )
+    .into_iter()
+    .map(|line| {
+        let mut s = String::new();
+        for (w, _col, space_before) in line {
+            if !s.is_empty() && space_before {
+                s.push(' ');
+            }
+            s.push_str(&w);
+        }
+        s
+    })
+    .collect()
+}
+
+/// Mots (`TitleWord`) d'un texte : découpe aux espaces et, pour un mot trop
+/// large, par caractère - couleur `None` (blanc).
+fn words_from(text: &str, size: u16, max_w: f32) -> Vec<TitleWord> {
+    let mut tokens = Vec::new();
+    for w in text.split_whitespace() {
+        let mut first = true;
+        for chunk in chunk_word(w, size, max_w) {
+            tokens.push((chunk, None, first));
+            first = false;
+        }
+    }
+    tokens
+}
+
+/// Repli d'une ligne de segments (règles / sauvegarde) en lignes de largeur
+/// ≤ `max_w`, en conservant la **couleur** de chaque mot (`RuleSegment::color`).
+fn wrap_segments(
+    segments: &[crate::scenario::RuleSegment],
+    size: u16,
+    max_w: f32,
+) -> Vec<Vec<TitleWord>> {
+    let space_w = measure_text(" ", None, size, 1.0).width;
+    let mut tokens = Vec::new();
+    for seg in segments {
+        let mut first = true;
+        for w in seg.text.split_whitespace() {
+            for chunk in chunk_word(w, size, max_w) {
+                tokens.push((chunk, seg.color, first));
+                first = false;
+            }
+        }
+    }
+    pack_words(tokens, size, space_w, max_w)
+}
+
+/// Dessine un texte **replié** s'il dépasse la largeur de l'écran (saut de
+/// ligne aux espaces), chaque ligne centrée, en blanc. Renvoie le nombre de
+/// lignes dessinées (pour avancer `y`).
+fn draw_centered_line(line: &str, y: f32) -> usize {
+    let size = TITLE_FONT;
+    let lines = wrap_text(line, size, TITLE_TEXT_W);
+    for (i, l) in lines.iter().enumerate() {
+        let w = measure_text(l, None, size, 1.0).width;
+        draw_text(
+            l,
+            (VIEWPORT_WIDTH as f32 - w) / 2.0,
+            y + i as f32 * TITLE_LINE_H as f32,
+            size as f32,
+            WHITE,
+        );
+    }
+    lines.len()
 }
 
 /// Dessine une ligne de segments centrée (règles ou sauvegarde de l'écran
 /// titre, voir `scenario::scenario_rules` / `scenario::save_summary_segments`)
 /// : chaque segment dans sa couleur - `color: None` = blanc, `Some(argb)` =
 /// couleur du scénario. `flash_color` (pendant le flash après un changement
-/// de scénario) remplace toutes les couleurs par celle du scénario.
+/// de scénario) remplace toutes les couleurs par celle du scénario. Le texte
+/// est **replié** s'il dépasse la largeur de l'écran (saut de ligne aux
+/// espaces, couleurs conservées). Renvoie le nombre de lignes dessinées.
 fn draw_segments_line(
     segments: &[crate::scenario::RuleSegment],
     y: f32,
     flash_color: Option<u32>,
-) {
-    let total_w: f32 = segments
-        .iter()
-        .map(|s| measure_text(&s.text, None, 16, 1.0).width)
-        .sum();
-    let mut x = (VIEWPORT_WIDTH as f32 - total_w) / 2.0;
-    for seg in segments {
-        let color = flash_color.or(seg.color).map(argb_to_color).unwrap_or(WHITE);
-        draw_text(&seg.text, x, y, 16.0, color);
-        x += measure_text(&seg.text, None, 16, 1.0).width;
+) -> usize {
+    let size = TITLE_FONT;
+    let space_w = measure_text(" ", None, size, 1.0).width;
+    let lines = wrap_segments(segments, size, TITLE_TEXT_W);
+    for (li, words) in lines.iter().enumerate() {
+        // largeur totale (espaces entre mots comptés, sauf morceau collé)
+        let total: f32 = words.iter().enumerate().fold(0.0, |acc, (i, (w, _, sb))| {
+            acc + measure_text(w, None, size, 1.0).width
+                + if i > 0 && *sb { space_w } else { 0.0 }
+        });
+        let mut x = (VIEWPORT_WIDTH as f32 - total) / 2.0;
+        let ly = y + li as f32 * TITLE_LINE_H as f32;
+        for (i, (w, col, space_before)) in words.iter().enumerate() {
+            if i > 0 && *space_before {
+                x += space_w;
+            }
+            let color = flash_color.or(*col).map(argb_to_color).unwrap_or(WHITE);
+            draw_text(w, x, ly, size as f32, color);
+            x += measure_text(w, None, size, 1.0).width;
+        }
     }
+    lines.len()
 }
 
 /// Couleurs arc-en-ciel (ex `nextRainbowColor` de l'original) : HSV → RGB
@@ -399,8 +555,7 @@ fn draw_objectives_list(state: &crate::state::GameState, start_y: f64) -> f64 {
         tracker.completed_count(),
         tracker.total_count()
     );
-    draw_centered_line(&header, y as f32);
-    y += 20.0;
+    y += draw_centered_line(&header, y as f32) as f64 * TITLE_LINE_H;
 
     // Lister tous les objectifs avec leur statut
     let all_objectives = &tracker.objectives;
@@ -431,26 +586,32 @@ fn draw_objectives_list(state: &crate::state::GameState, start_y: f64) -> f64 {
         };
 
         let line = format!("  {} {} - {}", symbol, obj.title, obj.description);
-        // Tronquer si trop long (> 80 caractères), sans couper un caractère
-        // UTF-8 en deux (accents)
-        let display_line: String = if line.chars().count() > 80 {
-            let truncated: String = line.chars().take(77).collect();
-            format!("{}...", truncated)
-        } else {
-            line
-        };
-        draw_centered_line_color(&display_line, y as f32, argb_to_color(color));
-        y += 20.0;
+        // pas de troncature : le texte est **replié** au besoin (saut de
+        // ligne aux espaces) s'il dépasse la largeur de l'écran
+        y += draw_centered_line_color(&line, y as f32, argb_to_color(color)) as f64 * TITLE_LINE_H;
     }
 
     y += 4.0; // espace avant les touches
     y
 }
 
-/// Dessine une ligne centrée avec une couleur donnée.
-fn draw_centered_line_color(line: &str, y: f32, color: Color) {
-    let w = measure_text(line, None, 16, 1.0).width;
-    draw_text(line, (VIEWPORT_WIDTH as f32 - w) / 2.0, y, 16.0, color);
+/// Dessine un texte **replié** s'il dépasse la largeur de l'écran (saut de
+/// ligne aux espaces), chaque ligne centrée, avec la couleur donnée. Renvoie
+/// le nombre de lignes dessinées.
+fn draw_centered_line_color(line: &str, y: f32, color: Color) -> usize {
+    let size = TITLE_FONT;
+    let lines = wrap_text(line, size, TITLE_TEXT_W);
+    for (i, l) in lines.iter().enumerate() {
+        let w = measure_text(l, None, size, 1.0).width;
+        draw_text(
+            l,
+            (VIEWPORT_WIDTH as f32 - w) / 2.0,
+            y + i as f32 * TITLE_LINE_H as f32,
+            size as f32,
+            color,
+        );
+    }
+    lines.len()
 }
 
 /// Boîte de choix affichée au lancement d'un scénario qui a une progression
@@ -578,11 +739,11 @@ fn draw_frame(
     // rang, vies, bouclier - voir `scenario::save_summary_segments`)
     let scenario = crate::scenario::scenario(state.scenario);
     let mut y = 10.0 * (8.0 + banner_rows as f64) + 20.0;
-    draw_centered_line(
+    y += draw_centered_line(
         &format!("[ SCENARIO : {} - {} ]", scenario.name, scenario.description),
         y as f32,
-    );
-    y += 20.0;
+    ) as f64
+        * TITLE_LINE_H;
 
     // ligne des règles : segments alignés, valeurs colorées (couleur du
     // scénario - voir `scenario::scenario_rules`) - les coûts/vies/bouclier/
@@ -606,8 +767,8 @@ fn draw_frame(
     } else {
         None
     };
-    draw_segments_line(&segments, y as f32, flash_color);
-    y += 20.0;
+    let rules_lines = draw_segments_line(&segments, y as f32, flash_color);
+    y += rules_lines as f64 * TITLE_LINE_H;
 
     // ligne de la progression enregistrée : mêmes segments, valeurs (minerais,
     // modes, réputation, rang, vies, bouclier) dans la couleur du scénario -
@@ -621,8 +782,8 @@ fn draw_frame(
         text: " ]".to_string(),
         color: None,
     });
-    draw_segments_line(&save_segments, y as f32, None);
-    y += 20.0;
+    let save_lines = draw_segments_line(&save_segments, y as f32, None);
+    y += save_lines as f64 * TITLE_LINE_H;
 
     // Objectifs DAG (scénarios custom) : liste des étapes avec statut
     if crate::scenario::is_custom(state.scenario) {
@@ -644,8 +805,8 @@ fn draw_frame(
         "[ ESC to quit ]",
         "[ Hit other key to launch ]",
     ] {
-        draw_centered_line(line, y as f32);
-        y += 20.0;
+        let n = draw_centered_line(line, y as f32);
+        y += n as f64 * TITLE_LINE_H;
     }
 
     // version + numéro de build (petit, coin bas-droit - voir
