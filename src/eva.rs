@@ -1,67 +1,16 @@
-//! Cosmonaute EVA : ramassage des minerais et secours du pilote
-//! (vaisseau détruit) - portage de `src/game.rs`. Le cosmonaute
-//! éjecté ramasse les minerais par proximité et rejoint la base ;
+//! Cosmonaute EVA : secours du pilote éjecté (vaisseau détruit) - portage
+//! de `src/game.rs`. Le cosmonaute rejoint la base sans ramasser de minerais
+//! (ceux relâchés au crash restent dans l'espace, pour le vaisseau reconstruit) ;
 //! la station le récupère (cordon), puis le vaisseau est reconstruit.
 
-use crate::audio::{Sounds};
 use crate::config::*;
 use crate::cosmonaut::{COSMONAUTE_EVA_PARK};
 use crate::geom::{Point, Triangle};
 use crate::shape::{compute_real_positions, Shape};
-use crate::state::{Element, GameState};
+use crate::state::GameState;
 
-/// Ramassage des minerais par le **cosmonaute EVA** : chaque minerai dont le
-/// centre entre dans le rayon `EVA_PICKUP_RADIUS` du cosmonaute est ramassé
-/// (détruit, son élément est compté dans la **même soute que le vaisseau** -
-/// déchargée en crédits à la station après le secours). Soute pleine, plus
-/// de ramassage. Sans effet quand le vaisseau est intact (`cosmonaut_active`
-/// faux) : le cosmonaute garé ne ramasse rien.
-pub fn eva_collect_minerals(
-    state: &mut GameState,
-    shapes: &mut [Shape],
-    triangles: &mut [Triangle],
-    elements: &mut [Element],
-    mut sounds: Option<&mut Sounds>,
-) {
-    if !state.cosmonaut_active {
-        return;
-    }
-    let eva = state.eva_cosmonaut as usize;
-    if eva >= shapes.len() {
-        return;
-    }
-    let pos = shapes[eva].position;
-    for g in 0..shapes.len() {
-        if g == eva || shapes[g].who_i_am != WHOIAM_MINERAL || shapes[g].life <= 0 {
-            continue;
-        }
-        // soute pleine : plus de ramassage
-        if state.player.cargo_qty >= state.player.cargo_size {
-            return;
-        }
-        let d = (shapes[g].position.x - pos.x).hypot(shapes[g].position.y - pos.y);
-        if d > EVA_PICKUP_RADIUS {
-            continue;
-        }
-        // ramassage : le minerai est détruit, son élément compté dans la soute
-        let first = shapes[g].first_triangle;
-        let element = triangles[first].element as usize;
-        if element < elements.len() {
-            elements[element].count += 1;
-        }
-        state.player.cargo_qty += 1;
-        shapes[g].life = 0;
-        for t in &mut triangles[shapes[g].first_triangle..=shapes[g].last_triangle] {
-            t.life = 0;
-        }
-        if let Some(sounds) = sounds.as_mut() {
-            sounds.play_mineral();
-        }
-        if state.player.cargo_qty >= state.player.cargo_size {
-            state.send_message("YOUR LOADING BAY IS FULL, YOU MUST UNLOAD IT AT THE STATION");
-        }
-    }
-}
+
+
 
 /// Restaure le vaisseau à la station après une destruction (scénario
 /// Survival - `scenario::PlayerHit::Destroyed`) : position, rotation et
@@ -104,8 +53,8 @@ pub fn respawn_player(state: &mut GameState, shapes: &mut [Shape], triangles: &m
 /// rejoindre la base (voir `rescue_cosmonaut`). La caméra, la mire et le HUD
 /// suivent le cosmonaute (`input::pilot_index`). Le vaisseau détruit cesse
 /// d'être un collider : il ne doit plus **re-ramasser** (ni détruire) les
-/// minerais rejetés autour du crash - seule le cosmonaute les ramasse, par
-/// proximité (`eva_collect_minerals`).
+/// minerais rejetés autour du crash - ils restent dans l'espace, pour le
+/// vaisseau reconstruit à son retour.
 pub fn activate_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
     let idx = state.eva_cosmonaut as usize;
     if idx >= shapes.len() {

@@ -426,9 +426,9 @@ pub fn eject_cargo_minerals(
             // vitesse de dérive : le chargement « se renverse » autour du
             // vaisseau détruit. La dérive reste **très lente** (2,5-8
             // unités/s) : les minerais s'éparpillent visuellement mais
-            // **restent à portée** du cosmonaute EVA (à la poussée
-            // vectorielle sans frein, des minerais qui filent à 30 unités/s
-            // deviendraient inrattrapables - voir `eva_collect_minerals`)
+            // **restent à portée** du vaisseau reconstruit quand le joueur
+            // reviendra les récupérer (des minerais qui filent à 30 unités/s
+            // deviendraient inrattrapables)
             let ang = rng.r#gen::<f64>() * TAU;
             let dist = CARGO_EJECT_SPREAD * rng.r#gen::<f64>();
             let pos = Point::new(crash.x + ang.cos() * dist, crash.y + ang.sin() * dist);

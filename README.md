@@ -64,12 +64,12 @@ soute, puis revenez à la station pour décharger et gagner des crédits.
   le dos**
   (flamme animée orange/jaune, vacillante, visible quand il pousse) et des
   **membres animés** : bras et jambes **s'agitent** (bascule autour des
-  épaules/hanches) pendant la poussée puis retombent au repos. Il peut
-  **ramasser les minerais** par proximité (même soute que le vaisseau -
-  déchargée en crédits à la station). Au crash, les minerais collectés
-  sont **rejetés autour** du vaisseau détruit (un minerai par unité,
-  éparpillé à proximité, soute vidée) - le cosmonaute, ou le vaisseau
-  ressuscité en Survival, peut les ramasser à nouveau. Son **seul
+  épaules/hanches) pendant la poussée puis retombent au repos. Au crash, les
+  minerais collectés sont **rejetés autour** du vaisseau détruit (un minerai
+  par unité, éparpillé à proximité, soute vidée) et **restent dans
+  l'espace** : le cosmonaute EVA **ne les ramasse pas** - seul le vaisseau
+  reconstruit (ou ressuscité en Survival) pourra les récupérer à son retour,
+  par collision. Son **seul
   objectif** : **rejoindre la base** - dès qu'il atteint la zone d'accostage au centre de la
   station, la **récupération** s'anime : un **cordon orange** jaillit de
   l'anneau jusqu'à lui et le **ramène sur l'anneau** (~2,5 s, monde vivant,

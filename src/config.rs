@@ -220,19 +220,12 @@ pub const CARGO_SIZE: i32 = 5;
 /// station (voir `render::draw_docking_marker`).
 pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 
-/// Rayon (unités monde) de ramassage des minerais par le **cosmonaute EVA**
-/// (vaisseau détruit) : il est non-collider, les minerais le traversent - il
-/// les ramasse par proximité (voir `eva::eva_collect_minerals`) et les
-/// rapporte à la station. Large (contact visuel cosmonaute/minerai ~16 + une
-/// marge confortable) : le cosmonaute, à la poussée vectorielle **sans
-/// frein**, doit ramasser sans viser précisément.
-pub const EVA_PICKUP_RADIUS: f64 = 30.0;
-
 /// Rayon (unités monde) du cercle d'éparpillement des minerais de la soute
 /// quand le vaisseau est détruit (`generate::eject_cargo_minerals`) : les
-/// minerais rejetés jaillissent dans un cercle de ce rayon autour du crash
-/// (au-delà du rayon de ramassage du cosmonaute, pour qu'ils restent à
-/// ramasser).
+/// minerais rejetés jaillissent dans un cercle de ce rayon autour du crash et
+/// **restent dans l'espace** - le cosmonaute EVA ne les ramasse pas, seul le
+/// vaisseau reconstruit (ou ressuscité en Survival) les récupérera à son
+/// retour, par collision.
 pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 
 /// Durée (secondes) de la **récupération** du cosmonaute EVA par la station
