@@ -5,8 +5,9 @@
 //! `src/config.rs` - seul l'état mutable reste ici.
 
 use crate::config::{
-    ATTEMPT_FPS, CARGO_SIZE, MOVING_MODE_COUNT, MOVING_MODE_DIRECTIONAL, PLAYER_INDEX, WEAPON_SLOTS,
-    WORLD_HEIGHT, WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
+    ATTEMPT_FPS, BOSS_SPAWN_INTERVAL, CARGO_SIZE, CRAFT_COUNT, MOVING_MODE_COUNT,
+    MOVING_MODE_DIRECTIONAL, PLAYER_INDEX, WARP_GATE_SPAWN_INTERVAL, WEAPON_SLOTS, WORLD_HEIGHT,
+    WORLD_MAXX, WORLD_MAXY, WORLD_MINX, WORLD_MINY, WORLD_WIDTH,
 };
 use crate::geom::{Point, World};
 // population de météores : constante de la carte « Météores & collisions »
@@ -102,6 +103,8 @@ pub struct Element {
 }
 
 /// Construit le tableau des éléments (ex `prepare`, données `elements:`).
+/// Index 1 = GOLD, 2 = IRON, 3 = WATER, 4 = PLATINUM (minerai rare du
+/// météore spécial - `ELEMENT_PLATINUM`, valeur de 10 crédits).
 pub fn default_elements() -> Vec<Element> {
     vec![
         Element {
@@ -128,7 +131,40 @@ pub fn default_elements() -> Vec<Element> {
             color: 0xFF8080FF,
             count: 0,
         },
+        Element {
+            id: 0,
+            name: "PLATINUM".into(),
+            color: 0xFFFFE040,
+            count: 0,
+        },
     ]
+}
+
+/// État dynamique du jeu (ex `context_type`, sans les constantes).
+#[derive(Clone, Debug)]
+/// Statistiques de session - récapitulatif affiché à l'écran GAME OVER (et
+/// aux objets des tests) : temps de vol, distance parcourue, précision de
+/// tir, triangles minéralisés détruits, accostages, valeur totale déchargée.
+pub struct SessionStats {
+    /// Temps de vol total (secondes, hors pause).
+    pub flight_time: f64,
+    /// Distance totale parcourue (unités monde).
+    pub distance: f64,
+    /// Triangles minéralisés (or/fer/eau/platine) détruits par des tirs.
+    pub minerals_destroyed: i32,
+    /// Valeur totale (crédits) de la cargaison déchargée à la station.
+    pub cargo_value_unloaded: i32,
+}
+
+impl Default for SessionStats {
+    fn default() -> Self {
+        SessionStats {
+            flight_time: 0.0,
+            distance: 0.0,
+            minerals_destroyed: 0,
+            cargo_value_unloaded: 0,
+        }
+    }
 }
 
 /// État dynamique du jeu (ex `context_type`, sans les constantes).
@@ -367,14 +403,48 @@ pub struct GameState {
     /// config (clé `highscore_<index>`) par `load_progression` - affiché à
     /// l'écran titre dans la ligne `[ SAVE : … ]`. Mis à jour quand le score
     /// courant le dépasse (voir `scenario::maybe_update_high_score`).
-    pub high_score: i32,
-    /// Annonce « NEW RECORD » déjà émise pour la session courante (voir
-    /// `scenario::maybe_update_high_score`) : l'annonce n'est envoyée qu'une
-    /// fois, au premier dépassement d'un record enregistré non nul - sans ce
-    /// drapeau, chaque point gagné ensuite repasserait pour un nouveau record.
-    /// Remis à faux par `apply_start` (nouvelle partie) et réarmé par
-    /// `load_progression` quand un record enregistré est restauré.
-    pub score_record_announced: bool,
+    pub high_score: i32,/// Annonce « NEW RECORD » déjà émise pour la session courante (voir
+/// `scenario::maybe_update_high_score`) : l'annonce n'est envoyée qu'une
+/// fois, au premier dépassement d'un record enregistré non nul - sans ce
+/// drapeau, chaque point gagné ensuite repasserait pour un nouveau record.
+/// Remis à faux par `apply_start` (nouvelle partie) et réarmé par
+/// `load_progression` quand un record enregistré est restauré.
+pub score_record_announced: bool,
+    /// Temps de partie écoulé (secondes, hors pause) - moteur de la
+    /// **difficulté adaptative** (`difficulty.rs`) : à chaque palier
+    /// (`DIFFICULTY_RAMP_SECONDS`), la vitesse, la densité et la population
+    /// des météores augmentent progressivement.
+    pub session_time: f64,
+    /// Statistiques de session (récapitulatif affiché à l'écran GAME OVER).
+    pub session_stats: SessionStats,
+    /// Journal de bord : les `EVENT_LOG_LEN` derniers événements (tirs,
+    /// minerais, accostages, achats…), consultables via la touche L.
+    pub event_log: Vec<String>,
+    /// Journal de bord affiché (touche L) : panneau au-dessus du monde.
+    pub log_box: bool,
+    /// Briefing pré-partie affiché (scénarios custom avec objectifs) :
+    /// résumé des objectifs DAG, des contraintes et un conseil avant le
+    /// lancement - fermé par ENTRÉE / ÉCHAP / clic.
+    pub briefing_box: bool,
+    /// Défilement du briefing (px, borné par `hud::briefing_scroll_max`) :
+    /// l'ascenseur vertical apparaît quand le contenu dépasse la zone
+    /// visible du panneau (molette, flèches haut/bas, PgPréc/PgSuiv).
+    pub briefing_scroll: f32,
+    /// Consommables fabriqués à la station (onglet FABRICATION) : index
+    /// `CRAFT_*` - bouclier temporaire, boost de vitesse, mines. Utilisés en
+    /// vol (touches 1/2/3).
+    pub consumables: [i32; CRAFT_COUNT],
+    /// Bouclier temporaire actif (points d'impacts absorbés, consommable
+    /// SHIELD) : absorbe les impacts comme le bouclier Survival, dans tous
+    /// les scénarios, jusqu'à épuisement.
+    pub temp_shield: f64,
+    /// Boost de vitesse actif (secondes restantes, consommable BOOST) : la
+    /// poussée est multipliée par `BOOST_FACTOR` tant qu'il est positif.
+    pub boost_timer: f64,
+    /// Décompte avant l'apparition du prochain **météore spécial** (boss).
+    pub boss_timer: f64,
+    /// Décompte avant la pose du prochain **portail** (warp gate).
+    pub warp_timer: f64,
 }
 
 impl GameState {
@@ -457,6 +527,17 @@ impl GameState {
             credits_earned: 0,
             high_score: 0,
             score_record_announced: false,
+            session_time: 0.0,
+            session_stats: SessionStats::default(),
+            event_log: Vec::new(),
+            log_box: false,
+            briefing_box: false,
+            briefing_scroll: 0.0,
+            consumables: [0; CRAFT_COUNT],
+            temp_shield: 0.0,
+            boost_timer: 0.0,
+            boss_timer: BOSS_SPAWN_INTERVAL,
+            warp_timer: WARP_GATE_SPAWN_INTERVAL,
         }
     }
 
@@ -469,6 +550,26 @@ impl GameState {
         }
         self.message_queue.push_str(message);
         self.message_queue.push('/');
+    }
+
+    /// Ajoute un événement au **journal de bord** (les `EVENT_LOG_LEN`
+    /// derniers, consultables via la touche L) - le plus récent en tête.
+    pub fn log_event(&mut self, message: &str) {
+        self.event_log.insert(0, message.to_string());
+        self.event_log.truncate(crate::config::EVENT_LOG_LEN);
+    }
+
+    /// Remet à zéro les statistiques de session et le journal de bord
+    /// (nouvelle partie - `apply_start`).
+    pub fn reset_session(&mut self) {
+        self.session_time = 0.0;
+        self.session_stats = SessionStats::default();
+        self.event_log.clear();
+        self.consumables = [0; CRAFT_COUNT];
+        self.temp_shield = 0.0;
+        self.boost_timer = 0.0;
+        self.boss_timer = crate::config::BOSS_SPAWN_INTERVAL;
+        self.warp_timer = crate::config::WARP_GATE_SPAWN_INTERVAL;
     }
 }
 

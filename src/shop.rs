@@ -38,6 +38,9 @@ pub enum ShopClick {
     BuyAmmoUpgrade,
     /// Achète l'extension de soute (atelier).
     BuyCargoUpgrade,
+    /// Fabrique le consommable `i` (index `CRAFT_*`, onglet FABRICATION) :
+    /// prélevé dans la soute (minerais) et ajouté à l'inventaire.
+    Craft(usize),
     /// Revient à la boîte DOCK STATION (toujours accosté).
     Close,
 }
@@ -92,6 +95,13 @@ pub fn shop_box_click(state: &GameState) -> ShopClick {
             for (i, r) in l.buy_mode.iter().enumerate() {
                 if r.w > 0.0 && r.contains(m) {
                     return ShopClick::Mode(MOVING_MODE_ORDER[i]);
+                }
+            }
+        }
+        crate::config::SHOP_TAB_CRAFT => {
+            for (i, r) in l.buy_craft.iter().enumerate() {
+                if r.w > 0.0 && r.contains(m) {
+                    return ShopClick::Craft(i);
                 }
             }
         }

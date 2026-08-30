@@ -9,9 +9,12 @@
 
 use crate::config::{CARGO_SIZE, MOVING_MODE_COUNT};
 
-/// Valeur en crédits d.un minerai par élément (index 1..3 = GOLD, IRON,
-/// WATER - voir `default_elements` ; 0 = sans valeur).
-pub const ELEMENT_VALUES: [i32; 4] = [0, 5, 3, 2];
+/// Valeur en crédits d.un minerai par élément (index 1..4 = GOLD, IRON,
+/// WATER, PLATINUM - voir `default_elements` ; 0 = sans valeur). Le
+/// PLATINUM (10 CR, minerai rare du météore spécial) a été ajouté à la main
+/// dans ce fichier généré : l'outil de gestion ne le connaît pas encore -
+/// régénérer depuis l'outil réécrira cette constante (reporter la valeur).
+pub const ELEMENT_VALUES: [i32; 5] = [0, 5, 3, 2, 10];
 
 /// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre
 /// historique - l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :

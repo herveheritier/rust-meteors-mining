@@ -19,7 +19,8 @@ use crate::cosmonaut::{animate_eva_cosmonaut};
 use crate::marketplace::*;
 use crate::garbage::{generate_garbages, moving_garbage, Garbage};
 use crate::generate::{
-    create_alien, create_mineral, create_shape, eject_cargo_minerals, release_meteor_minerals,
+    create_alien, create_boss_meteor, create_mineral, create_shape, create_warp_gate,
+    eject_cargo_minerals, release_meteor_minerals,
 };
 use crate::persist;
 use crate::scenario;
@@ -88,6 +89,28 @@ pub fn update(
     // suit le pilote : le vaisseau, ou le cosmonaute EVA quand le vaisseau
     // est détruit.
     let mut camera = camera_for(state, &shapes[pilot_index(state)]);
+
+    // Écran de **briefing pré-partie** (scénarios custom avec objectifs,
+    // affiché au lancement de la partie) : seul l'input de l'écran est traité
+    // - ENTRÉE / ÉCHAP / clic sur CLOSE ferment le briefing et libèrent la
+    // partie. Le monde, lui, continue de tourner derrière (le vaisseau à
+    // quai est protégé - voir `collisions`).
+    if state.briefing_box {
+        // défilement du contenu (molette, flèches, PgPréc/PgSuiv) : l'offset
+        // est borné par le contenu réel - un long briefing (nombreux
+        // objectifs / longues descriptions) se fait avec un ascenseur sans
+        // rien déborder du panneau (`hud::draw_briefing_box`)
+        state.briefing_scroll = (state.briefing_scroll + crate::hud::briefing_scroll_delta())
+            .clamp(0.0, crate::hud::briefing_scroll_max(state));
+        if is_key_pressed(KeyCode::Enter)
+            || is_key_pressed(KeyCode::Escape)
+            || crate::hud::briefing_close_clicked()
+        {
+            state.briefing_box = false;
+        }
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
+        return (Action::Continue, camera);
+    }
 
     // Écran de paramétrage ouvert (touche O) : seul l'input de l'écran est
     // traité (voir `handle_settings_input`) - le monde, lui, **continue de
@@ -372,6 +395,19 @@ pub fn update(
             ShopClick::BuyCargoUpgrade => {
                 buy_upgrade_and_save(state, shapes, triangles, scenario::UpgradeTrackId::Cargo)
             }
+            // FABRICATION : un consommable est fabriqué à partir des minerais
+            // de la soute (prélevés - `scenario::craft`), ajouté à
+            // l'inventaire (touches 1/2/3 pour utiliser en vol)
+            ShopClick::Craft(i) => match scenario::craft_consumable(state, elements, i) {
+                scenario::CraftOutcome::Crafted(_) => {
+                    state.shop_feedback = "Consommable fabriqué".to_string();
+                    state.shop_feedback_ok = true;
+                }
+                scenario::CraftOutcome::NotEnough => {
+                    state.shop_feedback = "PAS ASSEZ DE MINERAIS EN SOUTE".to_string();
+                    state.shop_feedback_ok = false;
+                }
+            },
             ShopClick::Close => {
                 state.shop_box = false;
                 state.dock_box = true;
@@ -433,6 +469,25 @@ pub fn update(
     // S : fenêtre d'aide (ex `showKeys%` → `help`)
     if is_key_pressed(KeyCode::S) {
         state.help_box = true;
+    }
+
+    // L : journal de bord - les EVENT_LOG_LEN derniers événements (tirs,
+    // minerais, accostages, achats…) dans un panneau consultable (la touche
+    // n'est plus utilisée dans le jeu)
+    if is_key_pressed(KeyCode::L) {
+        state.log_box = !state.log_box;
+    }
+
+    // 1 / 2 / 3 : utiliser un consommable fabriqué (onglet FABRICATION du
+    // magasin) - 1 = bouclier temporaire, 2 = boost de vitesse, 3 = mine
+    if is_key_pressed(KeyCode::Key1) {
+        scenario::use_consumable(state, shapes, triangles, CRAFT_SHIELD);
+    }
+    if is_key_pressed(KeyCode::Key2) {
+        scenario::use_consumable(state, shapes, triangles, CRAFT_BOOST);
+    }
+    if is_key_pressed(KeyCode::Key3) {
+        scenario::use_consumable(state, shapes, triangles, CRAFT_MINE);
     }
 
     // O : écran de paramétrage (options audio et graphiques - le mode de
@@ -529,13 +584,54 @@ pub fn update(
     // supprime les balles sorties de la zone de dessin (ex mainLoop)
     delete_out_of_range_bullets(state, shapes, triangles, camera);
 
+    // ─── session : temps de vol, distance parcourue, difficulté, vagues ─────
+    // (hors pause et hors fin de partie - le monde gelé ne compte pas)
+    if !state.paused && !state.game_over {
+        // temps de partie (moteur de la difficulté adaptative) + distance
+        // parcourue (vitesse du vaisseau × 60 × dt, comme `moving_shape`)
+        state.session_time += dt;
+        state.session_stats.flight_time += dt;
+        let speed = shapes[PLAYER_INDEX].velocity;
+        state.session_stats.distance += speed * 60.0 * dt;
+        // décompte du boost de vitesse (consommable)
+        if state.boost_timer > 0.0 {
+            state.boost_timer = (state.boost_timer - dt).max(0.0);
+        }
+        // décomptes des vagues : météore spécial (boss) et portails
+        if state.boss_timer > 0.0 {
+            state.boss_timer = (state.boss_timer - dt).max(0.0);
+        }
+        if state.warp_timer > 0.0 {
+            state.warp_timer = (state.warp_timer - dt).max(0.0);
+        }
+        // apparition du boss : à échéance, s'il n'y en a pas déjà un vivant
+        if state.boss_timer <= 0.0 && !alive_boss(shapes) {
+            create_boss_meteor(state, shapes, triangles, camera, elements, rng);
+            state.send_message("SPECIAL METEOR INBOUND!");
+            state.log_event("MÉTÉORE SPÉCIAL EN APPROCHE");
+            state.boss_timer = BOSS_SPAWN_INTERVAL;
+        }
+        // apparition d'un portail : à échéance, si la limite n'est pas atteinte
+        if state.warp_timer <= 0.0 && alive_warp_gates(shapes) < WARP_GATE_MAX {
+            create_warp_gate(state, shapes, triangles, camera, rng);
+            state.log_event("PORTAL SPAWNED");
+            state.warp_timer = WARP_GATE_SPAWN_INTERVAL;
+        }
+    }
+
     // formes vivantes (avec nettoyage des formes « oubliées » par la logique)
     let alive_shapes = count_alive_shapes(shapes, triangles);
 
-    // génération automatique : 5 % de chance par frame tant que la limite
-    // n'est pas atteinte (ex `mainLoop`) - non gelée par la pause, comme
-    // l'original.
-    if state.auto_generate && alive_shapes < state.max_meteor_shapes && rng.r#gen::<f64>() > 0.95 {
+    // génération automatique (ex `mainLoop`) - non gelée par la pause, comme
+    // l'original. **Difficulté adaptative** (`difficulty.rs`) : la chance par
+    // frame croît avec les paliers (0,05 → 0,15 max) et la population maximale
+    // reçoit un bonus par palier (en plus du +1 par météore détruit).
+    let max_shapes = state.max_meteor_shapes + crate::difficulty::max_meteors_bonus(state);
+    let spawn_chance = crate::difficulty::spawn_chance(state);
+    if state.auto_generate
+        && alive_shapes < max_shapes
+        && rng.r#gen::<f64>() > 1.0 - spawn_chance
+    {
         create_shape(state, shapes, triangles, camera, elements, rng);
     }
 
@@ -674,13 +770,19 @@ fn collisions(
             if x_dist <= sum_radius && y_dist <= sum_radius
                 && detect_collision(&shapes[i], &shapes[j], i, j, triangles) {
                     // pas de choc élastique entre un minerai et (vaisseau ou
-                    // météore), ni avec la station
+                    // météore), ni avec la station - ni avec les portails
+                    // (statiques, ils ne bougent pas) et les mines (posées,
+                    // elles explosent - voir la résolution)
                     let no_elastic = (shapes[i].who_i_am == WHOIAM_MINERAL
                         && (shapes[j].who_i_am == WHOIAM_PLAYER || shapes[j].who_i_am == WHOIAM_METEOR))
                         || (shapes[j].who_i_am == WHOIAM_MINERAL
                             && (shapes[i].who_i_am == WHOIAM_PLAYER || shapes[i].who_i_am == WHOIAM_METEOR))
                         || shapes[i].who_i_am == WHOIAM_STATION
-                        || shapes[j].who_i_am == WHOIAM_STATION;
+                        || shapes[j].who_i_am == WHOIAM_STATION
+                        || shapes[i].who_i_am == WHOIAM_WARP_GATE
+                        || shapes[j].who_i_am == WHOIAM_WARP_GATE
+                        || shapes[i].who_i_am == WHOIAM_MINE
+                        || shapes[j].who_i_am == WHOIAM_MINE;
                     if !no_elastic {
                         elastic_pairs.push((i, j));
                     }
@@ -697,6 +799,11 @@ fn collisions(
 
     // ─── résolution des collisions ─────────────────────────────────────────
     let mut previous_shape_index = -1i32;
+    // triangles de la base déjà endommagés cette frame (un impact par
+    // météore par frame - pas de cumul multiple pour un même chevauchement)
+    let mut damaged_station_tris: Vec<usize> = Vec::new();
+    // le bouclier temporaire (consommable) absorbe au plus un impact par frame
+    let mut temp_absorbed = false;
     for i in 0..triangles.len() {
         if !triangles[i].collid {
             continue;
@@ -725,12 +832,84 @@ fn collisions(
             if state.player.cargo_qty >= state.player.cargo_size {
                 state.send_message("YOUR LOADING BAY IS FULL, YOU MUST UNLOAD IT AT THE STATION");
             }
+            state.log_event(&format!(
+                "MINERAL RÉCUPÉRÉ ({})",
+                if element < elements.len() {
+                    elements[element].name.clone()
+                } else {
+                    "?".to_string()
+                }
+            ));
         } else if collid_by_who == WHOIAM_MINERAL && who == WHOIAM_PLAYER {
             // déjà résolu côté minerai (cargaison pleine)
         } else if collid_by_who == WHOIAM_STATION && who == WHOIAM_PLAYER {
             // accostage (M5)
         } else if who == WHOIAM_STATION {
-            // la station est indestructible
+            // la station est indestructible - mais les impacts de **météores**
+            // l'**endommagent** : chaque triangle percuté gagne 1 point de
+            // dégât ; à `STATION_TRIANGLE_DAMAGE_MAX`, le triangle meurt (un
+            // trou s'ouvre dans l'anneau - les météores suivants peuvent
+            // passer à travers). Les balles et le vaisseau (accostage) ne
+            // l'endommagent pas. Une seule fois par triangle par frame.
+            if collid_by_who == WHOIAM_METEOR && !damaged_station_tris.contains(&i) {
+                damaged_station_tris.push(i);
+                let tri = &mut triangles[i];
+                tri.damage += 1;
+                if tri.damage >= STATION_TRIANGLE_DAMAGE_MAX {
+                    tri.life = 0;
+                }
+            }
+        } else if who == WHOIAM_WARP_GATE {
+            // portail : indestructible (il ne se consume que lorsque le
+            // vaisseau le traverse - voir la branche joueur ci-dessous)
+        } else if who == WHOIAM_MINE {
+            // mine : indestructible aux chocs (elle explose au contact d'un
+            // météore - voir la branche météore ci-dessous)
+        } else if collid_by_who == WHOIAM_WARP_GATE && who == WHOIAM_PLAYER {
+            // le vaisseau traverse un **portail** : téléporté d'une fraction
+            // du monde torique (`WARP_JUMP_FRACTION` × largeur) dans la
+            // direction qui l'éloigne du portail - raccourci stratégique ou
+            // fuite. Le portail est consommé (une seule fois : sa vie passe
+            // à 0 au premier passage, les triangles suivants en collision de
+            // la même frame ne refont rien).
+            let gate_idx = collid_by as usize;
+            if shapes[gate_idx].life <= 0 {
+                continue;
+            }
+            let gate_pos = shapes[gate_idx].position;
+            let ship_pos = shapes[PLAYER_INDEX].position;
+            // direction de la fuite : du centre du portail vers le vaisseau
+            let mut dx = ship_pos.x - gate_pos.x;
+            let mut dy = ship_pos.y - gate_pos.y;
+            let norm = dx.hypot(dy);
+            if norm < 1.0 {
+                // vaisseau pile sur le portail : on suit son orientation
+                dx = shapes[PLAYER_INDEX].orientation.cos();
+                dy = -shapes[PLAYER_INDEX].orientation.sin();
+            } else {
+                dx /= norm;
+                dy /= norm;
+            }
+            let jump = WARP_JUMP_FRACTION * WORLD_WIDTH;
+            let mut p = Point::new(ship_pos.x + dx * jump, ship_pos.y + dy * jump);
+            p.normalize_world(&state.world);
+            shapes[PLAYER_INDEX].position = p;
+            state.send_message("WARP JUMP!");
+            state.log_event("PORTAL: WARP JUMP");
+            // le portail est consommé (il disparaît)
+            shapes[gate_idx].life = 0;
+            for t in &mut triangles[shapes[gate_idx].first_triangle..=shapes[gate_idx].last_triangle] {
+                t.life = 0;
+            }
+        } else if who == WHOIAM_PLAYER && !temp_absorbed && state.temp_shield > 0.0 {
+            // bouclier temporaire (consommable SHIELD) : absorbe l'impact
+            // sans toucher à la coque ni au bouclier du scénario, dans tous
+            // les scénarios - jusqu'à épuisement
+            temp_absorbed = true;
+            state.temp_shield = (state.temp_shield - 1.0).max(0.0);
+            if state.temp_shield <= 0.0 {
+                state.send_message("TEMPORARY SHIELD DEPLETED");
+            }
         } else if who == WHOIAM_PLAYER && scenario::has_survival(state) {
             // scénario Survival : le bouclier encaisse les impacts (le
             // triangle du vaisseau n'est pas tué) ; s'il est percé, le
@@ -796,6 +975,32 @@ fn collisions(
             // absorbé par les météores, il doit rester ramassable par le
             // cosmonaute EVA / le vaisseau ressuscité (le minerai n.est pas
             // perdu avec le vaisseau)
+        } else if collid_by_who == WHOIAM_MINE && who == WHOIAM_METEOR {
+            // une **mine** explose au contact d'un météore : tous les
+            // triangles de météore dans son rayon sont détruits (débris,
+            // minerais libérés, réputation/score comptés) - la mine est
+            // consommée. Une seule fois par mine (sa vie passe à 0 au
+            // premier contact).
+            explode_mine(
+                state,
+                shapes,
+                triangles,
+                garbages,
+                elements,
+                rng,
+                sounds.as_deref_mut(),
+                collid_by as usize,
+            );
+        } else if collid_by_who == WHOIAM_MINE && who == WHOIAM_BULLET {
+            // une munition qui touche une mine est détruite (la mine, elle,
+            // n'explose qu'au contact d'un météore)
+            let bullet_idx = collid_by as usize;
+            if bullet_idx < shapes.len() && shapes[bullet_idx].who_i_am == WHOIAM_BULLET {
+                shapes[bullet_idx].life = 0;
+                for t in &mut triangles[shapes[bullet_idx].first_triangle..=shapes[bullet_idx].last_triangle] {
+                    t.life = 0;
+                }
+            }
         } else if who == WHOIAM_PLAYER {
             // vaisseau joueur : mesh multi-triangles (35 faces) mais toujours
             // « 1 impact = détruit » (l'ancien triangle unique valait 1 vie)
@@ -893,6 +1098,17 @@ fn collisions(
                 && shapes[shape_index].life <= 0
             {
                 state.meteors_destroyed += 1;
+                // le météore spécial (boss) libère son PLATINUM et rapporte
+                // un bonus de réputation à sa destruction (le minerai rare
+                // renforce la réputation - voir le README)
+                if shapes[shape_index].is_boss {
+                    state.resources.reputation +=
+                        scenario::scenario(state.scenario).reputation_per_asteroid * 5.0;
+                    state.send_message("SPECIAL METEOR DESTROYED: PLATINUM +");
+                    state.log_event("MÉTÉORE SPÉCIAL DÉTRUIT (PLATINUM)");
+                } else {
+                    state.log_event("MÉTÉORE DÉTRUIT");
+                }
                 scenario::on_meteor_destroyed(state);
                 // le score composite vient de monter : record relevé et
                 // persisté si battu (clé `highscore_<index>`)
@@ -938,6 +1154,8 @@ fn collisions(
                 && collid_by_who == WHOIAM_BULLET && triangles[i].element > 0 {
                     let source = triangles[i];
                     create_mineral(shapes, triangles, elements, &source, rng);
+                    // statistiques de session : triangles minéralisés détruits
+                    state.session_stats.minerals_destroyed += 1;
                     if shapes[shape_index].minerals > 0 {
                         shapes[shape_index].minerals -= 1;
                     }
@@ -989,6 +1207,110 @@ fn nearest_meteor(shapes: &[Shape], pos: Point) -> Option<usize> {
         }
     }
     best.map(|(i, _)| i)
+}
+
+/// Un **météore spécial** (boss) est-il vivant ? - un seul boss à la fois :
+/// pas d'apparition tant que le précédent n'est pas détruit.
+fn alive_boss(shapes: &[Shape]) -> bool {
+    shapes
+        .iter()
+        .any(|s| s.who_i_am == WHOIAM_METEOR && s.is_boss && s.life > 0)
+}
+
+/// Nombre de **portails** vivants (plafonné à `WARP_GATE_MAX`).
+fn alive_warp_gates(shapes: &[Shape]) -> i32 {
+    shapes
+        .iter()
+        .filter(|s| s.who_i_am == WHOIAM_WARP_GATE && s.life > 0)
+        .count() as i32
+}
+
+/// Explosion d'une **mine** (consommable fabriqué) au contact d'un météore :
+/// tous les météores dont le centre est dans `MINE_RADIUS` sont détruits
+/// (triangles tués, débris, minerais libérés, réputation/score comptés), la
+/// mine est consommée. Une seule fois par mine (`life` passé à 0 au premier
+/// contact - les contacts suivants de la même frame ne refont rien).
+#[allow(clippy::too_many_arguments)]
+fn explode_mine(
+    state: &mut GameState,
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    garbages: &mut Vec<Garbage>,
+    elements: &mut [Element],
+    rng: &mut impl Rng,
+    mut sounds: Option<&mut Sounds>,
+    mine_idx: usize,
+) {
+    if mine_idx >= shapes.len()
+        || shapes[mine_idx].who_i_am != WHOIAM_MINE
+        || shapes[mine_idx].life <= 0
+    {
+        return;
+    }
+    let mine_pos = shapes[mine_idx].position;
+    // la mine est consommée par l'explosion
+    shapes[mine_idx].life = 0;
+    for t in &mut triangles[shapes[mine_idx].first_triangle..=shapes[mine_idx].last_triangle] {
+        t.life = 0;
+    }
+    state.send_message("MINE EXPLODED");
+    state.log_event("MINE EXPLOSION");
+    if let Some(sounds) = sounds.as_mut() {
+        let dx = mine_pos.x - shapes[PLAYER_INDEX].position.x;
+        let dy = mine_pos.y - shapes[PLAYER_INDEX].position.y;
+        let dist = dx.hypot(dy);
+        let v = (1.0 - dist / WORLD_WIDTH.hypot(WORLD_HEIGHT)).powi(3) as f32;
+        sounds.play_explosion(rng, v);
+    }
+    // tous les météores dans le rayon de l'explosion
+    let in_radius: Vec<usize> = shapes
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| {
+            m.who_i_am == WHOIAM_METEOR
+                && m.life > 0
+                && (m.position.x - mine_pos.x).hypot(m.position.y - mine_pos.y) <= MINE_RADIUS
+        })
+        .map(|(i, _)| i)
+        .collect();
+    for mi in in_radius {
+        let mfirst = shapes[mi].first_triangle;
+        let mlast = shapes[mi].last_triangle;
+        // minerais des triangles minéralisés libérés (comme un tir - le
+        // minerai n'est pas détruit avec le météore)
+        for ti in mfirst..=mlast {
+            if triangles[ti].life > 0 && triangles[ti].element > 0 {
+                let source = triangles[ti];
+                create_mineral(shapes, triangles, elements, &source, rng);
+                state.session_stats.minerals_destroyed += 1;
+                if shapes[mi].minerals > 0 {
+                    shapes[mi].minerals -= 1;
+                }
+            }
+        }
+        // débris depuis le premier triangle encore vivant
+        if let Some(t) = triangles[mfirst..=mlast].iter().find(|t| t.life > 0) {
+            generate_garbages(garbages, t, shapes, rng);
+        }
+        for t in &mut triangles[mfirst..=mlast] {
+            t.life = 0;
+        }
+        // le météore est détruit : réputation, score, record, progression
+        if shapes[mi].life > 0 {
+            shapes[mi].life = 0;
+            state.meteors_destroyed += 1;
+            if shapes[mi].is_boss {
+                state.resources.reputation +=
+                    scenario::scenario(state.scenario).reputation_per_asteroid * 5.0;
+                state.log_event("MÉTÉORE SPÉCIAL DÉTRUIT (PLATINUM)");
+            }
+            scenario::on_meteor_destroyed(state);
+            scenario::maybe_update_high_score(state);
+            let _ = scenario::save_progression(state);
+        }
+        // minerais absorbés restants libérés (jamais détruits avec le météore)
+        release_meteor_minerals(shapes, triangles, elements, mi, rng);
+    }
 }
 
 /// Compte les formes vivantes et nettoie les formes « oubliées » par la
@@ -2564,6 +2886,213 @@ mod tests {
             5,
             "minerais relâchés : soit dans l'espace, soit absorbés par le météore du crash (rien de perdu)"
         );
+    }
+
+    #[test]
+    fn meteor_impacts_damage_the_station_triangle() {
+        // un météore qui percute la base endommage le triangle percuté
+        // (1 point par impact) ; à STATION_TRIANGLE_DAMAGE_MAX, le triangle
+        // meurt (un trou s'ouvre dans l'anneau). La détection repose sur la
+        // géométrie (les indicateurs `collid` sont resetés en début de
+        // frame) : le triangle du météore chevauche celui de la base, la
+        // collision est re-détectée à chaque frame. Chaque impact détruit
+        // aussi le météore (son triangle explose contre la base) : on le
+        // ravive entre les frames pour simuler une série d'impacts.
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_STATION, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        for _ in 0..STATION_TRIANGLE_DAMAGE_MAX - 1 {
+            shapes[1].life = 1;
+            triangles[1].life = 1;
+            collisions(
+                &mut state,
+                &mut shapes,
+                &mut triangles,
+                &mut garbages,
+                &mut elements,
+                &mut rng,
+                None,
+                0.0,
+            );
+        }
+        // dégâts cumulés, triangle encore vivant sous le seuil
+        assert_eq!(triangles[0].damage, STATION_TRIANGLE_DAMAGE_MAX - 1);
+        assert_eq!(triangles[0].life, 1);
+
+        // dernier impact : le triangle de la base meurt
+        shapes[1].life = 1;
+        triangles[1].life = 1;
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            0.0,
+        );
+        assert_eq!(triangles[0].life, 0, "le triangle de la base doit mourir au seuil");
+    }
+
+    #[test]
+    fn station_damage_ignores_bullets_and_player() {
+        // seuls les **météores** endommagent la base : une balle ou le
+        // vaisseau (accostage) ne font pas gagner de dégât au triangle
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_STATION, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_BULLET, 1, 1, 2.0, 2.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        triangles[0].collid = true;
+        triangles[0].collid_by = 1; // percuté par la balle
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            0.0,
+        );
+        assert_eq!(triangles[0].damage, 0, "une balle n'endommage pas la base");
+        assert_eq!(triangles[0].life, 1);
+    }
+
+    #[test]
+    fn warp_gate_teleports_the_ship_and_is_consumed() {
+        // le vaisseau traverse un portail : téléporté d'environ 25 % de la
+        // largeur du monde dans la direction qui l'éloigne du portail - le
+        // portail est consommé. Le triangle du vaisseau (à 5,0) chevauche
+        // celui du portail (à 0,0) : la collision est détectée par la
+        // géométrie.
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 5.0, 0.0),
+            test_shape(WHOIAM_WARP_GATE, 1, 1, 0.0, 0.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 5.0, 0.0), test_triangle(1, 1, 0.0, 0.0)];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            0.0,
+        );
+
+        // saut ≈ 25 % de WORLD_WIDTH (990) dans la direction qui éloigne le
+        // vaisseau du portail : le vaisseau est à droite du portail → +x
+        let jump = WARP_JUMP_FRACTION * WORLD_WIDTH;
+        assert!(
+            (shapes[0].position.x - (5.0 + jump)).abs() < 1.0,
+            "position après warp : {}",
+            shapes[0].position.x
+        );
+        assert_eq!(shapes[0].position.y, 0.0);
+        assert_eq!(shapes[1].life, 0, "le portail est consommé");
+        assert!(state.message_queue.contains("WARP JUMP"));
+    }
+
+    #[test]
+    fn temp_shield_absorbs_impacts_in_any_scenario() {
+        // le bouclier temporaire (consommable) absorbe les impacts dans tous
+        // les scénarios : le vaisseau reste intact, le bouclier décroît
+        let mut state = GameState::new();
+        state.temp_shield = 2.0;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 1, 1, 2.0, 2.0),
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        triangles[0].collid = true;
+        triangles[0].collid_by = 1; // percuté par le météore
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            0.0,
+        );
+
+        assert_eq!(state.temp_shield, 1.0);
+        assert_eq!(shapes[0].life, 1, "le vaisseau est intact");
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(state.resources.lives, 0); // aucun impact subi (classique)
+    }
+
+    #[test]
+    fn mine_explodes_destroying_meteors_in_radius() {
+        // une mine explose au contact d'un météore : tous les météores dont
+        // le centre est dans MINE_RADIUS sont détruits (minerais libérés),
+        // la mine est consommée, les météores hors rayon restent intacts.
+        // Le vaisseau est garé loin du carnage.
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, -5000.0, -5000.0),
+            test_shape(WHOIAM_MINE, 1, 1, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 2, 2, 2.0, 2.0), // chevauche la mine : déclenche l'explosion
+            test_shape(WHOIAM_METEOR, 3, 3, 60.0, 0.0), // dans le rayon 130
+            test_shape(WHOIAM_METEOR, 4, 4, 400.0, 0.0), // hors rayon
+        ];
+        shapes[2].minerals = 2; // 2 minerais absorbés à libérer
+        let mut triangles = vec![
+            test_triangle(0, 0, -5000.0, -5000.0),
+            test_triangle(1, 1, 0.0, 0.0),
+            test_triangle(2, 2, 2.0, 2.0),
+            test_triangle(3, 3, 60.0, 0.0),
+            test_triangle(4, 4, 400.0, 0.0),
+        ];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            0.0,
+        );
+
+        assert_eq!(shapes[1].life, 0, "la mine est consommée");
+        assert_eq!(shapes[2].life, 0, "le météore déclencheur est détruit");
+        assert_eq!(shapes[3].life, 0, "le météore dans le rayon est détruit");
+        assert_eq!(shapes[4].life, 1, "le météore lointain est intact");
+        assert_eq!(state.meteors_destroyed, 2);
+        // les 2 minerais absorbés du météore déclencheur sont libérés (jamais perdus)
+        let minerals = shapes.iter().filter(|s| s.who_i_am == WHOIAM_MINERAL).count();
+        assert_eq!(minerals, 2);
+        assert!(state.message_queue.contains("MINE EXPLODED"));
     }
 
     #[test]

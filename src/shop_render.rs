@@ -11,21 +11,21 @@ use crate::geom::{Point, Triangle};
 use crate::marketplace::MOVING_MODES;
 use crate::scenario;
 use crate::shape::Shape;
-use crate::state::GameState;
+use crate::state::{Element, GameState};
 
 /// Géométrie du magasin de la station (bouton MARCHÉ de la boîte DOCK
 /// STATION) : fenêtre à **onglets** - un seul contenu affiché à la fois
 /// (RAVITAILLEMENT par défaut), ce qui garde la fenêtre compacte et
 /// compréhensible. En-tête : titre + porte-monnaie (crédits). Onglets :
-/// RAVITAILLEMENT, ÉQUIPEMENT, ATELIER, MODE DE VOL. Pied : retour d'action
-/// (achat confirmé / refus) + bouton CLOSE. Chaque ligne a un bouton
-/// « pilule » explicite (ACHETER / sélection / déblocage) à droite.
+/// RAVITAILLEMENT, ÉQUIPEMENT, ATELIER, MODE DE VOL, FABRICATION. Pied :
+/// retour d'action (achat confirmé / refus) + bouton CLOSE. Chaque ligne a
+/// un bouton « pilule » explicite (ACHETER / sélection / déblocage) à droite.
 pub struct ShopBoxLayout {
     /// Rectangle de la fenêtre complète (fond, bordure, coordonnées).
     pub window: Rect,
-    /// Onglets (RAVITAILLEMENT, ÉQUIPEMENT, ATELIER, MODE DE VOL) - clic =
-    /// bascule de `state.shop_tab` (`shop::shop_update`).
-    pub tabs: [Rect; 4],
+    /// Onglets (RAVITAILLEMENT, ÉQUIPEMENT, ATELIER, MODE DE VOL,
+    /// FABRICATION) - clic = bascule de `state.shop_tab` (`shop::shop_update`).
+    pub tabs: [Rect; SHOP_TAB_COUNT],
     /// Ligne « carburant » du ravitaillement (étiquette à gauche, curseur au
     /// centre) - rectangle vide hors économie.
     pub supplies_fuel: Rect,
@@ -72,6 +72,11 @@ pub struct ShopBoxLayout {
     pub modes: [Rect; 4],
     /// Boutons de sélection / déblocage des modes.
     pub buy_mode: [Rect; 4],
+    /// Lignes des consommables (onglet FABRICATION) : nom + recette
+    /// (ingrédients) à gauche, bouton FABRIQUER à droite.
+    pub craft: [Rect; CRAFT_COUNT],
+    /// Boutons de fabrication des consommables.
+    pub buy_craft: [Rect; CRAFT_COUNT],
     /// Bouton CLOSE : revient à la boîte DOCK STATION.
     pub close: Rect,
 }
@@ -89,6 +94,7 @@ pub fn shop_box_height(state: &GameState, ammo_rows: usize) -> f32 {
         }
         crate::config::SHOP_TAB_WORKSHOP => 8.0 + 3.0 * (SHOP_ROW_H + 2.0),
         crate::config::SHOP_TAB_MODES => 8.0 + 4.0 * (SHOP_ROW_H + 2.0),
+        crate::config::SHOP_TAB_CRAFT => 8.0 + 3.0 * (SHOP_ROW_H + 2.0),
         _ => {
             // RAVITAILLEMENT : une ligne carburant + une ligne munitions par
             // arme possédée, puis le bouton TOUT REMPLIR
@@ -111,11 +117,12 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
     let row_w = w - 2.0 * pad;
     let right = left + w - pad;
 
-    // onglets : 4 onglets égaux sous l'en-tête (titre + porte-monnaie)
+    // onglets : SHOP_TAB_COUNT onglets égaux sous l'en-tête (titre +
+    // porte-monnaie)
     let tab_gap = 6.0;
-    let tab_w = (w - 2.0 * pad - 3.0 * tab_gap) / 4.0;
+    let tab_w = (w - 2.0 * pad - (SHOP_TAB_COUNT - 1) as f32 * tab_gap) / SHOP_TAB_COUNT as f32;
     let tabs_top = top + 40.0;
-    let mut tabs = [Rect::new(0.0, 0.0, 0.0, 0.0); 4];
+    let mut tabs = [Rect::new(0.0, 0.0, 0.0, 0.0); SHOP_TAB_COUNT];
     for (i, tab) in tabs.iter_mut().enumerate() {
         *tab = Rect::new(
             left + pad + i as f32 * (tab_w + tab_gap),
@@ -150,6 +157,8 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
     let mut buy_cargo_upgrade = Rect::new(0.0, 0.0, 0.0, 0.0);
     let mut modes = [Rect::new(0.0, 0.0, 0.0, 0.0); 4];
     let mut buy_mode = [Rect::new(0.0, 0.0, 0.0, 0.0); 4];
+    let mut craft = [Rect::new(0.0, 0.0, 0.0, 0.0); CRAFT_COUNT];
+    let mut buy_craft = [Rect::new(0.0, 0.0, 0.0, 0.0); CRAFT_COUNT];
 
     match state.shop_tab {
         crate::config::SHOP_TAB_WEAPONS => {
@@ -183,6 +192,15 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
             for i in 0..4 {
                 modes[i] = Rect::new(left + pad, y, row_w, SHOP_ROW_H);
                 buy_mode[i] = pill(y);
+                y += SHOP_ROW_H + 2.0;
+            }
+        }
+        crate::config::SHOP_TAB_CRAFT => {
+            // FABRICATION : une ligne par consommable (bouclier, boost, mine)
+            y += 8.0;
+            for i in 0..CRAFT_COUNT {
+                craft[i] = Rect::new(left + pad, y, row_w, SHOP_ROW_H);
+                buy_craft[i] = pill(y);
                 y += SHOP_ROW_H + 2.0;
             }
         }
@@ -231,18 +249,22 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
         buy_cargo_upgrade,
         modes,
         buy_mode,
+        craft,
+        buy_craft,
         close: Rect::new(right - 96.0, top + h - 20.0 - 28.0, 96.0, 28.0),
     }
 }
 
 /// Dessine le magasin de la station (bouton MARCHÉ de la boîte DOCK STATION) :
 /// en-tête avec titre + porte-monnaie (crédits toujours visibles), rangée
-/// d'onglets (RAVITAILLEMENT / ÉQUIPEMENT / ATELIER / MODE DE VOL - un seul
-/// contenu à la fois, fenêtre compacte), le contenu de l'onglet actif
-/// (lignes à boutons « ACHETER » explicites, prix colorés : vert si
-/// abordable, rouge sinon) et un pied avec le retour d'action (achat
-/// confirmé / refus) + le bouton CLOSE.
-pub fn draw_shop_box(state: &GameState, shapes: &[Shape], triangles: &[Triangle]) {
+/// d'onglets (RAVITAILLEMENT / ÉQUIPEMENT / ATELIER / MODE DE VOL /
+/// FABRICATION - un seul contenu à la fois, fenêtre compacte), le contenu de
+/// l'onglet actif (lignes à boutons « ACHETER » explicites, prix colorés :
+/// vert si abordable, rouge sinon), un **tooltip** au survol des lignes et un
+/// pied avec le retour d'action (achat confirmé / refus) + le bouton CLOSE.
+/// `elements` porte le contenu de la soute (ingrédients de l'onglet
+/// FABRICATION).
+pub fn draw_shop_box(state: &GameState, shapes: &[Shape], triangles: &[Triangle], elements: &[Element]) {
     let l = shop_box_layout(state);
     let win = l.window;
     let m = mouse_to_game();
@@ -280,8 +302,12 @@ pub fn draw_shop_box(state: &GameState, shapes: &[Shape], triangles: &[Triangle]
         crate::config::SHOP_TAB_WEAPONS => draw_shop_weapons_tab(state, &l, m, shapes, triangles),
         crate::config::SHOP_TAB_WORKSHOP => draw_shop_workshop_tab(state, &l, m),
         crate::config::SHOP_TAB_MODES => draw_shop_modes_tab(state, &l, m),
+        crate::config::SHOP_TAB_CRAFT => draw_shop_craft_tab(state, &l, m, elements),
         _ => draw_shop_supplies_tab(state, &l, m),
     }
+
+    // tooltip au survol d'une ligne (prix, effets, description)
+    draw_shop_tooltip(state, &l, m, elements);
 
     // pied : retour d'action (vert = succès, rouge = refus) + CLOSE
     if !state.shop_feedback.is_empty() {
@@ -311,7 +337,7 @@ pub fn draw_shop_box(state: &GameState, shapes: &[Shape], triangles: &[Triangle]
 /// Dessine la rangée d'onglets du magasin : onglet actif rempli + vert,
 /// survol blanc, autres en bleu clair (clic = bascule, `shop::shop_update`).
 pub fn draw_shop_tabs(state: &GameState, l: &ShopBoxLayout) {
-    let labels = ["RAVITAILLEMENT", "ÉQUIPEMENT", "ATELIER", "MODE DE VOL"];
+    let labels = ["RAVITAILLEMENT", "ÉQUIPEMENT", "ATELIER", "MODE DE VOL", "FABRICATION"];
     let m = mouse_to_game();
     for (i, rect) in l.tabs.iter().enumerate() {
         let active = state.shop_tab as usize == i;
@@ -754,6 +780,205 @@ pub fn draw_supply_slider(track: Rect, max: f64, value: f64, m: Vec2) {
     // pouce (ascenseur) : barre verticale de 14 px, centrée sur la piste
     let thumb_x = (track.x + fill - 2.0).clamp(track.x, track.x + track.w - 4.0);
     draw_rectangle(thumb_x, bar_y - 4.0, 4.0, 14.0, color);
+}
+
+/// Onglet FABRICATION : une ligne par consommable (bouclier temporaire,
+/// boost de vitesse, mine) - nom + recette (ingrédients GOLD/IRON/WATER
+/// prélevés dans la **soute**) + inventaire à gauche, bouton FABRIQUER à
+/// droite (vert si la soute couvre la recette, rouge sinon). Les
+/// consommables s'utilisent en vol avec les touches 1/2/3.
+pub fn draw_shop_craft_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2, elements: &[Element]) {
+    const NAMES: [&str; 3] = ["GOLD", "IRON", "WATER"];
+    const KEYS: [&str; CRAFT_COUNT] = ["1", "2", "3"];
+    for i in 0..CRAFT_COUNT {
+        let rect = l.craft[i];
+        if rect.w <= 0.0 {
+            continue;
+        }
+        let spec = crate::scenario::craft_recipe(i);
+        let affordable = crate::scenario::craft_affordable(state, elements, i);
+        draw_text_shadow(
+            spec.name,
+            rect.x + 4.0,
+            rect.y + 14.0,
+            15.0,
+            argb_to_color(BOX_FG),
+        );
+        // recette : « 2 IRON · 1 WATER » (ingrédients non nuls) + inventaire
+        let mut parts = Vec::new();
+        for (e, &need) in spec.ingredients.iter().enumerate() {
+            if need > 0 {
+                parts.push(format!("{} {}", need, NAMES[e]));
+            }
+        }
+        draw_text_shadow(
+            &format!("{}  |  EN STOCK : {} (touche {})", parts.join(" · "), state.consumables[i], KEYS[i]),
+            rect.x + 4.0,
+            rect.y + 31.0,
+            12.0,
+            argb_to_color(BOX_FG_DIM),
+        );
+        draw_shop_pill(l.buy_craft[i], "FABRIQUER", Some(affordable), m);
+    }
+}
+
+/// Tooltip au survol d'une ligne du magasin : petit panneau sombre près du
+/// pointeur avec le **prix**, les **effets** et la **description** de la
+/// ligne survolée - pour chaque onglet (RAVITAILLEMENT, ÉQUIPEMENT, ATELIER,
+/// MODE DE VOL, FABRICATION). Aucun état mutable : pur affichage.
+fn draw_shop_tooltip(state: &GameState, l: &ShopBoxLayout, m: Vec2, elements: &[Element]) {
+    let mut lines: Vec<String> = Vec::new();
+    let mut hovered = false;
+    match state.shop_tab {
+        crate::config::SHOP_TAB_SUPPLIES => {
+            if scenario::has_economy(state) {
+                if l.supplies_fuel.w > 0.0 && l.supplies_fuel.contains(m) {
+                    hovered = true;
+                    let cap = scenario::fuel_capacity(state);
+                    let missing = (cap - state.resources.fuel).max(0.0);
+                    lines.push("CARBURANT : remplit le réservoir".to_string());
+                    lines.push(format!(
+                        "MANQUE : {:.0}/{} u - {} CR / {} u",
+                        missing,
+                        cap,
+                        scenario::scenario(state.scenario).fuel_price,
+                        scenario::scenario(state.scenario).fuel_step
+                    ));
+                    lines.push("Chaque poussée consomme du carburant".to_string());
+                }
+                for i in 0..scenario::weapon_slot_count() {
+                    if l.supplies_ammo[i].w > 0.0 && l.supplies_ammo[i].contains(m) {
+                        hovered = true;
+                        let spec = scenario::weapon_spec(i);
+                        lines.push(format!("{} : munitions de l'arme", spec.name));
+                        lines.push(format!(
+                            "{} CR / paquet de {} u",
+                            spec.ammo_price, spec.ammo_pack
+                        ));
+                    }
+                }
+                if l.refill_all.w > 0.0 && l.refill_all.contains(m) {
+                    hovered = true;
+                    lines.push("TOUT REMPLIR : carburant + munitions".to_string());
+                    lines.push("au maximum achetable avec les crédits courants".to_string());
+                }
+            }
+        }
+        crate::config::SHOP_TAB_WEAPONS => {
+            for i in 0..scenario::weapon_slot_count().min(WEAPON_SLOTS) {
+                if l.weapons[i].w > 0.0 && l.weapons[i].contains(m) {
+                    hovered = true;
+                    let spec = scenario::weapon_spec(i);
+                    if let Some((_, discounted)) = scenario::weapon_prices(state, i) {
+                        lines.push(format!("{} : {} CR", spec.name, discounted));
+                    } else {
+                        lines.push(format!("{} : équipée", spec.name));
+                    }
+                    lines.push(format!(
+                        "Munition : {} CR / {} u - tire depuis son emplacement",
+                        spec.ammo_price, spec.ammo_pack
+                    ));
+                }
+            }
+            if l.radar.w > 0.0 && l.radar.contains(m) {
+                hovered = true;
+                let (_, discounted) = scenario::radar_price(state).unwrap_or((0, 0));
+                lines.push(format!("RADAR : minimap globale des météores ({} CR)", discounted));
+                lines.push("Éteint par défaut en scénario à économie".to_string());
+            }
+        }
+        crate::config::SHOP_TAB_WORKSHOP => {
+            for (rect, track) in [
+                (l.fuel, crate::scenario::UpgradeTrackId::Fuel),
+                (l.ammo, crate::scenario::UpgradeTrackId::Ammo),
+                (l.cargo, crate::scenario::UpgradeTrackId::Cargo),
+            ] {
+                if rect.w > 0.0 && rect.contains(m) {
+                    hovered = true;
+                    let line = crate::scenario::upgrade_line(state, track);
+                    lines.push(format!("{} : capacité {}", line.label, line.capacity));
+                    match line.next {
+                        Some(u) => {
+                            let cost = crate::scenario::discounted_cost(
+                                u.cost,
+                                crate::scenario::current_discount(state),
+                            );
+                            lines.push(format!(
+                                "Extension : {} (+{} u) - {} CR",
+                                u.name, u.bonus, cost
+                            ));
+                        }
+                        None => lines.push("Niveau maximum atteint".to_string()),
+                    }
+                }
+            }
+        }
+        crate::config::SHOP_TAB_MODES => {
+            for (i, rect) in l.modes.iter().enumerate() {
+                if rect.w > 0.0 && rect.contains(m) {
+                    hovered = true;
+                    let mode = MOVING_MODE_ORDER[i];
+                    let catalog = MOVING_MODES[mode as usize];
+                    lines.push(format!("{} : {}", catalog.name, catalog.description));
+                    match scenario::mode_unlock_prices(state, mode) {
+                        Some((_, discounted)) => lines.push(format!("Déblocage : {} CR", discounted)),
+                        None => lines.push("Déjà débloqué".to_string()),
+                    }
+                }
+            }
+        }
+        _ => {
+            // FABRICATION
+            for i in 0..CRAFT_COUNT {
+                if l.craft[i].w > 0.0 && l.craft[i].contains(m) {
+                    hovered = true;
+                    let spec = crate::scenario::craft_recipe(i);
+                    lines.push(format!("{} : {}", spec.name, spec.description));
+                    const NAMES: [&str; 3] = ["GOLD", "IRON", "WATER"];
+                    let mut parts = Vec::new();
+                    for (e, &need) in spec.ingredients.iter().enumerate() {
+                        if need > 0 {
+                            let have = elements.get(e + 1).map_or(0, |el| el.count);
+                            parts.push(format!("{} {} ({} en soute)", need, NAMES[e], have));
+                        }
+                    }
+                    lines.push(parts.join(" · "));
+                }
+            }
+        }
+    }
+    if hovered && !lines.is_empty() {
+        draw_tooltip_box(&lines, m);
+    }
+}
+
+/// Dessine un panneau de tooltip (fond sombre + bordures) près du pointeur,
+/// avec les lignes de texte données (chaque ligne = une entrée du tooltip).
+fn draw_tooltip_box(lines: &[String], m: Vec2) {
+    let font = 12u16;
+    let line_h = 16.0f32;
+    let pad = 6.0f32;
+    let mut w = 0.0f32;
+    for l in lines {
+        let tw = measure_text(l, None, font, 1.0).width;
+        w = w.max(tw);
+    }
+    w += 2.0 * pad;
+    let h = lines.len() as f32 * line_h + 2.0 * pad;
+    // position près du pointeur, sans déborder de l'écran
+    let mut x = m.x + 14.0;
+    let mut y = m.y + 14.0;
+    if x + w > VIEWPORT_WIDTH as f32 {
+        x = (m.x - w - 14.0).max(0.0);
+    }
+    if y + h > VIEWPORT_HEIGHT as f32 {
+        y = (m.y - h - 14.0).max(0.0);
+    }
+    draw_rectangle(x, y, w, h, Color::new(0.03, 0.04, 0.07, 0.95));
+    draw_rectangle_lines(x, y, w, h, 1.0, argb_to_color(SHOP_OK));
+    for (i, l) in lines.iter().enumerate() {
+        draw_text(l, x + pad, y + pad + 12.0 + i as f32 * line_h, font as f32, WHITE);
+    }
 }
 
 /// Dessine un bouton de boîte (cadre + texte centré, hover : fond surbrillé

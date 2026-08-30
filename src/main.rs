@@ -19,6 +19,8 @@ mod audio;
 mod build_info;
 mod config;
 mod cosmonaut;
+mod difficulty;
+mod modding;
 mod dock_render;
 mod docking;
 mod eva;
@@ -363,6 +365,10 @@ async fn main() {
     // bouton RESET PROGRESSION du titre - `_title_progression_reset`).
     eva::respawn_player(&mut state, &mut shapes, &mut triangles);
     launch_setup(&mut state, &mut shapes);
+    // Briefing pré-partie : les scénarios custom avec objectifs affichent
+    // leur résumé (objectifs DAG, contraintes, conseil) avant de jouer
+    state.briefing_box = state.objective_tracker.has_objectives();
+    state.briefing_scroll = 0.0; // nouveau briefing : défilement en haut
 
     // ─── Télécommande HTTP (piloter le jeu depuis un téléphone) ─────────────
     // Le serveur local démarre au lancement (`remote.rs`) : la page de
@@ -508,6 +514,9 @@ async fn main() {
                 // et état d'accostage de départ (mêmes règles qu'au lancement)
                 eva::respawn_player(&mut state, &mut shapes, &mut triangles);
                 launch_setup(&mut state, &mut shapes);
+                // briefing pré-partie ré-affiché (défilement remis en haut)
+                state.briefing_box = state.objective_tracker.has_objectives();
+                state.briefing_scroll = 0.0;
                 // ambiance/musique relancées si le titre les a coupées, et
                 // mode d'affichage ré-annoncé (même message qu'au lancement)
                 sounds.start_ambient();
@@ -762,6 +771,17 @@ async fn main() {
         );
         // Objectifs DAG (scénarios custom) : panneau dans le coin supérieur droit
         render::draw_objectives_hud(&state);
+        // consommables actifs (bouclier temporaire, boost, mines - touches
+        // 1/2/3) sous le HUD, et score composite + record en bas à droite
+        // (le statut d'accostage garde toute la ligne principale)
+        render::draw_consumables_hud(&state);
+        render::draw_score_hud(&state);
+        // journal de bord (touche L) et briefing pré-partie (scénarios
+        // custom - lancé au démarrage de la partie, fermé par ENTRÉE/ÉCHAP)
+        render::draw_log_box(&state);
+        if state.briefing_box {
+            render::draw_briefing_box(&state);
+        }
 
         // Écran PAUSE (touche P) : le monde est gelé - l'overlay rend l'état
         // visible (assombrissement + bandeau) tant qu'aucune fenêtre ne
@@ -800,8 +820,9 @@ async fn main() {
         if state.shop_box {
             // aperçu du vaisseau équipé dans l'onglet ÉQUIPEMENT : le mesh
             // réel du vaisseau (et des armes survolées) est redessiné à
-            // l'échelle dans la fenêtre
-            render::draw_shop_box(&state, &shapes, &triangles);
+            // l'échelle dans la fenêtre ; `elements` porte la soute
+            // (ingrédients de l'onglet FABRICATION)
+            render::draw_shop_box(&state, &shapes, &triangles, &elements);
         }
         if state.help_box {
             render::draw_help_box();

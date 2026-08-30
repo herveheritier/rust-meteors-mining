@@ -292,6 +292,11 @@ pub struct Triangle {
     pub a_shape_border: bool,
     pub b_shape_border: bool,
     pub c_shape_border: bool,
+    /// Niveau de dégâts du triangle (base uniquement - `WHOIAM_STATION`) :
+    /// chaque impact de météore ajoute 1 ; à `STATION_TRIANGLE_DAMAGE_MAX`,
+    /// le triangle meurt (un trou s'ouvre dans l'anneau). Affiché par le
+    /// style MESH (teinte vers le rouge). 0 pour toutes les autres formes.
+    pub damage: i32,
     /// Position de base dans la texture (ex `textureBasePosition`) - posée
     /// mais non relue (le rendu texturé du port ne s'en sert pas).
     #[allow(dead_code)]
@@ -327,6 +332,7 @@ impl Default for Triangle {
             a_shape_border: false,
             b_shape_border: false,
             c_shape_border: false,
+            damage: 0,
             texture_base_position: 0,
         }
     }

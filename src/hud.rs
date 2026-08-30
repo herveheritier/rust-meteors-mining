@@ -12,12 +12,18 @@ use crate::scenario;
 use crate::shape::Shape;
 use crate::state::{Element, GameState};
 
-/// Cargo : 5 cercles à `x = 11*i + 5`, `y = 50`, remplis de la couleur de
-/// l'élément (GOLD, IRON puis WATER), vide = contour gris (ex mainLoop).
+/// Cargo : cercles à `x = 11*i + 5`, `y = 50`, remplis de la couleur de
+/// l'élément (GOLD, IRON, WATER puis PLATINUM - tous les éléments de la
+/// soute), vide = contour gris (ex mainLoop).
 pub fn draw_cargo(state: &GameState, elements: &[Element]) {
-    let e1 = elements[1].count;
-    let e2 = e1 + elements[2].count;
-    let e3 = e2 + elements[3].count;
+    // bornes cumulées de chaque élément (le i-ème emplacement contient le
+    // premier élément dont le cumul dépasse i)
+    let mut cum: Vec<i32> = Vec::with_capacity(elements.len());
+    let mut acc = 0;
+    for e in 1..elements.len() {
+        acc += elements[e].count;
+        cum.push(acc);
+    }
     // soute presque pleine : les baies occupées clignotent (elles alternent
     // leur couleur ↔ rouge tant que le cargo reste à `HUD_FULL_CARGO_RATIO`
     // de sa capacité - les emplacements vides gardent leur contour gris)
@@ -25,15 +31,13 @@ pub fn draw_cargo(state: &GameState, elements: &[Element]) {
         && state.player.cargo_qty as f64 / state.player.cargo_size as f64 >= HUD_FULL_CARGO_RATIO;
     let blink_on = almost_full && (get_time() * HUD_BLINK_HZ) as i64 % 2 == 0;
     for i in 1..=state.player.cargo_size {
-        let color = if i <= e1 {
-            elements[1].color
-        } else if i <= e2 {
-            elements[2].color
-        } else if i <= e3 {
-            elements[3].color
-        } else {
-            0xFF808080
-        };
+        let color = elements
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(e, _)| i <= cum[e - 1])
+            .map(|(_, el)| el.color)
+            .unwrap_or(0xFF808080);
         let x = 11.0 * i as f32 + 5.0;
         if color != 0xFF808080 {
             let fill = if blink_on { HUD_WARN_COLOR } else { color };
@@ -131,16 +135,11 @@ pub fn draw_hud(state: &GameState) -> f32 {
     }
     // ressources du scénario, sur la même ligne : carburant/munitions/minerais
     // (économie - les capacités montrent les extensions d'atelier achetées)
-    // ou vies + bouclier (Survival) - champs fixes : 3/3/2/2/5 chiffres
-    // score composite + record : affichés à la fin du bloc de ressources pour
-    // TOUS les scénarios (jeu libre compris) - `SCORE:… BEST:…`, valeurs
-    // alignées à droite sur 5 chiffres (anti-tremblement)
-    let score = scenario::composite_score(state);
-    let score_txt = format!(
-        " SCORE:{:>5} BEST:{:>5}",
-        score.min(99999),
-        state.high_score.min(99999)
-    );
+    // ou vies + bouclier (Survival) - champs fixes : 3/3/2/2/5 chiffres.
+    // Le score composite + record est affiché sur la **deuxième ligne**
+    // (`draw_score_hud`) : la ligne principale est réservée au statut
+    // d'accostage (distance à la base), prioritaire - il reprend sa place
+    // juste après les ressources (colonnes de départ fixes, anti-tremblement)
     let dock_col = if economy {
         // blocs dessinés séparément (mêmes champs fixes → même abscisse de
         // départ pour chacun, aucune dérive) pour pouvoir **clignoter** une
@@ -165,9 +164,7 @@ pub fn draw_hud(state: &GameState) -> f32 {
         draw_text(&ammo_txt, x_ammo, 14.0, 16.0, argb_to_color(ammo_color));
         let x_minerals = x_ammo + measure_text(&ammo_txt, None, 16, 1.0).width;
         draw_text(&min_txt, x_minerals, 14.0, 16.0, WHITE);
-        let x_score = x_minerals + measure_text(&min_txt, None, 16, 1.0).width;
-        draw_text(&score_txt, x_score, 14.0, 16.0, WHITE);
-        HUD_RESOURCES_COL + HUD_RESOURCES_ECONOMY_COLS + HUD_SCORE_COLS + 1
+        HUD_RESOURCES_COL + HUD_RESOURCES_ECONOMY_COLS + 1
     } else if scenario::has_survival(state) {
         let x = hud_col_x(HUD_RESOURCES_COL);
         draw_text(
@@ -180,18 +177,17 @@ pub fn draw_hud(state: &GameState) -> f32 {
             16.0,
             WHITE,
         );
-        draw_text(&score_txt, x + 8.0 * HUD_RESOURCES_SURVIVAL_COLS as f32, 14.0, 16.0, WHITE);
-        HUD_RESOURCES_COL + HUD_RESOURCES_SURVIVAL_COLS + HUD_SCORE_COLS + 1
+        HUD_RESOURCES_COL + HUD_RESOURCES_SURVIVAL_COLS + 1
     } else {
-        // jeu libre : pas de ressources - le score suit PRECISION, l'accostage
-        // suit le score
-        draw_text(&score_txt, hud_col_x(HUD_RESOURCES_COL), 14.0, 16.0, WHITE);
-        HUD_RESOURCES_COL + HUD_SCORE_COLS + 1
+        // jeu libre : pas de ressources - l'accostage suit directement PRECISION
+        HUD_RESOURCES_COL + 1
     };
-    // fin de partie (Survival, dernière vie perdue) : GAME OVER au centre,
-    // rappel des touches et deux boutons cliquables (R = nouvelle partie,
-    // T = écran titre - clic détecté côté `game::game_over_button_click`)
+    // fin de partie (Survival, dernière vie perdue) : récapitulatif de la
+    // session (statistiques), GAME OVER au centre, rappel des touches et
+    // deux boutons cliquables (R = nouvelle partie, T = écran titre - clic
+    // détecté côté `game::game_over_button_click`)
     if state.game_over {
+        draw_session_recap(state);
         let msg = "GAME OVER";
         let w = measure_text(msg, None, 32, 1.0).width;
         draw_text(
@@ -215,6 +211,29 @@ pub fn draw_hud(state: &GameState) -> f32 {
         crate::shop_render::draw_box_button("TITLE", title);
     }
     hud_col_x(dock_col)
+}
+
+/// Score composite + record, **en bas à droite** de l'écran (aligné à droite
+/// sur la ligne du bas, avec une marge) : « SCORE:… BEST:… », valeurs
+/// alignées à droite sur 5 chiffres (anti-tremblement). Position permanente
+/// qui ne gêne ni la ligne principale du HUD (réservée au statut
+/// d'accostage - distance à la base prioritaire) ni les messages du bas
+/// (centrés, ils restent à gauche du score - voir `draw_hud`).
+pub fn draw_score_hud(state: &GameState) {
+    let score = scenario::composite_score(state);
+    let score_txt = format!(
+        " SCORE:{:>5} BEST:{:>5}",
+        score.min(99999),
+        state.high_score.min(99999)
+    );
+    let w = measure_text(&score_txt, None, 16, 1.0).width;
+    draw_text_shadow(
+        &score_txt,
+        VIEWPORT_WIDTH as f32 - w - 8.0,
+        VIEWPORT_HEIGHT as f32 - 16.0,
+        16.0,
+        WHITE,
+    );
 }
 
 /// Géométrie des deux boutons de l'écran GAME OVER (côte à côte sous le
@@ -660,6 +679,354 @@ pub fn format_condition_hud(cond: &crate::scenario_loader::JsonCondition, state:
     }
 }
 
+/// Récapitulatif de **fin de partie** (écran GAME OVER) : panneau sombre
+/// avec les statistiques de la session - temps de vol, distance parcourue,
+/// précision de tir, météores et triangles minéralisés détruits, accostages,
+/// valeur de la cargaison déchargée et score composite.
+pub fn draw_session_recap(state: &GameState) {
+    let st = &state.session_stats;
+    let mins = (st.flight_time / 60.0) as i32;
+    let secs = (st.flight_time % 60.0) as i32;
+    let time_txt = if mins > 0 {
+        format!("{} min {} s", mins, secs)
+    } else {
+        format!("{:.0} s", st.flight_time)
+    };
+    let precision = if state.bullets_fired > 0 {
+        (100.0 * (1.0 - state.bullets_lost as f64 / state.bullets_fired as f64)) as i32
+    } else {
+        0
+    };
+    let lines = [
+        "RÉCAPITULATIF DE SESSION".to_string(),
+        format!("Temps de vol : {}", time_txt),
+        format!("Distance parcourue : {:.0} u", st.distance),
+        format!("Précision de tir : {} % ({}/{})", precision, state.bullets_fired - state.bullets_lost, state.bullets_fired),
+        format!("Météores détruits : {}", state.meteors_destroyed),
+        format!("Triangles minéralisés détruits : {}", st.minerals_destroyed),
+        format!("Accostages : {}", state.docking_count),
+        format!("Cargaison déchargée : {} CR", st.cargo_value_unloaded),
+        format!("Score : {}", crate::scenario::composite_score(state)),
+    ];
+    // panneau centré au-dessus du bandeau GAME OVER
+    let w = 460.0;
+    let line_h = 20.0;
+    let h = 12.0 + lines.len() as f32 * line_h + 12.0;
+    let x = (VIEWPORT_WIDTH as f32 - w) / 2.0;
+    let y = VIEWPORT_HEIGHT as f32 / 2.0 - h - 70.0;
+    draw_rectangle(x + 2.0, y + 2.0, w, h, Color::new(0.0, 0.0, 0.0, 0.55));
+    draw_rectangle(x, y, w, h, Color::new(0.05, 0.07, 0.10, 0.85));
+    draw_rectangle_lines(x, y, w, h, 1.5, argb_to_color(BOX_BORDER));
+    for (i, line) in lines.iter().enumerate() {
+        let color = if i == 0 { SHOP_OK } else { BOX_FG };
+        let wl = measure_text(line, None, 16, 1.0).width;
+        draw_text_shadow(
+            line,
+            x + (w - wl) / 2.0,
+            y + 16.0 + i as f32 * line_h,
+            16.0,
+            argb_to_color(color),
+        );
+    }
+}
+
+/// Journal de bord (touche L) : panneau semi-transparent dans le coin
+/// inférieur droit listant les `EVENT_LOG_LEN` derniers événements (le plus
+/// récent en tête) - tirs, minerais, accostages, achats, destructions…
+pub fn draw_log_box(state: &GameState) {
+    if !state.log_box {
+        return;
+    }
+    let w = 420.0;
+    let pad = 10.0;
+    let line_h = 18.0;
+    let max_lines = crate::config::EVENT_LOG_LEN;
+    let h = pad + 24.0 + max_lines as f32 * line_h + pad;
+    let x = VIEWPORT_WIDTH as f32 - w - 12.0;
+    let y = VIEWPORT_HEIGHT as f32 - h - 40.0;
+    draw_rectangle(x + 2.0, y + 2.0, w, h, Color::new(0.0, 0.0, 0.0, 0.55));
+    draw_rectangle(x, y, w, h, Color::new(0.05, 0.07, 0.10, 0.88));
+    draw_rectangle_lines(x, y, w, h, 1.5, argb_to_color(BOX_BORDER));
+    draw_text_shadow("JOURNAL DE BORD (L : FERMER)", x + pad, y + 16.0, 16.0, argb_to_color(SHOP_OK));
+    if state.event_log.is_empty() {
+        draw_text_shadow("(vide)", x + pad, y + 40.0, 14.0, argb_to_color(BOX_FG_DIM));
+        return;
+    }
+    // chaque événement est replié à la largeur du panneau (les événements
+    // longs ne débordent pas) - seuls les EVENT_LOG_LEN premiers comptent
+    let mut rows: Vec<String> = Vec::new();
+    for ev in &state.event_log {
+        for line in crate::hud::wrap_text(ev, w - 2.0 * pad, 14) {
+            rows.push(line);
+            if rows.len() >= max_lines {
+                break;
+            }
+        }
+        if rows.len() >= max_lines {
+            break;
+        }
+    }
+    for (i, row) in rows.iter().enumerate() {
+        draw_text_shadow(row, x + pad, y + 40.0 + i as f32 * line_h, 14.0, argb_to_color(BOX_FG));
+    }
+}
+
+/// Consommables actifs (HUD) : petite ligne sous le HUD - bouclier
+/// temporaire restant, boost en cours et mines en stock (touches 1/2/3).
+/// Rien n'est affiché tant que rien n'est actif.
+pub fn draw_consumables_hud(state: &GameState) {
+    let mut parts: Vec<(String, u32)> = Vec::new();
+    if state.temp_shield > 0.0 {
+        parts.push((format!("SHLD:{:.0}", state.temp_shield), SHOP_OK));
+    }
+    if state.boost_timer > 0.0 {
+        parts.push((format!("BOOST:{:.0}s", state.boost_timer.ceil()), 0xFF40C0FF));
+    }
+    if state.consumables[CRAFT_MINE] > 0 {
+        parts.push((format!("MINE:{}", state.consumables[CRAFT_MINE]), 0xFFFF8040));
+    }
+    if parts.is_empty() {
+        return;
+    }
+    let mut x = hud_col_x(HUD_FPS_COL);
+    for (p, color) in &parts {
+        draw_text(p, x, 30.0, 16.0, argb_to_color(*color));
+        x += measure_text(p, None, 16, 1.0).width + 12.0;
+    }
+}
+
+/// Géométrie du panneau de **briefing pré-partie** (scénarios custom) :
+/// panneau centré de largeur fixe, bouton CLOSE en bas au centre. Renvoie
+/// (panneau, bouton CLOSE).
+pub fn briefing_layout() -> (Rect, Rect) {
+    let w = 640.0;
+    let h = 400.0;
+    let x = (VIEWPORT_WIDTH as f32 - w) / 2.0;
+    let y = (VIEWPORT_HEIGHT as f32 - h) / 2.0;
+    (
+        Rect::new(x, y, w, h),
+        Rect::new(x + w / 2.0 - 60.0, y + h - 44.0, 120.0, 28.0),
+    )
+}
+
+/// Clic sur le bouton CLOSE du briefing pré-partie (ENTRÉE/ÉCHAP ferment
+/// aussi - voir `game.rs`).
+pub fn briefing_close_clicked() -> bool {
+    if !is_mouse_button_pressed(MouseButton::Left) {
+        return false;
+    }
+    let (_, close) = briefing_layout();
+    close.contains(mouse_to_game())
+}
+
+/// Lignes de texte du briefing pré-partie : titre du scénario, description,
+/// objectifs DAG (titre + description), contraintes (fuel/ammo/credits ou
+/// vies/bouclier) et un conseil.
+pub fn briefing_lines(state: &GameState) -> Vec<String> {
+    let mut lines = Vec::new();
+    match state.scenario {
+        crate::scenario::ScenarioId::Custom(ci) => {
+            if let Some(data) = crate::scenario_loader::loaded_data(ci) {
+                lines.push(format!("SCÉNARIO : {}", data.json.name));
+                if !data.json.description.is_empty() {
+                    lines.push(data.json.description.clone());
+                }
+                lines.push(String::new());
+                lines.push("OBJECTIFS :".to_string());
+                for o in &data.json.objectives {
+                    let title = if o.title.is_empty() {
+                        o.id.clone()
+                    } else {
+                        o.title.clone()
+                    };
+                    lines.push(format!("• {}", title));
+                    if !o.description.is_empty() {
+                        lines.push(format!("    {}", o.description));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    lines.push(String::new());
+    let s = crate::scenario::scenario(state.scenario);
+    if s.has_economy {
+        lines.push(format!(
+            "CONTRAINTES : carburant {:.0} u, munitions {}, crédits {}",
+            s.start_fuel,
+            s.start_ammo,
+            state.resources.credits
+        ));
+    } else if s.lives > 0 {
+        lines.push(format!(
+            "CONTRAINTES : {} vies, bouclier {:.0} points",
+            s.lives, s.shield_capacity
+        ));
+    } else {
+        lines.push("CONTRAINTES : aucune - carburant et munitions illimités".to_string());
+    }
+    lines.push(String::new());
+    lines.push("CONSEIL : les objectifs s'enchaînent selon leurs prérequis (DAG).".to_string());
+    lines.push("Suivez le panneau OBJECTIFS du HUD et revenez à la station pour".to_string());
+    lines.push("décharger, ravitailler et fabriquer entre deux étapes.".to_string());
+    lines
+}
+
+/// Hauteur verticale (px) d'une ligne du contenu du briefing.
+pub const BRIEFING_LINE_H: f32 = 19.0;
+
+/// Contenu du briefing découpé en **lignes rendues** (repliées à la largeur
+/// du panneau), chacune avec sa couleur : sert au dessin ET au calcul de la
+/// hauteur totale pour l'ascenseur (`draw_briefing_box`).
+fn briefing_wrapped_lines(state: &GameState) -> Vec<(String, u32)> {
+    let text_w = briefing_layout().0.w - 40.0;
+    let mut out = Vec::new();
+    for line in briefing_lines(state) {
+        for wrapped in wrap_text(&line, text_w, 15) {
+            let color = if wrapped.starts_with("SCÉNARIO")
+                || wrapped.starts_with("OBJECTIFS")
+                || wrapped.starts_with("CONTRAINTES")
+                || wrapped.starts_with("CONSEIL")
+            {
+                SHOP_OK
+            } else {
+                BOX_FG
+            };
+            out.push((wrapped, color));
+        }
+    }
+    out
+}
+
+/// Zone **défilante** du briefing : (haut, bas) en px, entre le titre et le
+/// rappel des touches / bouton CLOSE - rien ne peut déborder sous le bas
+/// tant que le défilement est borné par `briefing_scroll_max`.
+fn briefing_scroll_rect() -> (f32, f32) {
+    let (panel, close) = briefing_layout();
+    let top = panel.y + 62.0;
+    // le bas s'arrête bien au-dessus du rappel des touches (`close.y - 34`,
+    // une ligne de marge) : une ligne qui commence au bas finit à
+    // `bottom + BRIEFING_LINE_H` < la position du rappel.
+    let bottom = close.y - 34.0;
+    (top, bottom)
+}
+
+/// Défilement maximal du briefing (px) : le bas de la dernière ligne s'aligne
+/// avec le bas de la zone défilante (0 = tout tient, pas d'ascenseur).
+pub fn briefing_scroll_max(state: &GameState) -> f32 {
+    let (top, bottom) = briefing_scroll_rect();
+    let visible = bottom - top;
+    let content_h = briefing_wrapped_lines(state).len() as f32 * BRIEFING_LINE_H;
+    (content_h - visible).max(0.0)
+}
+
+/// Défilement demandé ce frame pour le briefing (px) : molette de la souris,
+/// flèches haut/bas et PgPréc/PgSuiv du clavier. À ajouter à l'offset puis à
+/// borner par `briefing_scroll_max` (`game.rs`).
+pub fn briefing_scroll_delta() -> f32 {
+    let mut d = 0.0;
+    // molette : un « cran » = 3 lignes, borné pour rester stable quelle que
+    // soit la granularité reportée par l'OS (certains renvoient ±1, d'autres
+    // ±120 par cran)
+    let wheel = mouse_wheel().1;
+    if wheel != 0.0 {
+        d += wheel.signum() * wheel.abs().min(3.0) * 3.0;
+    }
+    // clavier : flèches (ligne par ligne) et PgPréc/PgSuiv (6 lignes)
+    if is_key_down(KeyCode::Down) {
+        d += 1.0;
+    }
+    if is_key_down(KeyCode::Up) {
+        d -= 1.0;
+    }
+    if is_key_pressed(KeyCode::PageDown) {
+        d += 6.0;
+    }
+    if is_key_pressed(KeyCode::PageUp) {
+        d -= 6.0;
+    }
+    d * BRIEFING_LINE_H
+}
+
+/// Écran de **briefing pré-partie** (scénarios custom avec objectifs,
+/// affiché au lancement de la partie avant de jouer) : panneau sombre au
+/// centre listant les objectifs DAG, les contraintes (fuel/ammo ou
+/// vies/bouclier) et un conseil - fermé par ENTRÉE / ÉCHAP / clic sur CLOSE
+/// (`game.rs`). Le contenu est **borné à la zone défilante** du panneau :
+/// s'il est trop long, un **ascenseur** (piste + curseur) apparaît sur le
+/// bord droit et on ne dessine que les lignes visibles - rien ne dépasse le
+/// panneau ni l'écran.
+pub fn draw_briefing_box(state: &GameState) {
+    if !state.briefing_box {
+        return;
+    }
+    let (panel, close) = briefing_layout();
+    let (view_top, view_bottom) = briefing_scroll_rect();
+    // assombrissement du monde derrière
+    draw_rectangle(
+        0.0,
+        0.0,
+        VIEWPORT_WIDTH as f32,
+        VIEWPORT_HEIGHT as f32,
+        Color::new(0.0, 0.0, 0.0, 0.55),
+    );
+    draw_rectangle(panel.x + 3.0, panel.y + 3.0, panel.w, panel.h, Color::new(0.0, 0.0, 0.0, 0.55));
+    draw_rectangle(panel.x, panel.y, panel.w, panel.h, Color::new(0.05, 0.07, 0.10, 0.92));
+    draw_rectangle_lines(panel.x, panel.y, panel.w, panel.h, 2.0, argb_to_color(SHOP_OK));
+
+    // titre
+    draw_text_shadow(
+        "BRIEFING DE MISSION",
+        panel.x + 20.0,
+        panel.y + 30.0,
+        22.0,
+        argb_to_color(SHOP_OK),
+    );
+
+    // contenu défilant, borné à la zone visible
+    let lines = briefing_wrapped_lines(state);
+    let visible = view_bottom - view_top;
+    let content_h = lines.len() as f32 * BRIEFING_LINE_H;
+    let max_scroll = (content_h - visible).max(0.0);
+    let scroll = state.briefing_scroll.clamp(0.0, max_scroll);
+    let first = (scroll / BRIEFING_LINE_H).floor() as usize;
+    let mut y = view_top - (scroll - first as f32 * BRIEFING_LINE_H);
+    for (text, color) in &lines[first..] {
+        // on ne dessine qu'une ligne entièrement dans la zone : au-dessus du
+        // haut (ligne partiellement coupée) ou sous le bas, on l'ignore
+        if y + BRIEFING_LINE_H - 0.5 > view_bottom {
+            break;
+        }
+        if y >= view_top - 0.5 {
+            draw_text_shadow(text, panel.x + 20.0, y, 15.0, argb_to_color(*color));
+        }
+        y += BRIEFING_LINE_H;
+    }
+
+    // ascenseur (piste + curseur) si le contenu dépasse la zone visible
+    if max_scroll > 0.5 {
+        let track_w = 8.0;
+        let track_x = panel.x + panel.w - track_w - 10.0;
+        let thumb_h = (visible * visible / content_h).clamp(20.0, visible - 8.0);
+        let thumb_y = view_top + scroll / max_scroll * (visible - thumb_h);
+        draw_rectangle(track_x + 1.0, view_top + 1.0, track_w, visible, Color::new(0.0, 0.0, 0.0, 0.45));
+        draw_rectangle_lines(track_x, view_top, track_w + 2.0, visible, 1.0, argb_to_color(BOX_BORDER));
+        draw_rectangle(track_x, thumb_y, track_w + 2.0, thumb_h, argb_to_color(SHOP_OK));
+    }
+
+    // bouton CLOSE + rappel des touches
+    let hint = "ENTRÉE / ÉCHAP : LANCER LA MISSION";
+    let hw = measure_text(hint, None, 13, 1.0).width;
+    draw_text_shadow(
+        hint,
+        panel.x + (panel.w - hw) / 2.0,
+        close.y - 8.0,
+        13.0,
+        argb_to_color(BOX_FG_DIM),
+    );
+    draw_box_button("CLOSE", close);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -674,5 +1041,27 @@ mod tests {
             assert!(r.y >= 0.0 && r.y + r.h <= VIEWPORT_HEIGHT as f32);
         }
         assert!(restart.x + restart.w <= title.x);
+    }
+
+    #[test]
+    fn briefing_panel_is_fully_visible_and_content_is_clipped() {
+        // la fenêtre de briefing est entièrement dans la vue (jamais
+        // tronquée par le bord de l'écran)
+        let (panel, close) = briefing_layout();
+        assert!(panel.x >= 0.0 && panel.x + panel.w <= VIEWPORT_WIDTH as f32);
+        assert!(panel.y >= 0.0 && panel.y + panel.h <= VIEWPORT_HEIGHT as f32);
+        assert!(close.x >= panel.x && close.x + close.w <= panel.x + panel.w);
+        assert!(close.y >= panel.y && close.y + close.h <= panel.y + panel.h);
+
+        // le bas de la zone défilante laisse la place à une ligne : une ligne
+        // qui y commence ne recouvre jamais le rappel des touches ni le
+        // bouton CLOSE (le contenu ne déborde pas de la fenêtre)
+        let (top, bottom) = briefing_scroll_rect();
+        assert!(top < bottom, "la zone défilante doit avoir une hauteur positive");
+        assert!(
+            bottom + BRIEFING_LINE_H <= close.y,
+            "le contenu du briefing ne doit pas recouvrir le bouton CLOSE"
+        );
+        assert!(bottom + BRIEFING_LINE_H <= VIEWPORT_HEIGHT as f32);
     }
 }

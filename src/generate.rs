@@ -15,8 +15,7 @@ use crate::geom::{generate_vertex_outside, Point, Triangle};
 // constantes de la carte « Météores & collisions » de l'outil de gestion
 use crate::marketplace::{
     METEOR_SPIN_BASE, METEOR_SPIN_MAX, METEOR_VELOCITY_MAX, TRIANGLE_BASE_MAX,
-    TRIANGLE_BASE_MIN, TRIANGLE_HEIGHT_MAX, TRIANGLE_HEIGHT_MIN, TRIANGLES_IN_SHAPE_MAX,
-    TRIANGLES_IN_SHAPE_MIN,
+    TRIANGLE_BASE_MIN, TRIANGLE_HEIGHT_MAX, TRIANGLE_HEIGHT_MIN, TRIANGLES_IN_SHAPE_MIN,
 };
 use crate::shape::*;
 use crate::state::{default_elements, Element, GameState};
@@ -188,6 +187,10 @@ pub fn meteor_spin(nbr: usize) -> f64 {
 }
 
 /// Crée un météore à une position hors de la vue (ex `createShape`).
+///
+/// **Difficulté adaptative** (`difficulty.rs`) : au fil de la session, le
+/// nombre de triangles (taille) et la vitesse maximale des météores
+/// augmentent progressivement (vagues progressives).
 pub fn create_shape(
     state: &GameState,
     shapes: &mut Vec<Shape>,
@@ -196,9 +199,7 @@ pub fn create_shape(
     elements: &[Element],
     rng: &mut impl Rng,
 ) -> usize {
-    let nbr = (TRIANGLES_IN_SHAPE_MIN as f64
-        + (TRIANGLES_IN_SHAPE_MAX - TRIANGLES_IN_SHAPE_MIN) as f64 * rng.r#gen::<f64>())
-        as usize;
+    let nbr = crate::difficulty::triangle_count(state, rng);
     let shape_index = generate_shape(
         shapes,
         triangles,
@@ -212,29 +213,20 @@ pub fn create_shape(
     );
 
     // position aléatoire dans le monde, hors de la vue actuelle
-    let (x, y) = loop {
-        let x = WORLD_WIDTH * rng.r#gen::<f64>() + WORLD_MINX;
-        let y = WORLD_HEIGHT * rng.r#gen::<f64>() + WORLD_MINY;
-        let mut p = Point::new(x + camera.x, y + camera.y);
-        p.normalize_world(&state.world);
-        let inside_view =
-            (p.x > 0.0 && p.x < VIEWPORT_WIDTH) || (p.y > 0.0 && p.y < VIEWPORT_HEIGHT);
-        if !inside_view {
-            break (x, y);
-        }
-    };
+    let (x, y) = random_world_position(state, camera, rng);
 
     let shape = &mut shapes[shape_index];
     shape.who_i_am = WHOIAM_METEOR;
     shape.is_collider = true;
     shape.position = Point::new(x, y);
     shape.direction = TAU * rng.r#gen::<f64>();
-    shape.velocity = METEOR_VELOCITY_MAX * rng.r#gen::<f64>();
+    shape.velocity = crate::difficulty::meteor_velocity_max(state) * rng.r#gen::<f64>();
     shape.orientation = 0.0;
     // Tournoiement : vitesse de rotation inversement proportionnelle à la
     // taille (voir `meteor_spin`), signe aléatoire.
     shape.rotation = meteor_spin(nbr) * (1.0 - 2.0 * rng.r#gen::<f64>());
     shape.texture = TEXTURE_METEOR;
+    shape.is_boss = false;
     // minerais contenus : un par triangle minéralisé (or/fer/eau) - la
     // quantité libérée en minerais si le météore est détruit par la collision
     // d'un autre météore (voir `release_meteor_minerals`)
@@ -244,6 +236,184 @@ pub fn create_shape(
     compute_shape_center(shape, triangles);
 
     shape_index
+}
+
+/// Position aléatoire dans le monde, **hors de la vue actuelle** (ex la
+/// boucle de positionnement de `createShape`) - partagée par les météores,
+/// le météore spécial et les portails.
+pub fn random_world_position(state: &GameState, camera: Point, rng: &mut impl Rng) -> (f64, f64) {
+    loop {
+        let x = WORLD_WIDTH * rng.r#gen::<f64>() + WORLD_MINX;
+        let y = WORLD_HEIGHT * rng.r#gen::<f64>() + WORLD_MINY;
+        let mut p = Point::new(x + camera.x, y + camera.y);
+        p.normalize_world(&state.world);
+        let inside_view =
+            (p.x > 0.0 && p.x < VIEWPORT_WIDTH) || (p.y > 0.0 && p.y < VIEWPORT_HEIGHT);
+        if !inside_view {
+            break (x, y);
+        }
+    }
+}
+
+/// Crée le **météore spécial** (boss) : un gros astéroïde de
+/// `BOSS_TRIANGLES` triangles (générés avec les bornes maximales), mis à
+/// l'échelle `BOSS_SCALE` (plus de résistance : chaque triangle est une
+/// « vie »), lent (vitesse réduite, rotation lente - `meteor_spin` plafonne
+/// déjà pour les gros corps), avec une forte teneur minérale - y compris du
+/// **PLATINUM** (`ELEMENT_PLATINUM`, le minerai rare) sur une partie des
+/// triangles. Sa destruction rapporte un bonus de réputation et un
+/// éparpillement de minerais (voir `game.rs`). Apparaît périodiquement
+/// (`BOSS_SPAWN_INTERVAL`, `game.rs`) - un seul boss vivant à la fois.
+pub fn create_boss_meteor(
+    state: &GameState,
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    camera: Point,
+    elements: &[Element],
+    rng: &mut impl Rng,
+) -> usize {
+    let nbr = BOSS_TRIANGLES;
+    let shape_index = generate_shape(
+        shapes,
+        triangles,
+        nbr,
+        TRIANGLE_BASE_MAX / 2,
+        TRIANGLE_BASE_MAX,
+        TRIANGLE_HEIGHT_MAX / 2,
+        TRIANGLE_HEIGHT_MAX,
+        elements,
+        rng,
+    );
+    resize_shape(BOSS_SCALE, &mut shapes[shape_index], triangles);
+
+    let (x, y) = random_world_position(state, camera, rng);
+    let shape = &mut shapes[shape_index];
+    shape.who_i_am = WHOIAM_METEOR;
+    shape.is_collider = true;
+    shape.is_boss = true;
+    shape.position = Point::new(x, y);
+    shape.direction = TAU * rng.r#gen::<f64>();
+    shape.velocity = METEOR_VELOCITY_MAX * 0.6 * rng.r#gen::<f64>();
+    shape.orientation = 0.0;
+    shape.rotation = meteor_spin(nbr) * (1.0 - 2.0 * rng.r#gen::<f64>());
+    shape.texture = TEXTURE_METEOR;
+    // forte teneur minérale : les triangles générés ont déjà leur élément
+    // (15 % par défaut) - on en ajoute sur les triangles restants, avec une
+    // part de PLATINUM (1 triangle sur 8)
+    let plat = ELEMENT_PLATINUM;
+    for i in shape.first_triangle..=shape.last_triangle {
+        if triangles[i].element <= 0 {
+            triangles[i].element = if rng.r#gen::<f64>() < 0.5 {
+                plat
+            } else {
+                1 + (rng.r#gen::<f64>() * 3.0) as i32
+            };
+        }
+    }
+    shape.minerals = (shape.first_triangle..=shape.last_triangle)
+        .filter(|&i| triangles[i].element > 0)
+        .count() as i32;
+    compute_shape_center(shape, triangles);
+
+    shape_index
+}
+
+/// Crée un **portail de distorsion** (warp gate) à une position hors de la
+/// vue : un anneau violet statique, indestructible, qui téléporte le
+/// vaisseau qui le percute d'une fraction du monde (`WARP_JUMP_FRACTION`,
+/// `game.rs` - le portail est consommé). Les météores rebondissent dessus
+/// sans l'endommager (pas de choc élastique - `game.rs`).
+pub fn create_warp_gate(
+    state: &GameState,
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    camera: Point,
+    rng: &mut impl Rng,
+) -> usize {
+    // anneau à 16 côtés (éventail glissant → 14 triangles)
+    const GATE_MESH: Mesh = &[&[
+        (30.0, 0.0),
+        (24.0, 0.0),
+        (27.7, -11.5),
+        (22.2, -9.2),
+        (21.2, -21.2),
+        (17.0, -17.0),
+        (11.5, -27.7),
+        (9.2, -22.2),
+        (0.0, -30.0),
+        (0.0, -24.0),
+        (-11.5, -27.7),
+        (-9.2, -22.2),
+        (-21.2, -21.2),
+        (-17.0, -17.0),
+        (-27.7, -11.5),
+        (-22.2, -9.2),
+        (-30.0, 0.0),
+        (-24.0, 0.0),
+        (-27.7, 11.5),
+        (-22.2, 9.2),
+        (-21.2, 21.2),
+        (-17.0, 17.0),
+        (-11.5, 27.7),
+        (-9.2, 22.2),
+        (0.0, 30.0),
+        (0.0, 24.0),
+        (11.5, 27.7),
+        (9.2, 22.2),
+        (21.2, 21.2),
+        (17.0, 17.0),
+        (27.7, 11.5),
+        (22.2, 9.2),
+        (30.0, 0.0),
+        (24.0, 0.0),
+    ]];
+    let mut shape = Shape::default();
+    let idx = meshes_to_shape(&mut shape, shapes, triangles, GATE_MESH);
+    let (x, y) = random_world_position(state, camera, rng);
+    let shape = &mut shapes[idx];
+    shape.who_i_am = WHOIAM_WARP_GATE;
+    shape.is_collider = true;
+    shape.shape_color = 0xFFB04AFF; // violet néon
+    shape.position = Point::new(x, y);
+    shape.direction = 0.0;
+    shape.velocity = 0.0;
+    shape.orientation = 0.0;
+    shape.rotation = 0.0;
+    shape.texture = TEXTURE_NONE;
+    compute_shape_center(shape, triangles);
+    idx
+}
+
+/// Crée une **mine** (consommable fabriqué, posée en vol - touche 3) : un
+/// octogone rouge statique qui explose au contact d'un météore, détruisant
+/// les triangles dans son rayon (`MINE_RADIUS`, `game.rs`).
+pub fn create_mine(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>, position: Point) -> usize {
+    const MINE_MESH: Mesh = &[&[
+        (12.0, 0.0),
+        (8.5, -8.5),
+        (0.0, -12.0),
+        (-8.5, -8.5),
+        (-12.0, 0.0),
+        (-8.5, 8.5),
+        (0.0, 12.0),
+        (8.5, 8.5),
+        (12.0, 0.0),
+        (8.5, -8.5),
+    ]];
+    let mut shape = Shape::default();
+    let idx = meshes_to_shape(&mut shape, shapes, triangles, MINE_MESH);
+    let shape = &mut shapes[idx];
+    shape.who_i_am = WHOIAM_MINE;
+    shape.is_collider = true;
+    shape.shape_color = 0xFFFF5040;
+    shape.position = position;
+    shape.direction = 0.0;
+    shape.velocity = 0.0;
+    shape.orientation = 0.0;
+    shape.rotation = 0.0;
+    shape.texture = TEXTURE_NONE;
+    compute_shape_center(shape, triangles);
+    idx
 }
 
 /// Libère les minerais d'un météore détruit par la collision d'un autre
@@ -970,7 +1140,8 @@ mod tests {
             shapes[STATION_INDEX].radius
         );
         assert_eq!(stars.len(), STARS_COUNT);
-        assert_eq!(elements.len(), 4);
+        // GOLD, IRON, WATER + PLATINUM (minerai rare du météore spécial)
+        assert_eq!(elements.len(), 5);
         // positions initiales
         assert_eq!(shapes[PLAYER_INDEX].position, Point::new(0.0, 0.0));
         assert_eq!(shapes[STATION_INDEX].position, Point::new(0.0, 0.0));

@@ -51,39 +51,41 @@ impl Sounds {
     pub async fn load() -> Sounds {
         // Sons intégrés dans le binaire (`include_bytes!`) : l'exécutable est
         // autonome, le dossier `assets/` n'est plus nécessaire au runtime.
+        // Modding : un fichier `user_assets/<nom>` remplace le son embarqué
+        // (voir `modding.rs`).
         async fn load(bytes: &'static [u8], name: &str) -> Sound {
-            audio::load_sound_from_bytes(bytes)
+            let owned = crate::modding::asset_bytes(name, bytes);
+            audio::load_sound_from_bytes(&owned)
                 .await
                 .unwrap_or_else(|e| panic!("{name} illisible - {e}"))
         }
 
         let mut explosions = Vec::with_capacity(10);
-        for (i, bytes) in [
-            &include_bytes!("../assets/exp11.ogg")[..],
-            &include_bytes!("../assets/exp12.ogg")[..],
-            &include_bytes!("../assets/exp13.ogg")[..],
-            &include_bytes!("../assets/exp14.ogg")[..],
-            &include_bytes!("../assets/exp15.ogg")[..],
-            &include_bytes!("../assets/exp16.ogg")[..],
-            &include_bytes!("../assets/exp17.ogg")[..],
-            &include_bytes!("../assets/exp18.ogg")[..],
-            &include_bytes!("../assets/exp19.ogg")[..],
-            &include_bytes!("../assets/exp20.ogg")[..],
-        ]
-        .iter()
-        .enumerate()
-        {
-            explosions.push(load(bytes, &format!("assets/exp{}.ogg", i + 11)).await);
+        for i in 0..10 {
+            let name = format!("exp{}.ogg", i + 11);
+            let bytes: &'static [u8] = match i {
+                0 => &include_bytes!("../assets/exp11.ogg")[..],
+                1 => &include_bytes!("../assets/exp12.ogg")[..],
+                2 => &include_bytes!("../assets/exp13.ogg")[..],
+                3 => &include_bytes!("../assets/exp14.ogg")[..],
+                4 => &include_bytes!("../assets/exp15.ogg")[..],
+                5 => &include_bytes!("../assets/exp16.ogg")[..],
+                6 => &include_bytes!("../assets/exp17.ogg")[..],
+                7 => &include_bytes!("../assets/exp18.ogg")[..],
+                8 => &include_bytes!("../assets/exp19.ogg")[..],
+                _ => &include_bytes!("../assets/exp20.ogg")[..],
+            };
+            explosions.push(load(bytes, &name).await);
         }
 
         Sounds {
-            bullet: load(include_bytes!("../assets/mis4.ogg"), "assets/mis4.ogg").await,
-            mineral: load(include_bytes!("../assets/gem1.ogg"), "assets/gem1.ogg").await,
+            bullet: load(include_bytes!("../assets/mis4.ogg"), "mis4.ogg").await,
+            mineral: load(include_bytes!("../assets/gem1.ogg"), "gem1.ogg").await,
             explosions,
-            engine: load(include_bytes!("../assets/fffff.ogg"), "assets/fffff.ogg").await,
-            reverse: load(include_bytes!("../assets/fffff.ogg"), "assets/fffff.ogg").await,
-            ambient: load(include_bytes!("../assets/bruitDeFond.ogg"), "assets/bruitDeFond.ogg").await,
-            music: load(include_bytes!("../assets/music1.ogg"), "assets/music1.ogg").await,
+            engine: load(include_bytes!("../assets/fffff.ogg"), "fffff.ogg").await,
+            reverse: load(include_bytes!("../assets/fffff.ogg"), "fffff.ogg").await,
+            ambient: load(include_bytes!("../assets/bruitDeFond.ogg"), "bruitDeFond.ogg").await,
+            music: load(include_bytes!("../assets/music1.ogg"), "music1.ogg").await,
             music_on: false,
             volume: 1.0,
             music_volume: 1.0,

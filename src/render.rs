@@ -86,21 +86,26 @@ impl Assets {
     pub async fn load() -> Assets {
         // Textures intégrées dans le binaire (`include_bytes!`) : l'exécutable
         // est autonome, le dossier `assets/` n'est plus nécessaire au runtime.
+        // Modding : un fichier `user_assets/<nom>` remplace l'asset embarqué
+        // (voir `modding.rs` - le format est déduit de l'extension du fichier).
         let orange = Texture2D::from_file_with_format(
-            include_bytes!("../assets/orange2.png"),
-            Some(ImageFormat::Png),
+            &crate::modding::asset_bytes("orange2.png", include_bytes!("../assets/orange2.png")),
+            Some(crate::modding::image_format_for("orange2.png")),
         );
         let player = Texture2D::from_file_with_format(
-            include_bytes!("../assets/vaisseau.png"),
-            Some(ImageFormat::Png),
+            &crate::modding::asset_bytes("vaisseau.png", include_bytes!("../assets/vaisseau.png")),
+            Some(crate::modding::image_format_for("vaisseau.png")),
         );
         let meteor = Texture2D::from_file_with_format(
-            include_bytes!("../assets/meteor_surface_tile.jpg"),
-            Some(ImageFormat::Jpeg),
+            &crate::modding::asset_bytes(
+                "meteor_surface_tile.jpg",
+                include_bytes!("../assets/meteor_surface_tile.jpg"),
+            ),
+            Some(crate::modding::image_format_for("meteor_surface_tile.jpg")),
         );
         let station = Texture2D::from_file_with_format(
-            include_bytes!("../assets/station.png"),
-            Some(ImageFormat::Png),
+            &crate::modding::asset_bytes("station.png", include_bytes!("../assets/station.png")),
+            Some(crate::modding::image_format_for("station.png")),
         );
 
         let star_layers = build_star_layers();
@@ -569,15 +574,35 @@ pub fn draw_shape(
     }
 
     // minimap (radar de bord - `scenario::has_radar` : allumée par défaut en
-    // jeu libre / Survival, achetée au magasin en scénario à économie)
+    // jeu libre / Survival, achetée au magasin en scénario à économie).
+    // **Zones colorées** : la station en vert, les météores en rouge, les
+    // minerais en jaune, le vaisseau en blanc, les portails en cyan et les
+    // mines en orange - les balles ne sont pas dessinées (elles passeraient
+    // chaque frame).
     if crate::scenario::has_radar(state) {
         let mut p = Point::new(shape.position.x + camera.x, shape.position.y + camera.y);
         p.normalize_world(&state.world);
-        // NB : l'original calcule une couleur `c&` (inutilisée) ; le point est
-        // dessiné avec `shape.shapeColor`.
         let x = (p.x / 10.0) as i32 + (VIEWPORT_WIDTH / 2.0 - VIEWPORT_WIDTH / 20.0) as i32;
         let y = (p.y / 10.0) as i32 + (VIEWPORT_HEIGHT / 2.0 - VIEWPORT_HEIGHT / 20.0) as i32;
-        draw_circle(x as f32, y as f32, 1.0, argb_to_color(shape.shape_color));
+        let color = match shape.who_i_am {
+            WHOIAM_STATION => 0xFF40FF80,   // base : vert
+            WHOIAM_METEOR => 0xFFFF5050,    // météores : rouge
+            WHOIAM_MINERAL => 0xFFFFFF60,   // minerais : jaune
+            WHOIAM_PLAYER => 0xFFFFFFFF,    // vaisseau : blanc
+            WHOIAM_WARP_GATE => 0xFF60FFFF, // portails : cyan
+            WHOIAM_MINE => 0xFFFF9050,      // mines : orange
+            WHOIAM_BULLET => 0x00000000,    // balles : invisibles
+            _ => shape.shape_color,
+        };
+        if color != 0x00000000 {
+            draw_circle(x as f32, y as f32, 1.0, argb_to_color(color));
+            // highlight de la zone d'accostage quand le guide est actif
+            // (retour à la base) : anneau vert pulsant autour de la station
+            if shape.who_i_am == WHOIAM_STATION && state.docking_guide {
+                let r = 3.0 + (get_time() * 2.0).sin().abs() as f32;
+                draw_circle_lines(x as f32, y as f32, r, 1.0, argb_to_color(0xFF40FF80));
+            }
+        }
     }
 
     for t in &triangles[shape.first_triangle..=shape.last_triangle] {
@@ -810,7 +835,9 @@ fn draw_colored_triangle(
 
 /// Triangle en fil de fer (style « MESH » de l'écran de paramétrage) :
 /// arêtes seules, dans la couleur de l'élément (sinon celle de la forme) ;
-/// les triangles morts restent en pointillés.
+/// les triangles morts restent en pointillés. Les triangles de la **base**
+/// portent leur niveau de dégâts : les arêtes rougissent et s'épaississent à
+/// mesure que les impacts s'accumulent (`t.damage` / `STATION_TRIANGLE_DAMAGE_MAX`).
 fn draw_mesh_triangle(
     t: &Triangle,
     shape: &Shape,
@@ -826,7 +853,18 @@ fn draw_mesh_triangle(
         draw_dead_triangle(a, b, c, t, shape);
         return;
     }
-    draw_triangle_lines(a, b, c, 1.0, fade_color(triangle_color(t, shape, elements), fade));
+    // niveau de dégâts de la base (style MESH) : rouge d'autant plus vif et
+    // arêtes d'autant plus épaisses que le triangle est endommagé
+    let (line_color, width) = if shape.who_i_am == WHOIAM_STATION && t.damage > 0 {
+        let f = (t.damage as f32 / STATION_TRIANGLE_DAMAGE_MAX as f32).min(1.0);
+        (
+            Color::new(1.0, 0.30 * (1.0 - f), 0.20 * (1.0 - f), 1.0),
+            1.0 + 2.5 * f,
+        )
+    } else {
+        (triangle_color(t, shape, elements), 1.0)
+    };
+    draw_triangle_lines(a, b, c, width, fade_color(line_color, fade));
     draw_element_dot(t, camera, elements, world);
 }
 
@@ -1105,11 +1143,9 @@ pub(crate) const HUD_RESOURCES_ECONOMY_COLS: i32 = 39;
 /// Largeur maximale (en caractères) du bloc de ressources en Survival
 /// (LIVES/SHIELD) → le statut d'accostage démarre à la colonne 74.
 pub(crate) const HUD_RESOURCES_SURVIVAL_COLS: i32 = 16;
-/// Largeur (en caractères) du bloc SCORE/RECORD ajouté à la fin du bloc de
-/// ressources : « SCORE:99999 BEST:99999 » = 26 caractères → le statut
-/// d'accostage démarre après le record (les colonnes de départ restent
-/// fixes, seule la fin de ligne recule).
-pub(crate) const HUD_SCORE_COLS: i32 = 27;
+/// Le score composite + record n'est PAS sur la ligne principale (réservée
+/// au statut d'accostage - distance à la base prioritaire) : il est affiché
+/// **en bas à droite** de l'écran (voir `draw_score_hud`).
 
 /// Fréquence (Hz) du **clignotement d'alerte** des ressources du HUD :
 /// carburant/munitions presque vides et baies de chargement presque pleines

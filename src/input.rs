@@ -102,6 +102,9 @@ pub fn player_controls(
     // carburant (scénarios à économie) : les poussées avant/arrière sont
     // bloquées quand le réservoir est vide - les rotations restent libres
     let fuel_ok = scenario::fuel_available(state);
+    // boost de vitesse (consommable) : la poussée est amplifiée pendant
+    // `BOOST_DURATION` (voir `scenario::boost_factor`)
+    let boost = scenario::boost_factor(state);
 
     // (portée dédiée : l'emprunt mutable de `shapes[PLAYER_INDEX]` doit se
     // terminer avant le tir, qui réemprunte tout `shapes`)
@@ -113,7 +116,7 @@ pub fn player_controls(
             // rotation de REALISTIC continuer après un changement de mode
             player.rotation = 0.0;
             if fuel_ok && up_pressed() {
-                player.velocity += PLAYER_ACCELERATION * 60.0 * dt;
+                player.velocity += PLAYER_ACCELERATION * 60.0 * dt * boost;
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
             }
@@ -144,14 +147,14 @@ pub fn player_controls(
             if fuel_ok && up_pressed() {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
-                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, 1.0, -1.0);
+                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt * boost, player.orientation, 1.0, -1.0);
             }
             if right_pressed() {
                 player.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
             if fuel_ok && down_pressed() {
-                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, -1.0, 1.0);
+                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt * boost, player.orientation, -1.0, 1.0);
                 if player.velocity > 0.0 {
                     state.player.revert_thrusted = -5;
                 }
@@ -169,7 +172,7 @@ pub fn player_controls(
             if fuel_ok && up_pressed() {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
-                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, 1.0, -1.0);
+                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt * boost, player.orientation, 1.0, -1.0);
             }
             let rotate_right = right_pressed();
             let rotate_left = left_pressed();
@@ -187,7 +190,7 @@ pub fn player_controls(
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
             if fuel_ok && down_pressed() {
-                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt, player.orientation, -1.0, 1.0);
+                thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt * boost, player.orientation, -1.0, 1.0);
                 if player.velocity > 0.0 {
                     state.player.revert_thrusted = -5;
                 }
@@ -202,13 +205,13 @@ pub fn player_controls(
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 let dx = player.direction.cos() * player.velocity;
-                let dy = player.direction.sin() * player.velocity + PLAYER_ACCELERATION * 60.0 * dt;
+                let dy = player.direction.sin() * player.velocity + PLAYER_ACCELERATION * 60.0 * dt * boost;
                 player.direction = dy.atan2(dx);
                 player.velocity = dx.hypot(dy);
                 player.orientation = -player.direction;
             }
             if fuel_ok && right_pressed() {
-                let dx = player.direction.cos() * player.velocity + PLAYER_ACCELERATION * 60.0 * dt;
+                let dx = player.direction.cos() * player.velocity + PLAYER_ACCELERATION * 60.0 * dt * boost;
                 let dy = player.direction.sin() * player.velocity;
                 player.direction = dy.atan2(dx);
                 player.velocity = dx.hypot(dy);
@@ -217,7 +220,7 @@ pub fn player_controls(
             }
             if fuel_ok && down_pressed() {
                 let dx = player.direction.cos() * player.velocity;
-                let dy = player.direction.sin() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt;
+                let dy = player.direction.sin() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt * boost;
                 player.direction = dy.atan2(dx);
                 player.velocity = dx.hypot(dy);
                 player.orientation = -player.direction;
@@ -226,7 +229,7 @@ pub fn player_controls(
                 }
             }
             if fuel_ok && left_pressed() {
-                let dx = player.direction.cos() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt;
+                let dx = player.direction.cos() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt * boost;
                 let dy = player.direction.sin() * player.velocity;
                 player.direction = dy.atan2(dx);
                 player.velocity = dx.hypot(dy);

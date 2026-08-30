@@ -49,12 +49,14 @@ use crate::state::{Element, GameState};
 // pas. Les éléments privés de `scenario.rs` (définitions, règles affichées)
 // restent accessibles aux sous-modules via `use super::*`.
 
+mod craft;
 mod progression;
 mod ranks;
 mod rules;
 mod shop;
 mod workshop;
 
+pub use craft::*;
 pub use progression::*;
 pub use ranks::*;
 pub use rules::*;
@@ -441,6 +443,13 @@ pub fn apply_start(state: &mut GameState) {
     // annonce « NEW RECORD » réarmée pour la nouvelle partie (le record
     // enregistré lui-même survit - voir `load_progression`)
     state.score_record_announced = false;
+    // statistiques de session, journal de bord, consommables et minuteurs
+    // des vagues (difficulté, boss, portails) remis à zéro pour la nouvelle
+    // partie
+    state.reset_session();
+    // l'écran de briefing pré-partie (scénarios custom avec objectifs) est
+    // ré-armé - il s'affichera au lancement de la partie (`main.rs`)
+    state.briefing_box = false;
     match state.scenario {
         ScenarioId::FreePlay | ScenarioId::Survival => {
             // jeu libre : aucune ressource ; Survival : vies + bouclier pleins

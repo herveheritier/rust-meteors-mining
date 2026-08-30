@@ -58,6 +58,19 @@ pub const WHOIAM_ALIEN: i32 = 5;
 /// Cosmonaute décoratif chargé depuis `assets/cosmonaute.json` (export
 /// « meshes-designer », voir `cosmonaut.rs`) : jamais détruit, aucun collider.
 pub const WHOIAM_COSMONAUT: i32 = 6;
+/// Portail de distorsion (warp gate) : un anneau violet posé dans le monde -
+/// le vaisseau qui le percute est téléporté d'une fraction du monde
+/// (`WARP_JUMP_FRACTION`), le portail est consommé. Indestructible sinon.
+pub const WHOIAM_WARP_GATE: i32 = 7;
+/// Mine posée par le joueur (consommable fabriqué) : explose au contact d'un
+/// météore, détruisant les triangles dans son rayon (`MINE_RADIUS`).
+pub const WHOIAM_MINE: i32 = 8;
+
+/// Élément minéral **PLATINUM** (index dans `default_elements` et
+/// `ELEMENT_VALUES`) : minerai rare relâché par le **météore spécial** (boss,
+/// voir `generate::create_boss_meteor`), d'une valeur de 10 crédits au
+/// déchargement. Les éléments classiques restent GOLD=1, IRON=2, WATER=3.
+pub const ELEMENT_PLATINUM: i32 = 4;
 
 /// Modes de déplacement du vaisseau.
 ///
@@ -103,6 +116,13 @@ pub const SHOP_TAB_WEAPONS: u8 = 1;
 pub const SHOP_TAB_WORKSHOP: u8 = 2;
 /// Onglet MODE DE VOL : sélection / déblocage des modes de déplacement.
 pub const SHOP_TAB_MODES: u8 = 3;
+/// Onglet FABRICATION : consommer des minerais de la soute (GOLD, IRON,
+/// WATER) pour fabriquer des consommables (bouclier temporaire, boost de
+/// vitesse, mines) utilisables en vol (touches 1/2/3).
+pub const SHOP_TAB_CRAFT: u8 = 4;
+/// Nombre d'onglets du magasin (taille du tableau `tabs` de
+/// `shop_render::ShopBoxLayout`).
+pub const SHOP_TAB_COUNT: usize = 5;
 
 /// Styles de rendu des triangles (écran de paramétrage, touche O).
 pub const RENDER_STYLE_TEXTURED: i32 = 0;
@@ -219,6 +239,68 @@ pub const CARGO_SIZE: i32 = 5;
 /// rayon du vaisseau (10) - la zone est affichée par la mire au centre de la
 /// station (voir `render::draw_docking_marker`).
 pub const STATION_DOCK_DISTANCE: f64 = 15.0;
+
+/// Nombre d'impacts de météore qu'un triangle de la **base** encaisse avant
+/// d'être détruit : chaque collision météore/station ajoute 1 point de dégât
+/// au triangle percuté ; à `STATION_TRIANGLE_DAMAGE_MAX`, le triangle meurt
+/// (un trou s'ouvre dans l'anneau - les météores peuvent passer à travers).
+pub const STATION_TRIANGLE_DAMAGE_MAX: i32 = 5;
+
+/// Fraction de la **largeur du monde** franchie par un saut de portail
+/// (`WHOIAM_WARP_GATE`) : le vaisseau est téléporté d'environ 25 % de la
+/// largeur du monde torique le long de son orientation, dans la direction
+/// (avant ou arrière) qui l'éloigne du portail.
+pub const WARP_JUMP_FRACTION: f64 = 0.25;
+/// Intervalle (secondes) entre deux apparitions de portails (un portail est
+/// posé si aucun n'est déjà vivant à l'échéance).
+pub const WARP_GATE_SPAWN_INTERVAL: f64 = 75.0;
+/// Nombre maximal de portails vivants simultanément.
+pub const WARP_GATE_MAX: i32 = 2;
+
+/// Intervalle (secondes) entre deux apparitions de **météores spéciaux**
+/// (boss - gros astéroïde, minerai rare) : un boss apparaît si aucun n'est
+/// déjà vivant à l'échéance.
+pub const BOSS_SPAWN_INTERVAL: f64 = 150.0;
+/// Nombre de triangles demandés pour le météore spécial (le générateur peut
+/// en produire moins si les triangles sont invalides).
+pub const BOSS_TRIANGLES: usize = 60;
+/// Échelle appliquée au météore spécial (multiplicateur des sommets).
+pub const BOSS_SCALE: f64 = 2.4;
+
+/// Durée (secondes) de l'effet du **boost de vitesse** (consommable) : la
+/// poussée est multipliée par `BOOST_FACTOR` tant qu'il est actif.
+pub const BOOST_DURATION: f64 = 20.0;
+/// Multiplicateur de poussée pendant le boost de vitesse (consommable).
+pub const BOOST_FACTOR: f64 = 1.5;
+/// Points de **bouclier temporaire** accordés par le consommable SHIELD :
+/// absorbe les impacts comme le bouclier Survival, dans tous les scénarios,
+/// jusqu'à épuisement.
+pub const TEMP_SHIELD_POINTS: f64 = 3.0;
+/// Rayon (unités monde) de l'explosion d'une **mine** : tous les triangles
+/// de météore dans ce rayon sont détruits à l'explosion.
+pub const MINE_RADIUS: f64 = 130.0;
+/// Intervalle (secondes) entre deux paliers de **difficulté adaptative** :
+/// à chaque palier, la vitesse maximale des météores, leur nombre et la
+/// densité de génération augmentent (voir `difficulty.rs`).
+pub const DIFFICULTY_RAMP_SECONDS: f64 = 120.0;
+/// Nombre d'événements conservés dans le **journal de bord** (touche L,
+/// `GameState::event_log`).
+pub const EVENT_LOG_LEN: usize = 20;
+
+/// Recette « bouclier temporaire » (consommable) : (GOLD, IRON, WATER).
+pub const CRAFT_SHIELD_RECIPE: [i32; 3] = [0, 2, 1];
+/// Recette « boost de vitesse » (consommable) : (GOLD, IRON, WATER).
+pub const CRAFT_BOOST_RECIPE: [i32; 3] = [2, 0, 1];
+/// Recette « mine » (consommable) : (GOLD, IRON, WATER).
+pub const CRAFT_MINE_RECIPE: [i32; 3] = [1, 2, 0];
+
+/// Indices des consommables fabriqués (tableaux `GameState::consumables` et
+/// `CRAFT_RECIPES` de `scenario/craft.rs`).
+pub const CRAFT_SHIELD: usize = 0;
+pub const CRAFT_BOOST: usize = 1;
+pub const CRAFT_MINE: usize = 2;
+/// Nombre de consommables du système de fabrication.
+pub const CRAFT_COUNT: usize = 3;
 
 /// Rayon (unités monde) du cercle d'éparpillement des minerais de la soute
 /// quand le vaisseau est détruit (`generate::eject_cargo_minerals`) : les

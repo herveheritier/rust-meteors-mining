@@ -224,6 +224,11 @@ pub struct Shape {
     pub anim_angle: f64,
     pub show_all_parts: bool,
     pub who_i_am: i32,
+    /// Météore **spécial** (boss - `generate::create_boss_meteor`) : plus
+    /// gros, plus résistant (plus de triangles), libère du PLATINUM et
+    /// rapporte un bonus de réputation à sa destruction. `false` pour toutes
+    /// les autres formes.
+    pub is_boss: bool,
 }
 
 impl Default for Shape {
@@ -256,6 +261,7 @@ impl Default for Shape {
             anim_angle: 0.0,
             show_all_parts: false,
             who_i_am: 0,
+            is_boss: false,
         }
     }
 }

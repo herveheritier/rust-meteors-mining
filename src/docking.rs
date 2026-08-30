@@ -70,8 +70,9 @@ pub fn docking(
             // l'accostage démarre : le guide est coupé - il ne réapparaîtra
             // qu'à un prochain retour (et pas pendant qu'on quitte l'accostage)
             state.docking_guide = false;
-            // compteur d'accostages (objectifs DAG)
+            // compteur d'accostages (objectifs DAG) + journal de bord
             state.docking_count += 1;
+            state.log_event("ACCOSTAGE À LA STATION");
         } else {
             // déchargement : la soute est convertie en crédits (scénario à
             // économie) puis vidée - le ravitaillement s'achète au magasin
