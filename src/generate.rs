@@ -14,8 +14,9 @@ use crate::geom::{generate_vertex_outside, Point, Triangle};
 // génération des météores (taille, triangles, vitesse) et population :
 // constantes de la carte « Météores & collisions » de l'outil de gestion
 use crate::marketplace::{
-    METEOR_VELOCITY_MAX, TRIANGLE_BASE_MAX, TRIANGLE_BASE_MIN, TRIANGLE_HEIGHT_MAX,
-    TRIANGLE_HEIGHT_MIN, TRIANGLES_IN_SHAPE_MAX, TRIANGLES_IN_SHAPE_MIN,
+    METEOR_SPIN_BASE, METEOR_SPIN_MAX, METEOR_VELOCITY_MAX, TRIANGLE_BASE_MAX,
+    TRIANGLE_BASE_MIN, TRIANGLE_HEIGHT_MAX, TRIANGLE_HEIGHT_MIN, TRIANGLES_IN_SHAPE_MAX,
+    TRIANGLES_IN_SHAPE_MIN,
 };
 use crate::shape::*;
 use crate::state::{default_elements, Element, GameState};
@@ -171,6 +172,20 @@ pub fn generate_shape(
     shape_index
 }
 
+/// Скорость вращения метеора (рад/кадр@60fps): обратно пропорциональна размеру
+/// (числу треугольников), с потолком `METEOR_SPIN_MAX`. Маленький обломок
+/// крутится быстро, большой астероид — лениво (реалистичное поведение débris).
+/// NB: знак НЕ учитывается — вызывающий код умножает на случайный ±1.
+///
+/// Заменяет старый фиксированный 0.01–0.02 rad/frame из оригинала, у которого
+/// не было связи с размером.
+pub fn meteor_spin(nbr: usize) -> f64 {
+    if nbr <= 0 {
+        return 0.0;
+    }
+    (METEOR_SPIN_BASE * TRIANGLES_IN_SHAPE_MIN as f64 / nbr as f64).min(METEOR_SPIN_MAX)
+}
+
 /// Crée un météore à une position hors de la vue (ex `createShape`).
 pub fn create_shape(
     state: &GameState,
@@ -215,7 +230,9 @@ pub fn create_shape(
     shape.direction = TAU * rng.r#gen::<f64>();
     shape.velocity = METEOR_VELOCITY_MAX * rng.r#gen::<f64>();
     shape.orientation = 0.0;
-    shape.rotation = 0.01 - 0.02 * rng.r#gen::<f64>();
+    // Tournoiement : vitesse de rotation inversement proportionnelle à la
+    // taille (см. `meteor_spin`), знак случайный.
+    shape.rotation = meteor_spin(nbr) * (1.0 - 2.0 * rng.r#gen::<f64>());
     shape.texture = TEXTURE_METEOR;
     // minerais contenus : un par triangle minéralisé (or/fer/eau) - la
     // quantité libérée en minerais si le météore est détruit par la collision
@@ -713,6 +730,52 @@ mod tests {
             .count() as i32;
         assert_eq!(shapes[idx].minerals, minerals);
         assert_eq!(shapes[idx].who_i_am, WHOIAM_METEOR);
+    }
+
+    #[test]
+    fn meteor_spin_is_inversely_proportional_to_size() {
+        // Tournoiement : |spin| убывает с размером (nbr), потолок METEOR_SPIN_MAX.
+        use crate::marketplace::{METEOR_SPIN_BASE, METEOR_SPIN_MAX, TRIANGLES_IN_SHAPE_MIN};
+        let small = meteor_spin(TRIANGLES_IN_SHAPE_MIN as usize);
+        let big = meteor_spin(200);
+        assert!((small - METEOR_SPIN_BASE).abs() < 1e-9);
+        assert!(big < METEOR_SPIN_BASE, "gros astéroïde doit tourner plus lentement");
+        assert!(small <= METEOR_SPIN_MAX);
+        assert!(meteor_spin(0) == 0.0, "nbr=0 → без вращения (guard)");
+    }
+
+    #[test]
+    fn create_shape_applies_spin_with_random_sign() {
+        // create_shape применяет meteor_spin со случайным знаком: |rotation|
+        // в пределах (0, METEOR_SPIN_MAX]. (Фактическое число треугольников
+        // может быть меньше запрошенного — генерация пропускает невалидные,
+        // поэтому точное равенство не проверяем.)
+        use crate::marketplace::METEOR_SPIN_MAX;
+        let elements = default_elements();
+        let state = GameState::new();
+        let mut rng = seed();
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        let idx = create_shape(&state, &mut shapes, &mut triangles, Point::new(0.0, 0.0), &elements, &mut rng);
+        let rot = shapes[idx].rotation.abs();
+        assert!(rot > 0.0, "метеор должен вращаться");
+        assert!(rot <= METEOR_SPIN_MAX + 1e-9);
+    }
+
+    #[test]
+    fn meteor_spin_is_deterministic_with_fixed_seed() {
+        // même seed → même rotation (génération procédurale reproductible)
+        let elements = default_elements();
+        let state = GameState::new();
+        let mut r1 = seed();
+        let mut s1 = Vec::new();
+        let mut t1 = Vec::new();
+        let i1 = create_shape(&state, &mut s1, &mut t1, Point::new(0.0, 0.0), &elements, &mut r1);
+        let mut r2 = seed();
+        let mut s2 = Vec::new();
+        let mut t2 = Vec::new();
+        let i2 = create_shape(&state, &mut s2, &mut t2, Point::new(0.0, 0.0), &elements, &mut r2);
+        assert_eq!(s1[i1].rotation, s2[i2].rotation);
     }
 
     #[test]

@@ -15,7 +15,6 @@
 - [ ] **Difficulté adaptative / vagues progressives** — Nombre de météores, vitesse et densité qui augmentent progressivement pendant la session, particulièrement utile en Survival.
 - [ ] **Boss / météore spécial** — Gros astéroïde minable apparaissant périodiquement, avec plus de triangles, plus de résistance et un minerai rare (platinum ?). Renforce le système de réputation.
 - [ ] **Système de craft simple** — Utiliser les minerais (GOLD, IRON, WATER) pour fabriquer des consommables (bouclier temporaire, boost de vitesse, mines) à la station ou en vol. Extension de l'atelier actuel (fuel/ammo/cargo).
-- [ ] **Tournoiement des astéroïdes** — Vitesse de rotation propre pour les météores (proportionnelle à la taille), comportement de débris plus réaliste (rotation + translation indépendantes).
 - [ ] **Warp gates / portails** — Portails aléatoires dans le monde torique permettant des sauts courts (20-30 % de la distance monde), mécanique de fuite ou de raccourci stratégique utile en Progression.
 
 ## Interface & UX

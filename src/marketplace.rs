@@ -69,6 +69,21 @@ pub const GARBAGE_PER_TRIANGLE: usize = 12;
 /// Vitesse maximale des météores (`2*rnd` à l'origine).
 pub const METEOR_VELOCITY_MAX: f64 = 2.0;
 
+/// Tournoiement des météores : la vitesse de rotation est inversement
+/// proportionnelle à la taille — un petit débris tourne vite, un gros
+/// astéroïde tourne lentement (comportement réaliste des débris).
+/// Vitesse angulaire de base (rad/s) pour un météore au nombre minimal de
+/// triangles (TRIANGLES_IN_SHAPE_MIN) ; pour les autres :
+/// `rotation = METEOR_SPIN_BASE × TRIANGLES_IN_SHAPE_MIN / nbr`.
+pub const METEOR_SPIN_BASE: f64 = 0.9;
+
+/// Vitesse angulaire maximale (rad/s) : plafond pour les plus petits
+/// éclats, pour que la rotation ne devienne pas un scintillement à 60 fps.
+pub const METEOR_SPIN_MAX: f64 = 2.4;
+
+/// Vitesse angulaire de rotation des débris (rad/s), signe aléatoire.
+pub const GARBAGE_SPIN: f64 = 3.0;
+
 /// Génération procédurale des météores : bornes du nombre de triangles
 /// par météore et de la taille (base, hauteur) des triangles.
 pub const TRIANGLES_IN_SHAPE_MIN: i32 = 6;

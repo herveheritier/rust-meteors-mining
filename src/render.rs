@@ -1044,15 +1044,22 @@ pub fn draw_cosmonaut_thruster(shape: &Shape, camera: Point, world: &World) {
     );
 }
 
-/// Dessine un débris : pixel blanc 1×1 (ex `drawGarbage`).
+/// Dessine un débris : tiret 3×1 tourné selon sa phase de rotation propre
+/// (`angle` avancée par `moving_garbage`) — tournoiement visible des éclats
+/// (ex `drawGarbage`, qui dessinait un pixel fixe ; dérive volontaire).
 pub fn draw_garbage(g: &Garbage, camera: Point, world: &World) {
     if g.life == 0 {
         return;
     }
     let p = screen_point(g.position, camera, world);
-    if inner_draw_limit(Point::new(p.x as f64, p.y as f64)) {
-        draw_rectangle(p.x, p.y, 1.0, 1.0, argb_to_color(g.rgba_color));
+    if !inner_draw_limit(Point::new(p.x as f64, p.y as f64)) {
+        return;
     }
+    let (sin, cos) = (g.angle as f32).sin_cos();
+    // extrémités du tiret (±1.5 px le long de l'axe de rotation)
+    let dx = cos * 1.5;
+    let dy = sin * 1.5;
+    draw_line(p.x - dx, p.y - dy, p.x + dx, p.y + dy, 1.0, argb_to_color(g.rgba_color));
 }
 
 // ─── Accostage : mire au centre de la station + HUD d'approche ──────────────
