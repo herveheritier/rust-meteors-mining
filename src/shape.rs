@@ -402,7 +402,9 @@ pub fn moving_shape(shape: &mut Shape, triangles: &mut [Triangle], world: &World
     shape.position.normalize_world(world);
     shape.center.x += (shape.target_center.x - shape.center.x) / 100.0;
     shape.center.y += (shape.target_center.y - shape.center.y) / 100.0;
-    shape.orientation += 60.0 * shape.rotation * dt;
+    // `rotation` stocke des rad/s (voir `meteor_spin`) - pas de conversion
+    // ×60 : ce facteur ne s'applique qu'aux valeurs par frame de l'original.
+    shape.orientation += shape.rotation * dt;
     for t in &mut triangles[shape.first_triangle..=shape.last_triangle] {
         compute_real_positions(t, shape.position, shape.center, shape.orientation);
     }
