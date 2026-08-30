@@ -123,8 +123,8 @@ mod tests {
 
     #[test]
     fn moving_garbage_advances_rotation() {
-        // débris vivant : фаза вращения растёт по spin_rate·dt, направление
-        // сохраняется (translation независима от rotation)
+        // débris vivant : la phase de rotation avance de spin_rate·dt, la
+        // direction est conservée (translation indépendante de la rotation)
         let mut g = Garbage {
             direction: 0.0,
             velocity: 1.0,
@@ -137,15 +137,15 @@ mod tests {
         let expected = GARBAGE_SPIN / 60.0;
         assert!((g.angle - expected).abs() < 1e-9);
         assert_eq!(g.life, 9);
-        // позиция сдвинулась по направлению (translation)
+        // la position a avancé selon la direction (translation)
         assert!(g.position.x > 0.0);
         assert_eq!(g.position.y, 0.0);
     }
 
     #[test]
     fn moving_garbage_negative_spin_wraps_into_tau() {
-        // отрицательная скорость вращения: фаза не уходит в минус —
-        // заворачивается в [0, TAU)
+        // vitesse de rotation négative : la phase ne passe pas en négatif,
+        // elle revient dans [0, TAU)
         let mut g = Garbage {
             direction: 0.0,
             velocity: 0.0,
@@ -156,7 +156,7 @@ mod tests {
         };
         moving_garbage(&mut g, 1.0 / 60.0);
         assert!(g.angle >= 0.0 && g.angle < TAU);
-        // эквивалент -GARBAGE_SPIN/60 + TAU
+        // équivalent -GARBAGE_SPIN/60 + TAU
         let expected = TAU - GARBAGE_SPIN / 60.0;
         assert!((g.angle - expected).abs() < 1e-9);
     }
@@ -175,8 +175,8 @@ mod tests {
 
     #[test]
     fn generated_garbages_have_spin() {
-        // generate_garbages задаёт фазу и ненулевую скорость вращения,
-        // знаки встречаются оба (на 12+ дебрисах)
+        // generate_garbages pose la phase et une vitesse de rotation
+        // non nulle, les deux signes présents (sur 12+ débris)
         let mut rng = ::rand_chacha::ChaCha12Rng::seed_from_u64(42);
         let mut shapes = Vec::new();
         let mut meteor = Shape::default();
@@ -199,6 +199,6 @@ mod tests {
             assert!((0.0..TAU).contains(&g.angle));
             if g.spin_rate > 0.0 { pos += 1; } else { neg += 1; }
         }
-        assert!(pos > 0 && neg > 0, "знаки вращения должны быть оба");
+        assert!(pos > 0 && neg > 0, "les deux signes de rotation doivent apparaître");
     }
 }

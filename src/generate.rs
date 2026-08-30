@@ -172,13 +172,14 @@ pub fn generate_shape(
     shape_index
 }
 
-/// Скорость вращения метеора (рад/кадр@60fps): обратно пропорциональна размеру
-/// (числу треугольников), с потолком `METEOR_SPIN_MAX`. Маленький обломок
-/// крутится быстро, большой астероид — лениво (реалистичное поведение débris).
-/// NB: знак НЕ учитывается — вызывающий код умножает на случайный ±1.
+/// Vitesse de rotation d'un météore (rad/frame à 60 fps) : inversement
+/// proportionnelle à la taille (nombre de triangles), plafonnée à
+/// `METEOR_SPIN_MAX`. Un petit éclat tourne vite, un gros astéroïde avec
+/// langueur (comportement réaliste des débris).
+/// NB : le signe n'est pas géré ici — l'appelant multiplie par un ±1 aléatoire.
 ///
-/// Заменяет старый фиксированный 0.01–0.02 rad/frame из оригинала, у которого
-/// не было связи с размером.
+/// Remplace l'ancien 0.01–0.02 rad/frame fixe de l'original, sans lien avec
+/// la taille.
 pub fn meteor_spin(nbr: usize) -> f64 {
     if nbr <= 0 {
         return 0.0;
@@ -231,7 +232,7 @@ pub fn create_shape(
     shape.velocity = METEOR_VELOCITY_MAX * rng.r#gen::<f64>();
     shape.orientation = 0.0;
     // Tournoiement : vitesse de rotation inversement proportionnelle à la
-    // taille (см. `meteor_spin`), знак случайный.
+    // taille (voir `meteor_spin`), signe aléatoire.
     shape.rotation = meteor_spin(nbr) * (1.0 - 2.0 * rng.r#gen::<f64>());
     shape.texture = TEXTURE_METEOR;
     // minerais contenus : un par triangle minéralisé (or/fer/eau) - la
@@ -734,22 +735,22 @@ mod tests {
 
     #[test]
     fn meteor_spin_is_inversely_proportional_to_size() {
-        // Tournoiement : |spin| убывает с размером (nbr), потолок METEOR_SPIN_MAX.
+        // Tournoiement : |spin| décroît avec la taille (nbr), plafond METEOR_SPIN_MAX.
         use crate::marketplace::{METEOR_SPIN_BASE, METEOR_SPIN_MAX, TRIANGLES_IN_SHAPE_MIN};
         let small = meteor_spin(TRIANGLES_IN_SHAPE_MIN as usize);
         let big = meteor_spin(200);
         assert!((small - METEOR_SPIN_BASE).abs() < 1e-9);
         assert!(big < METEOR_SPIN_BASE, "gros astéroïde doit tourner plus lentement");
         assert!(small <= METEOR_SPIN_MAX);
-        assert!(meteor_spin(0) == 0.0, "nbr=0 → без вращения (guard)");
+        assert!(meteor_spin(0) == 0.0, "nbr=0 → pas de rotation (garde)");
     }
 
     #[test]
     fn create_shape_applies_spin_with_random_sign() {
-        // create_shape применяет meteor_spin со случайным знаком: |rotation|
-        // в пределах (0, METEOR_SPIN_MAX]. (Фактическое число треугольников
-        // может быть меньше запрошенного — генерация пропускает невалидные,
-        // поэтому точное равенство не проверяем.)
+        // create_shape applique meteor_spin avec un signe aléatoire :
+        // |rotation| dans (0, METEOR_SPIN_MAX]. (Le nombre réel de triangles
+        // peut être inférieur au nombre demandé — la génération saute les
+        // triangles invalides — d'où l'absence d'égalité exacte.)
         use crate::marketplace::METEOR_SPIN_MAX;
         let elements = default_elements();
         let state = GameState::new();
@@ -758,7 +759,7 @@ mod tests {
         let mut triangles = Vec::new();
         let idx = create_shape(&state, &mut shapes, &mut triangles, Point::new(0.0, 0.0), &elements, &mut rng);
         let rot = shapes[idx].rotation.abs();
-        assert!(rot > 0.0, "метеор должен вращаться");
+        assert!(rot > 0.0, "le météore doit tourner");
         assert!(rot <= METEOR_SPIN_MAX + 1e-9);
     }
 
