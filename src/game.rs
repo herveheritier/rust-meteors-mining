@@ -1113,17 +1113,20 @@ mod tests {
 
     #[test]
     fn realistic_rotation_is_preserved_when_released() {
+        // vitesse angulaire en rad/s : plafond = PLAYER_ROTATION_SPEED * 60
+        // (la constante d'origine est par frame - voir realistic_rotation_after_input)
+        let max_speed = PLAYER_ROTATION_SPEED * 60.0;
         let dt = 1.0 / 60.0;
         let mut speed = 0.0;
         for _ in 0..30 {
             speed = realistic_rotation_after_input(speed, true, false, dt);
         }
-        assert!((speed - PLAYER_ROTATION_SPEED).abs() < 1e-12);
+        assert!((speed - max_speed).abs() < 1e-9);
         assert_eq!(realistic_rotation_after_input(speed, false, false, dt), speed);
         for _ in 0..30 {
             speed = realistic_rotation_after_input(speed, false, true, dt);
         }
-        assert!(speed.abs() < 1e-12);
+        assert!(speed.abs() < 1e-9);
         assert_eq!(realistic_rotation_after_input(speed, true, true, dt), speed);
     }
 

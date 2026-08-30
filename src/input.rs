@@ -333,22 +333,25 @@ pub fn qb_keycode(k: KeyCode) -> i32 {
     }
 }
 
-/// Met à jour la vitesse angulaire du mode REALISTIC : une commande latérale
-/// l'accélère progressivement jusqu'à `±PLAYER_ROTATION_SPEED`, le relâchement
-/// la conserve, et la commande opposée la freine jusqu'à l'arrêt.
+/// Met à jour la vitesse angulaire du mode REALISTIC (rad/s) : une commande
+/// latérale l'accélère progressivement jusqu'à `±PLAYER_ROTATION_SPEED * 60`
+/// (la constante d'origine est par frame, comme les autres modes), le
+/// relâchement la conserve, et la commande opposée la freine jusqu'à l'arrêt.
 pub fn realistic_rotation_after_input(
     current: f64,
     right: bool,
     left: bool,
     dt: f64,
 ) -> f64 {
+    let max_speed = PLAYER_ROTATION_SPEED * 60.0;
+    let accel = PLAYER_ROTATION_ACCELERATION * 60.0;
     let direction = match (right, left) {
         (true, false) => 1.0,
         (false, true) => -1.0,
         _ => 0.0,
     };
-    (current + direction * PLAYER_ROTATION_ACCELERATION * dt)
-        .clamp(-PLAYER_ROTATION_SPEED, PLAYER_ROTATION_SPEED)
+    (current + direction * accel * dt)
+        .clamp(-max_speed, max_speed)
 }
 
 /// Ajoute une poussée le long de `orientation` (ex blocs INERTIAL de
