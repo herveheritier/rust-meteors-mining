@@ -438,6 +438,9 @@ pub fn apply_start(state: &mut GameState) {
     state.docking_count = 0;
     state.bullets_fired = 0;
     state.bullets_lost = 0;
+    // annonce « NEW RECORD » réarmée pour la nouvelle partie (le record
+    // enregistré lui-même survit - voir `load_progression`)
+    state.score_record_announced = false;
     match state.scenario {
         ScenarioId::FreePlay | ScenarioId::Survival => {
             // jeu libre : aucune ressource ; Survival : vies + bouclier pleins
@@ -649,4 +652,63 @@ pub fn player_hit(state: &mut GameState, damage: f64) -> PlayerHit {
         }
     ));
     PlayerHit::Destroyed(state.resources.lives)
+}
+
+// ─── Score composite et record (high-score) ─────────────────────────────
+
+/// Poids du score composite : crédits gagnés (déchargés à la station +
+/// récompenses d'objectifs DAG) et astéroïdes détruits pèsent 1 point par
+/// unité, chaque objectif DAG complété 50 points.
+pub const SCORE_PER_OBJECTIVE: i32 = 50;
+
+/// Score composite de la partie courante : crédits **gagnés** cumulés
+/// (`credits_earned` - pas le solde courant, que les achats diminuent) +
+/// astéroïdes détruits + 50 points par objectif DAG complété. Fonction pure
+/// (tests). Affiché au HUD avec le record (`render.rs`).
+pub fn composite_score(state: &GameState) -> i32 {
+    state.credits_earned
+        + state.meteors_destroyed
+        + state.objective_tracker.completed_ids.len() as i32 * SCORE_PER_OBJECTIVE
+}
+
+/// Clé de config du record d'un scénario (index global - voir
+/// `scenario_index`) : `highscore_0` = jeu libre, `highscore_1` = Progression,
+/// etc. Les records des scénarios custom suivent l'ordre de chargement.
+pub fn high_score_key(id: ScenarioId) -> String {
+    format!("highscore_{}", scenario_index(id))
+}
+
+/// Met à jour le record du scénario courant si le score composite courant le
+/// dépasse : `state.high_score` (affiché à l'écran titre) est relevé et la
+/// clé `highscore_<index>` persistée dans le fichier de config. Appelé aux
+/// mêmes moments que la sauvegarde de progression (déchargement, astéroïde
+/// détruit, sortie du jeu). Renvoie `true` si le record a été battu.
+pub fn maybe_update_high_score(state: &mut GameState) -> bool {
+    let score = composite_score(state);
+    if score > state.high_score {
+        // « NEW RECORD » une seule fois par session, et seulement quand un
+        // record **enregistré** (non nul) est dépassé : sans ça, l'annonce
+        // se répéterait à chaque astéroïde détruit (chaque point bat le
+        // record fraîchement relevé) - et le tout premier record d'un
+        // scénario (record 0) reste silencieux
+        let announce = !state.score_record_announced && state.high_score > 0;
+        state.score_record_announced = true;
+        state.high_score = score;
+        let _ = crate::persist::set_i32(
+            &high_score_key(state.scenario),
+            score,
+        );
+        if announce {
+            state.send_message(&format!("NEW RECORD: {}", score));
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// Lit le record enregistré d'un scénario dans un fichier de config donné
+/// (version testable ; clé absente → 0).
+pub fn load_high_score_from(path: &std::path::Path, id: ScenarioId) -> i32 {
+    crate::persist::get_i32_from(path, &high_score_key(id)).unwrap_or(0)
 }

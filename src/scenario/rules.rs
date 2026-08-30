@@ -158,7 +158,15 @@ pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
         text: text.to_string(),
         color: None,
     };
-    match state.scenario {
+    // record (high-score) du scénario : affiché pour TOUS les scénarios (y
+    // compris le jeu libre, qui n'a pas d'autre sauvegarde) - le score
+    // composite (crédits gagnés + astéroïdes + objectifs) et son record
+    // sont la trace de progression universelle
+    let mut high_score = vec![
+        label(" - record "),
+        value(state.high_score.to_string()),
+    ];
+    let mut out = match state.scenario {
         ScenarioId::FreePlay => vec![label("aucune sauvegarde (jeu libre)")],
         ScenarioId::Custom(_) => {
             let mut out = vec![];
@@ -207,7 +215,9 @@ pub fn save_summary_segments(state: &GameState) -> Vec<RuleSegment> {
             }),
             value(format!("{:.1}", state.resources.shield)),
         ],
-    }
+    };
+    out.append(&mut high_score);
+    out
 }
 
 /// Texte complet du résumé de sauvegarde (segments concaténés, sans

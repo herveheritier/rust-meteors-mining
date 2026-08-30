@@ -358,6 +358,23 @@ pub struct GameState {
     pub initial_ship_orientation: f64,
     /// Vitesse initiale du vaisseau (0 = immobile).
     pub initial_ship_velocity: f64,
+    /// Crédits **gagnés cumulés** depuis le départ de la partie (crédits
+    /// déchargés à la station + récompenses d'objectifs DAG) - indépendant des
+    /// dépenses : le score composite (`scenario::composite_score`) s'appuie
+    /// sur ce total, pas sur le solde courant (`resources.credits`).
+    pub credits_earned: i32,
+    /// Record (high-score) du scénario courant, restauré depuis le fichier de
+    /// config (clé `highscore_<index>`) par `load_progression` - affiché à
+    /// l'écran titre dans la ligne `[ SAVE : … ]`. Mis à jour quand le score
+    /// courant le dépasse (voir `scenario::maybe_update_high_score`).
+    pub high_score: i32,
+    /// Annonce « NEW RECORD » déjà émise pour la session courante (voir
+    /// `scenario::maybe_update_high_score`) : l'annonce n'est envoyée qu'une
+    /// fois, au premier dépassement d'un record enregistré non nul - sans ce
+    /// drapeau, chaque point gagné ensuite repasserait pour un nouveau record.
+    /// Remis à faux par `apply_start` (nouvelle partie) et réarmé par
+    /// `load_progression` quand un record enregistré est restauré.
+    pub score_record_announced: bool,
 }
 
 impl GameState {
@@ -437,6 +454,9 @@ impl GameState {
             initial_ship_y: 0.0,
             initial_ship_orientation: 0.0,
             initial_ship_velocity: 0.0,
+            credits_earned: 0,
+            high_score: 0,
+            score_record_announced: false,
         }
     }
 

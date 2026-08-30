@@ -132,6 +132,15 @@ pub fn draw_hud(state: &GameState) -> f32 {
     // ressources du scénario, sur la même ligne : carburant/munitions/minerais
     // (économie - les capacités montrent les extensions d'atelier achetées)
     // ou vies + bouclier (Survival) - champs fixes : 3/3/2/2/5 chiffres
+    // score composite + record : affichés à la fin du bloc de ressources pour
+    // TOUS les scénarios (jeu libre compris) - `SCORE:… BEST:…`, valeurs
+    // alignées à droite sur 5 chiffres (anti-tremblement)
+    let score = scenario::composite_score(state);
+    let score_txt = format!(
+        " SCORE:{:>5} BEST:{:>5}",
+        score.min(99999),
+        state.high_score.min(99999)
+    );
     let dock_col = if economy {
         // blocs dessinés séparément (mêmes champs fixes → même abscisse de
         // départ pour chacun, aucune dérive) pour pouvoir **clignoter** une
@@ -156,22 +165,28 @@ pub fn draw_hud(state: &GameState) -> f32 {
         draw_text(&ammo_txt, x_ammo, 14.0, 16.0, argb_to_color(ammo_color));
         let x_minerals = x_ammo + measure_text(&ammo_txt, None, 16, 1.0).width;
         draw_text(&min_txt, x_minerals, 14.0, 16.0, WHITE);
-        HUD_RESOURCES_COL + HUD_RESOURCES_ECONOMY_COLS + 1
+        let x_score = x_minerals + measure_text(&min_txt, None, 16, 1.0).width;
+        draw_text(&score_txt, x_score, 14.0, 16.0, WHITE);
+        HUD_RESOURCES_COL + HUD_RESOURCES_ECONOMY_COLS + HUD_SCORE_COLS + 1
     } else if scenario::has_survival(state) {
+        let x = hud_col_x(HUD_RESOURCES_COL);
         draw_text(
             &format!(
                 "LIVES:{:>1} SHIELD:{:>1.0}",
                 state.resources.lives, state.resources.shield
             ),
-            hud_col_x(HUD_RESOURCES_COL),
+            x,
             14.0,
             16.0,
             WHITE,
         );
-        HUD_RESOURCES_COL + HUD_RESOURCES_SURVIVAL_COLS + 1
+        draw_text(&score_txt, x + 8.0 * HUD_RESOURCES_SURVIVAL_COLS as f32, 14.0, 16.0, WHITE);
+        HUD_RESOURCES_COL + HUD_RESOURCES_SURVIVAL_COLS + HUD_SCORE_COLS + 1
     } else {
-        // jeu libre : pas de ressources - l'accostage suit PRECISION
-        HUD_RESOURCES_COL
+        // jeu libre : pas de ressources - le score suit PRECISION, l'accostage
+        // suit le score
+        draw_text(&score_txt, hud_col_x(HUD_RESOURCES_COL), 14.0, 16.0, WHITE);
+        HUD_RESOURCES_COL + HUD_SCORE_COLS + 1
     };
     // fin de partie (Survival, dernière vie perdue) : GAME OVER au centre,
     // rappel des touches et deux boutons cliquables (R = nouvelle partie,

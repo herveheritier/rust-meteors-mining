@@ -1101,6 +1101,11 @@ pub(crate) const HUD_RESOURCES_ECONOMY_COLS: i32 = 39;
 /// Largeur maximale (en caractères) du bloc de ressources en Survival
 /// (LIVES/SHIELD) → le statut d'accostage démarre à la colonne 74.
 pub(crate) const HUD_RESOURCES_SURVIVAL_COLS: i32 = 16;
+/// Largeur (en caractères) du bloc SCORE/RECORD ajouté à la fin du bloc de
+/// ressources : « SCORE:99999 BEST:99999 » = 26 caractères → le statut
+/// d'accostage démarre après le record (les colonnes de départ restent
+/// fixes, seule la fin de ligne recule).
+pub(crate) const HUD_SCORE_COLS: i32 = 27;
 
 /// Fréquence (Hz) du **clignotement d'alerte** des ressources du HUD :
 /// carburant/munitions presque vides et baies de chargement presque pleines

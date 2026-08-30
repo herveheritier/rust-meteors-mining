@@ -553,6 +553,8 @@ pub fn update(
                     // `Minerals` (ancien nom) reste accepté pour les
                     // scénarios écrits avant le renommage minerais → crédits
                     state.resources.credits += result.reward.amount as i32;
+                    // crédits gagnés cumulés (score composite)
+                    state.credits_earned += result.reward.amount as i32;
                 }
                 "Reputation" => {
                     state.resources.reputation += result.reward.amount;
@@ -892,6 +894,9 @@ fn collisions(
             {
                 state.meteors_destroyed += 1;
                 scenario::on_meteor_destroyed(state);
+                // le score composite vient de monter : record relevé et
+                // persisté si battu (clé `highscore_<index>`)
+                scenario::maybe_update_high_score(state);
                 // la réputation est persistée à chaque astéroïde détruit
                 let _ = scenario::save_progression(state);
                 if state.max_meteor_shapes < SHAPES_COUNT {

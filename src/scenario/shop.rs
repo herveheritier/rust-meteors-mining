@@ -286,6 +286,8 @@ pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
     if !s.has_economy {
         return;
     }
+    // NB : `has_economy` contrôle aussi le score - hors économie (jeu libre,
+    // Survival), le score ne compte que les astéroïdes et les objectifs.
     let mut gained = 0;
     for (i, e) in elements.iter().enumerate() {
         if let Some(&value) = ELEMENT_VALUES.get(i) {
@@ -293,6 +295,12 @@ pub fn unload_cargo(state: &mut GameState, elements: &[Element]) {
         }
     }
     state.resources.credits += gained;
+    // crédits gagnés cumulés (score composite - voir `composite_score`) : le
+    // commerce enrichit le score, pas seulement le solde
+    state.credits_earned += gained;
+    // le record (high-score) suit : relevé et persisté si le score composite
+    // vient de dépasser l'ancien (`maybe_update_high_score`)
+    maybe_update_high_score(state);
     if gained > 0 {
         state.send_message(&format!("CARGO UNLOADED: +{} CREDITS", gained));
         // réputation gagnée par minerai déchargé - un palier franchi est

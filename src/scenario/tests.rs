@@ -158,7 +158,7 @@ fn save_summary_segments_highlight_values() {
         .filter(|s| s.color.is_some())
         .map(|s| s.text.as_str())
         .collect();
-    assert_eq!(highlighted, vec!["42", "3/4", "60", " (ACE)"]);
+    assert_eq!(highlighted, vec!["42", "3/4", "60", " (ACE)", "0"]);
     assert!(segs.iter().filter(|s| s.color.is_some()).all(|s| s.color == Some(RULES_COLOR_YELLOW)));
     assert_eq!(
         save_summary(&prog),
@@ -174,13 +174,51 @@ fn save_summary_segments_highlight_values() {
         .filter(|s| s.color.is_some())
         .map(|s| s.text.as_str())
         .collect();
-    assert_eq!(highlighted, vec!["2", "1.5"]);
+    assert_eq!(highlighted, vec!["2", "1.5", "0"]);
     assert!(segs.iter().filter(|s| s.color.is_some()).all(|s| s.color == Some(RULES_COLOR_CYAN)));
 
-    // jeu libre : aucune valeur à mettre en évidence
-    assert!(save_summary_segments(&GameState::new())
+    // jeu libre : la seule valeur mise en évidence est le record (toujours
+    // affiché, même sans sauvegarde - voir save_summary_segments)
+    let free_segs = save_summary_segments(&GameState::new());
+    let highlighted: Vec<&str> = free_segs
         .iter()
-        .all(|s| s.color.is_none()));
+        .filter(|s| s.color.is_some())
+        .map(|s| s.text.as_str())
+        .collect();
+    assert_eq!(highlighted, vec!["0"]); // record 0 du jeu libre
+}
+
+#[test]
+fn new_record_announced_once_per_session() {
+    // « NEW RECORD » : annoncé **une seule fois** par session, au premier
+    // dépassement d'un record enregistré non nul ; le tout premier record
+    // d'un scénario (record 0) reste silencieux ; une nouvelle partie
+    // (apply_start) ou un changement de scénario (load_progression) réarme
+    // l'annonce
+    let mut s = progression_state();
+    // record 0 : premier dépassement silencieux
+    s.meteors_destroyed = 5;
+    assert!(maybe_update_high_score(&mut s));
+    assert_eq!(s.high_score, 5);
+    assert!(!s.message_queue.contains("NEW RECORD"), "record 0 silencieux : {}", s.message_queue);
+
+    // points suivants : plus d'annonce (le record vient d'être relevé)
+    s.meteors_destroyed = 6;
+    assert!(maybe_update_high_score(&mut s));
+    assert!(!s.message_queue.contains("NEW RECORD"));
+
+    // nouvelle partie : l'annonce est réarmée (le record 6 survit en état)
+    apply_start(&mut s);
+    assert!(!s.score_record_announced);
+    s.meteors_destroyed = 7; // 7 > 6 : dépassement d'un record non nul
+    assert!(maybe_update_high_score(&mut s));
+    assert!(s.message_queue.contains("NEW RECORD: 7"), "annonce : {}", s.message_queue);
+
+    // une seule fois : le point suivant ne ré-annonce pas
+    s.meteors_destroyed = 8;
+    assert!(maybe_update_high_score(&mut s));
+    // l'annonce de 7 est restée la seule dans la file
+    assert_eq!(s.message_queue.matches("NEW RECORD").count(), 1);
 }
 
 #[test]
@@ -1535,4 +1573,144 @@ fn upgrade_levels_persist_and_restore_clamped() {
     assert_eq!(u.resources.fuel_level, 3); // borné au max d'extensions
     assert_eq!(u.resources.fuel, 220.0);
     let _ = std::fs::remove_file(&p);
+}
+
+// ─── Score composite et record (high-score) ───────────────────────────
+
+#[test]
+fn composite_score_sums_credits_meteors_and_objectives() {
+    // score composite : crédits **gagnés** (pas le solde, que les achats
+    // diminuent) + astéroïdes détruits + 50 points par objectif DAG complété
+    let mut s = progression_state();
+    assert_eq!(composite_score(&s), 0);
+    s.credits_earned = 120;
+    s.resources.credits = 20; // 100 dépensés : le solde ne compte pas
+    s.meteors_destroyed = 7;
+    assert_eq!(composite_score(&s), 127);
+    s.objective_tracker.completed_ids.insert("obj_a".into());
+    s.objective_tracker.completed_ids.insert("obj_b".into());
+    assert_eq!(composite_score(&s), 127 + 2 * SCORE_PER_OBJECTIVE);
+}
+
+#[test]
+fn credits_earned_tracks_unload_and_objective_rewards() {
+    // déchargement : les crédits gagnés suivent le solde ; récompense
+    // d'objectif DAG : le cumul suit aussi (score = valeur produite, pas
+    // ce qui reste en banque)
+    let mut s = progression_state();
+    let mut elements = default_elements();
+    elements[1].count = 3; // 3 or × 5 = 15 crédits (ELEMENT_VALUES)
+    unload_cargo(&mut s, &elements);
+    assert_eq!(s.resources.credits, 15);
+    assert_eq!(s.credits_earned, 15);
+    // achat : le solde baisse, le cumul non
+    s.resources.credits -= 10;
+    assert_eq!(s.credits_earned, 15);
+}
+
+#[test]
+fn high_score_updates_only_when_beaten_and_persists_per_scenario() {
+    // le record n'est relevé que si le score courant dépasse l'ancien, et
+    // chaque scénario écrit sa propre clé `highscore_<index>` (index global,
+    // scénarios custom compris)
+    let p = temp_path("highscore.cfg");
+    let _ = std::fs::remove_file(&p);
+    let mut s = progression_state();
+    s.meteors_destroyed = 10;
+    assert!(maybe_update_high_score(&mut s)); // 10 > 0 : record battu
+    assert_eq!(s.high_score, 10);
+    assert_eq!(
+        get_i32_from(&p, &high_score_key(ScenarioId::Progression)),
+        None
+    ); // la version chemin explicite n'écrit pas ici
+    assert_eq!(
+        crate::persist::set_i32_to(&p, &high_score_key(ScenarioId::Progression), 10).is_ok(),
+        true
+    );
+
+    // restauration : le record du scénario est surimposé sur l'état
+    let mut t = progression_state();
+    load_progression_from(&p, &mut t);
+    assert_eq!(t.high_score, 10);
+
+    // score inférieur : pas de nouveau record, la clé n'est pas réduite
+    let mut u = progression_state();
+    load_progression_from(&p, &mut u); // record restauré : 10
+    assert_eq!(u.high_score, 10);
+    u.meteors_destroyed = 4; // score courant 4 < 10
+    assert!(!maybe_update_high_score(&mut u));
+    assert_eq!(u.high_score, 10);
+
+    // score supérieur : relevé
+    let mut v = progression_state();
+    load_progression_from(&p, &mut v); // record restauré : 10
+    v.meteors_destroyed = 12;
+    assert!(maybe_update_high_score(&mut v));
+    assert_eq!(v.high_score, 12);
+
+    // clé propre au scénario : le record Survival vit ailleurs
+    assert_eq!(
+        high_score_key(ScenarioId::Survival),
+        "highscore_2".to_string()
+    );
+    assert_eq!(high_score_key(ScenarioId::FreePlay), "highscore_0");
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn high_score_survives_progression_reset_and_load() {
+    // RESET PROGRESSION / « repartir du début » : la progression (crédits,
+    // modes, vies) est effacée, le record du scénario est conservé ; le jeu
+    // libre aussi a un record (affiché même sans sauvegarde)
+    let p = temp_path("highscore_reset.cfg");
+    let _ = std::fs::remove_file(&p);
+    let mut s = survival_state();
+    s.meteors_destroyed = 33;
+    assert!(maybe_update_high_score(&mut s));
+    // écrit le record dans le fichier (comme la persistance réelle - le
+    // chemin utilisateur est utilisé par `maybe_update_high_score`)
+    crate::persist::set_i32_to(&p, &high_score_key(ScenarioId::Survival), 33).unwrap();
+
+    let mut t = survival_state();
+    t.resources.lives = 1; // progression entamée
+    load_progression_from(&p, &mut t);
+    assert_eq!(t.high_score, 33);
+    reset_progression_from(&p, &mut t);
+    assert_eq!(t.resources.lives, 3); // règles de départ réappliquées
+    assert_eq!(load_high_score_from(&p, ScenarioId::Survival), 33); // record intact
+
+    // jeu libre : record restauré aussi (aucune autre sauvegarde)
+    let mut f = GameState::new();
+    f.scenario = ScenarioId::FreePlay;
+    apply_start(&mut f);
+    load_progression_from(&p, &mut f);
+    assert_eq!(f.high_score, 0); // pas de record Survival pour le jeu libre
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
+fn save_summary_shows_high_score_for_all_scenarios() {
+    // la ligne SAVE de l'écran titre affiche le record pour tous les
+    // scénarios, jeu libre compris (dernier segment, valeur en surbrillance)
+    let mut s = GameState::new();
+    s.scenario = ScenarioId::FreePlay;
+    apply_start(&mut s);
+    s.high_score = 42;
+    let text: String = save_summary_segments(&s).iter().map(|g| g.text.as_str()).collect();
+    assert!(text.contains("record 42"), "ligne SAVE : {text}");
+    // la valeur du record est mise en évidence (couleur du scénario)
+    let segments = save_summary_segments(&s);
+    let seg = segments
+        .iter()
+        .find(|g| g.text == "42")
+        .expect("segment valeur du record");
+    assert_eq!(seg.color, Some(RULES_COLOR_YELLOW));
+
+    // jeu libre sans record : « aucune sauvegarde » + record 0
+    let mut z = GameState::new();
+    z.scenario = ScenarioId::FreePlay;
+    apply_start(&mut z);
+    let text: String = save_summary_segments(&z).iter().map(|g| g.text.as_str()).collect();
+    assert!(text.contains("aucune sauvegarde"));
+    assert!(text.contains("record 0"));
 }

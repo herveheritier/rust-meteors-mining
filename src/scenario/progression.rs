@@ -187,7 +187,8 @@ pub fn load_scenario() -> Option<ScenarioId> {
 
 /// Surimpose la progression enregistrée sur l'état courant (après
 /// `apply_start`) : crédits, modes débloqués, réputation et niveaux
-/// d'atelier en Progression, vies et bouclier en Survival. Les valeurs sont
+/// d'atelier en Progression, vies et bouclier en Survival, **record du
+/// scénario** (clé `highscore_<index>`) partout. Les valeurs sont
 /// bornées par les règles du scénario (jamais plus de vies ni de bouclier
 /// que la capacité, jamais plus d'extensions que le nombre défini). En
 /// Survival, une sauvegarde à 0 vie (partie terminée) repart sur le départ
@@ -199,6 +200,13 @@ pub fn load_scenario() -> Option<ScenarioId> {
 /// en jeu libre. Version chemin explicite (tests).
 pub fn load_progression_from(path: &Path, state: &mut GameState) {
     let s = scenario(state.scenario);
+    // record (high-score) du scénario : restauré quel que soit le scénario
+    // (jeu libre compris) - il survit au RESET PROGRESSION et à une partie
+    // repartie du début, et n'est jamais réduit par une sauvegarde plus faible.
+    // L'annonce « NEW RECORD » est réarmée : dépasser le record restauré
+    // pendant la session doit l'annoncer (une fois).
+    state.high_score = load_high_score_from(path, state.scenario);
+    state.score_record_announced = false;
     if s.has_economy {
         // crédits : clé courante, puis l'ancienne clé `prog_minerals` en
         // secours pour les sauvegardes créées avant le renommage
@@ -363,6 +371,9 @@ pub fn reset_progression_from(path: &Path, state: &mut GameState) {
     ] {
         let _ = crate::persist::delete_key_from(path, key);
     }
+    // NB : la clé `highscore_<index>` n'est PAS supprimée - le record d'un
+    // scénario survit à la remise à zéro de sa progression (le RESET
+    // réinitialise la partie, pas les records).
     apply_start(state);
 }
 
