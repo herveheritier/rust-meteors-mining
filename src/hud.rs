@@ -874,6 +874,8 @@ pub fn briefing_lines(state: &GameState) -> Vec<String> {
 
 /// Hauteur verticale (px) d'une ligne du contenu du briefing.
 pub const BRIEFING_LINE_H: f32 = 19.0;
+/// Largeur (px) de la piste de l'ascenseur du briefing.
+pub const BRIEFING_TRACK_W: f32 = 8.0;
 
 /// Contenu du briefing découpé en **lignes rendues** (repliées à la largeur
 /// du panneau), chacune avec sa couleur : sert au dessin ET au calcul de la
@@ -948,6 +950,67 @@ pub fn briefing_scroll_delta() -> f32 {
     d * BRIEFING_LINE_H
 }
 
+/// Géométrie de l'ascenseur du briefing : zone cliquable de la **piste**,
+/// hauteur du **curseur** et **défilement maximal**. `None` quand le contenu
+/// tient entièrement (pas d'ascenseur). Source unique partagée par le dessin
+/// (`draw_briefing_box`) et l'interaction souris (`briefing_mouse_scroll`) -
+/// le curseur dessiné et la zone clut puis atteignable à la souris coïncident.
+fn briefing_scrollbar(state: &GameState) -> Option<(Rect, f32, f32)> {
+    let (panel, _) = briefing_layout();
+    let (top, bottom) = briefing_scroll_rect();
+    let visible = bottom - top;
+    let content_h = briefing_wrapped_lines(state).len() as f32 * BRIEFING_LINE_H;
+    let max_scroll = (content_h - visible).max(0.0);
+    if max_scroll <= 0.5 {
+        return None;
+    }
+    let track_x = panel.x + panel.w - BRIEFING_TRACK_W - 10.0;
+    // la piste cliquable inclut la bordure (`BRIEFING_TRACK_W + 2`)
+    let track = Rect::new(track_x, top, BRIEFING_TRACK_W + 2.0, visible);
+    let thumb_h = (visible * visible / content_h).clamp(20.0, visible - 8.0);
+    Some((track, thumb_h, max_scroll))
+}
+
+/// Interaction **souris** sur l'ascenseur du briefing : saisie et déplacement
+/// du curseur, ou clic sur la piste (saut + saisie), avec le bouton gauche
+/// maintenu. Renvoie le **nouvel offset absolu** de défilement quand la
+/// souris le pilote (à affecter tel quel à `state.briefing_scroll`), `None`
+/// sinon (à laisser au clavier/molette). Appelé par `game.rs` quand le
+/// briefing est ouvert.
+pub fn briefing_mouse_scroll(state: &mut GameState) -> Option<f32> {
+    let Some((track, thumb_h, max_scroll)) = briefing_scrollbar(state) else {
+        state.briefing_drag_anchor = None;
+        return None;
+    };
+    // bouton relâché : fin de la saisie
+    if !is_mouse_button_down(MouseButton::Left) {
+        state.briefing_drag_anchor = None;
+        return None;
+    }
+    let m = mouse_to_game();
+    let top = track.y;
+    let scroll = state.briefing_scroll.clamp(0.0, max_scroll);
+    let thumb_y = top + scroll / max_scroll * (track.h - thumb_h);
+    let frac_for = |handle_y: f32| ((handle_y - top) / (track.h - thumb_h)).clamp(0.0, 1.0);
+    // saisie en cours : le curseur suit verticalement la souris
+    if let Some(anchor) = state.briefing_drag_anchor {
+        return Some(frac_for(m.y - anchor) * max_scroll);
+    }
+    // nouveau clic sur la piste : on saisit le curseur (ou on saute dedans)
+    if is_mouse_button_pressed(MouseButton::Left) && track.contains(m) {
+        let anchor = if m.y < thumb_y {
+            0.0
+        } else if m.y > thumb_y + thumb_h {
+            thumb_h
+        } else {
+            m.y - thumb_y // saisie du curseur : pas de saut, saisie à l'endroit du clic
+        };
+        state.briefing_drag_anchor = Some(anchor);
+        return Some(frac_for(m.y - anchor) * max_scroll);
+    }
+    None
+}
+
 /// Écran de **briefing pré-partie** (scénarios custom avec objectifs,
 /// affiché au lancement de la partie avant de jouer) : panneau sombre au
 /// centre listant les objectifs DAG, les contraintes (fuel/ammo ou
@@ -1003,15 +1066,13 @@ pub fn draw_briefing_box(state: &GameState) {
         y += BRIEFING_LINE_H;
     }
 
-    // ascenseur (piste + curseur) si le contenu dépasse la zone visible
-    if max_scroll > 0.5 {
-        let track_w = 8.0;
-        let track_x = panel.x + panel.w - track_w - 10.0;
-        let thumb_h = (visible * visible / content_h).clamp(20.0, visible - 8.0);
-        let thumb_y = view_top + scroll / max_scroll * (visible - thumb_h);
-        draw_rectangle(track_x + 1.0, view_top + 1.0, track_w, visible, Color::new(0.0, 0.0, 0.0, 0.45));
-        draw_rectangle_lines(track_x, view_top, track_w + 2.0, visible, 1.0, argb_to_color(BOX_BORDER));
-        draw_rectangle(track_x, thumb_y, track_w + 2.0, thumb_h, argb_to_color(SHOP_OK));
+    // ascenseur (piste + curseur) si le contenu dépasse la zone visible -
+    // même géométrie que l'interaction souris (`briefing_mouse_scroll`)
+    if let Some((track, thumb_h, _)) = briefing_scrollbar(state) {
+        let thumb_y = track.y + scroll / max_scroll * (track.h - thumb_h);
+        draw_rectangle(track.x + 1.0, track.y + 1.0, BRIEFING_TRACK_W, track.h, Color::new(0.0, 0.0, 0.0, 0.45));
+        draw_rectangle_lines(track.x, track.y, track.w, track.h, 1.0, argb_to_color(BOX_BORDER));
+        draw_rectangle(track.x, thumb_y, track.w, thumb_h, argb_to_color(SHOP_OK));
     }
 
     // bouton CLOSE + rappel des touches

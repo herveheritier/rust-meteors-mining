@@ -96,12 +96,17 @@ pub fn update(
     // partie. Le monde, lui, continue de tourner derrière (le vaisseau à
     // quai est protégé - voir `collisions`).
     if state.briefing_box {
-        // défilement du contenu (molette, flèches, PgPréc/PgSuiv) : l'offset
-        // est borné par le contenu réel - un long briefing (nombreux
-        // objectifs / longues descriptions) se fait avec un ascenseur sans
-        // rien déborder du panneau (`hud::draw_briefing_box`)
-        state.briefing_scroll = (state.briefing_scroll + crate::hud::briefing_scroll_delta())
-            .clamp(0.0, crate::hud::briefing_scroll_max(state));
+        // défilement du contenu : souris (saisie/déplacement du curseur de
+        // l'ascenseur ou clic sur la piste - offset absolu) ou clavier
+        // (molette, flèches, PgPréc/PgSuiv - offset relatif). L'offset est
+        // borné par le contenu réel - un long briefing se fait avec un
+        // ascenseur sans rien déborder du panneau (`draw_briefing_box`)
+        if let Some(scroll) = crate::hud::briefing_mouse_scroll(state) {
+            state.briefing_scroll = scroll;
+        } else {
+            state.briefing_scroll = (state.briefing_scroll + crate::hud::briefing_scroll_delta())
+                .clamp(0.0, crate::hud::briefing_scroll_max(state));
+        }
         if is_key_pressed(KeyCode::Enter)
             || is_key_pressed(KeyCode::Escape)
             || crate::hud::briefing_close_clicked()
@@ -1001,6 +1006,13 @@ fn collisions(
                     t.life = 0;
                 }
             }
+        } else if collid_by_who == WHOIAM_MINE && who == WHOIAM_PLAYER {
+            // le vaisseau chevauche une mine (déployée **sous lui**, à sa
+            // position)) : la mine ne réagit qu'au contact d'un **météore** -
+            // elle n'explose pas et n'endommage pas le vaisseau, qui reste
+            // intact et s'en éloigne simplement. Sans ce cas dédié (placé
+            // AVANT la branche générique `who == WHOIAM_PLAYER`), déployer
+            // une mine détruisait le vaisseau sans aucune collision visible.
         } else if who == WHOIAM_PLAYER {
             // vaisseau joueur : mesh multi-triangles (35 faces) mais toujours
             // « 1 impact = détruit » (l'ancien triangle unique valait 1 vie)
@@ -3093,6 +3105,31 @@ mod tests {
         let minerals = shapes.iter().filter(|s| s.who_i_am == WHOIAM_MINERAL).count();
         assert_eq!(minerals, 2);
         assert!(state.message_queue.contains("MINE EXPLODED"));
+    }
+
+    #[test]
+    fn ship_overlapping_a_mine_is_not_destroyed() {
+        // REGRESSION : déployer une mine (posée **sous** le vaisseau, à sa
+        // position) faisait détruire le vaisseau sans aucune collision
+        // visible - la collision vaisseau↔mine retombait dans la branche
+        // générique qui détruit le vaisseau. La mine ne réagissant qu'au
+        // contact d'un météore, le vaisseau qui la chevauche doit rester
+        // intact (et la mine reste posée).
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 0, 0.0, 0.0),
+            test_shape(WHOIAM_MINE, 1, 1, 2.0, 2.0), // mine chevauchant le vaisseau
+        ];
+        let mut triangles = vec![test_triangle(0, 0, 0.0, 0.0), test_triangle(1, 1, 2.0, 2.0)];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        assert_eq!(shapes[0].life, 1, "le vaisseau ne doit pas être détruit par une mine chevauchante");
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(shapes[1].life, 1, "la mine reste posée (elle n'explose pas au contact du vaisseau)");
     }
 
     #[test]

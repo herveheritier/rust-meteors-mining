@@ -428,8 +428,14 @@ pub score_record_announced: bool,
     pub briefing_box: bool,
     /// Défilement du briefing (px, borné par `hud::briefing_scroll_max`) :
     /// l'ascenseur vertical apparaît quand le contenu dépasse la zone
-    /// visible du panneau (molette, flèches haut/bas, PgPréc/PgSuiv).
+    /// visible du panneau (molette, flèches haut/bas, PgPréc/PgSuiv,
+    /// ou saisie/déplacement du curseur à la souris).
     pub briefing_scroll: f32,
+    /// Saisie du curseur de l'ascenseur en cours : `Some(anchor)` = le bouton
+    /// gauche est maintenu sur la piste, `anchor` étant la position verticale
+    /// du point de préhension dans le curseur (0 = haut, `thumb_h` = bas).
+    /// Le déplacement de la souris fait bouger le défilement (`hud.rs`).
+    pub briefing_drag_anchor: Option<f32>,
     /// Consommables fabriqués à la station (onglet FABRICATION) : index
     /// `CRAFT_*` - bouclier temporaire, boost de vitesse, mines. Utilisés en
     /// vol (touches 1/2/3).
@@ -533,6 +539,7 @@ impl GameState {
             log_box: false,
             briefing_box: false,
             briefing_scroll: 0.0,
+            briefing_drag_anchor: None,
             consumables: [0; CRAFT_COUNT],
             temp_shield: 0.0,
             boost_timer: 0.0,
