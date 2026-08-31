@@ -118,16 +118,22 @@ pub fn update(
     }
 
     // Écran de paramétrage ouvert (touche O) : seul l'input de l'écran est
-    // traité (voir `handle_settings_input`) - le monde, lui, **continue de
-    // tourner** : les météores et les débris dérivent derrière l'écran (le
-    // vaisseau reste vulnérable, seule la touche P gèle le monde). Un clic
-    // sur RESTART demande la relance du jeu ; un clic sur RESET PROGRESSION
-    // reconstruit le vaisseau (les plans liés aux extensions achetées
-    // disparaissent avec les niveaux remis à zéro).
+    // traité (voir `handle_settings_input`) - le jeu est **en pause** (il a
+    // été gelé à l'ouverture, comme la touche P, voir plus bas) : météores et
+    // débris ne dérivent plus derrière l'écran. Un clic sur RESTART demande
+    // la relance du jeu ; un clic sur RESET PROGRESSION reconstruit le
+    // vaisseau (les plans liés aux extensions achetées disparaissent avec les
+    // niveaux remis à zéro).
     if state.settings_box {
         let result = handle_settings_input(state, sounds.as_deref_mut());
         if result.progression_reset {
             crate::vaisseau::rebuild_player_vaisseau(state, shapes, triangles);
+        }
+        // fermeture de l'écran (CLOSE / ÉCHAP, ou bouton RESTART avant
+        // relance) : la pause est restaurée - le jeu reprend l'état d'avant
+        // l'ouverture des options (pause déjà active ou jeu en cours)
+        if !state.settings_box {
+            state.paused = state.settings_pause_prev;
         }
         collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         let action = if result.restart { Action::Restart } else { Action::Continue };
@@ -498,9 +504,14 @@ pub fn update(
     // O : écran de paramétrage (options audio et graphiques - le mode de
     // déplacement se choisit au magasin de la station, bouton SHOP) ; le
     // bouton souris OPTIONS du HUD (coin supérieur droit) déclenche la même
-    // action au clic gauche
+    // action au clic gauche. L'ouverture **met le jeu en pause** (comme la
+    // touche P) : le monde se fige tant que l'écran est affiché - l'état de
+    // pause d'avant est mémorisé et restauré à la fermeture (voir la branche
+    // `settings_box` en haut de `update`)
     if is_key_pressed(KeyCode::O) || crate::hud::options_button_click() {
         state.settings_box = true;
+        state.settings_pause_prev = state.paused;
+        state.paused = true;
     }
 
     // D : affichage des données des formes (ex `showData%`)

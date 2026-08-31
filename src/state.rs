@@ -353,6 +353,11 @@ pub struct GameState {
     /// choisit désormais au magasin de la station - bouton SHOP de la boîte
     /// DOCK STATION.)
     pub settings_box: bool,
+    /// État de pause avant l'ouverture de l'écran de paramétrage : ouvrir les
+    /// options (touche O / bouton OPTIONS du HUD) met le jeu en pause, et cet
+    /// état est restauré à la fermeture (le jeu reprend où il en était -
+    /// pause déjà active ou jeu en cours).
+    pub settings_pause_prev: bool,
     /// Code PIN de la télécommande HTTP (vide = aucune protection - n'importe
     /// qui sur le réseau local peut piloter le vaisseau). Saisi dans l'écran
     /// de paramétrage (ligne REMOTE PIN) et persisté (clé `remote_pin`) -
@@ -513,6 +518,7 @@ impl GameState {
             shop_box: false,
             help_box: false,
             settings_box: false,
+            settings_pause_prev: false,
             remote_pin: String::new(),
             settings_pin_edit: false,
             settings_pin_buffer: String::new(),
