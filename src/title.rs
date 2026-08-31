@@ -6,6 +6,10 @@
 //! touche (sauf F, qui bascule le plein écran ; O, qui ouvre l'écran de
 //! paramétrage ; et N/B/1-3, qui changent de scénario - la ligne des règles
 //! clignote alors brièvement dans la couleur du scénario pour attirer l'œil).
+//! Une rangée de boutons souris en bas de l'écran reproduit ces mêmes actions
+//! (`title_mouse_click` / `draw_title_buttons`) : chaque bouton est
+//! l'équivalent d'une touche, et la boîte de choix au lancement d'un scénario
+//! sauvegardé a aussi ses boutons (poursuivre / repartir / annuler).
 
 use macroquad::prelude::*;
 
@@ -14,8 +18,8 @@ use crate::config::{ATTEMPT_FPS, VIEWPORT_HEIGHT, VIEWPORT_WIDTH};
 use crate::font::{draw_text, measure_text};
 use crate::geom::Point;
 use crate::render::{
-    argb_to_color, cycle_view_mode, draw_settings_box, draw_stars, draw_zoomed, native_camera,
-    persist_window_geometry, virtual_camera, window_scaled,
+    argb_to_color, cycle_view_mode, draw_settings_box, draw_stars, draw_zoomed, mouse_to_game,
+    native_camera, persist_window_geometry, virtual_camera, window_scaled,
 };
 use crate::state::ViewMode;
 use crate::state::GameState;
@@ -246,6 +250,215 @@ fn rainbow(hue: f64) -> u32 {
     (0xFF << 24) | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
 }
 
+/// Action déclenchable à l'écran titre : soit par une touche du clavier
+/// (O, N/B/1-3, toute autre = lancement - ESC et F sont traitées à part en
+/// haut de la boucle), soit par un clic sur un bouton souris équivalent (voir
+/// `title_mouse_click` / `draw_title_buttons`). `key_action` convertit une
+/// touche, `title_mouse_click` fournit la même action via les boutons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TitleAction {
+    /// Toute touche (autre que F/ESC/O/N/B/1-3) ou bouton « Lancer ».
+    Launch,
+    /// Touche O ou bouton « Réglages » (écran de paramétrage).
+    Settings,
+    /// Touche N ou bouton « < Scénario » (scénario précédent).
+    ScenarioPrev,
+    /// Touche B ou bouton « Scénario > » (scénario suivant).
+    ScenarioNext,
+    /// Touche 1-3 : sélection directe d'un scénario.
+    Pick(crate::scenario::ScenarioId),
+    /// Touche F (traitée à part) ou bouton « Mode » (plein écran).
+    Fullscreen,
+    /// Touche ESC (traitée à part) ou bouton « Quitter » (quitter la partie).
+    Quit,
+}
+
+/// Convertit une touche détectée de l'écran titre en action (voir
+/// `TitleAction`). Les touches ESC et F sont déjà traitées avant l'appel.
+fn key_action(k: KeyCode) -> TitleAction {
+    match k {
+        KeyCode::O => TitleAction::Settings,
+        KeyCode::N => TitleAction::ScenarioNext,
+        KeyCode::B => TitleAction::ScenarioPrev,
+        KeyCode::Key1 => TitleAction::Pick(crate::scenario::ScenarioId::FreePlay),
+        KeyCode::Key2 => TitleAction::Pick(crate::scenario::ScenarioId::Progression),
+        KeyCode::Key3 => TitleAction::Pick(crate::scenario::ScenarioId::Survival),
+        KeyCode::Key4 => TitleAction::Pick(crate::scenario::scenario_id_from_index(3)),
+        KeyCode::Key5 => TitleAction::Pick(crate::scenario::scenario_id_from_index(4)),
+        KeyCode::Key6 => TitleAction::Pick(crate::scenario::scenario_id_from_index(5)),
+        KeyCode::Key7 => TitleAction::Pick(crate::scenario::scenario_id_from_index(6)),
+        KeyCode::Key8 => TitleAction::Pick(crate::scenario::scenario_id_from_index(7)),
+        KeyCode::Key9 => TitleAction::Pick(crate::scenario::scenario_id_from_index(8)),
+        _ => TitleAction::Launch,
+    }
+}
+
+/// Libellés des boutons souris de l'écran titre (ordre : scénario ‹/›, mode,
+/// réglages, quitter, lancer) - chaque bouton déclenche l'action équivalente
+/// d'une touche clavier.
+const TITLE_BUTTON_LABELS: [&str; 6] = [
+    "< Scénario",
+    "Scénario >",
+    "Mode (F)",
+    "Réglages (O)",
+    "Quitter",
+    "Lancer",
+];
+
+/// Géométrie des boutons souris de l'écran titre.
+struct TitleButtons {
+    prev_scenario: Rect,
+    next_scenario: Rect,
+    mode: Rect,
+    settings: Rect,
+    quit: Rect,
+    launch: Rect,
+}
+
+/// Calcule la géométrie des boutons souris de l'écran titre : une rangée
+/// horizontale centrée en bas de l'écran (au-dessus de l'affichage version),
+/// chacune équivalente à une action clavier.
+fn title_buttons_layout() -> TitleButtons {
+    let btn_h = 26.0;
+    let gap = 8.0;
+    let widths: Vec<f32> = TITLE_BUTTON_LABELS
+        .iter()
+        .map(|l| measure_text(l, None, 16, 1.0).width + 2.0 * crate::render::BOX_PADDING)
+        .collect();
+    let total: f32 = widths.iter().sum::<f32>() + gap * (TITLE_BUTTON_LABELS.len() - 1) as f32;
+    let mut x = (VIEWPORT_WIDTH as f32 - total) / 2.0;
+    let y = VIEWPORT_HEIGHT as f32 - 40.0;
+    let mut make = |w: f32| {
+        let r = Rect::new(x, y, w, btn_h);
+        x += w + gap;
+        r
+    };
+    let prev_scenario = make(widths[0]);
+    let next_scenario = make(widths[1]);
+    let mode = make(widths[2]);
+    let settings = make(widths[3]);
+    let quit = make(widths[4]);
+    let launch = make(widths[5]);
+    TitleButtons {
+        prev_scenario,
+        next_scenario,
+        mode,
+        settings,
+        quit,
+        launch,
+    }
+}
+
+/// Détermine l'action demandée par un clic gauche sur un bouton souris de
+/// l'écran titre (`None` = clic hors bouton). Les boutons couvrent les mêmes
+/// actions que les touches clavier (voir `TitleAction`).
+fn title_mouse_click() -> Option<TitleAction> {
+    if !is_mouse_button_pressed(MouseButton::Left) {
+        return None;
+    }
+    let l = title_buttons_layout();
+    let m = mouse_to_game();
+    if l.prev_scenario.contains(m) {
+        Some(TitleAction::ScenarioPrev)
+    } else if l.next_scenario.contains(m) {
+        Some(TitleAction::ScenarioNext)
+    } else if l.mode.contains(m) {
+        Some(TitleAction::Fullscreen)
+    } else if l.settings.contains(m) {
+        Some(TitleAction::Settings)
+    } else if l.quit.contains(m) {
+        Some(TitleAction::Quit)
+    } else if l.launch.contains(m) {
+        Some(TitleAction::Launch)
+    } else {
+        None
+    }
+}
+
+/// Dessine les boutons souris de l'écran titre (hover blanc, comme les
+/// boutons des boîtes - voir `draw_box_button`).
+fn draw_title_buttons() {
+    let l = title_buttons_layout();
+    let rects = [
+        l.prev_scenario,
+        l.next_scenario,
+        l.mode,
+        l.settings,
+        l.quit,
+        l.launch,
+    ];
+    for (label, rect) in TITLE_BUTTON_LABELS.iter().zip(rects) {
+        crate::shop_render::draw_box_button(label, rect);
+    }
+}
+
+/// Choix du lancement (boîte « SAUVEGARDE TROUVEE ») cliqué à la souris : les
+/// boutons reproduisent les touches du choix (1/ENTER/C = poursuivre, 2/R =
+/// repartir, ESC = annuler).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LaunchChoiceClick {
+    None,
+    Continue,
+    Restart,
+    Cancel,
+}
+
+/// Géométrie des boutons souris de la boîte de choix au lancement (une rangée
+/// centrée en bas de la boîte).
+struct LaunchChoiceLayout {
+    continue_btn: Rect,
+    restart_btn: Rect,
+    cancel_btn: Rect,
+}
+
+fn launch_choice_layout() -> LaunchChoiceLayout {
+    const W: f32 = 560.0;
+    const H: f32 = 200.0;
+    let left = ((VIEWPORT_WIDTH as f32 - W) / 2.0).round();
+    let top = ((VIEWPORT_HEIGHT as f32 - H) / 2.0).round();
+    const LABELS: [&str; 3] = ["POURSUIVRE", "REPARTIR", "ANNULER"];
+    let btn_h = 26.0;
+    let gap = 12.0;
+    let pad = 2.0 * crate::render::BOX_PADDING;
+    let widths: [f32; 3] = [
+        measure_text(LABELS[0], None, 16, 1.0).width + pad,
+        measure_text(LABELS[1], None, 16, 1.0).width + pad,
+        measure_text(LABELS[2], None, 16, 1.0).width + pad,
+    ];
+    let total = widths.iter().sum::<f32>() + gap * 2.0;
+    let mut x = left + (W - total) / 2.0;
+    let y = top + H - 20.0 - btn_h;
+    let continue_btn = Rect::new(x, y, widths[0], btn_h);
+    x += widths[0] + gap;
+    let restart_btn = Rect::new(x, y, widths[1], btn_h);
+    x += widths[1] + gap;
+    let cancel_btn = Rect::new(x, y, widths[2], btn_h);
+    LaunchChoiceLayout {
+        continue_btn,
+        restart_btn,
+        cancel_btn,
+    }
+}
+
+/// Détecte un clic gauche sur un bouton de la boîte de choix au lancement
+/// (`None` = aucun).
+fn launch_choice_click() -> LaunchChoiceClick {
+    if !is_mouse_button_pressed(MouseButton::Left) {
+        return LaunchChoiceClick::None;
+    }
+    let l = launch_choice_layout();
+    let m = mouse_to_game();
+    if l.continue_btn.contains(m) {
+        LaunchChoiceClick::Continue
+    } else if l.restart_btn.contains(m) {
+        LaunchChoiceClick::Restart
+    } else if l.cancel_btn.contains(m) {
+        LaunchChoiceClick::Cancel
+    } else {
+        LaunchChoiceClick::None
+    }
+}
+
 /// Écran titre : boucle jusqu'à une touche (autre que F, O ou N/B/1-3), ex
 /// `titleLoop`. `sounds` sert à l'écran de paramétrage (touche O), accessible
 /// depuis le titre - musique et volume y sont réglables ; N/B ou 1-3 changent
@@ -352,159 +565,185 @@ pub async fn title_loop(
             next_frame().await;
             continue;
         }
-        if let Some(k) = key {
-            if k == KeyCode::O {
-                // ouvre l'écran de paramétrage (mêmes initialisations que la
-                // touche O du jeu) ; sous-boucle d'input + rendu jusqu'à la
-                // fermeture (CLOSE ou ESC - consommé ici, ne quitte pas le
-                // jeu), puis retour à l'écran titre. Un clic sur RESTART
-                // (relance demandée) sort immédiatement du titre.
-                state.settings_box = true;
-                while state.settings_box {
-                    if LIMIT_FPS {
-                        crate::frame_pace(target_frame, &mut last_frame);
-                    }
-                    let result = crate::settings::handle_settings_input(state, Some(sounds));
-                    if result.progression_reset {
-                        progression_reset = true;
-                    }
-                    if result.restart {
-                        // ferme l'écran : si la relance échoue (retour de
-                        // `main`), la partie démarre sans l'écran ouvert
-                        state.settings_box = false;
-                        return (false, true, progression_reset);
-                    }
-                    draw_frame(
-                        state,
-                        assets,
-                        rt,
-                        camera,
-                        &banner_colors,
-                        sounds,
-                        get_time() < flash_until,
-                    );
+        // action de l'écran titre : une touche du clavier (ESC et F étant déjà
+        // traitées en haut de la boucle) ou, à défaut (aucune touche), un clic
+        // sur un bouton souris de l'écran titre - l'équivalent exact de la
+        // touche (voir `title_mouse_click` / `draw_title_buttons`). Les deux
+        // pilotent les mêmes branches ci-dessous.
+        let mut action = key.map(key_action);
+        if action.is_none() {
+            action = title_mouse_click();
+        }
+        if let Some(action) = &action {
+            match *action {
+                // quitter : l'invite « [ ESC to quit ] » vaut aussi pour le
+                // bouton souris « Quitter »
+                TitleAction::Quit => return (true, false, progression_reset),
+                // plein écran (bouton « Mode (F) ») : même cycle que la touche
+                // F ; comme pour F, on cède une frame (clic consommé)
+                TitleAction::Fullscreen => {
+                    cycle_view_mode(state);
                     next_frame().await;
+                    continue;
                 }
-                continue;
-            }
-            // après toute sélection de scénario : règles de départ appliquées
-            // (cycle/select), progression enregistrée restaurée puis nouveau
-            // scénario persisté, et flash de la ligne des règles (1,2 s -
-            // voir `draw_frame`) ; comme F, on cède une frame (keypress
-            // consommé)
-            let mut restore = |state: &mut GameState| {
-                crate::scenario::load_progression(state);
-                let _ = crate::scenario::save_progression(state);
-                flash_until = get_time() + RULES_FLASH_DURATION;
-            };
-            if k == KeyCode::N {
-                // bascule de scénario : jeu libre → Progression → Survival
-                crate::scenario::cycle_scenario(state);
-                restore(state);
-                next_frame().await;
-                continue;
-            }
-            if k == KeyCode::B {
-                // bascule au scénario précédent (inverse de N)
-                crate::scenario::cycle_scenario_back(state);
-                restore(state);
-                next_frame().await;
-                continue;
-            }
-            if k == KeyCode::Key1 || k == KeyCode::Key2 || k == KeyCode::Key3 {
-                // sélection directe : 1 = jeu libre, 2 = Progression,
-                // 3 = Survival
-                let id = match k {
-                    KeyCode::Key1 => crate::scenario::ScenarioId::FreePlay,
-                    KeyCode::Key2 => crate::scenario::ScenarioId::Progression,
-                    KeyCode::Key3 => crate::scenario::ScenarioId::Survival,
-                    KeyCode::Key4 => crate::scenario::scenario_id_from_index(3),
-                    KeyCode::Key5 => crate::scenario::scenario_id_from_index(4),
-                    KeyCode::Key6 => crate::scenario::scenario_id_from_index(5),
-                    KeyCode::Key7 => crate::scenario::scenario_id_from_index(6),
-                    KeyCode::Key8 => crate::scenario::scenario_id_from_index(7),
-                    KeyCode::Key9 => crate::scenario::scenario_id_from_index(8),
-                    _ => crate::scenario::ScenarioId::Survival,
-                };
-                crate::scenario::select_scenario(state, id);
-                restore(state);
-                next_frame().await;
-                continue;
-            }
-            // lancement de la partie : s'il existe une progression enregistrée
-            // pour le scénario courant, proposer de **poursuivre** ou de
-            // **repartir du début** (sous-boucle d'input + rendu, comme l'écran
-            // de paramétrage ci-dessus - l'état courant porte déjà la
-            // sauvegarde restaurée par `load_progression`).
-            if crate::scenario::has_saved_progression(state) {
-                // la touche qui a lancé la partie (ex R) est encore dans la
-                // file d'input : on cède une frame avant de lire les touches
-                // du choix, sinon elle serait relue immédiatement (ex R =
-                // lancement → « repartir »)
-                next_frame().await;
-                let mut launch = false;
-                'launch_choice: loop {
-                    if LIMIT_FPS {
-                        crate::frame_pace(target_frame, &mut last_frame);
+                TitleAction::Settings => {
+                    // ouvre l'écran de paramétrage (mêmes initialisations que
+                    // la touche O du jeu) ; sous-boucle d'input + rendu jusqu'à
+                    // la fermeture (CLOSE ou ESC - consommé ici, ne quitte pas
+                    // le jeu), puis retour à l'écran titre. Un clic sur RESTART
+                    // (relance demandée) sort immédiatement du titre.
+                    state.settings_box = true;
+                    while state.settings_box {
+                        if LIMIT_FPS {
+                            crate::frame_pace(target_frame, &mut last_frame);
+                        }
+                        let result = crate::settings::handle_settings_input(state, Some(sounds));
+                        if result.progression_reset {
+                            progression_reset = true;
+                        }
+                        if result.restart {
+                            // ferme l'écran : si la relance échoue (retour de
+                            // `main`), la partie démarre sans l'écran ouvert
+                            state.settings_box = false;
+                            return (false, true, progression_reset);
+                        }
+                        draw_frame(
+                            state,
+                            assets,
+                            rt,
+                            camera,
+                            &banner_colors,
+                            sounds,
+                            get_time() < flash_until,
+                        );
+                        next_frame().await;
                     }
-                    for k in [
-                        KeyCode::Escape,
-                        KeyCode::Enter,
-                        KeyCode::Space,
-                        KeyCode::Key1,
-                        KeyCode::Key2,
-                        KeyCode::C,
-                        KeyCode::R,
-                    ] {
-                        if is_key_pressed(k) {
-                            match k {
-                                // ESC : annule le lancement, retour à l'écran
-                                // titre (le scénario reste sélectionné)
-                                KeyCode::Escape => break 'launch_choice,
-                                // poursuivre le scénario : l'état porte déjà
-                                // la progression restaurée
-                                KeyCode::Enter | KeyCode::Space | KeyCode::Key1 | KeyCode::C => {
+                    continue;
+                }
+                // toute sélection de scénario (boutons «< Scénario >», touches
+                // N/B ou sélection directe 1-3) : règles de départ appliquées
+                // (cycle/select), progression enregistrée restaurée puis
+                // nouveau scénario persisté, et flash de la ligne des règles
+                // (1,2 s - voir `draw_frame`) ; comme F, on cède une frame
+                // (clic/touche consommé)
+                TitleAction::ScenarioNext | TitleAction::ScenarioPrev | TitleAction::Pick(_) => {
+                    let mut restore = |state: &mut GameState| {
+                        crate::scenario::load_progression(state);
+                        let _ = crate::scenario::save_progression(state);
+                        flash_until = get_time() + RULES_FLASH_DURATION;
+                    };
+                    match *action {
+                        TitleAction::ScenarioNext => crate::scenario::cycle_scenario(state),
+                        TitleAction::ScenarioPrev => crate::scenario::cycle_scenario_back(state),
+                        TitleAction::Pick(id) => crate::scenario::select_scenario(state, id),
+                        _ => {}
+                    }
+                    restore(state);
+                    next_frame().await;
+                    continue;
+                }
+                // lancement de la partie : s'il existe une progression
+                // enregistrée pour le scénario courant, proposer de
+                // **poursuivre** ou de **repartir du début** (sous-boucle
+                // d'input + rendu, comme l'écran de paramétrage ci-dessus -
+                // l'état courant porte déjà la sauvegarde restaurée par
+                // `load_progression`).
+                TitleAction::Launch => {
+                    if crate::scenario::has_saved_progression(state) {
+                        // la touche/souris qui a lancé la partie est encore
+                        // dans la file d'input : on cède une frame avant de
+                        // lire les touches du choix, sinon elle serait relue
+                        // immédiatement (ex R = lancement → « repartir »)
+                        next_frame().await;
+                        let mut launch = false;
+                        'launch_choice: loop {
+                            if LIMIT_FPS {
+                                crate::frame_pace(target_frame, &mut last_frame);
+                            }
+                            for k in [
+                                KeyCode::Escape,
+                                KeyCode::Enter,
+                                KeyCode::Space,
+                                KeyCode::Key1,
+                                KeyCode::Key2,
+                                KeyCode::C,
+                                KeyCode::R,
+                            ] {
+                                if is_key_pressed(k) {
+                                    match k {
+                                        // ESC : annule le lancement, retour à
+                                        // l'écran titre (le scénario reste
+                                        // sélectionné)
+                                        KeyCode::Escape => break 'launch_choice,
+                                        // poursuivre le scénario : l'état porte
+                                        // déjà la progression restaurée
+                                        KeyCode::Enter
+                                        | KeyCode::Space
+                                        | KeyCode::Key1
+                                        | KeyCode::C => {
+                                            launch = true;
+                                            break 'launch_choice;
+                                        }
+                                        // repartir du début : progression remise
+                                        // à zéro (clés `prog_*` supprimées,
+                                        // règles de départ réappliquées - le
+                                        // vaisseau sera reconstruit au lancement,
+                                        // voir `main.rs`)
+                                        KeyCode::Key2 | KeyCode::R => {
+                                            crate::scenario::reset_progression(state);
+                                            progression_reset = true;
+                                            launch = true;
+                                            break 'launch_choice;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            // clic souris sur un bouton de la boîte de choix :
+                            // mêmes actions que les touches (poursuivre /
+                            // repartir / annuler)
+                            match launch_choice_click() {
+                                LaunchChoiceClick::Continue => {
                                     launch = true;
                                     break 'launch_choice;
                                 }
-                                // repartir du début : progression remise à
-                                // zéro (clés `prog_*` supprimées, règles de
-                                // départ réappliquées - le vaisseau sera
-                                // reconstruit au lancement, voir `main.rs`)
-                                KeyCode::Key2 | KeyCode::R => {
+                                LaunchChoiceClick::Restart => {
                                     crate::scenario::reset_progression(state);
                                     progression_reset = true;
                                     launch = true;
                                     break 'launch_choice;
                                 }
-                                _ => {}
+                                LaunchChoiceClick::Cancel => break 'launch_choice,
+                                LaunchChoiceClick::None => {}
                             }
+                            draw_frame(
+                                state,
+                                assets,
+                                rt,
+                                camera,
+                                &banner_colors,
+                                sounds,
+                                get_time() < flash_until,
+                            );
+                            draw_launch_choice(state);
+                            next_frame().await;
+                        }
+                        if !launch {
+                            // ESC / bouton ANNULER : retour à l'écran titre.
+                            // La touche est encore dans la file d'input (le
+                            // `break` ne la consomme pas, la file n'est vidée
+                            // qu'à `next_frame`) : on cède une frame avant de
+                            // continuer, sinon la même pression serait relue
+                            // par la boucle du titre et rouvrirait immédiatement
+                            // cet écran de choix (ESC semblait ne pas fermer la
+                            // boîte).
+                            next_frame().await;
+                            continue;
                         }
                     }
-                    draw_frame(
-                        state,
-                        assets,
-                        rt,
-                        camera,
-                        &banner_colors,
-                        sounds,
-                        get_time() < flash_until,
-                    );
-                    draw_launch_choice(state);
-                    next_frame().await;
-                }
-                if !launch {
-                    // ESC : retour à l'écran titre. La touche ESC est encore
-                    // dans la file d'input (le `break` ne la consomme pas, la
-                    // file n'est vidée qu'à `next_frame`) : on cède une frame
-                    // avant de continuer, sinon la même pression serait relue
-                    // par la boucle du titre et rouvrirait immédiatement cet
-                    // écran de choix (ESC semblait ne pas fermer la boîte).
-                    next_frame().await;
-                    continue;
+                    break;
                 }
             }
-            break;
         }
 
         // caméra qui descend + rotation des couleurs (ex titleLoop : nouvelle
@@ -676,15 +915,22 @@ fn draw_launch_choice(state: &GameState) {
         argb_to_color(FG_DIM),
     );
 
-    // les deux options
-    draw_centered_line_color("1 / ENTER : POURSUIVRE LE SCENARIO", top + 96.0, argb_to_color(CONTINUE));
-    draw_centered_line_color("2 / R : REPARTIR DU DEBUT", top + 126.0, argb_to_color(RESTART));
-    draw_centered_line_color("ESC : retour a l'ecran titre", top + 164.0, argb_to_color(FG_DIM));
+    // les deux options (avec leurs équivalents clavier)
+    draw_centered_line_color("1 / ENTER : POURSUIVRE LE SCENARIO", top + 90.0, argb_to_color(CONTINUE));
+    draw_centered_line_color("2 / R : REPARTIR DU DEBUT", top + 118.0, argb_to_color(RESTART));
+    // et trois boutons souris équivalents en bas de la boîte (le clic pilote
+    // le choix, comme les touches ci-dessus)
+    let l = launch_choice_layout();
+    crate::shop_render::draw_box_button("POURSUIVRE", l.continue_btn);
+    crate::shop_render::draw_box_button("REPARTIR", l.restart_btn);
+    crate::shop_render::draw_box_button("ANNULER", l.cancel_btn);
 }
 
 /// Dessine une frame de l'écran titre : caméra selon le mode d'affichage,
-/// fond d'étoiles, bannière arc-en-ciel, invites, l'écran de paramétrage s'il
-/// est ouvert (touche O) et l'étirement de la vue virtuelle le cas échéant.
+/// fond d'étoiles, bannière arc-en-ciel, invites, les boutons souris
+/// (équivalents des actions clavier, masqués pendant l'écran de paramétrage),
+/// l'écran de paramétrage s'il est ouvert (touche O) et l'étirement de la vue
+/// virtuelle le cas échéant.
 /// `flash_rules` (vrai juste après un changement de scénario N/B/1-3, pendant
 /// `RULES_FLASH_DURATION`) fait clignoter toute la ligne des règles dans la
 /// couleur du scénario pour attirer l'œil sur les valeurs qui viennent de
@@ -803,7 +1049,7 @@ fn draw_frame(
     for line in [
         key_hint.as_str(),
         "[ ESC to quit ]",
-        "[ Hit other key to launch ]",
+        "[ Hit a key or click a button below to launch ]",
     ] {
         let n = draw_centered_line(line, y as f32);
         y += n as f64 * TITLE_LINE_H;
@@ -820,6 +1066,12 @@ fn draw_frame(
         8.0,
         argb_to_color(0xFF6B6B7E),
     );
+
+    // boutons souris de l'écran titre (équivalents des actions clavier) -
+    // masqués pendant l'écran de paramétrage, dessiné par-dessus
+    if !state.settings_box {
+        draw_title_buttons();
+    }
 
     // écran de paramétrage par-dessus (touche O)
     if state.settings_box {
