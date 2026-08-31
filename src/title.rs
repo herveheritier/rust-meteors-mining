@@ -937,6 +937,10 @@ fn draw_launch_choice(state: &GameState) {
 /// `RULES_FLASH_DURATION`) fait clignoter toute la ligne des règles dans la
 /// couleur du scénario pour attirer l'œil sur les valeurs qui viennent de
 /// changer.
+// Contexte de rendu complet (état, caméra, couleurs, sons) + l'état du flash
+// et de la boîte de choix au lancement : `#[allow]` ciblé plutôt qu'un
+// refactor risqué en struct (le paramètre `launch_choice` est récent).
+#[allow(clippy::too_many_arguments)]
 fn draw_frame(
     state: &GameState,
     assets: &crate::render::Assets,

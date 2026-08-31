@@ -1,5 +1,9 @@
 //! Tests du module `scenario` (définitions, règles affichées, magasin, rangs,
 //! atelier, survie, persistance) - déplacés tels quels de `scenario.rs`.
+//! `bool_assert_comparison` : un test compare le résultat d'une API (`is_ok`)
+//! à `true` - `#[allow]` ciblé sur ce module de tests, le `assert!`
+//! équivalent n'apportant pas de lisibilité ici.
+#![allow(clippy::bool_assert_comparison)]
 
 use super::*;
 use crate::config::{

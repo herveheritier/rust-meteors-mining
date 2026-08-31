@@ -790,7 +790,7 @@ pub fn draw_supply_slider(track: Rect, max: f64, value: f64, m: Vec2) {
 pub fn draw_shop_craft_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2, elements: &[Element]) {
     const NAMES: [&str; 3] = ["GOLD", "IRON", "WATER"];
     const KEYS: [&str; CRAFT_COUNT] = ["1", "2", "3"];
-    for i in 0..CRAFT_COUNT {
+    for (i, key) in KEYS.iter().enumerate() {
         let rect = l.craft[i];
         if rect.w <= 0.0 {
             continue;
@@ -812,7 +812,7 @@ pub fn draw_shop_craft_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2, elemen
             }
         }
         draw_text_shadow(
-            &format!("{}  |  EN STOCK : {} (touche {})", parts.join(" · "), state.consumables[i], KEYS[i]),
+            &format!("{}  |  EN STOCK : {} (touche {})", parts.join(" · "), state.consumables[i], key),
             rect.x + 4.0,
             rect.y + 31.0,
             12.0,

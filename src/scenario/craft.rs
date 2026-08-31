@@ -64,7 +64,7 @@ pub fn craft_affordable(_state: &GameState, elements: &[Element], i: usize) -> b
     spec.ingredients
         .iter()
         .enumerate()
-        .all(|(e, &need)| elements.get(e + 1).map_or(false, |el| el.count >= need))
+        .all(|(e, &need)| elements.get(e + 1).is_some_and(|el| el.count >= need))
 }
 
 /// Résultat d'une fabrication (`craft_consumable`).
@@ -115,6 +115,7 @@ pub enum ConsumableOutcome {
 ///   9 points) ;
 /// - BOOST : relance le minuteur de boost (`BOOST_DURATION`) ;
 /// - MINE : pose une mine à la position du vaisseau (`generate::create_mine`).
+///
 /// Le consommable est retiré de l'inventaire. Touches 1/2/3 (`game.rs`).
 pub fn use_consumable(
     state: &mut GameState,

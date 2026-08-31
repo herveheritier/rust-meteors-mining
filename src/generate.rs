@@ -180,7 +180,7 @@ pub fn generate_shape(
 /// Remplace l'ancien 0.01–0.02 rad/frame fixe de l'original, sans lien avec
 /// la taille.
 pub fn meteor_spin(nbr: usize) -> f64 {
-    if nbr <= 0 {
+    if nbr == 0 {
         return 0.0;
     }
     (METEOR_SPIN_BASE * TRIANGLES_IN_SHAPE_MIN as f64 / nbr as f64).min(METEOR_SPIN_MAX)
@@ -301,9 +301,13 @@ pub fn create_boss_meteor(
     // (15 % par défaut) - on en ajoute sur les triangles restants, avec une
     // part de PLATINUM (1 triangle sur 8)
     let plat = ELEMENT_PLATINUM;
-    for i in shape.first_triangle..=shape.last_triangle {
-        if triangles[i].element <= 0 {
-            triangles[i].element = if rng.r#gen::<f64>() < 0.5 {
+    for tri in triangles
+        .iter_mut()
+        .take(shape.last_triangle + 1)
+        .skip(shape.first_triangle)
+    {
+        if tri.element <= 0 {
+            tri.element = if rng.r#gen::<f64>() < 0.5 {
                 plat
             } else {
                 1 + (rng.r#gen::<f64>() * 3.0) as i32

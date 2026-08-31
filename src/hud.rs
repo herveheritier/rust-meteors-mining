@@ -20,8 +20,8 @@ pub fn draw_cargo(state: &GameState, elements: &[Element]) {
     // premier élément dont le cumul dépasse i)
     let mut cum: Vec<i32> = Vec::with_capacity(elements.len());
     let mut acc = 0;
-    for e in 1..elements.len() {
-        acc += elements[e].count;
+    for el in elements.iter().skip(1) {
+        acc += el.count;
         cum.push(acc);
     }
     // soute presque pleine : les baies occupées clignotent (elles alternent
@@ -859,29 +859,26 @@ pub fn briefing_close_clicked() -> bool {
 /// vies/bouclier) et un conseil.
 pub fn briefing_lines(state: &GameState) -> Vec<String> {
     let mut lines = Vec::new();
-    match state.scenario {
-        crate::scenario::ScenarioId::Custom(ci) => {
-            if let Some(data) = crate::scenario_loader::loaded_data(ci) {
-                lines.push(format!("SCÉNARIO : {}", data.json.name));
-                if !data.json.description.is_empty() {
-                    lines.push(data.json.description.clone());
-                }
-                lines.push(String::new());
-                lines.push("OBJECTIFS :".to_string());
-                for o in &data.json.objectives {
-                    let title = if o.title.is_empty() {
-                        o.id.clone()
-                    } else {
-                        o.title.clone()
-                    };
-                    lines.push(format!("• {}", title));
-                    if !o.description.is_empty() {
-                        lines.push(format!("    {}", o.description));
-                    }
+    if let crate::scenario::ScenarioId::Custom(ci) = state.scenario {
+        if let Some(data) = crate::scenario_loader::loaded_data(ci) {
+            lines.push(format!("SCÉNARIO : {}", data.json.name));
+            if !data.json.description.is_empty() {
+                lines.push(data.json.description.clone());
+            }
+            lines.push(String::new());
+            lines.push("OBJECTIFS :".to_string());
+            for o in &data.json.objectives {
+                let title = if o.title.is_empty() {
+                    o.id.clone()
+                } else {
+                    o.title.clone()
+                };
+                lines.push(format!("• {}", title));
+                if !o.description.is_empty() {
+                    lines.push(format!("    {}", o.description));
                 }
             }
         }
-        _ => {}
     }
     lines.push(String::new());
     let s = crate::scenario::scenario(state.scenario);

@@ -79,7 +79,6 @@ pub fn generate_garbages(
             spin_rate: GARBAGE_SPIN * (1.0 - 2.0 * rng.r#gen::<f64>()),
             life: ((rng.r#gen::<f64>() * 255.0) as i32) / 7,
             rgba_color: 0xFFFFFFFF,
-            ..Default::default()
         };
         // cherche un slot mort à réutiliser
         let mut reused = None;
@@ -179,8 +178,7 @@ mod tests {
         // non nulle, les deux signes présents (sur 12+ débris)
         let mut rng = ::rand_chacha::ChaCha12Rng::seed_from_u64(42);
         let mut shapes = Vec::new();
-        let mut meteor = Shape::default();
-        meteor.velocity = 1.0;
+        let meteor = Shape { velocity: 1.0, ..Default::default() };
         shapes.push(meteor);
         let mut t = Triangle::default();
         t.create(
