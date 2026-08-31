@@ -107,10 +107,16 @@ pub fn generate_shape(
         (127.0 + rng.r#gen::<f64>() * 128.0) as u32,
     );
 
-    // triangles supplémentaires sur les bords libres
+    // triangles supplémentaires sur les bords libres - `choose_border_segment`
+    // renvoie `None` quand plus aucun bord n'est libre (forme saturée par des
+    // placements invalides répétés) : le météore est terminé prématurément
+    // avec les triangles déjà posés (`life` est recalculé à partir du vrai
+    // nombre de triangles) - jamais de blocage
     let mut nbr = nbr;
     while nbr > 1 {
-        let bs = choose_border_segment(&mut shape, rng);
+        let Some(bs) = choose_border_segment(&mut shape, rng) else {
+            break;
+        };
         let p = bs % 3;
         let i = bs / 3;
         let tri = &triangles[shape.first_triangle + i];

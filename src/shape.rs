@@ -182,7 +182,11 @@ pub struct Shape {
     pub last_triangle: usize,
     /// `pointsUsageIndicator` en bitmask : bit `i` = bord `i` déjà utilisé
     /// (bords de l'éventail partagés ou consommés par la génération).
-    pub border_mask: u64,
+    /// `u128` : un météore de `n` triangles a `3n` bords, et la difficulté
+    /// monte à `TRIANGLES_IN_SHAPE_MAX × 2` = 32 triangles (96 bords) - un
+    /// `u64` débordait (repli silencieux du décalage en release, collision
+    /// de bits qui accélérait l'épuisement des bords libres).
+    pub border_mask: u128,
     /// Nombre de bits suivis (= 3 × nombre de triangles de la forme).
     pub border_len: usize,
     pub position: Point,
@@ -604,17 +608,24 @@ pub fn is_vertex_in_shape(shape: &Shape, triangles: &[Triangle], vertex: Point) 
 ///
 /// NB : équivalent au balayage cyclique de la chaîne `pointsUsageIndicator`
 /// de l'original, mais sur un bitmask - voir `docs/PORTAGE.md` §4.
-pub fn choose_border_segment(shape: &mut Shape, rng: &mut impl Rng) -> usize {
+///
+/// **Jamais bloquant** : le balayage est borné à un tour complet - si aucun
+/// bord n'est libre (forme « saturée », placement invalides répétés), renvoie
+/// `None` et l'appelant arrête d'ajouter des triangles. L'ancien `loop`
+/// infini gelait le jeu (CPU 100 %) quand les bords libres tombaient à zéro
+/// pendant la génération d'un météore.
+pub fn choose_border_segment(shape: &mut Shape, rng: &mut impl Rng) -> Option<usize> {
     let len = shape.border_len;
     let l = len + 1;
     let mut i = (rng.r#gen::<f64>() * l as f64) as usize;
-    loop {
+    for _ in 0..l {
         if i < len && shape.border_mask & (1 << i) == 0 {
             shape.border_mask |= 1 << i;
-            return i;
+            return Some(i);
         }
         i = (i + 1) % l;
     }
+    None
 }
 
 /// Construit une forme à partir d'un mesh d'éventails (ex `meshesToShape`).
