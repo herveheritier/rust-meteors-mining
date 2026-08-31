@@ -2,8 +2,12 @@
 //! virtuel** en bas à gauche pilote le vaisseau (↑/↓ = poussée avant/arrière,
 //! ←/→ = rotation - les mêmes commandes que les flèches) et un **bouton de
 //! tir** en bas à droite déclenche les canons (comme Shift). Les deux
-//! fonctionnent au doigt (touches macroquad) et, à défaut de doigt actif, à
-//! la souris (clic maintenu) pour tester sur un poste de travail.
+//! fonctionnent au doigt (touches macroquad) et aussi à la **souris** (clic
+//! maintenu - poste de travail et version web) : la souris est un point de
+//! contrôle permanent tant que le bouton gauche est enfoncé (dédupliqué d'un
+//! éventuel événement tactile du même geste), et une pression dans la zone du
+//! joystick « saisit » le manche - on peut sortir de la zone sans couper la
+//! commande, jusqu'au relâchement.
 //!
 //! Le jeu interroge l'état via `up()/down()/left()/right()/fire()` - combiné
 //! au clavier dans `game.rs` - et la boucle principale affiche les contrôles
@@ -21,6 +25,13 @@ use crate::font::{draw_text, measure_text};
 /// pilote au clavier seul - sinon des zones invisibles resteraient cliquables
 /// à la souris). Synchronisée à partir de `GameState.touch_ui`.
 static ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// La souris a « saisi » le joystick : une pression commencée dans la zone de
+/// saisie verrouille le manche à la souris (le vecteur reste borné au manche)
+/// même si le curseur sort ensuite de la zone - jusqu'au relâchement. Sans
+/// cela, un glissement au-delà du rayon de saisie couperait la commande en
+/// plein virage. Spécifique à la souris (les doigts ont leurs points propres).
+static JOY_GRABBED: AtomicBool = AtomicBool::new(false);
 
 /// Active/coupe l'interface tactile (réglage TOUCH UI de l'écran O).
 pub fn set_enabled(enabled: bool) {
@@ -52,10 +63,32 @@ fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
 }
 
-/// Points actifs (en coordonnées du jeu) : les doigts posés, ou la souris
-/// maintenue quand aucun doigt n'est actif (repli desktop - les touches
-/// simulant la souris, on n'ajoute la souris que sans doigt pour ne pas
-/// compter deux fois le même contact). Vide quand l'interface tactile est
+/// Point de contrôle de la souris (repli desktop/web) : le bouton gauche
+/// maintenu, quelle que soit la position du curseur (le joystick et le bouton
+/// de tir filtrent ensuite selon leurs zones). Une pression commencée dans la
+/// zone du joystick « saisit » le manche (`JOY_GRABBED`) : la souris garde la
+/// commande même si elle sort de la zone, jusqu'au relâchement. Renvoie la
+/// position souris en coordonnées du jeu, ou `None` si le bouton n'est pas
+/// enfoncé.
+fn mouse_point() -> Option<Vec2> {
+    if !is_mouse_button_down(MouseButton::Left) {
+        JOY_GRABBED.store(false, Ordering::Relaxed);
+        return None;
+    }
+    let m = crate::render::mouse_to_game();
+    if m.distance(JOY_CENTER) <= JOY_TOUCH_RADIUS {
+        JOY_GRABBED.store(true, Ordering::Relaxed);
+    }
+    Some(m)
+}
+
+/// Points actifs (en coordonnées du jeu) : les doigts posés, plus la souris
+/// maintenue (repli desktop/web - voir `mouse_point`). La souris est TOUJOURS
+/// ajoutée quand le bouton gauche est enfoncé, sans dépendre de `touches()`
+/// vide : sur certains navigateurs une souris émet aussi des événements
+/// tactiles (le repli conditionné à l'absence de doigt était alors bloqué et
+/// les contrôles restaient inertes). Un même contact souris/tactile (double
+/// événement du même geste) est dédupliqué. Vide quand l'interface tactile est
 /// désactivée (`set_enabled(false)`) : rien ne pilote ni ne tire.
 fn active_points() -> Vec<Vec2> {
     if !enabled() {
@@ -65,22 +98,28 @@ fn active_points() -> Vec<Vec2> {
         .iter()
         .map(|t| crate::render::screen_to_game(t.position))
         .collect();
-    if pts.is_empty() && is_mouse_button_down(MouseButton::Left) {
-        let (x, y) = mouse_position();
-        pts.push(crate::render::screen_to_game(vec2(x, y)));
+    if let Some(m) = mouse_point() {
+        // même contact souris + tactile (navigateur qui émet les deux pour un
+        // seul geste) : ne pas compter deux fois le même point
+        pts.retain(|p| p.distance(m) > 2.0);
+        pts.push(m);
     }
     pts
 }
 
 /// Vecteur courant du joystick (borné à `JOY_KNOB_RADIUS`), `None` si aucun
 /// doigt/souris n'est dans la zone de saisie. Plusieurs doigts dans la zone :
-/// le plus proche du centre pilote.
+/// le plus proche du centre pilote. Manche déjà saisi par la souris
+/// (`JOY_GRABBED`) : la commande reste active hors de la zone (vecteur borné).
 fn joystick_vector() -> Option<Vec2> {
+    let grabbed = JOY_GRABBED.load(Ordering::Relaxed);
     let mut best: Option<(f32, Vec2)> = None;
     for p in active_points() {
         let d = p - JOY_CENTER;
         let dist = d.length();
-        if dist > JOY_TOUCH_RADIUS {
+        // zone de saisie, ou manche saisi par la souris (sortie de zone sans
+        // couper la commande)
+        if dist > JOY_TOUCH_RADIUS && !grabbed {
             continue;
         }
         if best.is_none_or(|(bd, _)| dist < bd) {
@@ -156,26 +195,38 @@ fn draw_arrow(center: Vec2, dir: Vec2, len: f32, color: Color) {
 
 /// Dessine le joystick (bas-gauche) et le bouton de tir (bas-droite) -
 /// semi-transparents, par-dessus le jeu. À appeler pendant le jeu seulement
-/// (boîtes fermées, voir `main.rs`).
+/// (boîtes fermées, voir `main.rs`). Le joystick et le bouton FIRE se
+/// pilotent aussi à la souris (clic maintenu, `mouse_point`) : le survol de
+/// leurs zones de saisie éclaircit les contrôles pour le montrer.
 pub fn draw() {
     if !enabled() {
         return;
     }
+    // survol souris (coordonnées du jeu) : éclaircit les contrôles quand le
+    // curseur entre dans une zone de saisie - la souris pilote le jeu
+    let m = crate::render::mouse_to_game();
+    let joy_hover = m.distance(JOY_CENTER) <= JOY_TOUCH_RADIUS;
+    let fire_hover = m.distance(FIRE_CENTER) <= FIRE_TOUCH_RADIUS;
     // ── joystick ────────────────────────────────────────────────────────────
     let knob = joystick_vector().unwrap_or_default();
     let active = knob.length() >= DEADZONE;
-    // socle + anneau
-    draw_circle(JOY_CENTER.x, JOY_CENTER.y, JOY_BASE_RADIUS, rgba(1.0, 1.0, 1.0, 0.12));
+    // socle + anneau (plus clairs au survol souris : la zone répond)
+    draw_circle(
+        JOY_CENTER.x,
+        JOY_CENTER.y,
+        JOY_BASE_RADIUS,
+        rgba(1.0, 1.0, 1.0, if joy_hover { 0.20 } else { 0.12 }),
+    );
     draw_circle_lines(
         JOY_CENTER.x,
         JOY_CENTER.y,
         JOY_BASE_RADIUS,
         2.0,
-        rgba(1.0, 1.0, 1.0, 0.30),
+        rgba(1.0, 1.0, 1.0, if joy_hover { 0.55 } else { 0.30 }),
     );
     // flèches directionnelles sur le socle
     let arrow_len = JOY_BASE_RADIUS * 0.62;
-    let arrow_color = rgba(1.0, 1.0, 1.0, 0.45);
+    let arrow_color = rgba(1.0, 1.0, 1.0, if joy_hover { 0.75 } else { 0.45 });
     draw_arrow(JOY_CENTER, vec2(0.0, -1.0), arrow_len, arrow_color);
     draw_arrow(JOY_CENTER, vec2(0.0, 1.0), arrow_len, arrow_color);
     draw_arrow(JOY_CENTER, vec2(-1.0, 0.0), arrow_len, arrow_color);
@@ -199,8 +250,18 @@ pub fn draw() {
     };
     let ring = if pressed {
         rgba(1.0, 1.0, 1.0, 0.90)
+    } else if fire_hover {
+        // survol souris : le bouton répond au clic maintenu
+        rgba(1.0, 0.75, 0.75, 0.75)
     } else {
         rgba(1.0, 0.55, 0.55, 0.55)
+    };
+    let label_alpha = if pressed {
+        1.0
+    } else if fire_hover {
+        0.90
+    } else {
+        0.75
     };
     draw_circle(FIRE_CENTER.x, FIRE_CENTER.y, FIRE_RADIUS, base);
     draw_circle_lines(FIRE_CENTER.x, FIRE_CENTER.y, FIRE_RADIUS, 3.0, ring);
@@ -211,6 +272,6 @@ pub fn draw() {
         FIRE_CENTER.x - w / 2.0,
         FIRE_CENTER.y + 5.0,
         14.0,
-        rgba(1.0, 1.0, 1.0, if pressed { 1.0 } else { 0.75 }),
+        rgba(1.0, 1.0, 1.0, label_alpha),
     );
 }
