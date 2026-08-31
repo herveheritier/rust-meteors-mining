@@ -585,12 +585,12 @@ pub fn draw_shape(
         let x = (p.x / 10.0) as i32 + (VIEWPORT_WIDTH / 2.0 - VIEWPORT_WIDTH / 20.0) as i32;
         let y = (p.y / 10.0) as i32 + (VIEWPORT_HEIGHT / 2.0 - VIEWPORT_HEIGHT / 20.0) as i32;
         let color = match shape.who_i_am {
-            WHOIAM_STATION => 0xFF40FF80,   // base : vert
-            WHOIAM_METEOR => 0xFFFF5050,    // météores : rouge
-            WHOIAM_MINERAL => 0xFFFFFF60,   // minerais : jaune
-            WHOIAM_PLAYER => 0xFFFFFFFF,    // vaisseau : blanc
-            WHOIAM_WARP_GATE => 0xFF60FFFF, // portails : cyan
-            WHOIAM_MINE => 0xFFFF9050,      // mines : orange
+            WHOIAM_STATION => 0x3F40FF80,   // base : vert
+            WHOIAM_METEOR => 0x3FFF5050,    // météores : rouge
+            WHOIAM_MINERAL => 0x3FFFFF60,   // minerais : jaune
+            WHOIAM_PLAYER => 0x3FFFFFFF,    // vaisseau : blanc
+            WHOIAM_WARP_GATE => 0x3F60FFFF, // portails : cyan
+            WHOIAM_MINE => 0x3FFF9050,      // mines : orange
             WHOIAM_BULLET => 0x00000000,    // balles : invisibles
             _ => shape.shape_color,
         };
@@ -600,7 +600,7 @@ pub fn draw_shape(
             // (retour à la base) : anneau vert pulsant autour de la station
             if shape.who_i_am == WHOIAM_STATION && state.docking_guide {
                 let r = 3.0 + (get_time() * 2.0).sin().abs() as f32;
-                draw_circle_lines(x as f32, y as f32, r, 1.0, argb_to_color(0xFF40FF80));
+                draw_circle_lines(x as f32, y as f32, r, 1.0, argb_to_color(0x3F40FF80));
             }
         }
     }

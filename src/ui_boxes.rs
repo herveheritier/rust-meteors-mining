@@ -51,6 +51,7 @@ pub fn draw_help_box() {
         "G : generate a shape",
         "O : settings (audio, graphics)",
         "K : kill all shapes",
+        "L : show events log",
         "Enter : dock box (when docked)",
     ];
     for (i, label) in labels.iter().enumerate() {
