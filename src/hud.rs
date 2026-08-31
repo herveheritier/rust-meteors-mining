@@ -254,6 +254,41 @@ pub fn game_over_buttons_layout() -> [Rect; 2] {
     ]
 }
 
+/// Géométrie du bouton OPTIONS du HUD (coin supérieur droit, juste sous la
+/// ligne principale) : clic souris → écran de paramétrage, comme la touche O.
+/// Placé au coin supérieur droit pour ne gêner ni la ligne du HUD (réputa-
+/// tion/précision/ressources/accostage - qui s'arrête avant l'extrémité
+/// droite), ni le panneau des objectifs des scénarios custom (qui commence
+/// sous le bouton, `draw_objectives_hud`), ni les zones tactiles (joystick
+/// bas-gauche, FIRE bas-droit).
+pub fn game_options_button_layout() -> Rect {
+    const LABEL: &str = "OPTIONS";
+    let btn_h = 26.0;
+    let w = measure_text(LABEL, None, 16, 1.0).width + 2.0 * BOX_PADDING;
+    Rect::new(VIEWPORT_WIDTH as f32 - w - 8.0, 6.0, w, btn_h)
+}
+
+/// Dessine le bouton OPTIONS du HUD (ouvre l'écran de paramétrage au clic,
+/// comme la touche O - détection côté `options_button_click`).
+pub fn draw_options_button() {
+    crate::shop_render::draw_box_button("OPTIONS", game_options_button_layout());
+}
+
+/// Détecte un clic gauche sur le bouton OPTIONS du HUD (coin supérieur
+/// droit, dessiné par `draw_options_button`) : ouvre l'écran de paramétrage,
+/// comme la touche O. Appelée par `game::update` à côté de la touche O -
+/// elle n'est lue qu'à l'écran libre (les boîtes accostage/magasin/aide/
+/// paramétrage/briefing et la fin de partie font un retour anticipé avant
+/// l'input principal).
+pub fn options_button_click() -> bool {
+    if !is_mouse_button_pressed(MouseButton::Left) {
+        return false;
+    }
+    let rect = game_options_button_layout();
+    let m = mouse_to_game();
+    rect.contains(m)
+}
+
 /// Affiche les informations de debug (touche I, ex `showInfo` de `mainLoop`) :
 /// keycode, génération automatique, compteurs de formes/triangles/débris,
 /// formes vivantes et niveaux des éléments.

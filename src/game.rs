@@ -496,8 +496,10 @@ pub fn update(
     }
 
     // O : écran de paramétrage (options audio et graphiques - le mode de
-    // déplacement se choisit au magasin de la station, bouton SHOP)
-    if is_key_pressed(KeyCode::O) {
+    // déplacement se choisit au magasin de la station, bouton SHOP) ; le
+    // bouton souris OPTIONS du HUD (coin supérieur droit) déclenche la même
+    // action au clic gauche
+    if is_key_pressed(KeyCode::O) || crate::hud::options_button_click() {
         state.settings_box = true;
     }
 

@@ -776,6 +776,20 @@ async fn main() {
         // (le statut d'accostage garde toute la ligne principale)
         render::draw_consumables_hud(&state);
         render::draw_score_hud(&state);
+        // bouton OPTIONS (coin supérieur droit, équivalent souris de la
+        // touche O - ouvre l'écran de paramétrage) : masqué quand une boîte
+        // recouvre l'écran (accostage, magasin, aide, paramétrage, briefing)
+        // ou en fin de partie - le clic n'est de toute façon lu qu'à l'écran
+        // libre (voir `hud::options_button_click`)
+        if !state.dock_box
+            && !state.shop_box
+            && !state.help_box
+            && !state.settings_box
+            && !state.briefing_box
+            && !state.game_over
+        {
+            render::draw_options_button();
+        }
         // journal de bord (touche L) et briefing pré-partie (scénarios
         // custom - lancé au démarrage de la partie, fermé par ENTRÉE/ÉCHAP)
         render::draw_log_box(&state);
