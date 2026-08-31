@@ -615,6 +615,7 @@ pub async fn title_loop(
                             &banner_colors,
                             sounds,
                             get_time() < flash_until,
+                            false,
                         );
                         next_frame().await;
                     }
@@ -724,8 +725,8 @@ pub async fn title_loop(
                                 &banner_colors,
                                 sounds,
                                 get_time() < flash_until,
+                                true,
                             );
-                            draw_launch_choice(state);
                             next_frame().await;
                         }
                         if !launch {
@@ -769,6 +770,7 @@ pub async fn title_loop(
             &banner_colors,
             sounds,
             get_time() < flash_until,
+            false,
         );
         next_frame().await
     }
@@ -943,6 +945,7 @@ fn draw_frame(
     banner_colors: &[u32],
     sounds: &Sounds,
     flash_rules: bool,
+    launch_choice: bool,
 ) {
     // rendu selon le mode d'affichage : fenêtré → direct (ou étiré si la
     // fenêtre est plus grande que 960×540) ; plein écran zoomé → vue virtuelle
@@ -1068,14 +1071,24 @@ fn draw_frame(
     );
 
     // boutons souris de l'écran titre (équivalents des actions clavier) -
-    // masqués pendant l'écran de paramétrage, dessiné par-dessus
-    if !state.settings_box {
+    // masqués pendant l'écran de paramétrage et pendant la boîte de choix au
+    // lancement, dessinés par-dessus
+    if !state.settings_box && !launch_choice {
         draw_title_buttons();
     }
 
     // écran de paramétrage par-dessus (touche O)
     if state.settings_box {
         draw_settings_box(state, sounds);
+    }
+
+    // boîte de choix au lancement d'un scénario sauvegardé (dessinée ICI,
+    // dans la vue virtuelle - comme l'écran de paramétrage - pour rester
+    // alignée avec la détection de clic `mouse_to_game` : hors de `draw_frame`
+    // elle était tracée après `draw_zoomed`, donc mal positionnée et hors de
+    // portée de la souris en fenêtre agrandie / plein écran)
+    if launch_choice {
+        draw_launch_choice(state);
     }
 
     // étirement de la vue virtuelle en plein écran zoomé et en fenêtré
