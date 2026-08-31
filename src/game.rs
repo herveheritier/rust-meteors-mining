@@ -708,6 +708,23 @@ pub fn update(
     (Action::Continue, camera)
 }
 
+/// Libellé français d'un `who_i_am` (pour le journal de bord - ex. la
+/// collision qui détruit le vaisseau).
+fn who_i_am_label(who: i32) -> &'static str {
+    match who {
+        WHOIAM_METEOR => "MÉTÉORE",
+        WHOIAM_BULLET => "BALLE",
+        WHOIAM_PLAYER => "VAISSEAU",
+        WHOIAM_MINERAL => "MINERAI",
+        WHOIAM_STATION => "STATION",
+        WHOIAM_ALIEN => "ALIEN",
+        WHOIAM_COSMONAUT => "COSMONAUTE",
+        WHOIAM_WARP_GATE => "PORTAIL",
+        WHOIAM_MINE => "MINE",
+        _ => "?",
+    }
+}
+
 /// Physique et collisions pour une frame (ex sections « moves shapes »,
 /// « moves garbages », « detects collisions », « resolves collisions » de
 /// `mainLoop`).
@@ -1040,6 +1057,13 @@ fn collisions(
                 }
                 state.send_message("YOUR SPACESHIP IS DAMAGED, THE STATION CAN CARRY OUT REPAIRS");
                 state.send_message("REPAIRS ARE NOT FREE OF CHARGE");
+                // journal de bord : la collision qui a détruit le vaisseau
+                // (l'objet percuté - météore, alien…) est consignée, avec
+                // l'éjection du cosmonaute EVA qui s'ensuit
+                state.log_event(&format!(
+                    "VAISSEAU DÉTRUIT PAR COLLISION ({}) - COSMONAUTE ÉJECTÉ",
+                    who_i_am_label(collid_by_who)
+                ));
                 // vaisseau détruit (jeu libre/Progression - le Survival a son
                 // propre respawn) : le cosmonaute est éjecté à la position du
                 // crash - le joueur le contrôle pour rejoindre la base (une
@@ -1061,6 +1085,30 @@ fn collisions(
                     sounds.play_explosion(rng, v);
                 }
                 generate_garbages(garbages, &triangles[i], shapes, rng);
+            }
+        } else if who == WHOIAM_METEOR && shapes[shape_index].is_boss && collid_by_who == WHOIAM_METEOR {
+            // le boss est **immunisé contre les chocs de météores** : un
+            // météore normal qui le percute explose (traité de son côté),
+            // mais le boss ne perd aucun triangle - il ne peut être détruit
+            // que par les balles du vaisseau (voir la branche BULLET)
+        } else if who == WHOIAM_METEOR
+            && shapes[shape_index].is_boss
+            && collid_by_who == WHOIAM_BULLET
+            && triangles[i].armor > 0
+        {
+            // le boss **encaisse** : chaque balle dégrade l'armure du
+            // triangle (`armor` = balles restantes - posée par
+            // `create_boss_meteor` à `BOSS_TRIANGLE_HIT_POINTS - 1`) sans le
+            // tuer, ni débris, ni minerai relâché ; la balle est consommée
+            // comme d'habitude (elle ne traverse pas le boss). Le triangle ne
+            // meurt qu'à la dernière balle (branche générique ci-dessous)
+            triangles[i].armor -= 1;
+            let bullet_idx = collid_by as usize;
+            if bullet_idx < shapes.len() && shapes[bullet_idx].who_i_am == WHOIAM_BULLET {
+                shapes[bullet_idx].life = 0;
+                for t in &mut triangles[shapes[bullet_idx].first_triangle..=shapes[bullet_idx].last_triangle] {
+                    t.life = 0;
+                }
             }
         } else {
             triangles[i].life = 0;
@@ -1552,6 +1600,98 @@ mod tests {
         assert!(garbages.len() <= 4 * GARBAGE_PER_TRIANGLE);
         // le centre est recalculé (vie <= 0 → inchangé, pas de panique)
         compute_shape_center(&mut shapes[0], &triangles);
+    }
+
+    #[test]
+    fn boss_is_immune_to_normal_meteor_collisions() {
+        // un météore normal percute le boss : le météore explose (il perd ses
+        // triangles) mais le boss ne subit **aucun dégât** - il ne peut être
+        // détruit que par les balles du vaisseau (une balle = un triangle)
+        let mut state = GameState::new();
+        // boss : 10 triangles étalés en x (0..18), météore : 2 triangles à
+        // (24, 0) - seuls les triangles proches du point de contact doivent
+        // être touchés (le chevauchement réel dépend du SAT, pas du rayon).
+        // NB : `t.position` est **local** à la forme (`compute_real_positions`
+        // fait `réel = position_forme + position_triangle + sommet`), les
+        // triangles du météore restent donc en local (0,0)/(0,1)
+        let mut shapes = vec![
+            test_shape(WHOIAM_METEOR, 0, 9, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 10, 11, 24.0, 0.0),
+        ];
+        shapes[0].is_boss = true;
+        shapes[0].radius = 30.0;
+        shapes[1].radius = 10.0;
+        let mut triangles = Vec::new();
+        for i in 0..12 {
+            let (shape_index, x, y) = if i < 10 {
+                (0, (i as f64) * 2.0, 0.0)
+            } else {
+                (1, 0.0, (i as f64 - 10.0) * 1.0)
+            };
+            triangles.push(test_triangle(i as i32, shape_index, x, y));
+        }
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        let boss_life_before = shapes[0].life;
+        let meteor_life_before = shapes[1].life;
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        // le boss reste intact, le météore normal est endommagé
+        assert_eq!(shapes[0].life, boss_life_before);
+        assert!(shapes[1].life < meteor_life_before);
+        // les triangles du boss en collision survivent, ceux du météore meurent
+        assert_eq!(triangles[9].life, 1); // triangle du boss au point de contact
+        assert_eq!(triangles[10].life, 0); // triangle du météore
+        assert_eq!(triangles[11].life, 0);
+    }
+
+    #[test]
+    fn boss_triangle_requires_boss_triangle_hit_points_bullets() {
+        // chaque triangle du boss encaisse `BOSS_TRIANGLE_HIT_POINTS` balles
+        // avant de mourir (armure paramétrable - carte « Météores &
+        // collisions » de l'outil de gestion) : les premières balles dégradent
+        // l'armure et sont consommées sans tuer le triangle, la dernière le
+        // détruit
+        let hp = BOSS_TRIANGLE_HIT_POINTS.max(1);
+        let mut state = GameState::new();
+        // boss : 2 triangles (le second, éloigné, n'est pas touché) - balle :
+        // 1 triangle en (2,2) qui chevauche le premier triangle du boss
+        let mut shapes = vec![
+            test_shape(WHOIAM_METEOR, 0, 1, 0.0, 0.0),
+            test_shape(WHOIAM_BULLET, 2, 2, 2.0, 2.0),
+        ];
+        shapes[0].is_boss = true;
+        shapes[0].radius = 10.0;
+        shapes[1].radius = 10.0;
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 0, 50.0, 50.0), // hors de portée de la balle
+            test_triangle(2, 1, 0.0, 0.0),   // local : la position de la forme porte le décalage
+        ];
+        triangles[0].armor = hp - 1;
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        // hp-1 premières balles : le triangle survit, l'armure se dégrade,
+        // la balle est consommée
+        for shot in 0..hp - 1 {
+            collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+            assert_eq!(triangles[0].life, 1, "le triangle du boss doit survivre (tir {shot})");
+            assert_eq!(triangles[0].armor, hp - 2 - shot, "armure dégradée (tir {shot})");
+            assert_eq!(shapes[0].life, 2, "le boss reste vivant (tir {shot})");
+            assert_eq!(shapes[1].life, 0, "la balle est consommée (tir {shot})");
+            // nouvelle balle pour le tir suivant
+            shapes[1].life = 1;
+            triangles[2].life = 1;
+        }
+        // dernière balle : le triangle meurt (branche générique : débris…)
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+        assert_eq!(triangles[0].life, 0, "la dernière balle détruit le triangle");
+        assert_eq!(shapes[0].life, 1, "le boss survit avec son second triangle");
+        assert_eq!(shapes[1].life, 0, "la balle est consommée");
     }
 
     #[test]

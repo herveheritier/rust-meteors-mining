@@ -832,6 +832,7 @@ const DEFAULT_DATA = {
     // collisions météore / station
     restitution: 1.0, // METEOR_STATION_RESTITUTION - force de réaction (rebond)
     debrisPerTriangle: 12, // GARBAGE_PER_TRIANGLE - débris par triangle explosé
+    bossTriangleHp: 3, // BOSS_TRIANGLE_HIT_POINTS - balles pour détruire un triangle du boss
     // génération procédurale des météores
     meteorVelocityMax: 2.0, // METEOR_VELOCITY_MAX
     trianglesMin: 6, // TRIANGLES_IN_SHAPE_MIN
@@ -3009,6 +3010,7 @@ function summaryCard() {
   items.push(
     { k: "Force de réaction (base)", v: fmtFloat(gp.restitution), cls: "", sub: "restitution - le triangle qui collisionne explose et repousse le météore (1.0 = rebond parfait, 0 = sans réaction)" },
     { k: "Débris par explosion", v: String(int(gp.debrisPerTriangle)), cls: "", sub: "éclats générés par triangle détruit" },
+    { k: "Balles par triangle du boss", v: String(int(gp.bossTriangleHp)), cls: "", sub: "armure du météore spécial - il ne peut être détruit que par les balles du vaisseau" },
     { k: "Météores en jeu", v: gp.initialMax + " → " + gp.shapesCount, cls: "", sub: "limite au départ → plafond dur · vitesse max " + fmtFloat(gp.meteorVelocityMax) + " · triangles " + gp.trianglesMin + "–" + gp.trianglesMax },
   );
   for (const it of items) {
@@ -3209,6 +3211,17 @@ function gameplayCard() {
     Math.round((g.heightMin + g.heightMax) / 2) + " - constantes TRIANGLES_IN_SHAPE_*, " +
     "TRIANGLE_BASE_*, TRIANGLE_HEIGHT_*, lues par src/generate.rs."));
   host.appendChild(gen);
+
+  // météore spécial (boss) : armure des triangles
+  const boss = el("div", "eco-group");
+  boss.appendChild(el("h4", "", "Météore spécial (boss)"));
+  const bGrid = el("div", "field-grid");
+  bGrid.appendChild(field("Balles par triangle du boss", "gp-boss-triangle-hp",
+    economyNumber("gp-boss-triangle-hp", intSetter("bossTriangleHp"), g.bossTriangleHp, 1, "1",
+      "Nombre de balles nécessaires pour détruire un triangle du météore spécial (BOSS_TRIANGLE_HIT_POINTS) - chaque balle dégrade l'armure du triangle, il ne meurt qu'à la dernière. Le boss est immunisé contre les collisions avec les météores.")));
+  boss.appendChild(bGrid);
+  boss.appendChild(el("p", "hint", "Armure posée par src/generate.rs (create_boss_meteor) et dégradée par src/game.rs (collisions)."));
+  host.appendChild(boss);
 
   // population de météores
   const pop = el("div", "eco-group");
@@ -3936,6 +3949,13 @@ function gameplayConsts() {
     "/// météore sur la base ou un autre météore).",
     "pub const GARBAGE_PER_TRIANGLE: usize = " + i32(g.debrisPerTriangle) + ";",
     "",
+    "/// Nombre de **balles** nécessaires pour détruire un triangle du météore",
+    "/// spécial (boss) : chaque balle qui le touche dégrade l'armure du",
+    "/// triangle (`Triangle::armor`), le triangle ne meurt qu'à la dernière.",
+    "/// Le boss ne peut être détruit que par les balles du vaisseau (il est",
+    "/// immunisé contre les collisions avec les météores normaux).",
+    "pub const BOSS_TRIANGLE_HIT_POINTS: i32 = " + i32(g.bossTriangleHp) + ";",
+    "",
     "/// Vitesse maximale des météores (`2*rnd` à l'origine).",
     "pub const METEOR_VELOCITY_MAX: f64 = " + flt(g.meteorVelocityMax) + ";",
     "",
@@ -4368,6 +4388,8 @@ function parseRust(text) {
   if (restitution !== null) out.gameplay.restitution = restitution;
   const debris = price("GARBAGE_PER_TRIANGLE");
   if (debris !== null) out.gameplay.debrisPerTriangle = debris;
+  const bossHp = price("BOSS_TRIANGLE_HIT_POINTS");
+  if (bossHp !== null) out.gameplay.bossTriangleHp = bossHp;
   const vel = price("METEOR_VELOCITY_MAX");
   if (vel !== null) out.gameplay.meteorVelocityMax = vel;
   const tMin = price("TRIANGLES_IN_SHAPE_MIN");
@@ -4666,6 +4688,7 @@ function normalize(parsed) {
   };
   if (Number.isFinite(gameplay.restitution) && gameplay.restitution >= 0) out.gameplay.restitution = gameplay.restitution;
   gpInt("debrisPerTriangle", 0);
+  gpInt("bossTriangleHp", 1);
   if (Number.isFinite(gameplay.meteorVelocityMax) && gameplay.meteorVelocityMax >= 0) out.gameplay.meteorVelocityMax = gameplay.meteorVelocityMax;
   gpInt("trianglesMin", 1);
   gpInt("trianglesMax", 1);

@@ -14,8 +14,9 @@ use crate::geom::{generate_vertex_outside, Point, Triangle};
 // génération des météores (taille, triangles, vitesse) et population :
 // constantes de la carte « Météores & collisions » de l'outil de gestion
 use crate::marketplace::{
-    METEOR_SPIN_BASE, METEOR_SPIN_MAX, METEOR_VELOCITY_MAX, TRIANGLE_BASE_MAX,
-    TRIANGLE_BASE_MIN, TRIANGLE_HEIGHT_MAX, TRIANGLE_HEIGHT_MIN, TRIANGLES_IN_SHAPE_MIN,
+    BOSS_TRIANGLE_HIT_POINTS, METEOR_SPIN_BASE, METEOR_SPIN_MAX, METEOR_VELOCITY_MAX,
+    TRIANGLE_BASE_MAX, TRIANGLE_BASE_MIN, TRIANGLE_HEIGHT_MAX, TRIANGLE_HEIGHT_MIN,
+    TRIANGLES_IN_SHAPE_MIN,
 };
 use crate::shape::*;
 use crate::state::{default_elements, Element, GameState};
@@ -251,6 +252,13 @@ pub fn random_world_position(state: &GameState, camera: Point, rng: &mut impl Rn
     loop {
         let x = WORLD_WIDTH * rng.r#gen::<f64>() + WORLD_MINX;
         let y = WORLD_HEIGHT * rng.r#gen::<f64>() + WORLD_MINY;
+        // jamais sur ou dans la base : la station (anneau r ≈ 110-162, centrée
+        // sur (0,0)) doit rester dégagée - un météore né sur l'anneau y
+        // restait et pouvait détruire le vaisseau à son retour (voir
+        // `STATION_SPAWN_EXCLUSION_RADIUS`)
+        if x.hypot(y) < STATION_SPAWN_EXCLUSION_RADIUS {
+            continue;
+        }
         let mut p = Point::new(x + camera.x, y + camera.y);
         p.normalize_world(&state.world);
         let inside_view =
@@ -303,6 +311,19 @@ pub fn create_boss_meteor(
     shape.orientation = 0.0;
     shape.rotation = meteor_spin(nbr) * (1.0 - 2.0 * rng.r#gen::<f64>());
     shape.texture = TEXTURE_METEOR;
+    // armure des triangles : chaque triangle encaisse `BOSS_TRIANGLE_HIT_POINTS`
+    // balles avant de mourir (paramétrable - voir `collisions` dans `game.rs` :
+    // chaque balle dégrade `Triangle::armor`, le triangle ne meurt qu'à la
+    // dernière). Le boss est immunisé contre les collisions avec les météores.
+    if BOSS_TRIANGLE_HIT_POINTS > 1 {
+        for tri in triangles
+            .iter_mut()
+            .take(shape.last_triangle + 1)
+            .skip(shape.first_triangle)
+        {
+            tri.armor = BOSS_TRIANGLE_HIT_POINTS - 1;
+        }
+    }
     // forte teneur minérale : les triangles générés ont déjà leur élément
     // (15 % par défaut) - on en ajoute sur les triangles restants, avec une
     // part de PLATINUM (1 triangle sur 8)
@@ -911,6 +932,59 @@ mod tests {
             .count() as i32;
         assert_eq!(shapes[idx].minerals, minerals);
         assert_eq!(shapes[idx].who_i_am, WHOIAM_METEOR);
+    }
+
+    #[test]
+    fn random_world_position_never_spawns_on_or_in_the_station() {
+        // la zone de la station (anneau r ≈ 110-162) doit rester dégagée :
+        // aucune position générée ne peut se trouver sur ou dans la base
+        // (sinon un météore né sur l'anneau y restait et pouvait détruire
+        // le vaisseau à son retour)
+        let state = GameState::new();
+        let mut rng = seed();
+        for _ in 0..1000 {
+            let (x, y) = random_world_position(&state, Point::new(0.0, 0.0), &mut rng);
+            assert!(
+                x.hypot(y) >= STATION_SPAWN_EXCLUSION_RADIUS,
+                "position générée sur la base : ({x}, {y})"
+            );
+        }
+    }
+
+    #[test]
+    fn boss_triangles_carry_armor_normal_meteors_do_not() {
+        // le boss pose `BOSS_TRIANGLE_HIT_POINTS - 1` d'armure sur chacun de
+        // ses triangles (paramétrable - chaque balle en dégrade une, voir
+        // `game.rs`) ; les météores normaux n'en ont pas (une balle = un
+        // triangle)
+        let elements = default_elements();
+        let state = GameState::new();
+        let mut rng = seed();
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        let boss = create_boss_meteor(
+            &state,
+            &mut shapes,
+            &mut triangles,
+            Point::new(0.0, 0.0),
+            &elements,
+            &mut rng,
+        );
+        assert!(shapes[boss].is_boss);
+        for t in &triangles[shapes[boss].first_triangle..=shapes[boss].last_triangle] {
+            assert_eq!(t.armor, (BOSS_TRIANGLE_HIT_POINTS - 1).max(0));
+        }
+        let normal = create_shape(
+            &state,
+            &mut shapes,
+            &mut triangles,
+            Point::new(0.0, 0.0),
+            &elements,
+            &mut rng,
+        );
+        for t in &triangles[shapes[normal].first_triangle..=shapes[normal].last_triangle] {
+            assert_eq!(t.armor, 0, "un météore normal n'a pas d'armure");
+        }
     }
 
     #[test]

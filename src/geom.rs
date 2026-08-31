@@ -297,6 +297,12 @@ pub struct Triangle {
     /// le triangle meurt (un trou s'ouvre dans l'anneau). Affiché par le
     /// style MESH (teinte vers le rouge). 0 pour toutes les autres formes.
     pub damage: i32,
+    /// Armure d'un triangle du météore spécial (boss) : nombre de **balles**
+    /// restantes avant que la balle suivante ne détruise le triangle (0 =
+    /// aucune - une balle le tue). Posée par `create_boss_meteor` à
+    /// `BOSS_TRIANGLE_HIT_POINTS - 1` (paramétrable - carte « Météores &
+    /// collisions » de l'outil de gestion). 0 pour toutes les autres formes.
+    pub armor: i32,
     /// Position de base dans la texture (ex `textureBasePosition`) - posée
     /// mais non relue (le rendu texturé du port ne s'en sert pas).
     #[allow(dead_code)]
@@ -333,6 +339,7 @@ impl Default for Triangle {
             b_shape_border: false,
             c_shape_border: false,
             damage: 0,
+            armor: 0,
             texture_base_position: 0,
         }
     }

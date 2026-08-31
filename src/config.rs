@@ -353,6 +353,14 @@ pub const DOCK_RETRACT_DURATION: f64 = 1.5;
 /// l'animation (voir `render::draw_docking_line`).
 pub const STATION_INNER_RADIUS: f64 = 110.0;
 
+/// Rayon d'exclusion autour de la station (centre du monde, anneau de rayon
+/// r ≈ 110-162) : aucune forme générée en jeu (météores, boss, portails -
+/// voir `generate::random_world_position`) ne peut naître **sur ou dans la
+/// base**. Marge incluse pour la taille des plus gros corps (le boss,
+/// `BOSS_SCALE`) : sans elle, un météore né sur l'anneau y restait et
+/// pouvait détruire le vaisseau à son retour à la base.
+pub const STATION_SPAWN_EXCLUSION_RADIUS: f64 = 300.0;
+
 /// Vitesse maximale (unités/s) du vaisseau pour que l'accostage se **termine**
 /// (la boîte DOCK STATION ne s'ouvre que si le vaisseau est presque immobile
 /// dans la zone - voir `docking`).

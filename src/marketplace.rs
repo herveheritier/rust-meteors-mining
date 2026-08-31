@@ -69,6 +69,14 @@ pub const METEOR_STATION_RESTITUTION: f64 = 0.2;
 /// météore sur la base ou un autre météore).
 pub const GARBAGE_PER_TRIANGLE: usize = 12;
 
+/// Nombre de **balles** nécessaires pour détruire un triangle du météore
+/// spécial (boss) : chaque balle qui le touche dégrade l'armure du triangle
+/// (`Triangle::armor`), le triangle ne meurt qu'à la dernière. Le boss ne
+/// peut être détruit que par les balles du vaisseau (il est immunisé contre
+/// les collisions avec les météores normaux). Paramétrable - carte
+/// « Météores & collisions » de l'outil de gestion.
+pub const BOSS_TRIANGLE_HIT_POINTS: i32 = 3;
+
 /// Vitesse maximale des météores (`2*rnd` à l'origine).
 pub const METEOR_VELOCITY_MAX: f64 = 2.0;
 
