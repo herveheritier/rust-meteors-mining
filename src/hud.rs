@@ -405,7 +405,7 @@ const CMD_PANEL_PAD: f32 = 10.0;
 /// FIRE bas-droit), hauteur selon le nombre d'entrées (`count`). Renvoie le
 /// panneau et les rectangles des entrées dans l'ordre de la liste.
 fn commands_panel_geometry(count: usize) -> (Rect, Vec<Rect>) {
-    let rows = (count + CMD_PANEL_COLS - 1) / CMD_PANEL_COLS;
+    let rows = count.div_ceil(CMD_PANEL_COLS);
     let w = CMD_PANEL_PAD
         + CMD_PANEL_COLS as f32 * CMD_PANEL_BTN_W
         + (CMD_PANEL_COLS as f32 - 1.0) * CMD_PANEL_GAP
