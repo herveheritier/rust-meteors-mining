@@ -605,6 +605,14 @@ setInterval(async () => {
 mod tests {
     use super::*;
 
+    /// Sérialise les tests qui partagent l'état global `STATE` : le harnais
+    /// de test les lance **en parallèle**, or `server_serves_…` pose
+    /// `down=true` / `up=false` pendant que `publish_state_preserves_commands`
+    /// affirme `down==false` (course préexistante, révélée par le scheduling).
+    /// Verrou const (std, `Mutex::new` est const) - `into_inner` pour survivre
+    /// à un empoisonnement (panique en test).
+    static SERIAL: Mutex<()> = Mutex::new(());
+
     #[test]
     fn cmd_updates_remote_inputs() {
         let mut s = RemoteState::new();
@@ -674,6 +682,9 @@ mod tests {
     /// n'introduit pas de course.
     #[test]
     fn server_serves_page_accepts_commands_and_exposes_state() {
+        // sérialiser avec `publish_state_preserves_commands` (même `STATE`
+        // global - voir `SERIAL`)
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         use std::io::{Read, Write};
         use std::time::{Duration, Instant};
 
@@ -730,6 +741,9 @@ mod tests {
 
     #[test]
     fn publish_state_preserves_commands() {
+        // sérialiser avec `server_serves_…` (même `STATE` global - voir
+        // `SERIAL`)
+        let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         // simuler une commande reçue du téléphone
         {
             let mut s = STATE.lock().unwrap();
