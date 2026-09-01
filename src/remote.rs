@@ -737,6 +737,12 @@ mod tests {
         let state = conn("GET /state HTTP/1.1", "");
         assert!(state.contains("200 OK"), "{state}");
         assert!(state.contains("\"fps\""), "{state}");
+
+        // remise à zéro de la commande appliquée (`down=true`) : le test
+        // sérialisé `publish_state_preserves_commands` affirme `down==false`
+        // et s'exécute dans le même processus - sans ce nettoyage, l'ordre
+        // d'exécution des deux tests décide du succès/échec
+        STATE.lock().unwrap().down = false;
     }
 
     #[test]
@@ -744,11 +750,14 @@ mod tests {
         // sérialiser avec `server_serves_…` (même `STATE` global - voir
         // `SERIAL`)
         let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        // simuler une commande reçue du téléphone
+        // simuler une commande reçue du téléphone (état de départ propre :
+        // `down` peut avoir été laissé à `true` par `server_serves_…` si ce
+        // test s'exécute après lui)
         {
             let mut s = STATE.lock().unwrap();
             s.up = true;
             s.fire = true;
+            s.down = false;
         }
         // publish_state doit conserver up et fire
         crate::remote::publish_state(&crate::state::GameState::new());
