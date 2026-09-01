@@ -665,23 +665,23 @@ pub fn update(
     }
 
     // O : écran de paramétrage (options audio et graphiques - le mode de
-    // déplacement se choisit au magasin de la station, bouton SHOP) ; le
-    // bouton souris OPTIONS du HUD (coin supérieur droit) déclenche la même
-    // action au clic gauche. L'ouverture **met le jeu en pause** (comme la
-    // touche P) : le monde se fige tant que l'écran est affiché - l'état de
-    // pause d'avant est mémorisé et restauré à la fermeture (voir la branche
-    // `settings_box` en haut de `update`)
-    if is_key_pressed(KeyCode::O) || crate::hud::options_button_click() {
+    // déplacement se choisit au magasin de la station, bouton SHOP).
+    // L'ouverture **met le jeu en pause** (comme la touche P) : le monde se
+    // fige tant que l'écran est affiché - l'état de pause d'avant est
+    // mémorisé et restauré à la fermeture (voir la branche `settings_box` en
+    // haut de `update`). Au clic, l'entrée RÉGLAGES du panneau COMMANDES
+    // (bouton du HUD, ci-dessous) ouvre le même écran - l'ancien bouton
+    // OPTIONS du HUD a été remplacé par le bouton COMMANDES.
+    if is_key_pressed(KeyCode::O) {
         state.settings_box = true;
         state.settings_pause_prev = state.paused;
         state.paused = true;
     }
 
-    // bouton COMMANDES du HUD (interface tactile) : ouvre le panneau des
-    // commandes activables (équivalent souris/tactile des touches du jeu -
-    // voir la branche `commands_box` en tête d'`update`). Spécifique à
-    // l'interface tactile : `hud::commands_button_click` renvoie faux quand
-    // elle est coupée.
+    // bouton COMMANDES du HUD (coin supérieur droit, à la place de l'ancien
+    // bouton OPTIONS) : ouvre le panneau des commandes activables (équivalent
+    // souris/tactile des touches du jeu - voir la branche `commands_box` en
+    // tête d'`update`)
     if crate::hud::commands_button_click() {
         state.commands_box = true;
     }

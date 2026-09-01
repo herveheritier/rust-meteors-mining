@@ -254,45 +254,11 @@ pub fn game_over_buttons_layout() -> [Rect; 2] {
     ]
 }
 
-/// Géométrie du bouton OPTIONS du HUD (coin supérieur droit, juste sous la
-/// ligne principale) : clic souris → écran de paramétrage, comme la touche O.
-/// Placé au coin supérieur droit pour ne gêner ni la ligne du HUD (réputa-
-/// tion/précision/ressources/accostage - qui s'arrête avant l'extrémité
-/// droite), ni le panneau des objectifs des scénarios custom (qui commence
-/// sous le bouton, `draw_objectives_hud`), ni les zones tactiles (joystick
-/// bas-gauche, FIRE bas-droit).
-pub fn game_options_button_layout() -> Rect {
-    const LABEL: &str = "OPTIONS";
-    let btn_h = 26.0;
-    let w = measure_text(LABEL, None, 16, 1.0).width + 2.0 * BOX_PADDING;
-    Rect::new(VIEWPORT_WIDTH as f32 - w - 8.0, 6.0, w, btn_h)
-}
-
-/// Dessine le bouton OPTIONS du HUD (ouvre l'écran de paramétrage au clic,
-/// comme la touche O - détection côté `options_button_click`).
-pub fn draw_options_button() {
-    crate::shop_render::draw_box_button("OPTIONS", game_options_button_layout());
-}
-
-/// Détecte un clic gauche sur le bouton OPTIONS du HUD (coin supérieur
-/// droit, dessiné par `draw_options_button`) : ouvre l'écran de paramétrage,
-/// comme la touche O. Appelée par `game::update` à côté de la touche O -
-/// elle n'est lue qu'à l'écran libre (les boîtes accostage/magasin/aide/
-/// paramétrage/briefing et la fin de partie font un retour anticipé avant
-/// l'input principal).
-pub fn options_button_click() -> bool {
-    if !is_mouse_button_pressed(MouseButton::Left) {
-        return false;
-    }
-    let rect = game_options_button_layout();
-    let m = mouse_to_game();
-    rect.contains(m)
-}
-
-// ─── Panneau COMMANDES (bouton du HUD, interface tactile) ───────────────────
-// Équivalent souris/tactile des touches du jeu : un bouton ouvre une liste
-// des commandes **activables au moment de l'ouverture** (`available_commands`),
-// chacune exécutée au clic comme la touche correspondante (`game::update`).
+// ─── Panneau COMMANDES (bouton du HUD) ──────────────────────────────────────
+// Équivalent souris/tactile des touches du jeu : un bouton (coin supérieur
+// droit, à la place de l'ancien bouton OPTIONS) ouvre une liste des commandes
+// **activables au moment de l'ouverture** (`available_commands`), chacune
+// exécutée au clic comme la touche correspondante (`game::update`).
 
 /// Entrée du panneau COMMANDES (voir `available_commands`) : une commande du
 /// jeu (`crate::game::GameCommand`) et son libellé avec le rappel de touche
@@ -470,16 +436,17 @@ pub fn commands_panel_entry_click(count: usize) -> Option<usize> {
     rects.iter().position(|r| r.contains(m))
 }
 
-/// Géométrie du bouton COMMANDES du HUD (bord gauche, sous la ligne
-/// principale - équivalent souris/tactile des touches du jeu, interface
-/// tactile uniquement) : placé à gauche pour ne gêner ni le bouton OPTIONS
-/// ni le panneau des objectifs (coin supérieur droit), ni les zones
-/// tactiles (joystick bas-gauche, FIRE bas-droit), ni le cargo (rangée de
-/// cercles sous le HUD).
+/// Géométrie du bouton COMMANDES du HUD (coin supérieur droit, à la place de
+/// l'ancien bouton OPTIONS - équivalent souris/tactile des touches du jeu) :
+/// placé là pour ne gêner ni la ligne du HUD (réputation/précision/
+/// ressources/accostage - qui s'arrête avant l'extrémité droite), ni le
+/// panneau des objectifs des scénarios custom (qui commence sous le bouton,
+/// `draw_objectives_hud`), ni les zones tactiles (joystick bas-gauche, FIRE
+/// bas-droit).
 pub fn game_commands_button_layout() -> Rect {
-    let btn_h = 30.0;
+    let btn_h = 26.0;
     let w = measure_text("COMMANDES", None, 16, 1.0).width + 2.0 * BOX_PADDING;
-    Rect::new(8.0, 58.0, w, btn_h)
+    Rect::new(VIEWPORT_WIDTH as f32 - w - 8.0, 6.0, w, btn_h)
 }
 
 /// Dessine le bouton COMMANDES du HUD (ouvre le panneau des commandes
@@ -488,16 +455,14 @@ pub fn draw_commands_button() {
     crate::shop_render::draw_box_button("COMMANDES", game_commands_button_layout());
 }
 
-/// Détecte un clic gauche sur le bouton COMMANDES du HUD (bord gauche) :
-/// ouvre le panneau des commandes activables - équivalent souris/tactile des
-/// touches du jeu. **Réservé à l'interface tactile** (`touch::is_enabled`) -
-/// coupé sinon (les contrôles tactiles ne sont pas affichés). Appelée par
-/// `game::update` à côté de la touche O et du bouton OPTIONS ; elle n'est
-/// lue qu'à l'écran libre (les boîtes accostage/magasin/aide/paramétrage/
-/// briefing et la fin de partie font un retour anticipé avant l'input
-/// principal).
+/// Détecte un clic gauche sur le bouton COMMANDES du HUD (coin supérieur
+/// droit, à la place de l'ancien bouton OPTIONS) : ouvre le panneau des
+/// commandes activables - équivalent souris/tactile des touches du jeu.
+/// Appelée par `game::update` ; elle n'est lue qu'à l'écran libre (les
+/// boîtes accostage/magasin/aide/paramétrage/briefing et la fin de partie
+/// font un retour anticipé avant l'input principal).
 pub fn commands_button_click() -> bool {
-    if !crate::touch::is_enabled() || !is_mouse_button_pressed(MouseButton::Left) {
+    if !is_mouse_button_pressed(MouseButton::Left) {
         return false;
     }
     let m = mouse_to_game();

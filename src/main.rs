@@ -776,27 +776,13 @@ async fn main() {
         // (le statut d'accostage garde toute la ligne principale)
         render::draw_consumables_hud(&state);
         render::draw_score_hud(&state);
-        // bouton OPTIONS (coin supérieur droit, équivalent souris de la
-        // touche O - ouvre l'écran de paramétrage) : masqué quand une boîte
-        // recouvre l'écran (accostage, magasin, aide, paramétrage, briefing)
-        // ou en fin de partie - le clic n'est de toute façon lu qu'à l'écran
-        // libre (voir `hud::options_button_click`)
+        // bouton COMMANDES (coin supérieur droit, à la place de l'ancien
+        // bouton OPTIONS - panneau des commandes activables, équivalent
+        // souris/tactile des touches du jeu, réglages inclus) : masqué quand
+        // une boîte recouvre l'écran (accostage, magasin, aide, paramétrage,
+        // briefing) ou en fin de partie - le clic n'est de toute façon lu
+        // qu'à l'écran libre (voir `hud::commands_button_click`)
         if !state.dock_box
-            && !state.shop_box
-            && !state.help_box
-            && !state.settings_box
-            && !state.briefing_box
-            && !state.commands_box
-            && !state.game_over
-        {
-            render::draw_options_button();
-        }
-        // bouton COMMANDES (bord gauche - interface tactile : panneau des
-        // commandes activables, équivalent souris/tactile des touches du
-        // jeu) : même visibilité que le bouton OPTIONS, affiché seulement
-        // quand l'interface tactile est cochée
-        if state.touch_ui
-            && !state.dock_box
             && !state.shop_box
             && !state.help_box
             && !state.settings_box
