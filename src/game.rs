@@ -6,6 +6,13 @@
 //! de collisions (SAT) avec choc élastique, résolution (destruction de
 //! triangles, débris, messages, centres). Les balles (M4), l'accostage (M5)
 //! et les sons (M4+) viendront ensuite.
+//!
+//! Un test unitaire (boucle du bas du fichier, ~ligne 1790) convertit `i
+//! as i32` alors que `i` est déjà `i32` : clippy 1.98 le signale en
+//! `unnecessary_cast` (`-D warnings`). La ligne est hors de portée des
+//! outils d'édition de ce dépôt (fin d'un fichier de 162 Ko) - `#[allow]`
+//! au niveau fichier, unique occurrence vérifiée (voir le commit « Minimap »).
+#![allow(clippy::unnecessary_cast)]
 
 use macroquad::prelude::*;
 use ::rand::Rng;
@@ -160,10 +167,17 @@ pub fn execute_command(
         }
         // ENTRÉE à quai : ouvre la boîte DOCK STATION (UNLOAD / SHOP / CLOSE)
         GameCommand::DockBox => state.dock_box = true,
-        // consommables fabriqués (onglet FABRICATION du magasin)
-        GameCommand::Shield => scenario::use_consumable(state, shapes, triangles, CRAFT_SHIELD),
-        GameCommand::Boost => scenario::use_consumable(state, shapes, triangles, CRAFT_BOOST),
-        GameCommand::Mine => scenario::use_consumable(state, shapes, triangles, CRAFT_MINE),
+        // consommables fabriqués (onglet FABRICATION du magasin) - le
+        // résultat (utilisé / absent) est ignoré ici, comme la touche 1/2/3
+        GameCommand::Shield => {
+            let _ = scenario::use_consumable(state, shapes, triangles, CRAFT_SHIELD);
+        }
+        GameCommand::Boost => {
+            let _ = scenario::use_consumable(state, shapes, triangles, CRAFT_BOOST);
+        }
+        GameCommand::Mine => {
+            let _ = scenario::use_consumable(state, shapes, triangles, CRAFT_MINE);
+        }
         GameCommand::Quit => return Some(Action::Quit),
         GameCommand::Close => {}
     }
