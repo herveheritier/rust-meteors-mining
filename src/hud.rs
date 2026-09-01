@@ -289,6 +289,221 @@ pub fn options_button_click() -> bool {
     rect.contains(m)
 }
 
+// ─── Panneau COMMANDES (bouton du HUD, interface tactile) ───────────────────
+// Équivalent souris/tactile des touches du jeu : un bouton ouvre une liste
+// des commandes **activables au moment de l'ouverture** (`available_commands`),
+// chacune exécutée au clic comme la touche correspondante (`game::update`).
+
+/// Entrée du panneau COMMANDES (voir `available_commands`) : une commande du
+/// jeu (`crate::game::GameCommand`) et son libellé avec le rappel de touche
+/// entre parenthèses (ex « PAUSE (P) »), affiché dans le bouton de la grille.
+pub struct CmdEntry {
+    pub cmd: crate::game::GameCommand,
+    pub label: &'static str,
+}
+
+/// Commandes **activables au moment de l'ouverture** du panneau COMMANDES :
+/// liste figée à l'ouverture (la liste est re-questionnée à l'exécution de
+/// l'entrée cliquée, même contexte - `game::update`). Contexte courant : à
+/// quai (`dock_links` → DOCK), en pause (REPRENDRE) ou en vol (PAUSE), et
+/// les consommables fabriqués détenus (1/2/3). La dernière entrée, FERMER,
+/// referme le panneau sans action - comme ESC.
+pub fn available_commands(state: &GameState) -> Vec<CmdEntry> {
+    use crate::game::GameCommand as Cmd;
+    let mut commands: Vec<CmdEntry> = Vec::new();
+    // à quai (liens attachés) : la boîte DOCK STATION s'ouvre à ENTRÉE
+    if state.dock_links {
+        commands.push(CmdEntry {
+            cmd: Cmd::DockBox,
+            label: "DOCK (ENTRÉE)",
+        });
+    }
+    commands.push(CmdEntry {
+        cmd: if state.paused { Cmd::Resume } else { Cmd::Pause },
+        label: if state.paused { "REPRENDRE (P)" } else { "PAUSE (P)" },
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::Options,
+        label: "RÉGLAGES (O)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::Log,
+        label: "JOURNAL (L)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::Help,
+        label: "AIDE (S)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::Data,
+        label: "DONNÉES (D)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::Info,
+        label: "INFOS (I)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::Music,
+        label: "MUSIQUE (M)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::AutoGen,
+        label: "AUTO-GÉN. (A)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::SpawnMeteor,
+        label: "MÉTÉORE (G)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::SpawnAlien,
+        label: "ALIEN (C)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::ViewMode,
+        label: "PLEIN ÉCRAN (F)",
+    });
+    // consommables fabriqués détenus (onglet FABRICATION du magasin)
+    if state.consumables[crate::config::CRAFT_SHIELD] > 0 {
+        commands.push(CmdEntry {
+            cmd: Cmd::Shield,
+            label: "BOUCLIER (1)",
+        });
+    }
+    if state.consumables[crate::config::CRAFT_BOOST] > 0 {
+        commands.push(CmdEntry {
+            cmd: Cmd::Boost,
+            label: "BOOST (2)",
+        });
+    }
+    if state.consumables[crate::config::CRAFT_MINE] > 0 {
+        commands.push(CmdEntry {
+            cmd: Cmd::Mine,
+            label: "MINE (3)",
+        });
+    }
+    commands.push(CmdEntry {
+        cmd: Cmd::Quit,
+        label: "QUITTER (ESC)",
+    });
+    commands.push(CmdEntry {
+        cmd: Cmd::Close,
+        label: "FERMER",
+    });
+    commands
+}
+
+/// Grille du panneau COMMANDES : 2 colonnes, boutons assez grands pour le
+/// doigt, marge et espacement fixes.
+const CMD_PANEL_COLS: usize = 2;
+const CMD_PANEL_BTN_W: f32 = 150.0;
+const CMD_PANEL_BTN_H: f32 = 32.0;
+const CMD_PANEL_GAP: f32 = 8.0;
+const CMD_PANEL_PAD: f32 = 10.0;
+
+/// Géométrie du panneau COMMANDES : grille de 2 colonnes de boutons centrée
+/// horizontalement (hors des zones tactiles du joystick bas-gauche et de
+/// FIRE bas-droit), hauteur selon le nombre d'entrées (`count`). Renvoie le
+/// panneau et les rectangles des entrées dans l'ordre de la liste.
+fn commands_panel_geometry(count: usize) -> (Rect, Vec<Rect>) {
+    let rows = (count + CMD_PANEL_COLS - 1) / CMD_PANEL_COLS;
+    let w = CMD_PANEL_PAD
+        + CMD_PANEL_COLS as f32 * CMD_PANEL_BTN_W
+        + (CMD_PANEL_COLS as f32 - 1.0) * CMD_PANEL_GAP
+        + CMD_PANEL_PAD;
+    let h = CMD_PANEL_PAD
+        + 24.0
+        + rows as f32 * CMD_PANEL_BTN_H
+        + (rows as f32 - 1.0) * CMD_PANEL_GAP
+        + CMD_PANEL_PAD;
+    let panel = Rect::new(
+        (VIEWPORT_WIDTH as f32 - w) / 2.0,
+        (VIEWPORT_HEIGHT as f32 - h) / 2.0,
+        w,
+        h,
+    );
+    let mut rects = Vec::with_capacity(count);
+    for i in 0..count {
+        let col = i % CMD_PANEL_COLS;
+        let row = i / CMD_PANEL_COLS;
+        rects.push(Rect::new(
+            panel.x + CMD_PANEL_PAD + col as f32 * (CMD_PANEL_BTN_W + CMD_PANEL_GAP),
+            panel.y + CMD_PANEL_PAD + 24.0 + row as f32 * (CMD_PANEL_BTN_H + CMD_PANEL_GAP),
+            CMD_PANEL_BTN_W,
+            CMD_PANEL_BTN_H,
+        ));
+    }
+    (panel, rects)
+}
+
+/// Dessine le panneau COMMANDES (bouton du HUD, interface tactile) : titre +
+/// grille de boutons (style `draw_box_button`, hover au survol souris) -
+/// chaque entrée exécute la commande au clic (détection côté
+/// `commands_panel_entry_click`, exécution côté `game::update`).
+pub fn draw_commands_panel(state: &GameState) {
+    let commands = available_commands(state);
+    let (panel, rects) = commands_panel_geometry(commands.len());
+    draw_rectangle(panel.x + 2.0, panel.y + 2.0, panel.w, panel.h, Color::new(0.0, 0.0, 0.0, 0.50));
+    draw_rectangle(panel.x, panel.y, panel.w, panel.h, Color::new(0.05, 0.07, 0.10, 0.90));
+    draw_rectangle_lines(panel.x, panel.y, panel.w, panel.h, 1.5, argb_to_color(BOX_BORDER));
+    draw_text_shadow(
+        "COMMANDES (TOUCHE ESC : FERMER)",
+        panel.x + CMD_PANEL_PAD,
+        panel.y + 19.0,
+        16.0,
+        argb_to_color(SHOP_OK),
+    );
+    for (entry, rect) in commands.iter().zip(rects.iter()) {
+        crate::shop_render::draw_box_button(entry.label, *rect);
+    }
+}
+
+/// Détecte un clic gauche sur une entrée du panneau COMMANDES : renvoie
+/// l'index de l'entrée cliquée (dans la liste `hud::available_commands`), ou
+/// `None` (pas de clic, ou clic hors des boutons - le fond du panneau ne
+/// fait rien). Appelée par `game::update` quand le panneau est ouvert.
+pub fn commands_panel_entry_click(count: usize) -> Option<usize> {
+    if !is_mouse_button_pressed(MouseButton::Left) {
+        return None;
+    }
+    let (_panel, rects) = commands_panel_geometry(count);
+    let m = mouse_to_game();
+    rects.iter().position(|r| r.contains(m))
+}
+
+/// Géométrie du bouton COMMANDES du HUD (bord gauche, sous la ligne
+/// principale - équivalent souris/tactile des touches du jeu, interface
+/// tactile uniquement) : placé à gauche pour ne gêner ni le bouton OPTIONS
+/// ni le panneau des objectifs (coin supérieur droit), ni les zones
+/// tactiles (joystick bas-gauche, FIRE bas-droit), ni le cargo (rangée de
+/// cercles sous le HUD).
+pub fn game_commands_button_layout() -> Rect {
+    let btn_h = 30.0;
+    let w = measure_text("COMMANDES", None, 16, 1.0).width + 2.0 * BOX_PADDING;
+    Rect::new(8.0, 58.0, w, btn_h)
+}
+
+/// Dessine le bouton COMMANDES du HUD (ouvre le panneau des commandes
+/// activables au clic - détection côté `commands_button_click`).
+pub fn draw_commands_button() {
+    crate::shop_render::draw_box_button("COMMANDES", game_commands_button_layout());
+}
+
+/// Détecte un clic gauche sur le bouton COMMANDES du HUD (bord gauche) :
+/// ouvre le panneau des commandes activables - équivalent souris/tactile des
+/// touches du jeu. **Réservé à l'interface tactile** (`touch::is_enabled`) -
+/// coupé sinon (les contrôles tactiles ne sont pas affichés). Appelée par
+/// `game::update` à côté de la touche O et du bouton OPTIONS ; elle n'est
+/// lue qu'à l'écran libre (les boîtes accostage/magasin/aide/paramétrage/
+/// briefing et la fin de partie font un retour anticipé avant l'input
+/// principal).
+pub fn commands_button_click() -> bool {
+    if !crate::touch::is_enabled() || !is_mouse_button_pressed(MouseButton::Left) {
+        return false;
+    }
+    let m = mouse_to_game();
+    game_commands_button_layout().contains(m)
+}
+
 /// Affiche les informations de debug (touche I, ex `showInfo` de `mainLoop`) :
 /// keycode, génération automatique, compteurs de formes/triangles/débris,
 /// formes vivantes et niveaux des éléments.

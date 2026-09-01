@@ -58,6 +58,118 @@ pub enum Action {
     Continue,
 }
 
+/// Commande du jeu activable par le **bouton COMMANDES** du HUD (interface
+/// tactile) - une entrée du panneau des commandes listées à l'ouverture
+/// (`hud::available_commands`), exécutée par `execute_command` avec le même
+/// effet que la touche équivalente.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameCommand {
+    /// Pause (touche P) : monde gelé si en vol.
+    Pause,
+    /// Reprendre (touche P) : quand le jeu est déjà en pause.
+    Resume,
+    /// Écran de paramétrage (touche O) : le monde est gelé à l'ouverture.
+    Options,
+    /// Journal de bord (touche L).
+    Log,
+    /// Fenêtre d'aide (touche S).
+    Help,
+    /// Données des formes (touche D).
+    Data,
+    /// Informations de debug (touche I).
+    Info,
+    /// Bascule la musique (touche M).
+    Music,
+    /// Génération automatique des météores (touche A).
+    AutoGen,
+    /// Génère un météore près du vaisseau (touche G).
+    SpawnMeteor,
+    /// Crée un alien (touche C).
+    SpawnAlien,
+    /// Cycle des modes d'affichage (touche F).
+    ViewMode,
+    /// Ouvre la boîte DOCK STATION à quai (ENTRÉE).
+    DockBox,
+    /// Consommable bouclier temporaire (touche 1).
+    Shield,
+    /// Consommable boost de vitesse (touche 2).
+    Boost,
+    /// Consommable mine posée (touche 3).
+    Mine,
+    /// Quitter le jeu (ESC).
+    Quit,
+    /// Fermer le panneau sans exécuter de commande.
+    Close,
+}
+
+/// Exécute une commande du panneau COMMANDES (bouton du HUD, interface
+/// tactile - `hud::available_commands`) : mêmes effets que la touche
+/// équivalente du jeu, appliqués à la frame courante. Renvoie l'action de
+/// boucle demandée (`Quit` pour QUITTER), ou `None` - le panneau se ferme
+/// dans tous les cas (voir la branche `commands_box` de `update`).
+// Signature volontairement plate (miroir des entrées clavier qu'elle
+// reproduit) - `#[allow]` ciblé comme `update`.
+#[allow(clippy::too_many_arguments)]
+pub fn execute_command(
+    state: &mut GameState,
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    camera: Point,
+    elements: &mut [Element],
+    rng: &mut impl Rng,
+    sounds: Option<&mut Sounds>,
+    cmd: GameCommand,
+) -> Option<Action> {
+    match cmd {
+        // P / REPRENDRE : bascule la pause (le monde tourne encore derrière
+        // le panneau ouvert - le clic fige ou relance comme la touche P)
+        GameCommand::Pause | GameCommand::Resume => state.paused = !state.paused,
+        // O : l'ouverture de l'écran de paramétrage gèle le monde (voir la
+        // branche `settings_box` - l'état de pause d'avant est restauré à la
+        // fermeture)
+        GameCommand::Options => {
+            state.settings_box = true;
+            state.settings_pause_prev = state.paused;
+            state.paused = true;
+        }
+        GameCommand::Log => state.log_box = !state.log_box,
+        GameCommand::Help => state.help_box = true,
+        GameCommand::Data => state.show_data = !state.show_data,
+        GameCommand::Info => state.show_info = !state.show_info,
+        // M : bascule la musique (persistée)
+        GameCommand::Music => {
+            if let Some(sounds) = sounds {
+                sounds.toggle_music();
+                state.send_message(if sounds.music_on { "MUSIC ON" } else { "MUSIC OFF" });
+                let _ = persist::set_bool("music", sounds.music_on);
+            }
+        }
+        GameCommand::AutoGen => state.auto_generate = !state.auto_generate,
+        // G : génère un météore près du vaisseau (immobile, comme la touche G)
+        GameCommand::SpawnMeteor => {
+            let idx = create_shape(state, shapes, triangles, camera, elements, rng);
+            let player = &shapes[PLAYER_INDEX];
+            shapes[idx].position =
+                Point::new(player.position.x + VIEWPORT_WIDTH / 4.0, player.position.y);
+            shapes[idx].velocity = 0.0;
+        }
+        GameCommand::SpawnAlien => create_alien(shapes, triangles),
+        GameCommand::ViewMode => {
+            cycle_view_mode(state);
+            state.send_message(crate::config::view_mode_message(state.view_mode as i32));
+        }
+        // ENTRÉE à quai : ouvre la boîte DOCK STATION (UNLOAD / SHOP / CLOSE)
+        GameCommand::DockBox => state.dock_box = true,
+        // consommables fabriqués (onglet FABRICATION du magasin)
+        GameCommand::Shield => scenario::use_consumable(state, shapes, triangles, CRAFT_SHIELD),
+        GameCommand::Boost => scenario::use_consumable(state, shapes, triangles, CRAFT_BOOST),
+        GameCommand::Mine => scenario::use_consumable(state, shapes, triangles, CRAFT_MINE),
+        GameCommand::Quit => return Some(Action::Quit),
+        GameCommand::Close => {}
+    }
+    None
+}
+
 /// Traite l'input, les contrôles joueur, la physique et les collisions pour
 /// une frame. Renvoie l'action demandée et la caméra (centrée joueur) à
 /// utiliser pour le rendu.
@@ -138,6 +250,43 @@ pub fn update(
         collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
         let action = if result.restart { Action::Restart } else { Action::Continue };
         return (action, camera);
+    }
+
+    // Panneau COMMANDES ouvert (bouton COMMANDES du HUD, interface tactile -
+    // équivalent souris/tactile des touches du jeu) : seul l'input du panneau
+    // est traité - un clic sur une entrée exécute la commande et ferme le
+    // panneau (ESC ou l'entrée FERMER : ferme seulement). Les commandes
+    // listées sont celles **activables au moment de l'ouverture**
+    // (`hud::available_commands`, re-questionnée ici pour exécuter l'entrée
+    // cliquée). Le monde, lui, **continue de tourner** (comme la fenêtre
+    // d'aide) : les météores et les débris dérivent derrière le panneau
+    // pendant le choix (voir `collisions` ci-dessous).
+    if state.commands_box {
+        if is_key_pressed(KeyCode::Escape) {
+            state.commands_box = false;
+            collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
+            return (Action::Continue, camera);
+        }
+        let commands = crate::hud::available_commands(state);
+        if let Some(index) = crate::hud::commands_panel_entry_click(commands.len()) {
+            if let Some(entry) = commands.get(index) {
+                if let Some(action) = execute_command(
+                    state,
+                    shapes,
+                    triangles,
+                    camera,
+                    elements,
+                    rng,
+                    sounds.as_deref_mut(),
+                    entry.cmd,
+                ) {
+                    return (action, camera);
+                }
+            }
+            state.commands_box = false;
+        }
+        collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
+        return (Action::Continue, camera);
     }
 
     // ESC : quitter
@@ -512,6 +661,15 @@ pub fn update(
         state.settings_box = true;
         state.settings_pause_prev = state.paused;
         state.paused = true;
+    }
+
+    // bouton COMMANDES du HUD (interface tactile) : ouvre le panneau des
+    // commandes activables (équivalent souris/tactile des touches du jeu -
+    // voir la branche `commands_box` en tête d'`update`). Spécifique à
+    // l'interface tactile : `hud::commands_button_click` renvoie faux quand
+    // elle est coupée.
+    if crate::hud::commands_button_click() {
+        state.commands_box = true;
     }
 
     // D : affichage des données des formes (ex `showData%`)

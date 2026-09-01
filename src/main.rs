@@ -786,9 +786,25 @@ async fn main() {
             && !state.help_box
             && !state.settings_box
             && !state.briefing_box
+            && !state.commands_box
             && !state.game_over
         {
             render::draw_options_button();
+        }
+        // bouton COMMANDES (bord gauche - interface tactile : panneau des
+        // commandes activables, équivalent souris/tactile des touches du
+        // jeu) : même visibilité que le bouton OPTIONS, affiché seulement
+        // quand l'interface tactile est cochée
+        if state.touch_ui
+            && !state.dock_box
+            && !state.shop_box
+            && !state.help_box
+            && !state.settings_box
+            && !state.briefing_box
+            && !state.commands_box
+            && !state.game_over
+        {
+            render::draw_commands_button();
         }
         // journal de bord (touche L) et briefing pré-partie (scénarios
         // custom - lancé au démarrage de la partie, fermé par ENTRÉE/ÉCHAP)
@@ -820,9 +836,17 @@ async fn main() {
             && !state.shop_box
             && !state.help_box
             && !state.settings_box
+            && !state.commands_box
             && !state.game_over
         {
             crate::touch::draw();
+        }
+        // panneau COMMANDES (bouton COMMANDES du HUD, interface tactile) :
+        // liste des commandes activables au moment de l'ouverture - dessiné
+        // par-dessus le jeu, au même niveau que les boîtes (le joystick et
+        // FIRE sont masqués pendant son affichage ci-dessus)
+        if state.commands_box {
+            render::draw_commands_panel(&state);
         }
 
         // boîte de choix DOCK STATION (accostage), magasin de la station

@@ -38,6 +38,13 @@ pub fn set_enabled(enabled: bool) {
     ENABLED.store(enabled, Ordering::Relaxed);
 }
 
+/// L'interface tactile est-elle active (`set_enabled`) ? Lue par
+/// `hud::commands_button_click` : le bouton COMMANDES du HUD n'ouvre son
+/// panneau que quand l'interface tactile est affichée.
+pub fn is_enabled() -> bool {
+    enabled()
+}
+
 // ─── Disposition (coordonnées du jeu, vue 960×540) ──────────────────────────
 
 /// Centre du joystick (coin bas-gauche).

@@ -427,6 +427,11 @@ pub score_record_announced: bool,
     pub event_log: Vec<String>,
     /// Journal de bord affiché (touche L) : panneau au-dessus du monde.
     pub log_box: bool,
+    /// Panneau COMMANDES affiché (bouton COMMANDES du HUD, interface
+    /// tactile) : liste les commandes (touches) activables au moment de
+    /// l'ouverture - un clic sur une entrée exécute la commande, ESC ou
+    /// l'entrée FERMER referme le panneau.
+    pub commands_box: bool,
     /// Briefing pré-partie affiché (scénarios custom avec objectifs) :
     /// résumé des objectifs DAG, des contraintes et un conseil avant le
     /// lancement - fermé par ENTRÉE / ÉCHAP / clic.
@@ -543,6 +548,7 @@ impl GameState {
             session_stats: SessionStats::default(),
             event_log: Vec::new(),
             log_box: false,
+            commands_box: false,
             briefing_box: false,
             briefing_scroll: 0.0,
             briefing_drag_anchor: None,
