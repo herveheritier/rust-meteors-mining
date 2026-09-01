@@ -348,6 +348,10 @@ pub fn available_commands(state: &GameState) -> Vec<CmdEntry> {
         });
     }
     commands.push(CmdEntry {
+        cmd: Cmd::Title,
+        label: "TITRE (T)",
+    });
+    commands.push(CmdEntry {
         cmd: Cmd::Quit,
         label: "QUITTER (ESC)",
     });

@@ -103,6 +103,10 @@ pub enum GameCommand {
     Boost,
     /// Consommable mine posée (touche 3).
     Mine,
+    /// Retour à l'écran titre (touche T - ex GAME OVER) : progression
+    /// sauvegardée, puis l'écran titre rejoue son choix (poursuivre,
+    /// repartir, changer de scénario) avant de relancer la partie.
+    Title,
     /// Quitter le jeu (ESC).
     Quit,
     /// Fermer le panneau sans exécuter de commande.
@@ -178,6 +182,10 @@ pub fn execute_command(
         GameCommand::Mine => {
             let _ = scenario::use_consumable(state, shapes, triangles, CRAFT_MINE);
         }
+        // T : retour à l'écran titre (progression sauvegardée, choix rejoué
+        // par l'écran titre - géré par `main.rs`, comme la touche T de GAME
+        // OVER)
+        GameCommand::Title => return Some(Action::BackToTitle),
         GameCommand::Quit => return Some(Action::Quit),
         GameCommand::Close => {}
     }
@@ -684,6 +692,15 @@ pub fn update(
     // tête d'`update`)
     if crate::hud::commands_button_click() {
         state.commands_box = true;
+    }
+
+    // T : retour à l'écran titre (même touche que sur GAME OVER) - la
+    // progression est sauvegardée puis l'écran titre rejoue son choix
+    // (poursuivre, repartir, changer de scénario) avant de relancer la
+    // partie (`Action::BackToTitle`, géré par `main.rs`). Aussi activable en
+    // cliquant sur l'entrée TITRE du panneau COMMANDES.
+    if is_key_pressed(KeyCode::T) {
+        return (Action::BackToTitle, camera);
     }
 
     // D : affichage des données des formes (ex `showData%`)
