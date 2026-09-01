@@ -36,6 +36,10 @@ pub enum SettingsClick {
     /// Bascule la sauvegarde de position du vaisseau à la sortie (le
     /// prochain lancement repart de la dernière position).
     SavePosition,
+    /// Bascule la taille des étoiles du fond (case STARS 3x3 : 3×3 px au
+    /// lieu de 1×1 - visibilité du champ d'étoiles selon la qualité de
+    /// l'écran).
+    StarsBig,
     /// Ligne REMOTE PIN : arme la saisie du code de la télécommande (ou, si
     /// la saisie est déjà armée, valide le code tapé).
     PinEdit,
@@ -100,6 +104,9 @@ pub fn settings_box_click(state: &GameState) -> SettingsClick {
     }
     if l.save_position.contains(m) {
         return SettingsClick::SavePosition;
+    }
+    if l.stars_big.contains(m) {
+        return SettingsClick::StarsBig;
     }
     if state.antialias != state.antialias_applied && l.restart.contains(m) {
         return SettingsClick::Restart;
@@ -211,6 +218,11 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             } else {
                 "SAVE POSITION OFF"
             });
+        }
+        SettingsClick::StarsBig => {
+            state.stars_big = !state.stars_big;
+            let _ = persist::set_bool("stars_big", state.stars_big);
+            state.send_message(if state.stars_big { "STARS 3x3" } else { "STARS 1x1" });
         }
         SettingsClick::PinEdit => {
             if state.settings_pin_edit {
@@ -346,6 +358,7 @@ pub fn reset_settings_fields(state: &mut GameState) {
     state.antialias = false;
     state.touch_ui = true; // interface tactile affichée par défaut
     state.save_position = false; // position du vaisseau non sauvegardée
+    state.stars_big = false; // étoiles du fond en 1×1 par défaut
 }
 
 /// Remet les réglages par défaut (bouton RESET) : champs par défaut
@@ -388,6 +401,7 @@ pub fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
         "antialias",
         "touch_ui",
         "save_position",
+        "stars_big",
     ] {
         let _ = persist::delete_key(key);
     }

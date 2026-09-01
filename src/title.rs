@@ -967,9 +967,11 @@ fn draw_frame(
         ViewMode::Native => set_camera(&native_camera()),
     }
 
-    // fond noir + étoiles (caméra qui dérive vers le bas, ex titleLoop)
+    // fond noir + étoiles (caméra qui dérive vers le bas, ex titleLoop) -
+    // taille des étoiles : 1×1 par défaut, 3×3 si la case STARS 3x3 de
+    // l'écran de paramétrage est cochée (visibilité du champ d'étoiles)
     clear_background(BLACK);
-    draw_stars(assets, camera, false);
+    draw_stars(assets, camera, false, if state.stars_big { 3.0 } else { 1.0 });
 
     // bannière : un caractère par colonne, chaque colonne colorée
     // (ex titleLoop : `_printstring` de chaque caractère)

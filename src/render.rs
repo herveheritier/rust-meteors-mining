@@ -198,8 +198,10 @@ fn star_screen_pos(sx: f32, sy: f32, camera: Point, plan: f32) -> Option<(f32, f
 /// densité réduite est imperceptible et économise la part GPU du fond
 /// (~50 % du temps de frame sur GPU lents, ex virtio - voir la doc de
 /// `StarLayer`). L'échantillonnage régulier (`step_by`) garde une répartition
-/// uniforme des étoiles restantes.
-pub fn draw_stars(assets: &Assets, camera: Point, reduced: bool) {
+/// uniforme des étoiles restantes. `size` est la taille d'une étoile en px :
+/// 1×1 par défaut, 3×3 quand la case STARS 3x3 de l'écran de paramétrage est
+/// cochée (visibilité du champ d'étoiles selon la qualité de l'écran).
+pub fn draw_stars(assets: &Assets, camera: Point, reduced: bool, size: f32) {
     let step = if reduced { STAR_DENSITY_REDUCTION } else { 1 };
     for (layer, plan_layer) in assets.star_layers.iter().enumerate() {
         let plan = (layer + 1) as f32;
@@ -211,7 +213,7 @@ pub fn draw_stars(assets: &Assets, camera: Point, reduced: bool) {
             // tuile (torique), comme le `normalizePlanPosition` de l'original ;
             // on élimine les étoiles hors viewport.
             if let Some((x, y)) = star_screen_pos(sx, sy, camera, plan) {
-                draw_rectangle(x.round(), y.round(), 1.0, 1.0, Color::new(1.0, 1.0, 1.0, alpha / 255.0));
+                draw_rectangle(x.round(), y.round(), size, size, Color::new(1.0, 1.0, 1.0, alpha / 255.0));
             }
         }
     }

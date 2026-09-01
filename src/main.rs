@@ -244,6 +244,12 @@ async fn main() {
         state.touch_ui = on;
     }
     crate::touch::set_enabled(state.touch_ui);
+    // taille des étoiles du fond (case STARS 3x3 de l'écran de paramétrage,
+    // clé `stars_big`) : 3×3 px au lieu de 1×1 par défaut - visibilité du
+    // champ d'étoiles selon la qualité de l'écran
+    if let Some(on) = persist::get_bool("stars_big") {
+        state.stars_big = on;
+    }
     // option SAVE POSITION (case de l'écran de paramétrage, clé
     // `save_position`) : le vaisseau repart de sa dernière position à la
     // sortie (voir plus bas, au lancement de la partie)
@@ -582,7 +588,10 @@ async fn main() {
         // continue de tourner derrière mais l'œil est sur la fenêtre - la
         // densité d'étoiles est réduite (gain GPU, imperceptible)
         let modal_overlay = state.dock_box || state.shop_box || state.help_box || state.settings_box;
-        render::draw_stars(&assets, camera, modal_overlay);
+        // taille des étoiles : 1×1 par défaut, 3×3 quand la case STARS 3x3 de
+        // l'écran de paramétrage est cochée (voir `hud`/`settings`)
+        let star_size = if state.stars_big { 3.0 } else { 1.0 };
+        render::draw_stars(&assets, camera, modal_overlay, star_size);
 
         // formes (météores, station…) puis le vaisseau joueur par-dessus - le
         // cosmonaute EVA est retiré de la boucle : il est dessiné **au premier

@@ -266,6 +266,11 @@ pub struct GameState {
     /// du centre de la station) - débarqué, sans liens d'accostage, comme une
     /// position initiale de scénario custom (`initial_ship_*`).
     pub save_position: bool,
+    /// Étoiles du fond **agrandies** (case STARS 3x3 de l'écran de
+    /// paramétrage, clé `stars_big`) : chaque étoile est dessinée en 3×3 px
+    /// au lieu de 1×1 - pour les écrans (ou les réglages de l'OS) où le
+    /// champ d'étoiles 1×1 est peu visible. Éteinte par défaut (1×1).
+    pub stars_big: bool,
     /// Valeur d'anticrénelage effectivement appliquée par la fenêtre au
     /// lancement (`Conf.sample_count`). Si `antialias` en diffère, un
     /// redémarrage est nécessaire (bouton RESTART de l'écran de paramétrage).
@@ -505,6 +510,7 @@ impl GameState {
             antialias_applied: false,
             touch_ui: true, // interface tactile affichée par défaut
             save_position: false, // option SAVE POSITION éteinte par défaut
+            stars_big: false, // étoiles du fond en 1×1 par défaut
             max_meteor_shapes: INITIAL_MAX_METEOR_SHAPES,
             dock_anim: 0.0,
             dock_anim_from_pos: Point::new(0.0, 0.0),
