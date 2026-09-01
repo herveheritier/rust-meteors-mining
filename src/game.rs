@@ -929,6 +929,10 @@ fn collisions(
             let mut p = Point::new(ship_pos.x + dx * jump, ship_pos.y + dy * jump);
             p.normalize_world(&state.world);
             shapes[PLAYER_INDEX].position = p;
+            // brève invulnérabilité après le saut : le point d'arrivée peut
+            // contenir un météore - le vaisseau ne doit jamais être détruit
+            // au sortir du portail (il clignote pendant la fenêtre)
+            state.invulnerable = WARP_INVULNERABILITY;
             state.send_message("WARP JUMP!");
             state.log_event("PORTAL: WARP JUMP");
             // le portail est consommé (il disparaît)
@@ -945,6 +949,10 @@ fn collisions(
             if state.temp_shield <= 0.0 {
                 state.send_message("TEMPORARY SHIELD DEPLETED");
             }
+        } else if who == WHOIAM_PLAYER && state.invulnerable > 0.0 {
+            // protection post-warp (portail) et post-respawn : pendant la
+            // fenêtre, le vaisseau clignote et **absorbe** les collisions -
+            // jamais détruit au point d'arrivée d'un saut de portail
         } else if who == WHOIAM_PLAYER && scenario::has_survival(state) {
             // scénario Survival : le bouclier encaisse les impacts (le
             // triangle du vaisseau n'est pas tué) ; s'il est percé, le
@@ -1692,6 +1700,149 @@ mod tests {
         assert_eq!(triangles[0].life, 0, "la dernière balle détruit le triangle");
         assert_eq!(shapes[0].life, 1, "le boss survit avec son second triangle");
         assert_eq!(shapes[1].life, 0, "la balle est consommée");
+    }
+
+    #[test]
+    fn portal_collision_warps_the_ship_not_destroys_it() {
+        // le vaisseau qui traverse un portail est **téléporté** et le portail
+        // consommé : le vaisseau ne doit jamais être détruit par le portail
+        // (la branche WARP GATE passe avant la branche de destruction du
+        // joueur, et les triangles suivants de la même frame sont ignorés
+        // une fois le portail consommé)
+        let mut state = GameState::new();
+        // vaisseau : 3 triangles empilés (multi-triangles comme le mesh),
+        // tous en collision avec le portail - portail : 2 triangles
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 2, 0.0, 0.0),
+            test_shape(WHOIAM_WARP_GATE, 3, 4, 3.0, 3.0),
+        ];
+        shapes[0].radius = 10.0;
+        shapes[1].radius = 10.0;
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 0, 0.0, 0.0),
+            test_triangle(2, 0, 0.0, 0.0),
+            test_triangle(3, 1, 0.0, 0.0),
+            test_triangle(4, 1, 0.0, 0.0),
+        ];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        let ship_pos_before = shapes[0].position;
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        assert_eq!(shapes[0].life, 3, "le vaisseau doit survivre au portail");
+        assert_eq!(shapes[1].life, 0, "le portail est consommé par le passage");
+        assert_ne!(shapes[0].position, ship_pos_before, "le vaisseau a été téléporté");
+        // protection post-warp : le point d'arrivée ne doit pas pouvoir
+        // détruire le vaisseau (météore sur place)
+        assert!(state.invulnerable > 0.0, "invulnérabilité accordée après le saut");
+    }
+
+    #[test]
+    fn post_warp_invulnerability_absorbs_impacts() {
+        // pendant la fenêtre post-warp, une collision avec un météore au
+        // point d'arrivée est **absorbée** : le vaisseau survit
+        let mut state = GameState::new();
+        state.invulnerable = WARP_INVULNERABILITY;
+        let mut shapes = vec![
+            test_shape(WHOIAM_PLAYER, 0, 1, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 2, 3, 2.0, 2.0),
+        ];
+        shapes[0].radius = 10.0;
+        shapes[1].radius = 10.0;
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 0, 0.0, 0.0),
+            test_triangle(2, 1, 0.0, 0.0),
+            test_triangle(3, 1, 0.0, 0.0),
+        ];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        assert_eq!(shapes[0].life, 2, "le vaisseau invulnérable survit au météore");
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(triangles[1].life, 1);
+    }
+
+    #[test]
+    fn portal_apparent_size_and_ship_flies_through() {
+        // Mesures + vol de contrôle : vaisseau réel (mesh) et portail réel
+        // (agrandi `WARP_GATE_SCALE`). Dimension apparente du portail, puis
+        // vaisseau lancé droit dessus, frame par frame, à travers la vraie
+        // résolution des collisions.
+        let mut elements = default_elements();
+        let mut state = GameState::new();
+        let mut rng = seed();
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+
+        crate::vaisseau::create_player_vaisseau(&mut state, &mut shapes, &mut triangles);
+        let ship_radius = shapes[PLAYER_INDEX].radius;
+        let ship_life = shapes[PLAYER_INDEX].life;
+        let gate = create_warp_gate(
+            &state,
+            &mut shapes,
+            &mut triangles,
+            Point::new(0.0, 0.0),
+            &mut rng,
+        );
+        let gate_radius = shapes[gate].radius;
+        eprintln!(
+            "MESURE: vue {:.0}x{:.0} - vaisseau rayon ~{:.0} (diam ~{:.0}) - portail rayon ~{:.0} (diam ~{:.0}) -> ~{:.0}% de la largeur d'ecran",
+            VIEWPORT_WIDTH,
+            VIEWPORT_HEIGHT,
+            ship_radius,
+            ship_radius * 2.0,
+            gate_radius,
+            gate_radius * 2.0,
+            gate_radius * 2.0 / VIEWPORT_WIDTH * 100.0,
+        );
+
+        // portail à 320 unités à droite de la base, vaisseau à 100, lancé
+        // droit dessus à vitesse constante (direction +x)
+        shapes[gate].position = Point::new(320.0, 0.0);
+        shapes[PLAYER_INDEX].position = Point::new(100.0, 0.0);
+        shapes[PLAYER_INDEX].direction = 0.0;
+        shapes[PLAYER_INDEX].velocity = 3.0;
+        shapes[PLAYER_INDEX].orientation = 0.0;
+
+        let mut garbages = Vec::new();
+        let mut warped_at = None;
+        for frame in 0..600 {
+            collisions(
+                &mut state,
+                &mut shapes,
+                &mut triangles,
+                &mut garbages,
+                &mut elements,
+                &mut rng,
+                None,
+                1.0 / 60.0,
+            );
+            if shapes[gate].life <= 0 {
+                warped_at = Some(frame);
+                break;
+            }
+        }
+        let p = shapes[PLAYER_INDEX].position;
+        eprintln!(
+            "VOL: warp a la frame {:?} - vaisseau: vie {} -> {}, position finale (~{:.0}, ~{:.0}), invulnerable {:.2} s, portail consomme {}",
+            warped_at,
+            ship_life,
+            shapes[PLAYER_INDEX].life,
+            p.x,
+            p.y,
+            state.invulnerable,
+            shapes[gate].life == 0,
+        );
+        assert!(warped_at.is_some(), "le vaisseau doit toucher le portail");
+        assert!(shapes[PLAYER_INDEX].life > 0, "le vaisseau survit au portail");
+        assert!(state.invulnerable > 0.0, "protection post-warp active");
     }
 
     #[test]

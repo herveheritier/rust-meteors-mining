@@ -256,6 +256,11 @@ pub const WARP_JUMP_FRACTION: f64 = 0.25;
 pub const WARP_GATE_SPAWN_INTERVAL: f64 = 75.0;
 /// Nombre maximal de portails vivants simultanément.
 pub const WARP_GATE_MAX: i32 = 2;
+/// Durée (secondes) d'**invulnérabilité** après un saut de portail : le
+/// point d'arrivée peut contenir un météore - le vaisseau ne doit jamais
+/// être détruit au sortir du portail (il clignote pendant la fenêtre, comme
+/// après un respawn en Survival).
+pub const WARP_INVULNERABILITY: f64 = 1.5;
 
 /// Intervalle (secondes) entre deux apparitions de **météores spéciaux**
 /// (boss - gros astéroïde, minerai rare) : un boss apparaît si aucun n'est
