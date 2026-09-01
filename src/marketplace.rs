@@ -54,7 +54,7 @@ pub const RADAR_COST: i32 = 20;
 /// Données générées par l'outil de gestion : lues par `src/game.rs`
 /// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et
 /// `src/state.rs` (génération et population).
-
+///
 /// Force de réaction d'un météore qui percute la **station** : le triangle
 /// qui collisionne explose et le météore est repoussé - sa composante de
 /// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,

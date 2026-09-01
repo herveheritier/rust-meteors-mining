@@ -1970,7 +1970,7 @@ mod tests {
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
 
-        crate::vaisseau::create_player_vaisseau(&mut state, &mut shapes, &mut triangles);
+        crate::vaisseau::create_player_vaisseau(&state, &mut shapes, &mut triangles);
         let ship_radius = shapes[PLAYER_INDEX].radius;
         let ship_life = shapes[PLAYER_INDEX].life;
         let gate = create_warp_gate(
