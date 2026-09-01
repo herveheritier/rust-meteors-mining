@@ -24,18 +24,19 @@ use crate::render::{
 use crate::state::ViewMode;
 use crate::state::GameState;
 
-/// Bannière « METEORS MINING » en ASCII art (8 lignes × 125 colonnes,
-/// extraite telle quelle de l'original - les caractères `[]`/`[I]` dessinent
-/// les lettres en blocs).
+/// Bannière « METEORS MINING » en blocs pleins (8 lignes × 113 colonnes,
+/// même mise en page que l'original) - chaque cellule de trait est dessinée
+/// avec le caractère plein `■` (U+25A0, très visible sur fond noir, y compris
+/// sur les écrans où les crochets `[]`/`[I]` de l'original étaient peu lisibles).
 pub const BANNER: [&str; 8] = [
-    "     []    []                                                    []    [] []            []                       ",
-    "     [I]  [I]           []                   []                  [I]  [I]       []            []          []     ",
-    "     [][][][]  [III]  [IIII]  [III]   [III]   [III]   [III]      [][][][] []     [III]  []     [III]   [II]      ",
-    "     [] [] [] []   []   []   []   I] []   [] []   [] []          [] [] [] []     []  [] []     []  [] []  []     ",
-    "     []    [] [IIII]    []   [IIII]  []   [] []       [III]      []    [] []     []  [] []     []  []  [III]     ",
-    "     []    [] []        []   []      []   [] []           []     []    []  []    []  []  []    []  []     []     ",
-    "     []    []  [III]     [I]  [III]   [III]  []       [III]      []    []   [II] []  []   [II] []  [] []  []     ",
-    "                                                                                                       [II]      ",
+    "     ■■    ■■                                                    ■■    ■■ ■■            ■■                       ",
+    "     ■■■  ■■■           ■■                   ■■                  ■■■  ■■■       ■■            ■■          ■■     ",
+    "     ■■■■■■■■  ■■■■■  ■■■■■■  ■■■■■   ■■■■■   ■■■■■   ■■■■■      ■■■■■■■■ ■■     ■■■■■  ■■     ■■■■■   ■■■■      ",
+    "     ■■ ■■ ■■ ■■   ■■   ■■   ■■   ■■ ■■   ■■ ■■   ■■ ■■          ■■ ■■ ■■ ■■     ■■  ■■ ■■     ■■  ■■ ■■  ■■     ",
+    "     ■■    ■■ ■■■■■■    ■■   ■■■■■■  ■■   ■■ ■■       ■■■■■      ■■    ■■ ■■     ■■  ■■ ■■     ■■  ■■  ■■■■■     ",
+    "     ■■    ■■ ■■        ■■   ■■      ■■   ■■ ■■           ■■     ■■    ■■  ■■    ■■  ■■  ■■    ■■  ■■     ■■     ",
+    "     ■■    ■■  ■■■■■     ■■■  ■■■■■   ■■■■■  ■■       ■■■■■      ■■    ■■   ■■■■ ■■  ■■   ■■■■ ■■  ■■ ■■  ■■     ",
+    "                                                                                                       ■■■■      ",
 ];
 
 /// Durée (s) du flash de la ligne des règles après un changement de scénario
@@ -482,7 +483,7 @@ pub async fn title_loop(
     // fin (temps absolu) du flash de la ligne des règles ; 0 = aucun flash
     let mut flash_until: f64 = 0.0;
 
-    let banner_cols = BANNER[0].len();
+    let banner_cols = BANNER[0].chars().count();
     let mut banner_colors = vec![0u32; banner_cols];
     // RESET PROGRESSION cliqué depuis l'écran de paramétrage du titre : la
     // progression est remise à zéro mais le vaisseau n'est pas reconstruit ici
@@ -976,10 +977,9 @@ fn draw_frame(
     // bannière : un caractère par colonne, chaque colonne colorée
     // (ex titleLoop : `_printstring` de chaque caractère)
     let banner_rows = BANNER.len();
-    let banner_cols = BANNER[0].len();
+    let banner_cols = BANNER[0].chars().count();
     for (j, row) in BANNER.iter().enumerate() {
-        for (i, ch) in row.bytes().enumerate() {
-            let ch = ch as char;
+        for (i, ch) in row.chars().enumerate() {
             let x = (VIEWPORT_WIDTH / banner_cols as f64) * i as f64;
             let y = 10.0 * (8.0 + j as f64);
             let color = banner_colors[banner_cols - 1 - i];
