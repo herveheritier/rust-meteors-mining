@@ -354,6 +354,11 @@ pub fn create_boss_meteor(
 /// vaisseau qui le percute d'une fraction du monde (`WARP_JUMP_FRACTION`,
 /// `game.rs` - le portail est consommé). Les météores rebondissent dessus
 /// sans l'endommager (pas de choc élastique - `game.rs`).
+///
+/// Le portail est un **mesh « meshes-designer »** (`assets/portail.json`,
+/// chargé et paramétré par `warp_gate.rs` - échelle `WARP_GATE_SCALE`,
+/// orientation, centre de rotation, composition des plans de src/marketplace.rs)
+/// : il est construit par `warp_gate::build_warp_gate` puis posé ici.
 pub fn create_warp_gate(
     state: &GameState,
     shapes: &mut Vec<Shape>,
@@ -361,57 +366,12 @@ pub fn create_warp_gate(
     camera: Point,
     rng: &mut impl Rng,
 ) -> usize {
-    // anneau à 16 côtés (éventail glissant → 14 triangles)
-    const GATE_MESH: Mesh = &[&[
-        (30.0, 0.0),
-        (24.0, 0.0),
-        (27.7, -11.5),
-        (22.2, -9.2),
-        (21.2, -21.2),
-        (17.0, -17.0),
-        (11.5, -27.7),
-        (9.2, -22.2),
-        (0.0, -30.0),
-        (0.0, -24.0),
-        (-11.5, -27.7),
-        (-9.2, -22.2),
-        (-21.2, -21.2),
-        (-17.0, -17.0),
-        (-27.7, -11.5),
-        (-22.2, -9.2),
-        (-30.0, 0.0),
-        (-24.0, 0.0),
-        (-27.7, 11.5),
-        (-22.2, 9.2),
-        (-21.2, 21.2),
-        (-17.0, 17.0),
-        (-11.5, 27.7),
-        (-9.2, 22.2),
-        (0.0, 30.0),
-        (0.0, 24.0),
-        (11.5, 27.7),
-        (9.2, 22.2),
-        (21.2, 21.2),
-        (17.0, 17.0),
-        (27.7, 11.5),
-        (22.2, 9.2),
-        (30.0, 0.0),
-        (24.0, 0.0),
-    ]];
-    let mut shape = Shape::default();
-    let idx = meshes_to_shape(&mut shape, shapes, triangles, GATE_MESH);
     let (x, y) = random_world_position(state, camera, rng);
-    let shape = &mut shapes[idx];
-    shape.who_i_am = WHOIAM_WARP_GATE;
-    shape.is_collider = true;
-    shape.shape_color = 0xFFB04AFF; // violet néon
-    shape.position = Point::new(x, y);
-    shape.direction = 0.0;
-    shape.velocity = 0.0;
-    shape.orientation = 0.0;
-    shape.rotation = 0.0;
-    shape.texture = TEXTURE_NONE;
-    compute_shape_center(shape, triangles);
+    let idx = crate::warp_gate::build_warp_gate(shapes, triangles, Point::new(x, y));
+    // NB : `build_warp_gate` réécrit bien la forme dans `shapes[idx]` (vie,
+    // plage de triangles, centre) - sans quoi le portail resterait mort :
+    // vie 0 → jamais rendu, plage de triangles corrompue → collisions
+    // parasites qui détruisaient le vaisseau (corrigé)
     idx
 }
 

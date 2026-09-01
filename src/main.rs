@@ -49,6 +49,7 @@ mod title;
 mod touch;
 mod ui_boxes;
 mod vaisseau;
+mod warp_gate;
 mod wasm_audio_shims; // no-op audio sur wasm (silencieux) - vide sur le natif
 mod x11;
 

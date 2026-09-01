@@ -806,7 +806,7 @@ const DEFAULT_DATA = {
     },
   ],
   economy: {
-    gems: { gold: 5, iron: 3, water: 2 },
+    gems: { gold: 5, iron: 3, water: 2, platinum: 10 }, // PLATINUM (10) : minerai rare du météore spécial (boss)
     // Modes de déplacement du vaisseau, dans l'**ordre d'affichage du
     // magasin** (même ordre que le jeu, MOVING_MODE_ORDER : REALISTIC en
     // tête, mode de départ de Progression). Chaque mode porte son `id`
@@ -835,6 +835,10 @@ const DEFAULT_DATA = {
     bossTriangleHp: 3, // BOSS_TRIANGLE_HIT_POINTS - balles pour détruire un triangle du boss
     // génération procédurale des météores
     meteorVelocityMax: 2.0, // METEOR_VELOCITY_MAX
+    // tournoiement : rotation des météores et des débris
+    meteorSpinBase: 0.9, // METEOR_SPIN_BASE - rotation de base (rad/s), plus lente sur les gros
+    meteorSpinMax: 2.4, // METEOR_SPIN_MAX - plafond de rotation (rad/s)
+    garbageSpin: 3.0, // GARBAGE_SPIN - rotation des débris (rad/s), signe aléatoire
     trianglesMin: 6, // TRIANGLES_IN_SHAPE_MIN
     trianglesMax: 16, // TRIANGLES_IN_SHAPE_MAX
     baseMin: 15, // TRIANGLE_BASE_MIN
@@ -913,6 +917,15 @@ const DEFAULT_DATA = {
   cosmonaut: {
     asset: "assets/cosmonaute.json", // mesh « meshes-designer » du cosmonaute EVA
     scalePercent: 150, // échelle en % de la taille d'origine du mesh (~17 unités → ~26)
+    orientationDeg: 0, // angle de l'avant du mesh dans l'éditeur (0 = droite, +90 = haut)
+    centerXPercent: 50, // centre de rotation, % de la largeur du mesh (50 = centre)
+    centerYPercent: 50, // centre de rotation, % de la hauteur du mesh
+    planes: null, // composition des plans (indices) : « always » / « excluded »
+    planesForAsset: null,
+  },
+  warpGate: {
+    asset: "assets/portail.json", // mesh « meshes-designer » du portail de distorsion
+    scalePercent: 300, // échelle en % de la taille d'origine du mesh (anneau r 30 → r ≈ 90)
     orientationDeg: 0, // angle de l'avant du mesh dans l'éditeur (0 = droite, +90 = haut)
     centerXPercent: 50, // centre de rotation, % de la largeur du mesh (50 = centre)
     centerYPercent: 50, // centre de rotation, % de la hauteur du mesh
@@ -1043,6 +1056,7 @@ const TRACK_META = {
 const VIEWS = [
   { id: "ship", label: "Vaisseau joueur", build: shipCard },
   { id: "cosmonaut", label: "Cosmonaute EVA", build: cosmonautCard },
+  { id: "warpGate", label: "Portail de distorsion", build: warpGateCard },
   { id: "fuel", label: "Réservoir de carburant", build: () => trackCard(trackById("fuel")) },
   { id: "ammo", label: "Chargeur de munitions", build: () => trackCard(trackById("ammo")) },
   { id: "cargo", label: "Soute", build: () => trackCard(trackById("cargo")) },
@@ -1153,6 +1167,7 @@ function renderCurrentCard() {
   // aperçus mesh : rendu asynchrone (fetch du mesh en mode serveur)
   if (view.id === "ship") refreshMeshPreview(data.ship, "ship-preview");
   if (view.id === "cosmonaut") refreshMeshPreview(data.cosmonaut, "cosmonaut-preview");
+  if (view.id === "warpGate") refreshMeshPreview(data.warpGate, "warp-gate-preview");
   // compteur et boutons précédent/suivant
   const counter = document.getElementById("card-counter");
   if (counter) counter.textContent = (currentView + 1) + " / " + VIEWS.length;
@@ -2033,7 +2048,9 @@ async function refreshMeshPreview(cfg, canvasId) {
   // mode serveur) : dès qu'il est disponible, la carte est re-rendue une
   // fois pour afficher la liste des plans
   if (mesh) {
-    const key = canvasId === "ship-preview" ? "ship" : "cosmonaut";
+    const key = canvasId === "ship-preview" ? "ship"
+      : canvasId === "cosmonaut-preview" ? "cosmonaut"
+      : "warpGate";
     if (compositionRenderedFor !== key) {
       compositionRenderedFor = key;
       if (currentView === VIEWS.findIndex(v => v.id === key)) afterEdit();
@@ -2050,7 +2067,8 @@ async function refreshAssetPickers() {
   if (assetList === null) return;
   // re-rend la carte ouverte pour re-peupler les <select> d'asset
   if (currentView === VIEWS.findIndex(v => v.id === "ship")
-      || currentView === VIEWS.findIndex(v => v.id === "cosmonaut")) {
+      || currentView === VIEWS.findIndex(v => v.id === "cosmonaut")
+      || currentView === VIEWS.findIndex(v => v.id === "warpGate")) {
     render();
   }
 }
@@ -2871,6 +2889,33 @@ function cosmonautCard() {
   });
 }
 
+function warpGateCard() {
+  return meshCard({
+    cfg: data.warpGate,
+    prefix: "warpGate",
+    canvasId: "warp-gate-preview",
+    dot: "#b04aff",
+    title: "Portail de distorsion",
+    badge: "WARP_GATE_*",
+    links: false, // pas de lignes d'atelier : plans visibles ou exclus uniquement
+    defaultTrack: "cargo",
+    desc: "Mesh du portail de distorsion (warp gate - format « meshes-designer », assets/*.json), " +
+      "échelle, orientation, centre de rotation et **composition des plans** - constantes " +
+      "WARP_GATE_JSON / WARP_GATE_SCALE / WARP_GATE_ORIENTATION_DEGREES / " +
+      "WARP_GATE_CENTER_X/Y_PERCENT / WARP_GATE_PLANES de src/marketplace.rs (lues par " +
+      "src/warp_gate.rs, formes posées par src/generate.rs).",
+    compositionHint: "Chaque plan du mesh est <b>visible</b> ou <b>exclu</b> (jamais construit). " +
+      "L'aperçu et le centre de rotation ne portent que sur les plans retenus. Liste vide à " +
+      "l'export = tous les plans (repli).",
+    hint: "L'aperçu montre le portail tel qu'il apparaîtra en jeu (axe y du jeu). Orientation = angle " +
+      "de l'avant du mesh dans l'éditeur : 0 = à droite, +90 = vers le haut - le jeu tourne le mesh " +
+      "pour ramener l'avant à droite. Le centre de rotation est le pivot autour duquel le portail " +
+      "pivote (50/50 = centre de la boîte englobante de la composition). Sur l'aperçu : " +
+      "<b>molette = rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), " +
+      "<b>clic = centre de rotation au point visé</b>.",
+  });
+}
+
 function field(labelText, key, input, full) {
   const f = el("div", "field" + (full ? " full" : ""));
   const l = el("label", "", labelText);
@@ -2968,6 +3013,7 @@ function summaryCard() {
     { label: "or", value: eco.gems.gold },
     { label: "fer", value: eco.gems.iron },
     { label: "eau", value: eco.gems.water },
+    { label: "platine", value: eco.gems.platinum },
   ].filter(g => g.value > 0);
   const gemText = gemDefs
     .map(g => {
@@ -3056,8 +3102,9 @@ function economyCard() {
   gGrid.appendChild(field("GOLD (or)", "eco-gold", economyNumber("eco-gold", intSetter(eco.gems, "gold"), eco.gems.gold, 0, "1")));
   gGrid.appendChild(field("IRON (fer)", "eco-iron", economyNumber("eco-iron", intSetter(eco.gems, "iron"), eco.gems.iron, 0, "1")));
   gGrid.appendChild(field("WATER (eau)", "eco-water", economyNumber("eco-water", intSetter(eco.gems, "water"), eco.gems.water, 0, "1")));
+  gGrid.appendChild(field("PLATINUM (platine)", "eco-platinum", economyNumber("eco-platinum", intSetter(eco.gems, "platinum"), eco.gems.platinum, 0, "1")));
   gems.appendChild(gGrid);
-  gems.appendChild(el("p", "hint", "Prix d'un minerai déchargé à la station (ELEMENT_VALUES)."));
+  gems.appendChild(el("p", "hint", "Prix d'un minerai déchargé à la station (ELEMENT_VALUES) - le PLATINUM est le minerai rare relâché par le météore spécial (boss)."));
   host.appendChild(gems);
 
   // modes de déplacement : comme les autres extensions de l'économie, chaque
@@ -3192,6 +3239,15 @@ function gameplayCard() {
   genGrid.appendChild(field("Vitesse maximale", "gp-velocity",
     economyNumber("gp-velocity", floatSetter("meteorVelocityMax"), g.meteorVelocityMax, 0, "0.1",
       "Vitesse maximale des météores (METEOR_VELOCITY_MAX) - la vitesse de chaque météore est tirée aléatoirement en dessous.")));
+  genGrid.appendChild(field("Rotation de base (rad/s)", "gp-spin-base",
+    economyNumber("gp-spin-base", floatSetter("meteorSpinBase"), g.meteorSpinBase, 0, "0.1",
+      "METEOR_SPIN_BASE - rotation de base : vitesse angulaire (rad/s) d'un météore au nombre minimal de triangles ; les plus gros tournent plus lentement (rotation = base × TRIANGLES_IN_SHAPE_MIN / nbr).")));
+  genGrid.appendChild(field("Rotation maximale (rad/s)", "gp-spin-max",
+    economyNumber("gp-spin-max", floatSetter("meteorSpinMax"), g.meteorSpinMax, 0, "0.1",
+      "METEOR_SPIN_MAX - plafond de la vitesse angulaire, pour que les petits éclats ne deviennent pas un scintillement à 60 fps.")));
+  genGrid.appendChild(field("Rotation des débris (rad/s)", "gp-garbage-spin",
+    economyNumber("gp-garbage-spin", floatSetter("garbageSpin"), g.garbageSpin, 0, "0.1",
+      "GARBAGE_SPIN - vitesse angulaire des débris d'explosion (rad/s), signe aléatoire.")));
   genGrid.appendChild(field("Triangles par météore (min)", "gp-tri-min",
     economyNumber("gp-tri-min", intSetter("trianglesMin"), g.trianglesMin, 1, "1", "TRIANGLES_IN_SHAPE_MIN")));
   genGrid.appendChild(field("Triangles par météore (max)", "gp-tri-max",
@@ -3871,6 +3927,50 @@ function cosmonautConsts() {
   ].join("\n");
 }
 
+// Constantes du portail de distorsion (warp gate) : mesh, échelle,
+// orientation et centre de rotation - lues par src/warp_gate.rs à la
+// construction du portail (formes posées par src/generate.rs). Même format
+// que shipConsts (le chemin du mesh est relatif à la racine du projet ;
+// l'include_str! est résolu depuis src/, d'où le « ../ »).
+function warpGateConsts() {
+  const w = data.warpGate;
+  const scale = w.scalePercent / 100;
+  const orient = ((w.orientationDeg % 360) + 360) % 360;
+  const assetPath = String(w.asset).replace(/^(\.\.?\/)+/, "");
+  return [
+    "/// Portail de distorsion (warp gate) - mesh « meshes-designer » et réglages",
+    "/// (échelle, orientation, centre de rotation). Données générées par l'outil de",
+    "/// gestion : `src/warp_gate.rs` les lit pour construire le portail posé par",
+    "/// `src/generate.rs`.",
+    "///",
+    "/// Fichier mesh embarqué au compile (`include_str!`) : chemin relatif",
+    "/// à la racine du projet.",
+    'pub const WARP_GATE_JSON: &str = include_str!("../' + assetPath + '");',
+    "",
+    "/// Échelle du portail (multiplicateur des sommets du mesh) : 1.0 = 100 %.",
+    "/// L'anneau doit rester bien visible dans le monde (à 3.0, rayon ≈ 90).",
+    "pub const WARP_GATE_SCALE: f64 = " + fmtFloat(scale) + ";",
+    "",
+    "/// Orientation du portail (degrés) : angle de l'avant du mesh dans l'éditeur",
+    "/// « meshes-designer » (0 = à droite, +90 = vers le haut). Le mesh est",
+    "/// tourné de −orientation à la construction.",
+    "pub const WARP_GATE_ORIENTATION_DEGREES: f64 = " + fmtFloat(orient) + ";",
+    "",
+    "/// Centre de rotation du portail : position du pivot en pourcentage de la",
+    "/// boîte englobante du mesh (50 = centre), axe x.",
+    "pub const WARP_GATE_CENTER_X_PERCENT: f64 = " + fmtFloat(w.centerXPercent) + ";",
+    "",
+    "/// Centre de rotation du portail (voir `WARP_GATE_CENTER_X_PERCENT`), axe y.",
+    "pub const WARP_GATE_CENTER_Y_PERCENT: f64 = " + fmtFloat(w.centerYPercent) + ";",
+    "",
+    "/// Plans du portail construits (composition - indices des plans du fichier",
+    "/// mesh `WARP_GATE_JSON`) : un plan absent n'est jamais construit. **Liste",
+    "/// vide = tous les plans** (repli : composition non définie). Générée par",
+    "/// l'outil de gestion.",
+    "pub const WARP_GATE_PLANES: &[usize] = " + planesListExport(w) + ";",
+  ].join("\n");
+}
+
 function economyConsts() {
   const e = data.economy;
   const g = e.gems;
@@ -3885,8 +3985,9 @@ function economyConsts() {
   const modeCosts = ordered.map(m => int(m.cost)).join(", ");
   return [
     "/// Valeur en crédits d'un minerai par élément (index 1..3 = GOLD, IRON,",
-    "/// WATER - voir `default_elements` ; 0 = sans valeur).",
-    "pub const ELEMENT_VALUES: [i32; 4] = [0, " + g.gold + ", " + g.iron + ", " + g.water + "];",
+    "/// WATER, 4 = PLATINUM - voir `default_elements` ; 0 = sans valeur). Le",
+    "/// PLATINUM est le minerai rare relâché par le météore spécial (boss).",
+    "pub const ELEMENT_VALUES: [i32; 5] = [0, " + g.gold + ", " + g.iron + ", " + g.water + ", " + g.platinum + "];",
     "",
     "/// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre",
     "/// historique - l'ordre d'affichage dans le magasin est `MOVING_MODE_ORDER`) :",
@@ -3959,6 +4060,21 @@ function gameplayConsts() {
     "/// Vitesse maximale des météores (`2*rnd` à l'origine).",
     "pub const METEOR_VELOCITY_MAX: f64 = " + flt(g.meteorVelocityMax) + ";",
     "",
+    "/// Tournoiement des météores : la vitesse de rotation est inversement",
+    "/// proportionnelle à la taille — un petit débris tourne vite, un gros",
+    "/// astéroïde tourne lentement (comportement réaliste des débris).",
+    "/// Vitesse angulaire de base (rad/s) pour un météore au nombre minimal de",
+    "/// triangles (TRIANGLES_IN_SHAPE_MIN) ; pour les autres :",
+    "/// `rotation = METEOR_SPIN_BASE × TRIANGLES_IN_SHAPE_MIN / nbr`.",
+    "pub const METEOR_SPIN_BASE: f64 = " + flt(g.meteorSpinBase) + ";",
+    "",
+    "/// Vitesse angulaire maximale (rad/s) : plafond pour les plus petits",
+    "/// éclats, pour que la rotation ne devienne pas un scintillement à 60 fps.",
+    "pub const METEOR_SPIN_MAX: f64 = " + flt(g.meteorSpinMax) + ";",
+    "",
+    "/// Vitesse angulaire de rotation des débris (rad/s), signe aléatoire.",
+    "pub const GARBAGE_SPIN: f64 = " + flt(g.garbageSpin) + ";",
+    "",
     "/// Génération procédurale des météores : bornes du nombre de triangles",
     "/// par météore et de la taille (base, hauteur) des triangles.",
     "pub const TRIANGLES_IN_SHAPE_MIN: i32 = " + i32(g.trianglesMin) + ";",
@@ -4018,6 +4134,8 @@ function exportRust() {
     shipConsts(),
     "",
     cosmonautConsts(),
+    "",
+    warpGateConsts(),
     "",
     RUST_TYPES.replace(/\s+$/, ""),
   ];
@@ -4324,18 +4442,18 @@ function fillTrackFields(track, block) {
 // renvoie un état partiel { tracks, economy } - les valeurs manquantes
 // retombent sur les valeurs du jeu via normalize().
 function parseRust(text) {
-  const out = { tracks: [], economy: {}, gameplay: {}, reputation: {}, ship: {}, cosmonaut: {} };
+  const out = { tracks: [], economy: {}, gameplay: {}, reputation: {}, ship: {}, cosmonaut: {}, warpGate: {} };
   const grab = re => {
     const m = text.match(re);
     return m ? m[1] : null;
   };
 
   // ── économie ──
-  const gems = grab(/ELEMENT_VALUES\s*:\s*\[i32; 4\]\s*=\s*\[([^\]]*)\]/);
+  const gems = grab(/ELEMENT_VALUES\s*:\s*\[i32; 5\]\s*=\s*\[([^\]]*)\]/);
   if (gems) {
     const v = gems.split(",").map(s => parseInt(s, 10));
-    if (v.length === 4 && v.slice(1).every(Number.isFinite)) {
-      out.economy.gems = { gold: v[1], iron: v[2], water: v[3] };
+    if (v.length === 5 && v.slice(1).every(Number.isFinite)) {
+      out.economy.gems = { gold: v[1], iron: v[2], water: v[3], platinum: v[4] };
     }
   }
   // modes de déplacement : catalogue MOVING_MODES (nom / description / coût),
@@ -4392,6 +4510,12 @@ function parseRust(text) {
   if (bossHp !== null) out.gameplay.bossTriangleHp = bossHp;
   const vel = price("METEOR_VELOCITY_MAX");
   if (vel !== null) out.gameplay.meteorVelocityMax = vel;
+  const spinBase = price("METEOR_SPIN_BASE");
+  const spinMax = price("METEOR_SPIN_MAX");
+  const garbageSpin = price("GARBAGE_SPIN");
+  if (spinBase !== null) out.gameplay.meteorSpinBase = spinBase;
+  if (spinMax !== null) out.gameplay.meteorSpinMax = spinMax;
+  if (garbageSpin !== null) out.gameplay.garbageSpin = garbageSpin;
   const tMin = price("TRIANGLES_IN_SHAPE_MIN");
   const tMax = price("TRIANGLES_IN_SHAPE_MAX");
   if (tMin !== null) out.gameplay.trianglesMin = tMin;
@@ -4532,6 +4656,18 @@ function parseRust(text) {
   const ccy = grab(/pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = (-?[0-9.]+);/);
   if (ccy) out.cosmonaut.centerYPercent = parseFloat(ccy);
 
+  // ── portail de distorsion (warp gate - mesh, échelle, orientation, centre) ──
+  const wasset = grab(/pub const WARP_GATE_JSON: &str = include_str!\("([^"]+)"\)/);
+  if (wasset) out.warpGate.asset = wasset.replace(/^\.\.\//, "");
+  const wscale = grab(/pub const WARP_GATE_SCALE: f64 = ([0-9.]+);/);
+  if (wscale) out.warpGate.scalePercent = Math.round(parseFloat(wscale) * 100);
+  const worient = grab(/pub const WARP_GATE_ORIENTATION_DEGREES: f64 = (-?[0-9.]+);/);
+  if (worient) out.warpGate.orientationDeg = parseFloat(worient);
+  const wcx = grab(/pub const WARP_GATE_CENTER_X_PERCENT: f64 = (-?[0-9.]+);/);
+  if (wcx) out.warpGate.centerXPercent = parseFloat(wcx);
+  const wcy = grab(/pub const WARP_GATE_CENTER_Y_PERCENT: f64 = (-?[0-9.]+);/);
+  if (wcy) out.warpGate.centerYPercent = parseFloat(wcy);
+
   // ── composition des plans (vaisseau : toujours + liens ; cosmonaute) ──
   // Listes vides = composition non définie → `null` (tous les plans, repli).
   const always = grab(/pub const VAISSEAU_PLANES_ALWAYS: &\[usize\] = &\[([^\]]*)\]/);
@@ -4559,6 +4695,11 @@ function parseRust(text) {
     ? calways.split(",").map(s => parseInt(s, 10)).filter(Number.isFinite)
     : [];
   out.cosmonaut.planes = cidx.length > 0 ? parseComposition(cidx, []) : null;
+  const walways = grab(/pub const WARP_GATE_PLANES: &\[usize\] = &\[([^\]]*)\]/);
+  const widx = walways
+    ? walways.split(",").map(s => parseInt(s, 10)).filter(Number.isFinite)
+    : [];
+  out.warpGate.planes = widx.length > 0 ? parseComposition(widx, []) : null;
 
   // ── lignes d'atelier (par identifiant de constante) ──
   for (const [id, meta] of Object.entries(TRACK_META)) {
@@ -4644,6 +4785,7 @@ function normalize(parsed) {
   if (Number.isFinite(gems.gold)) out.economy.gems.gold = int(gems.gold);
   if (Number.isFinite(gems.iron)) out.economy.gems.iron = int(gems.iron);
   if (Number.isFinite(gems.water)) out.economy.gems.water = int(gems.water);
+  if (Number.isFinite(gems.platinum)) out.economy.gems.platinum = int(gems.platinum);
   // modes de déplacement : catalogue { id, name, description, cost } dans
   // l'ordre d'affichage du magasin. Formats anciens convertis : catalogue
   // sans id (ordre des id MOVING_MODE_*) et coûts numériques seuls (3 modes
@@ -4690,6 +4832,9 @@ function normalize(parsed) {
   gpInt("debrisPerTriangle", 0);
   gpInt("bossTriangleHp", 1);
   if (Number.isFinite(gameplay.meteorVelocityMax) && gameplay.meteorVelocityMax >= 0) out.gameplay.meteorVelocityMax = gameplay.meteorVelocityMax;
+  if (Number.isFinite(gameplay.meteorSpinBase) && gameplay.meteorSpinBase >= 0) out.gameplay.meteorSpinBase = gameplay.meteorSpinBase;
+  if (Number.isFinite(gameplay.meteorSpinMax) && gameplay.meteorSpinMax >= 0) out.gameplay.meteorSpinMax = gameplay.meteorSpinMax;
+  if (Number.isFinite(gameplay.garbageSpin) && gameplay.garbageSpin >= 0) out.gameplay.garbageSpin = gameplay.garbageSpin;
   gpInt("trianglesMin", 1);
   gpInt("trianglesMax", 1);
   gpInt("baseMin", 1);
@@ -4831,6 +4976,29 @@ function normalize(parsed) {
     out.cosmonaut.planesForAsset = typeof cosmonaut.planesForAsset === "string" && cosmonaut.planesForAsset
       ? cosmonaut.planesForAsset
       : out.cosmonaut.asset;
+  }
+  // portail de distorsion (warp gate - valeurs manquantes → valeurs du jeu)
+  const warpGate = parsed.warpGate || {};
+  if (typeof warpGate.asset === "string" && warpGate.asset) out.warpGate.asset = warpGate.asset;
+  if (Number.isFinite(warpGate.scalePercent)) {
+    out.warpGate.scalePercent = Math.max(1, Math.min(1000, Math.round(warpGate.scalePercent)));
+  }
+  if (Number.isFinite(warpGate.orientationDeg)) out.warpGate.orientationDeg = warpGate.orientationDeg;
+  if (Number.isFinite(warpGate.centerXPercent)) {
+    out.warpGate.centerXPercent = Math.max(0, Math.min(100, warpGate.centerXPercent));
+  }
+  if (Number.isFinite(warpGate.centerYPercent)) {
+    out.warpGate.centerYPercent = Math.max(0, Math.min(100, warpGate.centerYPercent));
+  }
+  if (Array.isArray(warpGate.planes)) {
+    out.warpGate.planes = warpGate.planes.map(p => ({
+      rule: p.rule === "excluded" ? "excluded" : "always",
+      track: "cargo",
+      minLevel: 1,
+    }));
+    out.warpGate.planesForAsset = typeof warpGate.planesForAsset === "string" && warpGate.planesForAsset
+      ? warpGate.planesForAsset
+      : out.warpGate.asset;
   }
   return out;
 }

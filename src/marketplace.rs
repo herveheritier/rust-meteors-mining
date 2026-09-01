@@ -9,11 +9,9 @@
 
 use crate::config::{CARGO_SIZE, MOVING_MODE_COUNT};
 
-/// Valeur en crédits d.un minerai par élément (index 1..4 = GOLD, IRON,
-/// WATER, PLATINUM - voir `default_elements` ; 0 = sans valeur). Le
-/// PLATINUM (10 CR, minerai rare du météore spécial) a été ajouté à la main
-/// dans ce fichier généré : l'outil de gestion ne le connaît pas encore -
-/// régénérer depuis l'outil réécrira cette constante (reporter la valeur).
+/// Valeur en crédits d'un minerai par élément (index 1..3 = GOLD, IRON,
+/// WATER, 4 = PLATINUM - voir `default_elements` ; 0 = sans valeur). Le
+/// PLATINUM est le minerai rare relâché par le météore spécial (boss).
 pub const ELEMENT_VALUES: [i32; 5] = [0, 5, 3, 2, 10];
 
 /// Modes de déplacement du vaisseau (index `MOVING_MODE_*` du jeu, ordre
@@ -52,11 +50,11 @@ pub const AMMO_STEP: i32 = 5;
 /// historique). Généré par l'outil de gestion.
 pub const RADAR_COST: i32 = 20;
 
-/// Météores - collisions avec la station et génération (mise au point) : les
-/// constantes ci-dessous sont générées par l'outil de gestion et lues par
-/// `src/game.rs` (réaction à la base), `src/garbage.rs` (débris),
-/// `src/generate.rs` et `src/state.rs` (génération et population).
-///
+/// Météores - collisions avec la station et génération (mise au point).
+/// Données générées par l'outil de gestion : lues par `src/game.rs`
+/// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et
+/// `src/state.rs` (génération et population).
+
 /// Force de réaction d'un météore qui percute la **station** : le triangle
 /// qui collisionne explose et le météore est repoussé - sa composante de
 /// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,
@@ -70,11 +68,10 @@ pub const METEOR_STATION_RESTITUTION: f64 = 0.2;
 pub const GARBAGE_PER_TRIANGLE: usize = 12;
 
 /// Nombre de **balles** nécessaires pour détruire un triangle du météore
-/// spécial (boss) : chaque balle qui le touche dégrade l'armure du triangle
-/// (`Triangle::armor`), le triangle ne meurt qu'à la dernière. Le boss ne
-/// peut être détruit que par les balles du vaisseau (il est immunisé contre
-/// les collisions avec les météores normaux). Paramétrable - carte
-/// « Météores & collisions » de l'outil de gestion.
+/// spécial (boss) : chaque balle qui le touche dégrade l'armure du
+/// triangle (`Triangle::armor`), le triangle ne meurt qu'à la dernière.
+/// Le boss ne peut être détruit que par les balles du vaisseau (il est
+/// immunisé contre les collisions avec les météores normaux).
 pub const BOSS_TRIANGLE_HIT_POINTS: i32 = 3;
 
 /// Vitesse maximale des météores (`2*rnd` à l'origine).
@@ -305,6 +302,37 @@ pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = 59.0;
 /// définie). Générée par l'outil de gestion.
 pub const COSMONAUTE_PLANES: &[usize] = &[];
 
+/// Portail de distorsion (warp gate) - mesh « meshes-designer » et réglages
+/// (échelle, orientation, centre de rotation). Données générées par l'outil de
+/// gestion : `src/warp_gate.rs` les lit pour construire le portail posé par
+/// `src/generate.rs`.
+///
+/// Fichier mesh embarqué au compile (`include_str!`) : chemin relatif
+/// à la racine du projet.
+pub const WARP_GATE_JSON: &str = include_str!("../assets/portail.json");
+
+/// Échelle du portail (multiplicateur des sommets du mesh) : 1.0 = 100 %.
+/// L'anneau doit rester bien visible dans le monde (à 3.0, rayon ≈ 90).
+pub const WARP_GATE_SCALE: f64 = 1.0;
+
+/// Orientation du portail (degrés) : angle de l'avant du mesh dans l'éditeur
+/// « meshes-designer » (0 = à droite, +90 = vers le haut). Le mesh est
+/// tourné de −orientation à la construction.
+pub const WARP_GATE_ORIENTATION_DEGREES: f64 = 0.0;
+
+/// Centre de rotation du portail : position du pivot en pourcentage de la
+/// boîte englobante du mesh (50 = centre), axe x.
+pub const WARP_GATE_CENTER_X_PERCENT: f64 = 50.0;
+
+/// Centre de rotation du portail (voir `WARP_GATE_CENTER_X_PERCENT`), axe y.
+pub const WARP_GATE_CENTER_Y_PERCENT: f64 = 50.0;
+
+/// Plans du portail construits (composition - indices des plans du fichier
+/// mesh `WARP_GATE_JSON`) : un plan absent n'est jamais construit. **Liste
+/// vide = tous les plans** (repli : composition non définie). Générée par
+/// l'outil de gestion.
+pub const WARP_GATE_PLANES: &[usize] = &[];
+
 /// Un mode de déplacement du vaisseau (index `MOVING_MODE_*` du jeu) : nom
 /// et description affichés (magasin de la station, messages du scénario) et
 /// coût de déblocage en crédits (0 = déjà débloqué au départ). Généré par
@@ -329,8 +357,7 @@ pub fn mode_label(mode: i32) -> &'static str {
 }
 
 /// Une extension de vaisseau achetable à l'atelier de la station (scénario
-/// Progression, bouton SHOP de la boîte DOCK STATION) : ajoute de la
-/// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en crédits.
+/// Progression, bouton SHOP de la boîte DOCK STATION) : ajoute de la    /// capacité (réservoir, chargeur ou soute) au prix indiqué, payé en crédits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShipUpgrade {
     /// Nom de l'extension (atelier, HUD).
