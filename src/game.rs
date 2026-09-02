@@ -497,7 +497,10 @@ pub fn update(
             ShopClick::None => {}
             ShopClick::Mode(mode) => select_mode_and_save(state, mode),
             ShopClick::Weapon(i) => buy_weapon_and_save(state, shapes, triangles, i),
-            ShopClick::BuyRadar => buy_radar_and_save(state),
+            // radars : achat (économie) ou simple sélection d'une version -
+            // un seul radar actif à la fois (minimap ou scope ATC)
+            ShopClick::BuyRadar => buy_or_select_radar_and_save(state, scenario::RadarKind::Minimap),
+            ShopClick::BuyAtcRadar => buy_or_select_radar_and_save(state, scenario::RadarKind::Atc),
             // ravitaillement : carburant et munitions achetés indépendamment,
             // à la quantité choisie sur le curseur de la ligne (crédits
             // persistés) - le résultat (achat / refus / plein) s'affiche dans
@@ -3288,6 +3291,52 @@ mod tests {
         assert_eq!(shapes[PLAYER_INDEX].position, Point::new(0.0, 0.0));
         assert_eq!(shapes[eva].position, COSMONAUTE_EVA_PARK);
         assert_eq!(pilot_index(&state), PLAYER_INDEX);
+    }
+
+    #[test]
+    fn cosmonaut_keeps_momentum_while_cable_deploys() {
+        // SPEC : à l'arrivée dans la zone d'accostage, le cosmonaute
+        // **continue sur son élan** pendant que le cordon se déploie vers lui
+        // (sa position dérive avec sa vitesse, elle n'est pas figée) ; seule
+        // la traction du cordon tendu l'immobilise et le ramène sur l'anneau
+        let (mut state, mut shapes, mut triangles) = ejection_scene();
+        shapes[PLAYER_INDEX].life = 0;
+        triangles[0].life = 0;
+        state.cosmonaut_active = true;
+        let eva = state.eva_cosmonaut as usize;
+        // le cosmonaute entre dans la zone avec de l'élan (vitesse vers +x)
+        shapes[eva].position = Point::new(10.0, 0.0);
+        shapes[eva].velocity = 0.5;
+        shapes[eva].direction = 0.0;
+        let mut elements = default_elements();
+
+        docking(&mut state, &mut shapes, &mut triangles, &mut elements);
+
+        // la récupération démarre et l'élan est conservé (pas d'arrêt brutal)
+        assert!(state.eva_recovery > 0.0);
+        assert_eq!(shapes[eva].velocity, 0.5);
+
+        // déploiement du cordon (phase 1) : le cosmonaute continue sur son
+        // élan - il dérive (la physique `moving_shape` le déplace comme en
+        // vol, la position n'est pas épinglée) et sa vitesse n'est pas coupée
+        let dt = 0.1;
+        let deploy_frames = (EVA_RECOVERY_DURATION * EVA_CABLE_DEPLOY_FRACTION / dt) as usize;
+        let start_x = shapes[eva].position.x;
+        for _ in 0..deploy_frames {
+            advance_eva_recovery(&mut state, &mut shapes, &mut triangles, dt);
+            moving_shape(&mut shapes[eva], &mut triangles, &state.world, dt);
+        }
+        assert!(shapes[eva].position.x > start_x, "le cosmonaute dérive avec son élan");
+        assert_eq!(shapes[eva].velocity, 0.5);
+
+        // cordon tendu (phase 2) : il ramène le cosmonaute sur l'anneau
+        // (point dans sa direction au début de la traction), l'élan est coupé
+        advance_eva_recovery(&mut state, &mut shapes, &mut triangles, EVA_RECOVERY_DURATION);
+        let to = state.eva_recovery_to_pos;
+        assert!(state.eva_recovery <= 0.0);
+        assert!(state.eva_crossfade > 0.0);
+        assert_eq!(shapes[eva].position, to, "ramené sur l'anneau");
+        assert_eq!(shapes[eva].velocity, 0.0);
     }
 
     #[test]

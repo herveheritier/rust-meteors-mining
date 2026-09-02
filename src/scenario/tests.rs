@@ -573,6 +573,94 @@ fn radar_persists_and_resets_with_progression() {
 }
 
 #[test]
+fn atc_radar_buyable_with_credits_and_exclusive_with_minimap() {
+    // jeu libre : le radar ATC est disponible sans achat (pas de prix),
+    // la sélection est libre et un seul radar est actif à la fois
+    let mut free = GameState::new();
+    assert!(has_radar(&free));
+    assert_eq!(atc_radar_price(&free), None);
+    assert_eq!(buy_atc_radar(&mut free), RadarOutcome::Owned);
+    assert_eq!(active_radar_kind(&free), RadarKind::Minimap);
+    assert!(select_radar_kind(&mut free, RadarKind::Atc));
+    assert_eq!(active_radar_kind(&free), RadarKind::Atc);
+    // la minimap n'est plus active (exclusivité) ; on peut y revenir
+    assert!(select_radar_kind(&mut free, RadarKind::Minimap));
+    assert_eq!(active_radar_kind(&free), RadarKind::Minimap);
+
+    // Progression : ATC éteint par défaut, prix 30 (remise CADET = 0),
+    // achat contre crédits → scope actif, minimap désactivée
+    let mut s = progression_state();
+    assert!(!has_radar(&s));
+    assert_eq!(atc_radar_price(&s), Some((30, 30)));
+    assert_eq!(atc_radar_cost(&s), Some(30));
+    assert!(!radar_kind_available(&s, RadarKind::Atc));
+    // pas assez de crédits : refusé, rien d'acheté
+    s.resources.credits = 5;
+    assert_eq!(buy_atc_radar(&mut s), RadarOutcome::Insufficient(30));
+    assert!(!has_radar(&s));
+    // assez de crédits : acheté, crédits déduits, scope actif
+    s.resources.credits = 30;
+    assert_eq!(buy_atc_radar(&mut s), RadarOutcome::Purchased(30));
+    assert!(has_radar(&s));
+    assert_eq!(active_radar_kind(&s), RadarKind::Atc);
+    assert_eq!(s.resources.credits, 0);
+    // déjà possédé : plus de prix ; la sélection reste gratuite
+    assert_eq!(atc_radar_price(&s), None);
+    assert_eq!(buy_atc_radar(&mut s), RadarOutcome::Owned);
+    assert!(radar_kind_available(&s, RadarKind::Atc));
+
+    // acheter la minimap bascule sur elle (exclusivité) ; le scope reste
+    // possédé et redevient sélectionnable gratuitement
+    s.resources.credits = 100;
+    assert_eq!(buy_radar(&mut s), RadarOutcome::Purchased(20));
+    assert_eq!(active_radar_kind(&s), RadarKind::Minimap);
+    assert!(select_radar_kind(&mut s, RadarKind::Atc));
+    assert_eq!(active_radar_kind(&s), RadarKind::Atc);
+    assert!(select_radar_kind(&mut s, RadarKind::Minimap));
+    assert_eq!(active_radar_kind(&s), RadarKind::Minimap);
+
+    // une version non possédée n'est jamais « active » (repli minimap)
+    let mut fresh = progression_state();
+    fresh.radar_kind = RadarKind::Atc; // jamais achetée
+    assert_eq!(active_radar_kind(&fresh), RadarKind::Minimap);
+    assert!(!select_radar_kind(&mut fresh, RadarKind::Atc));
+    assert_eq!(active_radar_kind(&fresh), RadarKind::Minimap);
+}
+
+#[test]
+fn atc_radar_persists_and_resets_with_progression() {
+    // le radar ATC acheté est enregistré (`prog_atc_radar`) avec la version
+    // active (`radar_kind`) et restauré au lancement suivant ; RESET
+    // PROGRESSION efface les deux
+    let p = temp_path("atc_radar.cfg");
+    let _ = std::fs::remove_file(&p);
+    let mut s = progression_state();
+    s.resources.credits = 100;
+    assert_eq!(buy_atc_radar(&mut s), RadarOutcome::Purchased(30));
+    save_progression_to(&p, &s).unwrap();
+    assert_eq!(get_i32_from(&p, "prog_atc_radar"), Some(1));
+    assert_eq!(get_i32_from(&p, "radar_kind"), Some(1)); // 1 = ATC
+
+    // un départ neuf a tout éteint ; rechargé, le scope est actif
+    let mut fresh = progression_state();
+    assert!(!has_radar(&fresh));
+    assert_eq!(active_radar_kind(&fresh), RadarKind::Minimap);
+    load_progression_from(&p, &mut fresh);
+    assert!(has_radar(&fresh));
+    assert!(fresh.resources.atc_radar_owned);
+    assert_eq!(active_radar_kind(&fresh), RadarKind::Atc);
+    assert_eq!(fresh.resources.credits, 70);
+
+    // RESET : les clés sont supprimées et tout repart éteint (minimap)
+    reset_progression_from(&p, &mut fresh);
+    assert_eq!(get_i32_from(&p, "prog_atc_radar"), None);
+    assert_eq!(get_i32_from(&p, "radar_kind"), None);
+    assert!(!has_radar(&fresh));
+    assert_eq!(active_radar_kind(&fresh), RadarKind::Minimap);
+    let _ = std::fs::remove_file(&p);
+}
+
+#[test]
 fn reputation_rewards_destructions_and_precision() {
     // précision 100 % : gain = 1 × (1 + 2×1,0) = 3 ; précision 50 % :
     // gain = 1 × (1 + 2×0,5) = 2 ; chaque destruction ajoute

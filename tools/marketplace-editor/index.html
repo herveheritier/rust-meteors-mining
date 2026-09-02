@@ -827,6 +827,7 @@ const DEFAULT_DATA = {
     ammoPrice: 1,
     ammoStep: 5,
     radarPrice: 20, // RADAR_COST - coût du radar de bord (minimap globale)
+    atcRadarPrice: 30, // ATC_RADAR_COST - coût du radar de contrôleur aérien (scope à balayage)
   },
   gameplay: {
     // collisions météore / station
@@ -3186,8 +3187,9 @@ function economyCard() {
   equip.appendChild(el("h4", "", "Équipement de bord"));
   const eGrid = el("div", "field-grid");
   eGrid.appendChild(field("Radar - coût (crédits)", "eco-radar-price", economyNumber("eco-radar-price", intSetter(eco, "radarPrice"), eco.radarPrice, 0, "1")));
+  eGrid.appendChild(field("Radar ATC - coût (crédits)", "eco-atc-radar-price", economyNumber("eco-atc-radar-price", intSetter(eco, "atcRadarPrice"), eco.atcRadarPrice, 0, "1")));
   equip.appendChild(eGrid);
-  equip.appendChild(el("p", "hint", "Le radar (RADAR_COST) affiche la minimap globale - position des météores et des autres formes. Éteint par défaut en scénario à économie, allumé d'office en jeu libre / Survival."));
+  equip.appendChild(el("p", "hint", "Le radar (RADAR_COST) affiche la minimap globale - position des météores et des autres formes ; le radar ATC (ATC_RADAR_COST) affiche un scope de contrôleur aérien (balayage rotatif + anneaux). Un seul radar actif à la fois, choisi au magasin. Éteints par défaut en scénario à économie, disponibles d'office en jeu libre / Survival."));
   host.appendChild(equip);
 
   // badge d'en-tête (monnaie et valeur des minerais)
@@ -4021,6 +4023,13 @@ function economyConsts() {
     "/// Hors économie le radar est toujours allumé (gratuit, comportement",
     "/// historique). Généré par l'outil de gestion.",
     "pub const RADAR_COST: i32 = " + e.radarPrice + ";",
+    "",
+    "/// Coût en crédits du **radar de contrôleur aérien** (scope circulaire à",
+    "/// balayage rotatif affiché en scénario à économie - éteint par défaut,",
+    "/// acheté au magasin, onglet ÉQUIPEMENT). Hors économie il est toujours",
+    "/// disponible (gratuit). Un seul radar actif à la fois (`scenario::RadarKind`).",
+    "/// Généré par l'outil de gestion.",
+    "pub const ATC_RADAR_COST: i32 = " + e.atcRadarPrice + ";",
   ].join("\n");
 }
 
@@ -4495,11 +4504,13 @@ function parseRust(text) {
   const ammoPrice = price("AMMO_PRICE");
   const ammoStep = price("AMMO_STEP");
   const radarPrice = price("RADAR_COST");
+  const atcRadarPrice = price("ATC_RADAR_COST");
   if (fuelPrice !== null) out.economy.fuelPrice = fuelPrice;
   if (fuelStep !== null) out.economy.fuelStep = fuelStep;
   if (ammoPrice !== null) out.economy.ammoPrice = ammoPrice;
   if (ammoStep !== null) out.economy.ammoStep = ammoStep;
   if (radarPrice !== null) out.economy.radarPrice = radarPrice;
+  if (atcRadarPrice !== null) out.economy.atcRadarPrice = atcRadarPrice;
 
   // ── gameplay (collisions avec la station, génération des météores) ──
   const restitution = price("METEOR_STATION_RESTITUTION");

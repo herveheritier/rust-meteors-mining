@@ -197,7 +197,44 @@ pub fn buy_weapon(state: &mut GameState, i: usize) -> WeaponOutcome {
     WeaponOutcome::Purchased(cost)
 }
 
-// ─── Radar de bord (minimap globale) ────────────────────────────────────────
+// ─── Radar de bord (minimap globale + scope ATC) ───────────────────────────
+
+/// Version de radar de bord - **une seule active à la fois** (choisie au
+/// magasin de la station, onglet ÉQUIPEMENT) :
+/// - `Minimap` : la minimap classique (points des météores et des autres
+///   formes autour du vaisseau) ;
+/// - `Atc` : le **scope de contrôleur aérien** (disque circulaire à balayage
+///   rotatif, anneaux de distance et échos des formes).
+///
+/// Hors économie (jeu libre, Survival) les deux versions sont toujours
+/// disponibles (gratuites) ; en scénario à économie, chacune s'achète au
+/// magasin (`radar_owned` / `atc_radar_owned`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadarKind {
+    /// Minimap globale classique (points des formes).
+    Minimap,
+    /// Scope de contrôleur aérien (balayage + anneaux + échos).
+    Atc,
+}
+
+/// Index de persistance d'une version de radar (clé `radar_kind` du fichier
+/// de config : 0 = minimap, 1 = contrôleur aérien). Pure (tests).
+pub fn radar_kind_index(kind: RadarKind) -> i32 {
+    match kind {
+        RadarKind::Minimap => 0,
+        RadarKind::Atc => 1,
+    }
+}
+
+/// Version de radar depuis un index persistant (0 = minimap, sinon
+/// contrôleur aérien). Pure (tests).
+pub fn radar_kind_from_index(index: i32) -> RadarKind {
+    if index == 1 {
+        RadarKind::Atc
+    } else {
+        RadarKind::Minimap
+    }
+}
 
 /// Coût en crédits du **radar de bord** (`RADAR_COST` de `src/marketplace.rs`) :
 /// acheté au magasin (onglet ÉQUIPEMENT) en scénario à économie ; hors
@@ -229,9 +266,11 @@ pub enum RadarOutcome {
 
 /// Achète le **radar de bord** au magasin de la station : paie en crédits
 /// (remise de réputation appliquée) et active la minimap globale (points des
-/// météores et des autres formes, `scenario::has_radar`). Hors scénario à
-/// économie : sans effet (`Owned` - le radar y est déjà allumé). Appelé par
-/// le magasin (bouton SHOP de la boîte DOCK STATION, onglet ÉQUIPEMENT).
+/// météores et des autres formes, `scenario::has_radar`) - la version ATC est
+/// désactivée (`radar_kind = Minimap`, un seul radar actif à la fois). Hors
+/// scénario à économie : sans effet (`Owned` - le radar y est déjà allumé).
+/// Appelé par le magasin (bouton SHOP de la boîte DOCK STATION, onglet
+/// ÉQUIPEMENT).
 pub fn buy_radar(state: &mut GameState) -> RadarOutcome {
     if !has_economy(state) || state.resources.radar_owned {
         return RadarOutcome::Owned;
@@ -245,8 +284,87 @@ pub fn buy_radar(state: &mut GameState) -> RadarOutcome {
     }
     state.resources.credits -= cost;
     state.resources.radar_owned = true;
+    state.radar_kind = RadarKind::Minimap;
     state.send_message(&format!("RADAR PURCHASED: -{} CREDITS", cost));
     RadarOutcome::Purchased(cost)
+}
+
+// ─── Radar de contrôleur aérien (scope à balayage) ─────────────────────────
+
+/// Coût en crédits du **radar de contrôleur aérien** (`ATC_RADAR_COST` de
+/// `src/marketplace.rs`) : acheté au magasin (onglet ÉQUIPEMENT) en scénario
+/// à économie ; hors économie il est toujours disponible (gratuit).
+pub fn atc_radar_price(state: &GameState) -> Option<(i32, i32)> {
+    if !has_economy(state) || state.resources.atc_radar_owned {
+        return None;
+    }
+    let cost = crate::marketplace::ATC_RADAR_COST;
+    (cost > 0).then(|| (cost, discounted_cost(cost, current_discount(state))))
+}
+
+/// Coût en crédits du radar ATC non encore possédé (`None` = déjà possédé,
+/// hors économie ou coût nul) - le prix réellement payé (remisé).
+pub fn atc_radar_cost(state: &GameState) -> Option<i32> {
+    atc_radar_price(state).map(|(_, discounted)| discounted)
+}
+
+/// Achète le **radar de contrôleur aérien** au magasin de la station : paie
+/// en crédits (remise de réputation appliquée) et active le scope à balayage
+/// (`scenario::has_radar`, `radar_kind = Atc`) - la minimap est désactivée
+/// (un seul radar actif à la fois). Hors scénario à économie : sans effet
+/// (`Owned` - il y est déjà disponible). Appelé par le magasin (bouton SHOP
+/// de la boîte DOCK STATION, onglet ÉQUIPEMENT).
+pub fn buy_atc_radar(state: &mut GameState) -> RadarOutcome {
+    if !has_economy(state) || state.resources.atc_radar_owned {
+        return RadarOutcome::Owned;
+    }
+    let Some(cost) = atc_radar_cost(state) else {
+        return RadarOutcome::Owned; // coût 0 → déjà disponible
+    };
+    if state.resources.credits < cost {
+        state.send_message(&format!("NOT ENOUGH CREDITS FOR ATC RADAR ({} NEEDED)", cost));
+        return RadarOutcome::Insufficient(cost);
+    }
+    state.resources.credits -= cost;
+    state.resources.atc_radar_owned = true;
+    state.radar_kind = RadarKind::Atc;
+    state.send_message(&format!("ATC RADAR PURCHASED: -{} CREDITS", cost));
+    RadarOutcome::Purchased(cost)
+}
+
+/// La version de radar `kind` est-elle **disponible** (sélectionnable au
+/// magasin) ? Hors économie : toujours (les deux versions sont gratuites,
+/// comportement historique). En scénario à économie : seulement si elle a été
+/// **achetée** (`radar_owned` / `atc_radar_owned`). Pure (tests).
+pub fn radar_kind_available(state: &GameState, kind: RadarKind) -> bool {
+    match kind {
+        RadarKind::Minimap => !has_economy(state) || state.resources.radar_owned,
+        RadarKind::Atc => !has_economy(state) || state.resources.atc_radar_owned,
+    }
+}
+
+/// Version de radar **effective** : `state.radar_kind` si elle est
+/// disponible, sinon la minimap (repli - jamais une version non possédée en
+/// scénario à économie). Pure (tests).
+pub fn active_radar_kind(state: &GameState) -> RadarKind {
+    if radar_kind_available(state, state.radar_kind) {
+        state.radar_kind
+    } else {
+        RadarKind::Minimap
+    }
+}
+
+/// Sélectionne la version de radar `kind` au magasin de la station :
+/// disponible → appliquée comme **radar actif** (l'autre version est
+/// désactivée - un seul radar actif à la fois). Renvoie `true` si la
+/// sélection a été appliquée. Hors économie, la sélection est toujours
+/// possible (les deux versions y sont gratuites).
+pub fn select_radar_kind(state: &mut GameState, kind: RadarKind) -> bool {
+    if !radar_kind_available(state, kind) {
+        return false;
+    }
+    state.radar_kind = kind;
+    true
 }
 
 /// Total des munitions restantes des armes **possédées** (toutes armes

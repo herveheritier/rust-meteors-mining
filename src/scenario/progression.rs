@@ -51,6 +51,10 @@ const PROG_UP_AMMO_KEY: &str = "prog_up_ammo";
 const PROG_UP_CARGO_KEY: &str = "prog_up_cargo";
 const PROG_WEAPONS_KEY: &str = "prog_weapons";
 const PROG_RADAR_KEY: &str = "prog_radar";
+/// Radar de contrôleur aérien possédé (0/1, Progression) - le scope à
+/// balayage reste éteint tant qu'il n'est pas acheté. La version **active**
+/// (minimap ou ATC) est persistée séparément (clé globale `radar_kind`).
+const PROG_ATC_RADAR_KEY: &str = "prog_atc_radar";
 const PROG_OBJECTIVES_KEY: &str = "prog_objectives";
 // compteurs d'avancement des conditions d'objectifs (scénarios custom)
 const PROG_METEORS_KEY: &str = "prog_meteors";
@@ -112,6 +116,11 @@ pub fn save_progression_to(path: &Path, state: &GameState) -> io::Result<()> {
         crate::persist::set_i32_to(path, PROG_WEAPONS_KEY, weapons_owned_mask(state))?;
         // radar de bord possédé (minimap globale)
         crate::persist::set_i32_to(path, PROG_RADAR_KEY, state.resources.radar_owned as i32)?;
+        // radar de contrôleur aérien possédé (scope à balayage)
+        crate::persist::set_i32_to(path, PROG_ATC_RADAR_KEY, state.resources.atc_radar_owned as i32)?;
+        // version de radar active (0 = minimap, 1 = contrôleur aérien) -
+        // écrite dans le fichier de config comme le mode de déplacement
+        crate::persist::save_radar_kind_to(path, radar_kind_index(state.radar_kind))?;
     }
     if has_survival(state) {
         crate::persist::set_i32_to(path, PROG_LIVES_KEY, state.resources.lives)?;
@@ -267,6 +276,18 @@ pub fn load_progression_from(path: &Path, state: &mut GameState) {
         if let Some(radar) = crate::persist::get_i32_from(path, PROG_RADAR_KEY) {
             state.resources.radar_owned = radar != 0;
         }
+        // radar de contrôleur aérien : possédé si la sauvegarde l'a acheté
+        if let Some(atc) = crate::persist::get_i32_from(path, PROG_ATC_RADAR_KEY) {
+            state.resources.atc_radar_owned = atc != 0;
+        }
+        // version de radar active : restaurée si elle a été achetée - jamais
+        // une version non possédée (repli sur la minimap)
+        if let Some(kind) = crate::persist::load_radar_kind_from(path) {
+            state.radar_kind = radar_kind_from_index(kind);
+            if !radar_kind_available(state, state.radar_kind) {
+                state.radar_kind = RadarKind::Minimap;
+            }
+        }
         // réservoirs pleins à la capacité courante (extensions comprises) et
         // soute à la taille du niveau restauré
         state.resources.fuel = fuel_capacity(state);
@@ -359,6 +380,7 @@ pub fn reset_progression_from(path: &Path, state: &mut GameState) {
         PROG_UP_CARGO_KEY,
         PROG_WEAPONS_KEY,
         PROG_RADAR_KEY,
+        PROG_ATC_RADAR_KEY,
         PROG_LIVES_KEY,
         PROG_SHIELD_KEY,
         PROG_OBJECTIVES_KEY,
@@ -368,6 +390,7 @@ pub fn reset_progression_from(path: &Path, state: &mut GameState) {
         PROG_BULLETS_LOST_KEY,
         PROG_SURVIVE_KEY,
         "moving_mode",
+        "radar_kind",
     ] {
         let _ = crate::persist::delete_key_from(path, key);
     }

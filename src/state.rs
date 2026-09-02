@@ -13,7 +13,7 @@ use crate::geom::{Point, World};
 // population de météores : constante de la carte « Météores & collisions »
 // de l'outil de gestion (src/marketplace.rs, généré)
 use crate::marketplace::INITIAL_MAX_METEOR_SHAPES;
-use crate::scenario::{Resources, ScenarioId};
+use crate::scenario::{RadarKind, Resources, ScenarioId};
 
 /// Mode d'affichage (touche F - cycle) : fenêtré → plein écran zoomé → plein
 /// écran natif → fenêtré.
@@ -167,6 +167,23 @@ impl Default for SessionStats {
     }
 }
 
+/// Écho du scope de contrôleur aérien (radar ATC - `render::draw_atc_radar`) :
+/// la position **figée** d'une forme sur le scope, telle que peinte au
+/// **dernier passage du balayage**. Entre deux passages, l'écho ne bouge pas :
+/// il reste à cette position et s'estompe progressivement (persistance
+/// décroissante) jusqu'au prochain rafraîchissement - un écho ne bouge que
+/// quand le balayage est repassé dessus. `age` (radians de balayage écoulés
+/// depuis le dernier rafraîchissement) pilote le fondu.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RadarEcho {
+    /// Position de l'écho sur le scope, relative à son centre (px écran).
+    pub x: f32,
+    /// Position de l'écho sur le scope, relative à son centre (px écran).
+    pub y: f32,
+    /// Âge de l'écho en radians de balayage depuis son dernier rafraîchissement.
+    pub age: f32,
+}
+
 /// État dynamique du jeu (ex `context_type`, sans les constantes).
 #[derive(Clone, Debug)]
 pub struct GameState {
@@ -185,6 +202,18 @@ pub struct GameState {
     pub moving_mode: i32,
     /// Scénario actif (choisi à l'écran titre, touche N) - voir `scenario.rs`.
     pub scenario: ScenarioId,
+    /// Version de radar de bord **active** - une seule à la fois : la minimap
+    /// classique ou le scope de contrôleur aérien (`RadarKind`, choisi au
+    /// magasin de la station, onglet ÉQUIPEMENT). En scénario à économie, la
+    /// version doit avoir été achetée pour être sélectionnable
+    /// (`scenario::radar_kind_available` - la version effective est
+    /// `scenario::active_radar_kind`).
+    pub radar_kind: RadarKind,
+    /// Échos du scope de contrôleur aérien (radar ATC), indexés par index de
+    /// forme (`shapes`) : positions **figées** des formes entre deux passages
+    /// du balayage + âge du fondu (`RadarEcho`) - un écho ne bouge que quand
+    /// le balayage le rafraîchit (voir `render::draw_atc_radar`).
+    pub radar_echoes: Vec<RadarEcho>,
     /// Ressources économiques du scénario (carburant, munitions, minerais,
     /// réputation) - ignorées en jeu libre (`has_economy` = false).
     pub resources: Resources,
@@ -327,11 +356,14 @@ pub struct GameState {
     /// pendant `EVA_RECOVERY_DURATION` (le monde continue de tourner, voir
     /// `eva::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
     pub eva_recovery: f64,
-    /// Position du cosmonaute au début de la récupération (interpolée vers
-    /// `eva_recovery_to_pos`, le point de l'anneau où le cordon le ramène).
+    /// Position de **départ de la traction** du cordon de récupération :
+    /// posée au déclenchement puis mise à jour pendant le déploiement (le
+    /// cosmonaute continue sur son élan) - interpolée vers
+    /// `eva_recovery_to_pos`, le point de l'anneau où le cordon le ramène,
+    /// une fois le cordon tendu.
     pub eva_recovery_from_pos: Point,
     /// Point de l'anneau (rayon `STATION_INNER_RADIUS`) où le cordon ramène
-    /// le cosmonaute - dans sa direction au moment de la récupération.
+    /// le cosmonaute - dans sa direction au début de la traction.
     pub eva_recovery_to_pos: Point,
     /// Fondu enchaîné de la récupération en cours (secondes restantes, 0 =
     /// aucune) : le cosmonaute sur l'anneau s'efface pendant que le vaisseau
@@ -490,6 +522,8 @@ impl GameState {
             bullets_lost: 0,
             moving_mode: MOVING_MODE_DIRECTIONAL,
             scenario: ScenarioId::FreePlay,
+            radar_kind: RadarKind::Minimap,
+            radar_echoes: Vec::new(),
             resources: Resources::default(),
             unlocked_modes: [true; MOVING_MODE_COUNT as usize],
             supplies_shortage_cost: 0,

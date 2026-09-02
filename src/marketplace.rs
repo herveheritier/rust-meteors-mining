@@ -50,6 +50,13 @@ pub const AMMO_STEP: i32 = 5;
 /// historique). Généré par l'outil de gestion.
 pub const RADAR_COST: i32 = 20;
 
+/// Coût en crédits du **radar de contrôleur aérien** (scope circulaire à
+/// balayage rotatif affiché en scénario à économie - éteint par défaut,
+/// acheté au magasin, onglet ÉQUIPEMENT). Hors économie il est toujours
+/// disponible (gratuit). Un seul radar actif à la fois (`scenario::RadarKind`).
+/// Généré par l'outil de gestion.
+pub const ATC_RADAR_COST: i32 = 30;
+
 /// Météores - collisions avec la station et génération (mise au point).
 /// Données générées par l'outil de gestion : lues par `src/game.rs`
 /// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et

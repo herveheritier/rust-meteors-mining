@@ -55,10 +55,16 @@ pub struct ShopBoxLayout {
     pub buy_weapon: [Rect; WEAPON_SLOTS],
     /// Ligne du **radar de bord** (onglet ÉQUIPEMENT, sous les armes) :
     /// affiche la minimap globale - acheté contre crédits en scénario à
-    /// économie, déjà actif (POSSÉDÉ) hors économie.
+    /// économie, déjà disponible (ACTIF / SÉLECTIONNER) hors économie.
     pub radar: Rect,
-    /// Bouton d'achat du radar.
+    /// Bouton d'achat / sélection du radar de bord.
     pub buy_radar: Rect,
+    /// Ligne du **radar de contrôleur aérien** (sous le radar de bord) :
+    /// scope circulaire à balayage - acheté contre crédits en scénario à
+    /// économie, disponible hors économie. Un seul radar actif à la fois.
+    pub atc_radar: Rect,
+    /// Bouton d'achat / sélection du radar de contrôleur aérien.
+    pub buy_atc_radar: Rect,
     /// Lignes d'extension de l'atelier (réservoir, chargeur, soute).
     pub fuel: Rect,
     pub ammo: Rect,
@@ -88,9 +94,10 @@ pub struct ShopBoxLayout {
 pub fn shop_box_height(state: &GameState, ammo_rows: usize) -> f32 {
     let content = match state.shop_tab {
         crate::config::SHOP_TAB_WEAPONS => {
-            // panneau d'aperçu du vaisseau + lignes d'armes + ligne RADAR
+            // panneau d'aperçu du vaisseau + lignes d'armes + lignes RADAR
+            // (minimap + scope ATC)
             let n = scenario::weapon_slot_count().min(WEAPON_SLOTS);
-            6.0 + SHOP_PREVIEW_H + 10.0 + (n + 1) as f32 * (SHOP_ROW_H + 2.0)
+            6.0 + SHOP_PREVIEW_H + 10.0 + (n + 2) as f32 * (SHOP_ROW_H + 2.0)
         }
         crate::config::SHOP_TAB_WORKSHOP => 8.0 + 3.0 * (SHOP_ROW_H + 2.0),
         crate::config::SHOP_TAB_MODES => 8.0 + 4.0 * (SHOP_ROW_H + 2.0),
@@ -149,6 +156,8 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
     let mut buy_weapon = [Rect::new(0.0, 0.0, 0.0, 0.0); WEAPON_SLOTS];
     let mut radar = Rect::new(0.0, 0.0, 0.0, 0.0);
     let mut buy_radar = Rect::new(0.0, 0.0, 0.0, 0.0);
+    let mut atc_radar = Rect::new(0.0, 0.0, 0.0, 0.0);
+    let mut buy_atc_radar = Rect::new(0.0, 0.0, 0.0, 0.0);
     let mut fuel = Rect::new(0.0, 0.0, 0.0, 0.0);
     let mut ammo = Rect::new(0.0, 0.0, 0.0, 0.0);
     let mut cargo = Rect::new(0.0, 0.0, 0.0, 0.0);
@@ -172,9 +181,13 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
                 buy_weapon[i] = pill(y);
                 y += SHOP_ROW_H + 2.0;
             }
-            // radar de bord (équipement - minimap globale) sous les armes
+            // radars de bord (équipement) sous les armes : minimap globale
+            // puis scope de contrôleur aérien - un seul actif à la fois
             radar = Rect::new(left + pad, y, row_w, SHOP_ROW_H);
             buy_radar = pill(y);
+            y += SHOP_ROW_H + 2.0;
+            atc_radar = Rect::new(left + pad, y, row_w, SHOP_ROW_H);
+            buy_atc_radar = pill(y);
         }
         crate::config::SHOP_TAB_WORKSHOP => {
             y += 8.0;
@@ -241,6 +254,8 @@ pub fn shop_box_layout(state: &GameState) -> ShopBoxLayout {
         buy_weapon,
         radar,
         buy_radar,
+        atc_radar,
+        buy_atc_radar,
         fuel,
         ammo,
         cargo,
@@ -497,8 +512,10 @@ pub fn draw_supply_row(
 /// réel avec les armes possédées, l'arme survolée superposée sur son
 /// emplacement) ; en dessous, une ligne par arme du catalogue - nom + paquet
 /// de munitions, prix à gauche de la pilule (vert si abordable, rouge sinon)
-/// et bouton ACHETER / POSSÉDÉE à droite - puis une ligne **RADAR** (minimap
-/// globale, achetée contre crédits en économie, POSSÉDÉ hors économie).
+/// et bouton ACHETER / POSSÉDÉE à droite - puis deux lignes **radar** : la
+/// minimap globale et le scope de contrôleur aérien (achetées contre crédits
+/// en économie, disponibles hors économie) - un seul radar **actif** à la
+/// fois (bouton ACTIF / SÉLECTIONNER / ACHETER).
 pub fn draw_shop_weapons_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2, shapes: &[Shape], triangles: &[Triangle]) {
     let n = scenario::weapon_slot_count().min(WEAPON_SLOTS);
     // arme survolée (non possédée) : son aperçu se superpose au vaisseau
@@ -546,35 +563,87 @@ pub fn draw_shop_weapons_tab(state: &GameState, l: &ShopBoxLayout, m: Vec2, shap
             draw_shop_pill(l.buy_weapon[i], "ACHETER", Some(affordable), m);
         }
     }
-    // radar de bord : sous les armes, une ligne d'équipement - allumé par
-    // défaut hors économie (POSSÉDÉ), acheté contre crédits en économie
+    // radars de bord : sous les armes, une ligne par version - allumées par
+    // défaut hors économie (ACTIF / SÉLECTIONNER), achetées contre crédits en
+    // économie ; un seul radar actif à la fois (`active_radar_kind`)
     if l.radar.w <= 0.0 {
         return;
     }
-    draw_text_shadow("RADAR", l.radar.x + 4.0, l.radar.y + 14.0, 15.0, argb_to_color(BOX_FG));
-    draw_text_shadow(
+    draw_radar_row(
+        state,
+        l.radar,
+        l.buy_radar,
+        "RADAR",
         "MINIMAP GLOBALE : POSITION DES MÉTÉORES",
-        l.radar.x + 4.0,
-        l.radar.y + 31.0,
-        12.0,
-        argb_to_color(BOX_FG_DIM),
+        scenario::RadarKind::Minimap,
+        m,
     );
-    if !scenario::has_economy(state) || scenario::has_radar(state) {
-        // hors économie, le radar est allumé par défaut : déjà en place
-        draw_shop_pill(l.buy_radar, "POSSÉDÉ", None, m);
-    } else {
-        let (_, discounted) = scenario::radar_price(state).unwrap_or((0, 0));
-        let affordable = discounted <= state.resources.credits;
-        let price = format!("{} CR", discounted);
-        let pw = measure_text(&price, None, 14, 1.0).width;
-        draw_text_shadow(
-            &price,
-            l.radar.x + l.radar.w - SHOP_PILL_W - 12.0 - pw,
-            l.radar.y + 14.0,
-            14.0,
-            argb_to_color(if affordable { SHOP_OK } else { SHOP_ERR }),
+    if l.atc_radar.w > 0.0 {
+        draw_radar_row(
+            state,
+            l.atc_radar,
+            l.buy_atc_radar,
+            "RADAR ATC",
+            "SCOPE CONTRÔLEUR AÉRIEN : BALAYAGE + ANNEAUX",
+            scenario::RadarKind::Atc,
+            m,
         );
-        draw_shop_pill(l.buy_radar, "ACHETER", Some(affordable), m);
+    }
+}
+
+/// Dessine une ligne de radar (minimap ou scope ATC) de l'onglet
+/// ÉQUIPEMENT : nom + description à gauche (vert si la version est **active**),
+/// prix à gauche de la pilule (vert si abordable, rouge sinon) et bouton
+/// ACTIF / SÉLECTIONNER / ACHETER à droite. En scénario à économie, une
+/// version non possédée s'achète (ACHETER {prix}) ; possédée (ou hors
+/// économie), elle se sélectionne (ACTIF si déjà active, SÉLECTIONNER sinon)
+/// - un seul radar actif à la fois (`scenario::active_radar_kind`).
+fn draw_radar_row(
+    state: &GameState,
+    row: Rect,
+    pill: Rect,
+    name: &str,
+    description: &str,
+    kind: scenario::RadarKind,
+    m: Vec2,
+) {
+    let active = scenario::active_radar_kind(state) == kind;
+    draw_text_shadow(
+        name,
+        row.x + 4.0,
+        row.y + 14.0,
+        15.0,
+        argb_to_color(if active { SHOP_OK } else { BOX_FG }),
+    );
+    draw_text_shadow(description, row.x + 4.0, row.y + 31.0, 12.0, argb_to_color(BOX_FG_DIM));
+    // prix d'achat (scénario à économie, version non possédée) - sinon la
+    // pilule porte la sélection (ACTIF / SÉLECTIONNER)
+    let price = match kind {
+        scenario::RadarKind::Minimap => scenario::radar_price(state),
+        scenario::RadarKind::Atc => scenario::atc_radar_price(state),
+    };
+    match price {
+        Some((_, discounted)) => {
+            let affordable = discounted <= state.resources.credits;
+            let price_text = format!("{} CR", discounted);
+            let pw = measure_text(&price_text, None, 14, 1.0).width;
+            draw_text_shadow(
+                &price_text,
+                row.x + row.w - SHOP_PILL_W - 12.0 - pw,
+                row.y + 14.0,
+                14.0,
+                argb_to_color(if affordable { SHOP_OK } else { SHOP_ERR }),
+            );
+            draw_shop_pill(pill, "ACHETER", Some(affordable), m);
+        }
+        None => {
+            let (label, tone) = if active {
+                ("ACTIF".to_string(), None)
+            } else {
+                ("SÉLECTIONNER".to_string(), Some(true))
+            };
+            draw_shop_pill(pill, &label, tone, m);
+        }
     }
 }
 
@@ -885,6 +954,19 @@ fn draw_shop_tooltip(state: &GameState, l: &ShopBoxLayout, m: Vec2, elements: &[
                 let (_, discounted) = scenario::radar_price(state).unwrap_or((0, 0));
                 lines.push(format!("RADAR : minimap globale des météores ({} CR)", discounted));
                 lines.push("Éteint par défaut en scénario à économie".to_string());
+                lines.push(if scenario::active_radar_kind(state) == scenario::RadarKind::Minimap {
+                    "Radar actif".to_string()
+                } else {
+                    "Cliquer pour activer ce radar".to_string()
+                });
+            }
+            if l.atc_radar.w > 0.0 && l.atc_radar.contains(m) {
+                hovered = true;
+                let (_, discounted) = scenario::atc_radar_price(state).unwrap_or((0, 0));
+                lines.push(format!("RADAR ATC : scope de contrôleur aérien ({} CR)", discounted));
+                lines.push("Balayage rotatif, anneaux de distance et échos".to_string());
+                lines.push("Un seul radar actif à la fois - les deux versions".to_string());
+                lines.push("s'éteignent mutuellement à la sélection".to_string());
             }
         }
         crate::config::SHOP_TAB_WORKSHOP => {

@@ -318,13 +318,14 @@ pub const CARGO_EJECT_SPREAD: f64 = 40.0;
 
 /// Durée (secondes) de la **récupération** du cosmonaute EVA par la station
 /// (vaisseau détruit, il a rejoint la zone d'accostage) : un cordon jaillit
-/// de l'anneau jusqu'à lui puis le ramène sur l'anneau - le monde continue
-/// de tourner (voir `eva::advance_eva_recovery` et
-/// `render::draw_eva_recovery_cable`).
+/// de l'anneau vers lui - pendant qu'il **continue sur son élan** - puis le
+/// ramène sur l'anneau - le monde continue de tourner (voir
+/// `eva::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
 pub const EVA_RECOVERY_DURATION: f64 = 2.5;
 /// Fraction de `EVA_RECOVERY_DURATION` consacrée au **déploiement** du cordon
-/// de récupération : pendant cette première phase le cosmonaute reste sur
-/// place et le cordon jaillit de l'anneau jusqu'à lui ; une fois
+/// de récupération : pendant cette première phase le cosmonaute **continue
+/// sur son élan** (sa position dérive avec sa vitesse - le cordon suit sa
+/// trajectoire) pendant que le cordon jaillit de l'anneau vers lui ; une fois
 /// complètement déployé (tendu), il le ramène sur l'anneau (voir
 /// `eva::advance_eva_recovery` et `render::draw_eva_recovery_cable`).
 pub const EVA_CABLE_DEPLOY_FRACTION: f64 = 0.3;

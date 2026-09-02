@@ -388,11 +388,13 @@ pub fn draw_docking_line(
 
 /// Cordon de **récupération** du cosmonaute EVA (vaisseau détruit, il a
 /// rejoint la base) : pendant la récupération (`state.eva_recovery > 0`), un
-/// cordon **orange** jaillit de l'anneau jusqu'au cosmonaute (déploiement sur
-/// les ~30 % du début) puis, tendu, le **ramène sur l'anneau** - son
-/// ondulation s'affaisse à mesure que la tension monte ; pendant le fondu
-/// enchaîné (`state.eva_crossfade > 0`), il reste tendu et **s'efface avec le
-/// cosmonaute**. Dessiné **sous le cosmonaute** (appelé avant son rendu).
+/// cordon **orange** jaillit de l'anneau vers le cosmonaute (déploiement sur
+/// les ~30 % du début, pendant lesquels il **continue sur son élan** - le
+/// cordon suit sa position qui dérive) puis, tendu, le **ramène sur l'anneau**
+/// - son ondulation s'affaisse à mesure que la tension monte ; pendant le
+/// fondu enchaîné (`state.eva_crossfade > 0`), il reste tendu et **s'efface
+/// avec le cosmonaute**. Dessiné **sous le cosmonaute** (appelé avant son
+/// rendu).
 pub fn draw_eva_recovery_cable(
     state: &GameState,
     camera: Point,
@@ -420,7 +422,8 @@ pub fn draw_eva_recovery_cable(
         draw_docking_cable(a, b, 1.0, 0.0, true, color); // tendu
     } else {
         // récupération en deux phases : le cordon se déploie de l'anneau
-        // vers le cosmonaute (qui reste sur place) pendant la fraction
+        // vers le cosmonaute (qui **continue sur son élan** - sa position
+        // dérive, l'extrémité du cordon le suit) pendant la fraction
         // `EVA_CABLE_DEPLOY_FRACTION`, puis, complètement tendu, le ramène
         // sur l'anneau - ondulation forte tant que le câble est lâche
         // (déploiement), nulle une fois la tension installée (traction)

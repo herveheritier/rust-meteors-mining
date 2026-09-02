@@ -21,8 +21,12 @@ pub enum ShopClick {
     Mode(i32),
     /// Achète une arme du catalogue (index dans `VAISSEAU_WEAPONS`).
     Weapon(usize),
-    /// Achète le **radar de bord** (minimap globale - onglet ÉQUIPEMENT).
+    /// Achète / sélectionne le **radar de bord** (minimap globale - onglet
+    /// ÉQUIPEMENT).
     BuyRadar,
+    /// Achète / sélectionne le **radar de contrôleur aérien** (scope à
+    /// balayage - onglet ÉQUIPEMENT).
+    BuyAtcRadar,
     /// Achète la quantité du curseur de carburant (ligne FUEL du
     /// ravitaillement).
     Refuel,
@@ -78,6 +82,9 @@ pub fn shop_box_click(state: &GameState) -> ShopClick {
             }
             if l.buy_radar.w > 0.0 && l.buy_radar.contains(m) {
                 return ShopClick::BuyRadar;
+            }
+            if l.buy_atc_radar.w > 0.0 && l.buy_atc_radar.contains(m) {
+                return ShopClick::BuyAtcRadar;
             }
         }
         crate::config::SHOP_TAB_WORKSHOP => {
@@ -229,24 +236,49 @@ pub fn buy_weapon_and_save(
     let _ = scenario::save_progression(state);
 }
 
-/// Achète le **radar de bord** au magasin (bouton MARCHÉ de la boîte DOCK
-/// STATION, onglet ÉQUIPEMENT) puis persiste la progression (crédits, radar
-/// possédé) : la minimap globale (positions des météores) s'affiche dès
-/// l'achat (`scenario::has_radar`). Le résultat (achat / refus) s'affiche
-/// dans le pied de la fenêtre (`shop_feedback`).
-pub fn buy_radar_and_save(state: &mut GameState) {
-    match scenario::buy_radar(state) {
+/// Achat **ou** sélection d'une version de radar au magasin (bouton MARCHÉ de
+/// la boîte DOCK STATION, onglet ÉQUIPEMENT) : la version demandée (`kind`)
+/// est **achetée** en crédits si elle ne l'est pas encore en scénario à
+/// économie (`scenario::buy_radar` / `buy_atc_radar`), sinon simplement
+/// **sélectionnée** comme radar actif (`scenario::select_radar_kind` - un
+/// seul radar actif à la fois, l'autre est désactivé). Hors économie, la
+/// sélection est toujours possible (les deux versions y sont gratuites). La
+/// progression (crédits, radars possédés) et la version active (`radar_kind`)
+/// sont persistées. Le résultat (achat / sélection / refus) s'affiche dans le
+/// pied de la fenêtre (`shop_feedback`).
+pub fn buy_or_select_radar_and_save(state: &mut GameState, kind: scenario::RadarKind) {
+    let outcome = match kind {
+        scenario::RadarKind::Minimap => scenario::buy_radar(state),
+        scenario::RadarKind::Atc => scenario::buy_atc_radar(state),
+    };
+    match outcome {
         scenario::RadarOutcome::Purchased(cost) => {
-            state.shop_feedback = format!("Radar installé (-{} CR)", cost);
+            state.shop_feedback = match kind {
+                scenario::RadarKind::Minimap => format!("Radar installé (-{} CR)", cost),
+                scenario::RadarKind::Atc => format!("Radar ATC installé (-{} CR)", cost),
+            };
             state.shop_feedback_ok = true;
         }
         scenario::RadarOutcome::Insufficient(_) => {
             state.shop_feedback = "PAS ASSEZ DE CRÉDITS".to_string();
             state.shop_feedback_ok = false;
         }
-        scenario::RadarOutcome::Owned => state.shop_feedback.clear(),
+        scenario::RadarOutcome::Owned => {
+            // déjà possédée (ou pas d'économie) : simple sélection
+            if scenario::select_radar_kind(state, kind) {
+                let label = match kind {
+                    scenario::RadarKind::Minimap => "MINIMAP",
+                    scenario::RadarKind::Atc => "CONTRÔLEUR AÉRIEN",
+                };
+                state.shop_feedback = format!("Radar : {}", label);
+                state.shop_feedback_ok = true;
+            } else {
+                state.shop_feedback.clear();
+            }
+        }
     }
     let _ = scenario::save_progression(state);
+    let _ = persist::save_radar_kind(scenario::radar_kind_index(state.radar_kind));
 }
 
 /// Achète une extension du magasin (réservoir, chargeur ou soute) puis persiste

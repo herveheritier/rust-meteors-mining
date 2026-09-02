@@ -199,6 +199,14 @@ async fn main() {
     if let Some(mode) = persist::load_moving_mode() {
         state.moving_mode = mode;
     }
+    // version de radar active persistée (clé `radar_kind`, choisie au
+    // magasin de la station - onglet ÉQUIPEMENT) : la minimap classique ou le
+    // scope de contrôleur aérien. Le départ d'une nouvelle partie repart sur
+    // la minimap (`scenario::apply_start` en économie) ; en jeu libre, la
+    // sélection mémorisée est conservée (comme le mode de déplacement).
+    if let Some(kind) = persist::load_radar_kind() {
+        state.radar_kind = crate::scenario::radar_kind_from_index(kind);
+    }
     // options graphiques persistées (écran de paramétrage O) : style de
     // rendu et anticrénelage (reflété par la case, l'effet étant appliqué
     // par `window_conf`).
@@ -765,6 +773,14 @@ async fn main() {
         for g in &garbages {
             render::draw_garbage(g, camera, &state.world);
         }
+
+        // radar de contrôleur aérien (scope à balayage - version ATC du radar
+        // de bord, achetée au magasin) : dessiné par-dessus le monde, sous le
+        // HUD - un seul radar actif à la fois (la minimap, elle, est dessinée
+        // dans `draw_shape` quand la version active est `RadarKind::Minimap`).
+        // `&mut` : les échos conservent leur position figée entre deux
+        // passages du balayage (`state.radar_echoes`)
+        render::draw_atc_radar(&mut state, camera, &shapes);
 
         render::draw_cargo(&state, &elements);
         // HUD en haut de l'écran : stats + ressources sur une ligne, puis le

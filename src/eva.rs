@@ -107,15 +107,16 @@ pub fn rescue_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: 
 /// l'animation). Après la récupération, le fondu enchaîné fait apparaître le
 /// vaisseau reconstruit (`advance_eva_crossfade`, terminé par
 /// `rescue_cosmonaut`).
-pub fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles: &mut [Triangle]) {
+pub fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], _triangles: &mut [Triangle]) {
     let idx = state.eva_cosmonaut as usize;
     if idx >= shapes.len() {
         return; // cosmonaute EVA absent : rien à récupérer
     }
     let c = &shapes[idx];
-    state.eva_recovery_from_pos = c.position;
     // point de l'anneau dans la direction du cosmonaute (le cordon le ramène
-    // radialement sur le bord intérieur de l'anneau, comme les liens)
+    // radialement sur le bord intérieur de l'anneau, comme les liens) -
+    // recalculé au début de la traction, depuis la position atteinte pendant
+    // le déploiement (voir `advance_eva_recovery`)
     let r = c.position.x.hypot(c.position.y);
     state.eva_recovery_to_pos = if r < 1.0 {
         Point::new(STATION_INNER_RADIUS, 0.0) // au centre : vers la droite
@@ -125,17 +126,14 @@ pub fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles
             c.position.y / r * STATION_INNER_RADIUS,
         )
     };
+    // position de départ de la traction (mise à jour en phase 1, pendant le
+    // déploiement - voir `advance_eva_recovery`)
+    state.eva_recovery_from_pos = c.position;
     state.eva_recovery = EVA_RECOVERY_DURATION;
-    // le cosmonaute est immobilisé pendant que le cordon le tire, mais il
-    // **garde son orientation** (il reste tourné comme il l'était en arrivant
-    // - pas de repositionnement brutal à la récupération)
-    let c = &mut shapes[idx];
-    c.velocity = 0.0;
-    c.direction = 0.0;
-    c.rotation = 0.0;
-    for t in &mut triangles[c.first_triangle..=c.last_triangle] {
-        compute_real_positions(t, c.position, c.center, c.orientation);
-    }
+    // le cosmonaute **continue sur son élan** pendant que le cordon se déploie
+    // vers lui : sa vitesse et son orientation sont conservées, il dérive avec
+    // sa physique - il n'est immobilisé que lorsque le cordon, une fois tendu,
+    // le tire (phase 2 de `advance_eva_recovery`)
     state.player.thrusted = 0; // flamme coupée : plus de poussée
     state.player.revert_thrusted = 0;
     state.player.rotate_left_thrusted = 0; // ni de jets latéraux
@@ -144,16 +142,17 @@ pub fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], triangles
 }
 
 /// Fait avancer la **récupération** du cosmonaute EVA d'une frame, en deux
-/// phases (vitesse nulle - le monde continue de tourner, voir `update`) :
-/// pendant la fraction
-/// `EVA_CABLE_DEPLOY_FRACTION` de `EVA_RECOVERY_DURATION`, le cordon jaillit
-/// de l'anneau vers le cosmonaute qui reste **sur place** ; une fois
-/// complètement déployé (tendu), il le **ramène sur l'anneau** - position
-/// interpolée (smoothstep) de `eva_recovery_from_pos` vers
-/// `eva_recovery_to_pos` sur la phase restante. À la fin, le **fondu
-/// enchaîné** démarre : le vaisseau est reconstruit au centre de la station
-/// (`respawn_player`, liens attachés) et le cosmonaute s'efface pendant que
-/// le vaisseau apparaît (`advance_eva_crossfade`).
+/// phases (le monde continue de tourner, voir `update`) : pendant la fraction
+/// `EVA_CABLE_DEPLOY_FRACTION` de `EVA_RECOVERY_DURATION`, le cordon se
+/// déploie de l'anneau vers le cosmonaute qui **continue sur son élan** (sa
+/// position dérive avec sa vitesse - la physique `moving_shape`, appelée par
+/// `collisions` juste après, le déplace) ; une fois complètement déployé
+/// (tendu), il le **ramène sur l'anneau** - position interpolée (smoothstep)
+/// de `eva_recovery_from_pos` (position au début de la traction, mémorisée
+/// pendant le déploiement) vers `eva_recovery_to_pos` sur la phase restante.
+/// À la fin, le **fondu enchaîné** démarre : le vaisseau est reconstruit au
+/// centre de la station (`respawn_player`, liens attachés) et le cosmonaute
+/// s'efface pendant que le vaisseau apparaît (`advance_eva_crossfade`).
 pub fn advance_eva_recovery(
     state: &mut GameState,
     shapes: &mut [Shape],
@@ -166,21 +165,40 @@ pub fn advance_eva_recovery(
     let idx = state.eva_cosmonaut as usize;
     let c = &mut shapes[idx];
     if t < EVA_CABLE_DEPLOY_FRACTION {
-        // Phase 1 : le cordon se déploie de l'anneau vers le cosmonaute,
-        // qui reste **sur place** tant qu'il n'est pas complètement tendu
-        c.position = state.eva_recovery_from_pos;
+        // Phase 1 : le cordon se déploie de l'anneau vers le cosmonaute, qui
+        // **continue sur son élan** : sa position n'est pas figée, elle dérive
+        // avec sa vitesse (la physique `moving_shape`, appelée juste après par
+        // `collisions`, le déplace) et le cordon « le chasse », sa longueur
+        // suit sa position courante (voir `render::draw_eva_recovery_cable`).
+        // On mémorise la position courante : ce sera le point de départ de la
+        // traction une fois le cordon tendu (début de phase 2).
+        state.eva_recovery_from_pos = c.position;
     } else {
-        // Phase 2 : cordon complètement déployé, il ramène le cosmonaute
-        // sur l'anneau - interpolation lissée (smoothstep) sur la phase
+        // Phase 2 : cordon complètement déployé (tendu), il ramène le
+        // cosmonaute sur l'anneau - interpolation lissée (smoothstep) de
+        // `eva_recovery_from_pos` (position au moment où le cordon s'est
+        // tendu, mémorisée en phase 1) vers `eva_recovery_to_pos`, recalculé
+        // depuis ce point (le cordon reste radial : point de l'anneau dans la
+        // direction du cosmonaute au début de la traction)
+        let r = state.eva_recovery_from_pos.x.hypot(state.eva_recovery_from_pos.y);
+        state.eva_recovery_to_pos = if r < 1.0 {
+            Point::new(STATION_INNER_RADIUS, 0.0) // au centre : vers la droite
+        } else {
+            Point::new(
+                state.eva_recovery_from_pos.x / r * STATION_INNER_RADIUS,
+                state.eva_recovery_from_pos.y / r * STATION_INNER_RADIUS,
+            )
+        };
         let u = ((t - EVA_CABLE_DEPLOY_FRACTION) / (1.0 - EVA_CABLE_DEPLOY_FRACTION)).clamp(0.0, 1.0);
         let e = u * u * (3.0 - 2.0 * u);
         c.position.x = state.eva_recovery_from_pos.x
             + (state.eva_recovery_to_pos.x - state.eva_recovery_from_pos.x) * e;
         c.position.y = state.eva_recovery_from_pos.y
             + (state.eva_recovery_to_pos.y - state.eva_recovery_from_pos.y) * e;
+        // le cordon est tendu : le cosmonaute est tiré, plus d'élan propre
+        c.velocity = 0.0;
+        c.rotation = 0.0;
     }
-    c.velocity = 0.0;
-    c.rotation = 0.0;
     for t in &mut triangles[c.first_triangle..=c.last_triangle] {
         compute_real_positions(t, c.position, c.center, c.orientation);
     }

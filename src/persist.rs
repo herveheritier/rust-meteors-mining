@@ -339,6 +339,31 @@ pub fn save_moving_mode(mode: i32) -> io::Result<()> {
     save_moving_mode_to(&config_path(), mode)
 }
 
+// ─── clé dédiée : version de radar active ───────────────────────────────────
+
+/// Lit la version de radar active enregistrée (index `RadarKind` :
+/// 0 = minimap, 1 = contrôleur aérien), bornée à `[0, 1]` (sinon `None`).
+pub fn load_radar_kind() -> Option<i32> {
+    load_radar_kind_from(&config_path())
+}
+
+/// Lit `radar_kind` dans un fichier donné (version testable).
+pub fn load_radar_kind_from(path: &Path) -> Option<i32> {
+    let kind = get_i32_from(path, "radar_kind")?;
+    (0..=1).contains(&kind).then_some(kind)
+}
+
+/// Enregistre la version de radar active (index `RadarKind` : 0 = minimap,
+/// 1 = contrôleur aérien ; les autres clés sont conservées).
+pub fn save_radar_kind(kind: i32) -> io::Result<()> {
+    save_radar_kind_to(&config_path(), kind)
+}
+
+/// Écrit `radar_kind` dans un fichier donné (version testable).
+pub fn save_radar_kind_to(path: &Path, kind: i32) -> io::Result<()> {
+    set_i32_to(path, "radar_kind", kind)
+}
+
 // ─── clés dédiées : options graphiques ─────────────────────────────────────
 
 /// Lit le style de rendu enregistré, borné à `[0, RENDER_STYLE_COUNT-1]`

@@ -74,8 +74,10 @@ soute, puis revenez à la station pour décharger et gagner des crédits.
   détruit pas. Son **seul
   objectif** : **rejoindre la base** - dès qu'il atteint la zone d'accostage au centre de la
   station, la **récupération** s'anime : un **cordon orange** jaillit de
-  l'anneau jusqu'à lui et le **ramène sur l'anneau** (~2,5 s, monde vivant,
-  ondulation qui s'affaisse quand la tension monte), puis un **fondu
+  l'anneau vers lui pendant qu'il **continue sur son élan** (sa position
+  dérive pendant le déploiement, le cordon suit sa trajectoire - plus
+  réaliste) puis, une fois tendu, le **ramène sur l'anneau** (~2,5 s, monde
+  vivant, ondulation qui s'affaisse quand la tension monte), puis un **fondu
   enchaîné** (2 s) l'efface pendant que le **vaisseau reconstruit apparaît
   au centre de la station, liens attachés** (la caméra glisse de l'anneau
   vers le centre). En Survival, la destruction reste gérée par les
@@ -208,8 +210,9 @@ qu'appeler des fonctions testables sans macroquad :
 
 - **FREE PLAY** (défaut) - le comportement historique : aucun coût, tous les
   modes de déplacement disponibles, carburant et munitions illimités, et le
-  **radar** (minimap globale des météores) **allumé par défaut** - il ne
-  s'achète qu'en scénario à économie (Progression / custom).
+  **radar** (minimap globale des météores, ou le **scope de contrôleur
+  aérien**) **allumé par défaut** - ils ne s'achètent qu'en scénario à
+  économie (Progression / custom).
 - **PROGRESSION** - l'exemple d'économie :
   - le vaisseau démarre gratuitement en mode **REALISTIC**, identique à
     **INERTIAL** pour la poussée vectorielle ; ses propulseurs latéraux
@@ -251,7 +254,12 @@ qu'appeler des fonctions testables sans macroquad :
     météores et des autres formes sur une carte au centre de l'écran) est
     **éteint par défaut** : il s'achète au magasin (onglet ÉQUIPEMENT, 20
     crédits, ligne RADAR sous les armes) et s'allume dès l'achat
-    (persisté avec la progression) ;
+    (persisté avec la progression). Une **version contrôleur aérien**
+    (`RADAR ATC`, 30 crédits) remplace la minimap par un **scope circulaire**
+    à balayage rotatif, anneaux de distance et échos - achetée comme la
+    minimap et **sélectionnable au magasin** (bouton ACTIF / SÉLECTIONNER /
+    ACHETER) : **un seul radar actif à la fois** (l'achat ou la sélection de
+    l'un désactive l'autre) ;
   - la **réputation** croît à chaque astéroïde détruit, d'autant plus que la
     précision de tir est bonne (gain × (1 + 2 × précision)) - affichée au HUD
     avec FUEL / AMMO / CREDITS ; elle débloque des **rangs** (paliers
@@ -281,8 +289,9 @@ Survival** (`prog_lives`, `prog_shield` - bornés aux capacités du scénario,
 une sauvegarde à 0 vie repart au départ complet) ; chaque scénario n'écrit
 que ses propres clés, sans écraser la sauvegarde de l'autre. Le carburant et
 les munitions (par arme), eux, repartent pleins à chaque lancement ; les
-armes achetées, elles, sont persistées (`prog_weapons`), de même que le
-**radar de bord** (`prog_radar`).
+armes achetées, elles, sont persistées (`prog_weapons`), de même que les
+**radars de bord** (`prog_radar` pour la minimap, `prog_atc_radar` pour le
+scope de contrôleur aérien) et la **version active** (`radar_kind`).
 
 ## Outil de gestion : la place de marché
 

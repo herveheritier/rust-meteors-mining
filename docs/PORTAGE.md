@@ -101,7 +101,10 @@ Autres écarts connus (les `docs/PORTAGE.md §6` du code y font référence) :
 - **Affichage I/D** : `SHOW_INFOS` (débug QB64) est devenu des touches
   runtime (D = données, I = infos), vs `SHOW_GLOBAL_MAP` qui n'est plus une
   compilation : la minimap est un équipement **radar** achetable au magasin
-  en scénario à économie (`scenario::has_radar`).
+  en scénario à économie (`scenario::has_radar`). Une seconde version, le
+  **scope de contrôleur aérien** (`RadarKind::Atc`, acheté au magasin -
+  `scenario::buy_atc_radar`), remplace la minimap par un disque à balayage
+  rotatif : un seul radar actif à la fois (`scenario::active_radar_kind`).
 
 ## 7. Fenêtrage / plein écran (EWMH)
 

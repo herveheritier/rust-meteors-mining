@@ -125,6 +125,12 @@ pub struct Resources {
     /// Survival / custom sans économie), le radar est **toujours allumé**
     /// (comportement historique, sans achat possible).
     pub radar_owned: bool,
+    /// Radar de **contrôleur aérien** possédé (acheté au magasin) : affiche
+    /// le scope circulaire à balayage (`RadarKind::Atc`) - `false` = éteint
+    /// par défaut en scénario à économie. Hors économie, il est **toujours
+    /// disponible** (gratuit). Un seul radar actif à la fois
+    /// (`scenario::active_radar_kind`).
+    pub atc_radar_owned: bool,
 }
 
 /// Types et données de la place de marché - extensions de vaisseau de
@@ -360,13 +366,15 @@ pub fn has_economy(state: &GameState) -> bool {
     scenario(state.scenario).has_economy
 }
 
-/// Le **radar de bord** est-il actif (minimap globale affichée) ? Hors
+/// Un **radar de bord** est-il actif (minimap ou scope ATC affiché) ? Hors
 /// économie (jeu libre, Survival, custom sans économie) : toujours `true`
-/// (comportement historique - la minimap est allumée par défaut). En
-/// scénario à économie : `true` seulement si le radar a été **acheté au
-/// magasin** (`Resources::radar_owned`) - éteint par défaut.
+/// (comportement historique - le radar est allumé par défaut). En scénario à
+/// économie : `true` seulement si un radar a été **acheté au magasin**
+/// (`Resources::radar_owned` ou `Resources::atc_radar_owned`) - éteint par
+/// défaut. La version affichée est `scenario::active_radar_kind` (une seule
+/// à la fois).
 pub fn has_radar(state: &GameState) -> bool {
-    !has_economy(state) || state.resources.radar_owned
+    !has_economy(state) || state.resources.radar_owned || state.resources.atc_radar_owned
 }
 
 /// Le scénario gère-t-il la survie (vies + bouclier) ? - déduit du nombre de
@@ -484,7 +492,12 @@ pub fn apply_start(state: &mut GameState) {
                 weapon_ammo: [0; WEAPON_SLOTS],
                 weapon_owned: [false; WEAPON_SLOTS],
                 radar_owned: false,
+                atc_radar_owned: false,
             };
+            // la version de radar active repart sur la minimap (aucun radar
+            // possédé au départ - la sélection enregistrée est surimposée par
+            // `load_progression` au lancement)
+            state.radar_kind = RadarKind::Minimap;
             for i in 0..weapon_slot_count() {
                 if weapon_spec(i).cost == 0 {
                     state.resources.weapon_owned[i] = true;
@@ -521,7 +534,12 @@ pub fn apply_start(state: &mut GameState) {
                 weapon_ammo: [0; WEAPON_SLOTS],
                 weapon_owned: [false; WEAPON_SLOTS],
                 radar_owned: false,
+                atc_radar_owned: false,
             };
+            // la version de radar active repart sur la minimap (aucun radar
+            // possédé au départ - la sélection enregistrée est surimposée par
+            // `load_progression` au lancement)
+            state.radar_kind = RadarKind::Minimap;
             // Armes équipées au départ : celles dont le coût configuré
             // (outil) est nul (0 = arme de base) - chargées à la capacité
             // courante. Les armes payantes s'achètent au magasin (bouton
