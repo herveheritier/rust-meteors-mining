@@ -668,9 +668,11 @@ pub fn draw_shape(
 
 /// Radar de **contrôleur aérien** (version ATC du radar de bord - achetée au
 /// magasin en scénario à économie, `scenario::RadarKind::Atc`) : un **scope
-/// circulaire** collé au bord gauche de l'écran (au-dessus du score, le coin
-/// bas gauche est occupé par le joystick tactile) avec **anneaux de
-/// distance**, croix cardinales et repères N/E/S/W, un **balayage rotatif**
+/// circulaire** compact et très translucide **collé au coin supérieur
+/// gauche** de l'écran (sous la ligne du HUD et des baies de soute, loin des
+/// zones tactiles - joystick bas-gauche et FIRE bas-droit de `touch.rs`)
+/// avec **anneaux de distance**, croix cardinales et repères N/E/S/W, un
+/// **balayage rotatif**
 /// lent et flouté (ligne vive + traînée qui s'estompe derrière) et les
 /// **échos** des formes proches du vaisseau - station verte, météores
 /// rouges, minerais jaunes, portails cyan, mines orange, autres en couleur
@@ -692,31 +694,34 @@ pub fn draw_atc_radar(state: &mut GameState, camera: Point, shapes: &[Shape]) {
     {
         return;
     }
-    // scope : instrument circulaire **collé au bord gauche** de l'écran (le
-    // coin bas gauche est occupé par le joystick tactile - `touch.rs`,
-    // translucide et dessiné par-dessus) - un point monde = 1/30 px écran
-    // (portée ×3). Teintes du jeu : vert « radar » (vert d'accostage /
-    // succès du magasin `SHOP_OK`) sur un disque bleu sombre.
-    let r = 55.0; // 35 % plus petit que l'ancien scope (85)
+    // scope : instrument circulaire **compact et très translucide** (45 px)
+    // **collé au coin supérieur gauche** de l'écran - sous la ligne du HUD
+    // (y ≈ 14-30) et des baies de soute (y ≈ 50), loin des zones tactiles :
+    // le joystick bas-gauche et FIRE bas-droit de `touch.rs` restent
+    // entièrement dégagés, et le disque laisse voir le jeu derrière (étoiles
+    // et météores lisibles). Un point monde = 1/30 px écran (portée ×3).
+    // Teintes du jeu : vert « radar » (vert d'accostage / succès du magasin
+    // `SHOP_OK`) sur un disque bleu sombre.
+    let r = 45.0; // compact : ~47 % plus petit que l'ancien scope (85)
     let cx = r; // bord gauche de l'écran
-    let cy = 435.0;
+    let cy = 115.0; // haut de l'écran : sous le HUD et la ligne de soute
     let tau = std::f32::consts::TAU;
     let green = |alpha: f32| Color::new(0.22, 1.00, 0.53, alpha); // 0xFF39FF88
     let dim = |alpha: f32| Color::new(0.20, 0.68, 0.40, alpha);
     let phosphor = |alpha: f32| Color::new(0.65, 1.00, 0.80, alpha);
 
     // fond du scope (disque translucide, bleu nuit) + halo + bordure +
-    // anneaux de distance - bordures volontairement transparentes
-    draw_circle(cx, cy, r, Color::new(0.02, 0.07, 0.10, 0.45));
-    draw_circle_lines(cx, cy, r + 3.0, 1.0, green(0.20)); // halo extérieur
-    draw_circle_lines(cx, cy, r, 2.0, green(0.55));
+    // anneaux de distance - bordures volontairement très transparentes
+    draw_circle(cx, cy, r, Color::new(0.02, 0.07, 0.10, 0.24));
+    draw_circle_lines(cx, cy, r + 3.0, 1.0, green(0.14)); // halo extérieur
+    draw_circle_lines(cx, cy, r, 2.0, green(0.40));
     for i in 1..=3 {
         let rr = r * i as f32 / 3.0;
-        draw_circle_lines(cx, cy, rr, 1.0, dim(0.35));
+        draw_circle_lines(cx, cy, rr, 1.0, dim(0.24));
     }
     // croix cardinales (horizontale + verticale, atténuées)
-    draw_line(cx - r, cy, cx + r, cy, 1.0, dim(0.22));
-    draw_line(cx, cy - r, cx, cy + r, 1.0, dim(0.22));
+    draw_line(cx - r, cy, cx + r, cy, 1.0, dim(0.16));
+    draw_line(cx, cy - r, cx, cy + r, 1.0, dim(0.16));
     // repères cardinaux N/E/S/W sur le bord extérieur
     for (dx, dy) in [(0.0, -1.0), (1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)] {
         draw_line(
@@ -725,7 +730,7 @@ pub fn draw_atc_radar(state: &mut GameState, camera: Point, shapes: &[Shape]) {
             cx + dx * r,
             cy + dy * r,
             1.5,
-            green(0.5),
+            green(0.38),
         );
     }
 
@@ -739,26 +744,26 @@ pub fn draw_atc_radar(state: &mut GameState, camera: Point, shapes: &[Shape]) {
     // passe « flou » : mêmes segments, plus épais et à peine visibles
     for i in (0..=SEGS).rev() {
         let a = angle - trail * (i as f32 / SEGS as f32);
-        let alpha = 0.25 * (1.0 - i as f32 / SEGS as f32);
+        let alpha = 0.16 * (1.0 - i as f32 / SEGS as f32);
         let end = Vec2::new(cx + r * a.sin(), cy - r * a.cos());
         draw_line(cx, cy, end.x, end.y, 4.5, green(alpha));
     }
     // passe nette : la traînée proprement dite
     for i in (0..=SEGS).rev() {
         let a = angle - trail * (i as f32 / SEGS as f32);
-        let alpha = 0.55 * (1.0 - i as f32 / SEGS as f32);
+        let alpha = 0.40 * (1.0 - i as f32 / SEGS as f32);
         let end = Vec2::new(cx + r * a.sin(), cy - r * a.cos());
         draw_line(cx, cy, end.x, end.y, 1.5, green(alpha));
     }
     // tête du balayage (phosphore, floutée par une triple passe)
     let head = Vec2::new(cx + r * angle.sin(), cy - r * angle.cos());
-    draw_line(cx, cy, head.x, head.y, 5.0, phosphor(0.22));
-    draw_line(cx, cy, head.x, head.y, 3.0, phosphor(0.40));
-    draw_line(cx, cy, head.x, head.y, 1.5, phosphor(0.65));
+    draw_line(cx, cy, head.x, head.y, 5.0, phosphor(0.13));
+    draw_line(cx, cy, head.x, head.y, 3.0, phosphor(0.25));
+    draw_line(cx, cy, head.x, head.y, 1.5, phosphor(0.42));
 
     // le vaisseau est le centre du scope : petite croix blanche (pas d'écho)
-    draw_line(cx - 4.0, cy, cx + 4.0, cy, 1.5, Color::new(1.0, 1.0, 1.0, 0.75));
-    draw_line(cx, cy - 4.0, cx, cy + 4.0, 1.5, Color::new(1.0, 1.0, 1.0, 0.75));
+    draw_line(cx - 4.0, cy, cx + 4.0, cy, 1.5, Color::new(1.0, 1.0, 1.0, 0.60));
+    draw_line(cx, cy - 4.0, cx, cy + 4.0, 1.5, Color::new(1.0, 1.0, 1.0, 0.60));
 
     // échos : les formes proches du vaisseau, positionnées comme sur la
     // minimap (1/10) mais centrées sur le scope. Un écho est peint **au
@@ -824,16 +829,17 @@ pub fn draw_atc_radar(state: &mut GameState, camera: Point, shapes: &[Shape]) {
         let size = if shape.who_i_am == WHOIAM_STATION { 2.4 } else { 1.7 };
         let ex = cx + e.x;
         let ey = cy + e.y;
-        // écho flouté : deux halos concentriques translucides + le cœur
-        draw_circle(ex, ey, size * 2.6, Color::new(c.r, c.g, c.b, light * 0.15));
-        draw_circle(ex, ey, size * 1.7, Color::new(c.r, c.g, c.b, light * 0.35));
+        // écho flouté : deux halos concentriques très translucides + le cœur
+        draw_circle(ex, ey, size * 2.6, Color::new(c.r, c.g, c.b, light * 0.10));
+        draw_circle(ex, ey, size * 1.7, Color::new(c.r, c.g, c.b, light * 0.24));
         draw_circle(ex, ey, size, Color::new(c.r, c.g, c.b, light));
     }
 
-    // légende au-dessus du scope (le bas de l'écran est occupé par le score)
+    // légende à droite du disque (au coin supérieur gauche, la place au-
+    // dessus du scope est prise par le HUD et la soute - le bord droit du
+    // disque, lui, est libre), à mi-hauteur du disque
     let label = "RADAR ATC";
-    let w = crate::font::measure_text(label, None, 12, 1.0).width;
-    draw_text_shadow(label, cx - w / 2.0, cy - r - 10.0, 12.0, dim(0.9));
+    draw_text_shadow(label, cx + r + 8.0, cy - 6.0, 12.0, dim(0.9));
 }
 
 /// Triangle texturé (ex `drawTexturedTriangle`) : UV dérivés de la géométrie
