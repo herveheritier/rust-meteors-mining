@@ -24,7 +24,9 @@ use crate::cosmonaut::{animate_eva_cosmonaut};
 // plafond et génération des météores) : constantes de la carte éponyme de
 // l'outil de gestion (src/marketplace.rs, généré)
 use crate::marketplace::*;
-use crate::garbage::{generate_garbages, moving_garbage, Garbage};
+use crate::garbage::{
+    Garbage, generate_garbages, generate_station_impact_garbages, moving_garbage,
+};
 use crate::generate::{
     create_alien, create_boss_meteor, create_mineral, create_shape, create_warp_gate,
     eject_cargo_minerals, release_meteor_minerals,
@@ -917,6 +919,27 @@ fn who_i_am_label(who: i32) -> &'static str {
     }
 }
 
+/// Applique 1 point de dégât à un triangle de la base : à
+/// `STATION_TRIANGLE_DAMAGE_MAX`, le triangle meurt (un trou s'ouvre dans
+/// l'anneau - les météores suivants peuvent passer à travers).
+fn apply_station_damage(tri: &mut Triangle) {
+    tri.damage += 1;
+    if tri.damage >= STATION_TRIANGLE_DAMAGE_MAX {
+        tri.life = 0;
+    }
+}
+
+/// Deux triangles de la base partagent-ils un **segment de côté** (2 sommets
+/// communs - un simple contact par un point ne compte pas) ? La station est
+/// statique (ni déplacement ni rotation) : les sommets locaux des triangles
+/// construits depuis le même mesh (`station.rs` / l'ex-`STATION_MESH`)
+/// coïncident à l'identique - la comparaison exacte suffit.
+fn station_triangles_share_edge(a: &Triangle, b: &Triangle) -> bool {
+    let a_vertices = [a.a, a.b, a.c];
+    let b_vertices = [b.a, b.b, b.c];
+    a_vertices.iter().filter(|p| b_vertices.contains(p)).count() >= 2
+}
+
 /// Physique et collisions pour une frame (ex sections « moves shapes »,
 /// « moves garbages », « detects collisions », « resolves collisions » de
 /// `mainLoop`).
@@ -1080,10 +1103,30 @@ fn collisions(
             // l'endommagent pas. Une seule fois par triangle par frame.
             if collid_by_who == WHOIAM_METEOR && !damaged_station_tris.contains(&i) {
                 damaged_station_tris.push(i);
-                let tri = &mut triangles[i];
-                tri.damage += 1;
-                if tri.damage >= STATION_TRIANGLE_DAMAGE_MAX {
-                    tri.life = 0;
+                apply_station_damage(&mut triangles[i]);
+                // explosion : le triangle de la base percuté **éjecte ses
+                // propres particules** (éclats rouille, distincts des débris
+                // blancs du météore qui explose) depuis son centre - la
+                // matière de l'anneau vole au point d'impact. (Le son
+                // d'explosion vient du triangle du météore qui explose dans
+                // la branche générique - pas de double son.)
+                generate_station_impact_garbages(garbages, &triangles[i], shapes, rng);
+                // le dégât se **propage** aux triangles en contact avec le
+                // triangle percuté (même forme, vivants, partage d'un
+                // **segment de côté** - un simple contact par un point ne
+                // compte pas) : un impact fissure l'anneau autour du point
+                // percuté - chaque voisin subit le même dégât, lui aussi une
+                // seule fois par frame (`damaged_station_tris` couvre les
+                // impacts directs et la propagation)
+                for j in shapes[shape_index].first_triangle..=shapes[shape_index].last_triangle {
+                    if j != i
+                        && !damaged_station_tris.contains(&j)
+                        && triangles[j].life > 0
+                        && station_triangles_share_edge(&triangles[i], &triangles[j])
+                    {
+                        damaged_station_tris.push(j);
+                        apply_station_damage(&mut triangles[j]);
+                    }
                 }
             }
         } else if who == WHOIAM_WARP_GATE {
@@ -2170,7 +2213,9 @@ mod tests {
             shapes[idx].life,
             initial_life
         );
-        assert_eq!(shapes[STATION_INDEX].life, 66);
+        // la station est désormais un mesh de `assets/anneauStation.json`
+        // (`station.rs`) : 48 faces vivantes (24 segments × 2 triangles)
+        assert_eq!(shapes[STATION_INDEX].life, 48);
         assert_eq!(triangles[shapes[STATION_INDEX].first_triangle].life, 1);
     }
 
@@ -3479,6 +3524,18 @@ mod tests {
         // dégâts cumulés, triangle encore vivant sous le seuil
         assert_eq!(triangles[0].damage, STATION_TRIANGLE_DAMAGE_MAX - 1);
         assert_eq!(triangles[0].life, 1);
+        // l'impact éjecte ses propres particules depuis le triangle percuté
+        // (éclats rouille, distincts des débris blancs du météore qui explose)
+        assert!(
+            garbages
+                .iter()
+                .any(|g| g.rgba_color == STATION_IMPACT_DEBRIS_COLOR),
+            "aucun éclat de la base après l'impact"
+        );
+        assert!(
+            garbages.iter().any(|g| g.rgba_color == 0xFFFFFFFF),
+            "aucun débris du météore après l'impact"
+        );
 
         // dernier impact : le triangle de la base meurt
         shapes[1].life = 1;
@@ -3494,6 +3551,116 @@ mod tests {
             0.0,
         );
         assert_eq!(triangles[0].life, 0, "le triangle de la base doit mourir au seuil");
+    }
+
+    #[test]
+    fn meteor_impact_damage_spreads_to_contacting_station_triangles() {
+        // le dégât d'un impact se **propage** aux triangles de la base qui
+        // partagent un **segment de côté** avec le triangle percuté (2
+        // sommets communs) : un impact fissure l'anneau autour du point
+        // percuté. Le triangle 0 (percuté) et le triangle 1 (contact par le
+        // côté (0,0)-(10,0)) gagnent chacun 1 point par impact ; le triangle
+        // 2 (contact par le seul sommet (0,0)) et le triangle 3 (isolé)
+        // restent intacts. Au seuil, le percuté et son voisin meurent
+        // ensemble (le trou s'ouvre autour de l'impact).
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_STATION, 0, 3, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 4, 4, 2.0, 2.0),
+        ];
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 0, 0.0, 0.0),
+            test_triangle(2, 0, 0.0, 0.0),
+            test_triangle(3, 0, 0.0, 0.0),
+            test_triangle(4, 1, 2.0, 2.0),
+        ];
+        // triangle 1 : (0,0)-(10,0)-(5,-10) - partage le côté (0,0)-(10,0)
+        // avec le triangle 0, loin du météore (y négatif)
+        triangles[1].a = Point::new(0.0, 0.0);
+        triangles[1].b = Point::new(10.0, 0.0);
+        triangles[1].c = Point::new(5.0, -10.0);
+        triangles[1].center = Point::new((0.0 + 10.0 + 5.0) / 3.0, (0.0 + 0.0 - 10.0) / 3.0);
+        triangles[1].real_a = triangles[1].a;
+        triangles[1].real_b = triangles[1].b;
+        triangles[1].real_c = triangles[1].c;
+        triangles[1].real_center = triangles[1].center;
+        triangles[1].real_min = Point::new(0.0, -10.0);
+        triangles[1].real_max = Point::new(10.0, 0.0);
+        // triangle 2 : (-10,0)-(0,0)-(0,-10) - ne partage que le sommet (0,0)
+        // avec le triangle 0 : pas un contact, pas de propagation
+        triangles[2].a = Point::new(-10.0, 0.0);
+        triangles[2].b = Point::new(0.0, 0.0);
+        triangles[2].c = Point::new(0.0, -10.0);
+        triangles[2].center = Point::new((-10.0 + 0.0 + 0.0) / 3.0, (0.0 + 0.0 - 10.0) / 3.0);
+        triangles[2].real_a = triangles[2].a;
+        triangles[2].real_b = triangles[2].b;
+        triangles[2].real_c = triangles[2].c;
+        triangles[2].real_center = triangles[2].center;
+        triangles[2].real_min = Point::new(-10.0, -10.0);
+        triangles[2].real_max = Point::new(0.0, 0.0);
+        // triangle 3 : isolé, aucun contact avec les autres
+        triangles[3].a = Point::new(100.0, 100.0);
+        triangles[3].b = Point::new(110.0, 100.0);
+        triangles[3].c = Point::new(100.0, 110.0);
+        triangles[3].center = Point::new((100.0 + 110.0 + 100.0) / 3.0, (100.0 + 100.0 + 110.0) / 3.0);
+        triangles[3].real_a = triangles[3].a;
+        triangles[3].real_b = triangles[3].b;
+        triangles[3].real_c = triangles[3].c;
+        triangles[3].real_center = triangles[3].center;
+        triangles[3].real_min = Point::new(100.0, 100.0);
+        triangles[3].real_max = Point::new(110.0, 110.0);
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut rng,
+            None,
+            0.0,
+        );
+
+        // le triangle percuté ET son voisin par un côté gagnent 1 point ;
+        // le contact par un seul point ne propage pas, l'isolé non plus
+        assert_eq!(triangles[0].damage, 1);
+        assert_eq!(triangles[1].damage, 1);
+        assert_eq!(triangles[2].damage, 0, "un contact par un point ne doit pas propager");
+        assert_eq!(triangles[3].damage, 0);
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(triangles[1].life, 1);
+        assert_eq!(triangles[2].life, 1);
+        assert_eq!(triangles[3].life, 1);
+
+        // série d'impacts : le voisin par un côté suit le percuté et meurt
+        // avec lui au seuil (le trou s'ouvre autour de l'impact) ; le
+        // contact par un point et l'isolé restent intacts
+        for _ in 0..STATION_TRIANGLE_DAMAGE_MAX - 1 {
+            shapes[1].life = 1;
+            triangles[4].life = 1;
+            collisions(
+                &mut state,
+                &mut shapes,
+                &mut triangles,
+                &mut garbages,
+                &mut elements,
+                &mut rng,
+                None,
+                0.0,
+            );
+        }
+        assert_eq!(triangles[0].damage, STATION_TRIANGLE_DAMAGE_MAX);
+        assert_eq!(triangles[1].damage, STATION_TRIANGLE_DAMAGE_MAX);
+        assert_eq!(triangles[2].damage, 0);
+        assert_eq!(triangles[3].damage, 0);
+        assert_eq!(triangles[0].life, 0, "le triangle percuté meurt au seuil");
+        assert_eq!(triangles[1].life, 0, "le voisin par un côté meurt au seuil");
+        assert_eq!(triangles[2].life, 1);
+        assert_eq!(triangles[3].life, 1);
     }
 
     #[test]

@@ -293,9 +293,11 @@ pub struct Triangle {
     pub b_shape_border: bool,
     pub c_shape_border: bool,
     /// Niveau de dégâts du triangle (base uniquement - `WHOIAM_STATION`) :
-    /// chaque impact de météore ajoute 1 ; à `STATION_TRIANGLE_DAMAGE_MAX`,
-    /// le triangle meurt (un trou s'ouvre dans l'anneau). Affiché par le
-    /// style MESH (teinte vers le rouge). 0 pour toutes les autres formes.
+    /// chaque impact de météore ajoute 1, **propagé** aux triangles qui
+    /// partagent un **segment de côté** avec le triangle percuté (2 sommets
+    /// communs, `game.rs`) ; à `STATION_TRIANGLE_DAMAGE_MAX`, le triangle
+    /// meurt (un trou s'ouvre dans l'anneau). Affiché par le style MESH
+    /// (teinte vers le rouge). 0 pour toutes les autres formes.
     pub damage: i32,
     /// Armure d'un triangle du météore spécial (boss) : nombre de **balles**
     /// restantes avant que la balle suivante ne détruise le triangle (0 =

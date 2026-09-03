@@ -6,8 +6,10 @@
 //! `is_vertex_in_shape`, `choose_border_segment`, `meshes_to_shape`,
 //! `resize_shape`, `create_specific_shape`.
 //!
-//! Les meshes (station, alien, minerai, balle) étaient des instructions `DATA`
-//! du code QB64 (voir `docs/ASSETS.md` §3) ; ils deviennent des constantes ici.
+//! Les meshes (alien, minerai, balle) étaient des instructions `DATA` du code
+//! QB64 (voir `docs/ASSETS.md` §3) ; ils deviennent des constantes ici (la
+//! station est désormais chargée depuis `assets/anneauStation.json`, voir
+//! `station.rs`).
 
 use rand::Rng;
 use std::f64::consts::TAU;
@@ -25,84 +27,6 @@ use crate::geom::{
 /// Chaque pack de `n` points produit `n-2` triangles : `(p1,p2,p3)`,
 /// `(p2,p3,p4)`, … (format `meshesToShape`).
 pub type Mesh = &'static [&'static [(f64, f64)]];
-
-/// Station - anneau lisse (1 pack de 66 points → 64 triangles).
-///
-/// Dérive volontaire de l'original (`reference/assets/station.bas`, anneau
-/// étoilé à 16 dents : 34 points → 32 triangles) : les bords intérieur
-/// (r = 110) et extérieur (r = 162) sont maintenant des polygones réguliers
-/// à 32 côtés, quasi circulaires à l'échelle du rendu. Les points alternent
-/// extérieur/intérieur (éventail glissant de `meshesToShape`) pour préserver
-/// le trou central ; les deux derniers répètent les deux premiers pour
-/// fermer l'anneau, comme l'original.
-pub const STATION_MESH: Mesh = &[&[
-    (162.0, 0.0),
-    (110.0, 0.0),
-    (158.9, -31.6),
-    (107.9, -21.5),
-    (149.7, -62.0),
-    (101.6, -42.1),
-    (134.7, -90.0),
-    (91.5, -61.1),
-    (114.6, -114.6),
-    (77.8, -77.8),
-    (90.0, -134.7),
-    (61.1, -91.5),
-    (62.0, -149.7),
-    (42.1, -101.6),
-    (31.6, -158.9),
-    (21.5, -107.9),
-    (0.0, -162.0),
-    (0.0, -110.0),
-    (-31.6, -158.9),
-    (-21.5, -107.9),
-    (-62.0, -149.7),
-    (-42.1, -101.6),
-    (-90.0, -134.7),
-    (-61.1, -91.5),
-    (-114.6, -114.6),
-    (-77.8, -77.8),
-    (-134.7, -90.0),
-    (-91.5, -61.1),
-    (-149.7, -62.0),
-    (-101.6, -42.1),
-    (-158.9, -31.6),
-    (-107.9, -21.5),
-    (-162.0, 0.0),
-    (-110.0, 0.0),
-    (-158.9, 31.6),
-    (-107.9, 21.5),
-    (-149.7, 62.0),
-    (-101.6, 42.1),
-    (-134.7, 90.0),
-    (-91.5, 61.1),
-    (-114.6, 114.6),
-    (-77.8, 77.8),
-    (-90.0, 134.7),
-    (-61.1, 91.5),
-    (-62.0, 149.7),
-    (-42.1, 101.6),
-    (-31.6, 158.9),
-    (-21.5, 107.9),
-    (0.0, 162.0),
-    (0.0, 110.0),
-    (31.6, 158.9),
-    (21.5, 107.9),
-    (62.0, 149.7),
-    (42.1, 101.6),
-    (90.0, 134.7),
-    (61.1, 91.5),
-    (114.6, 114.6),
-    (77.8, 77.8),
-    (134.7, 90.0),
-    (91.5, 61.1),
-    (149.7, 62.0),
-    (101.6, 42.1),
-    (158.9, 31.6),
-    (107.9, 21.5),
-    (162.0, 0.0),
-    (110.0, 0.0),
-]];
 
 /// Alien - `reference/assets/gripper-meshes.bas` (4 packs : 16+16+5+8 → 37 triangles).
 pub const ALIEN_MESH: Mesh = &[
@@ -885,38 +809,69 @@ mod tests {
         assert_eq!(free_shape(&shapes, 7), None);
     }
 
+    /// Petit anneau d'essai (éventail glissant fermé, comme l'ex-`STATION_MESH`
+    /// de la station) : bords r 10/6, les deux derniers points répètent les
+    /// deux premiers pour fermer l'anneau (18 points → 16 triangles sur 18
+    /// emplacements).
+    const TEST_RING_MESH: Mesh = &[&[
+        (10.0, 0.0),
+        (6.0, 0.0),
+        (7.07, -7.07),
+        (4.24, -4.24),
+        (0.0, -10.0),
+        (0.0, -6.0),
+        (-7.07, -7.07),
+        (-4.24, -4.24),
+        (-10.0, 0.0),
+        (-6.0, 0.0),
+        (-7.07, 7.07),
+        (-4.24, 4.24),
+        (0.0, 10.0),
+        (0.0, 6.0),
+        (7.07, 7.07),
+        (4.24, 4.24),
+        (10.0, 0.0),
+        (6.0, 0.0),
+    ]];
+
     #[test]
-    fn station_mesh_builds_64_triangles_on_66_slots() {
+    fn ring_mesh_builds_16_triangles_on_18_slots() {
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         let mut shape = Shape::default();
-        let idx = meshes_to_shape(&mut shape, &mut shapes, &mut triangles, STATION_MESH);
+        let idx = meshes_to_shape(&mut shape, &mut shapes, &mut triangles, TEST_RING_MESH);
         assert_eq!(idx, 0);
-        assert_eq!(shape.life, 66); // points_qty (fidèle à l'original)
+        assert_eq!(shape.life, 18); // points_qty (fidèle à l'original)
         let alive = triangles[shape.first_triangle..=shape.last_triangle]
             .iter()
             .filter(|t| t.life > 0)
             .count();
-        assert_eq!(alive, 64);
+        assert_eq!(alive, 16);
         // ids séquentiels, partant de first_triangle
-        assert_eq!(triangles[shape.first_triangle].id as usize, shape.first_triangle);
-        assert_eq!(triangles[shape.first_triangle + 63].id as usize, shape.first_triangle + 63);
+        assert_eq!(
+            triangles[shape.first_triangle].id as usize,
+            shape.first_triangle
+        );
+        assert_eq!(
+            triangles[shape.first_triangle + 15].id as usize,
+            shape.first_triangle + 15
+        );
     }
 
     #[test]
     fn mesh_triangles_slide_consecutively_like_the_original() {
         // L'original fait glisser p1 et p2 (`p1 = p2: p2 = p3`) : le triangle
         // k doit être (pack[k], pack[k+1], pack[k+2]). Un éventail fixe depuis
-        // pack[0] remplirait le trou de la station (anneau) - test de garde.
+        // pack[0] remplirait le trou de l'anneau (la station) - test de garde.
         let mut shapes = Vec::new();
         let mut triangles = Vec::new();
         let mut shape = Shape::default();
-        meshes_to_shape(&mut shape, &mut shapes, &mut triangles, STATION_MESH);
-        for k in 0..64 {
+        meshes_to_shape(&mut shape, &mut shapes, &mut triangles, TEST_RING_MESH);
+        for k in 0..16 {
             let t = &triangles[shape.first_triangle + k];
-            let (ax, ay) = STATION_MESH[0][k];
-            let (bx, by) = STATION_MESH[0][k + 1];
-            let (cx, cy) = STATION_MESH[0][k + 2];
+            let (ax, ay) = TEST_RING_MESH[0][k];
+            let (bx, by) = TEST_RING_MESH[0][k + 1];
+            let (cx, cy) = TEST_RING_MESH[0][k + 2];
             assert_eq!((t.a.x, t.a.y), (ax, ay), "sommet a du triangle {k}");
             assert_eq!((t.b.x, t.b.y), (bx, by), "sommet b du triangle {k}");
             assert_eq!((t.c.x, t.c.y), (cx, cy), "sommet c du triangle {k}");

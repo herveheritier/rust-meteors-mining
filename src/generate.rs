@@ -465,30 +465,22 @@ pub fn create_alien(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
 }
 
 /// Crée la station au centre du monde (ex `createStation`).
+///
+/// La station est un **mesh « meshes-designer »** (`assets/anneauStation.json`,
+/// chargé par `station.rs` - mis à l'échelle vers l'anneau du jeu, rayon
+/// extérieur ~162), comme le vaisseau, le cosmonaute et le portail : elle
+/// remplace l'ancien anneau codé en dur (`STATION_MESH`, retiré de
+/// `shape.rs`). Le mesh ne porte que la **géométrie** : le rendu est inchangé
+/// (anneau texturé `station.png` dans le style TEXTURED, opacité décroissante
+/// dans COLORED, arêtes rougies dans MESH - voir `station.rs`).
 pub fn create_station(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
-    let mut shape = Shape::default();
-    let idx = meshes_to_shape(&mut shape, shapes, triangles, STATION_MESH);
-    resize_shape(1.0, &mut shape, triangles);
-    shape.who_i_am = WHOIAM_STATION;
-    shape.is_collider = true;
-    shape.shape_color = 0xFF808000;
-    shape.texture = TEXTURE_STATION;
-    shape.position = Point::new(0.0, 0.0);
-    shape.direction = 0.0;
-    shape.velocity = 0.0;
-    shape.orientation = 0.0;
-    shape.rotation = 0.0;
-    shapes[idx] = shape;
-    // NB : l'original recalcule (par bug) le centre du joueur `shapes[0]` ici ;
-    // l'intention est clairement de calculer celui de la station (résultat
-    // identique : la station est centrée sur (0,0)) - on le fait explicitement.
-    compute_shape_center(&mut shapes[idx], triangles);
-    // NB dérive volontaire de l'original : celui-ci forçait `radius = 36`,
-    // bien plus petit que l'anneau visible (r ≈ 110-162). Le pré-filtre de
-    // proximité de `game.rs` (`sum_radius`) laissait alors les météores
-    // traverser l'anneau sans aucun test. On garde le rayon calculé (la
-    // géométrie réelle) : c'est la détection de collision par triangles
-    // (SAT) qui décide de la collision avec la base.
+    // `build_station` construit la forme (slot réutilisé ou alloué) puis
+    // recalcule centre et rayon comme l'ancien chemin (`meshes_to_shape` +
+    // `compute_shape_center`) : la station garde son rayon géométrique réel
+    // (r ≈ 110-162, pas de rayon forcé à 36) - le pré-filtre de proximité de
+    // `game.rs` (`sum_radius`) et la détection par triangles (SAT) s'appuient
+    // dessus.
+    crate::station::build_station(shapes, triangles);
 }
 
 /// Crée un minerai à partir d.un triangle détruit (ex `createMineral`).
@@ -1173,8 +1165,8 @@ mod tests {
         let player_faces = crate::vaisseau::vaisseau_visible_face_count(&state);
         assert_eq!(shapes[PLAYER_INDEX].life as usize, player_faces);
         assert_eq!(shapes[STATION_INDEX].who_i_am, WHOIAM_STATION);
-        // joueur (plage maximale) + station (66 emplacements)
-        assert_eq!(triangles.len(), crate::vaisseau::vaisseau_face_count() + 66);
+        // joueur (plage maximale) + station (48 faces de `assets/anneauStation.json`)
+        assert_eq!(triangles.len(), crate::vaisseau::vaisseau_face_count() + 48);
         // le rayon de la station couvre l'anneau visible (r ≈ 110-162) : la
         // collision est décidée par la détection de triangles (SAT), pas par
         // un petit rayon forcé (dérive volontaire - voir `create_station`).

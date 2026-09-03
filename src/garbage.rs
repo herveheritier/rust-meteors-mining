@@ -1,4 +1,4 @@
-//! Débris (éclats de météore).
+//! Débris (éclats de météore et particules d'impact sur la base).
 //!
 //! Portage de `garbage_type.bas` : `Garbage`, `generate_garbages`,
 //! `moving_garbage` (le dessin `draw_garbage` viendra avec le rendu, Phase 2).
@@ -6,6 +6,7 @@
 use rand::Rng;
 use std::f64::consts::TAU;
 
+use crate::config::{STATION_IMPACT_DEBRIS_COLOR, STATION_IMPACT_DEBRIS_SPEED};
 use crate::marketplace::{GARBAGE_PER_TRIANGLE, GARBAGE_SPIN};
 use crate::geom::{Point, Triangle};
 use crate::shape::Shape;
@@ -53,7 +54,8 @@ impl Default for Garbage {
     }
 }
 
-/// Génère 12 débris à partir d'un triangle détruit (ex `generateGarbages`).
+/// Génère 12 débris blancs à partir d'un triangle détruit (ex
+/// `generateGarbages`).
 ///
 /// Les débris morts (`life = 0`) sont réutilisés avant d'étendre le tableau.
 /// NB : l'original démarrait avec un tableau « vide » contenant un slot à
@@ -65,20 +67,56 @@ pub fn generate_garbages(
     shapes: &[Shape],
     rng: &mut impl Rng,
 ) {
+    generate_garbages_with(garbages, t, shapes, rng, 0xFFFFFFFF, None);
+}
+
+/// Particules d'un **impact sur la base** : éclats éjectés par le triangle
+/// de la station percuté par un météore (branche `WHOIAM_STATION` de
+/// `game.rs`). Couleur rouille dédiée (`STATION_IMPACT_DEBRIS_COLOR`) et
+/// **vitesse d'éjection propre** (`STATION_IMPACT_DEBRIS_SPEED`) : la
+/// station est immobile, les éclats jaillissent du point d'impact (les
+/// débris de météore, eux, héritent de la vitesse de leur forme).
+pub fn generate_station_impact_garbages(
+    garbages: &mut Vec<Garbage>,
+    t: &Triangle,
+    shapes: &[Shape],
+    rng: &mut impl Rng,
+) {
+    generate_garbages_with(
+        garbages,
+        t,
+        shapes,
+        rng,
+        STATION_IMPACT_DEBRIS_COLOR,
+        Some(STATION_IMPACT_DEBRIS_SPEED),
+    );
+}
+
+/// Implémentation commune : couleur et vitesse d'éjection paramétrables
+/// (`None` = vitesse héritée de la forme du triangle).
+fn generate_garbages_with(
+    garbages: &mut Vec<Garbage>,
+    t: &Triangle,
+    shapes: &[Shape],
+    rng: &mut impl Rng,
+    rgba_color: u32,
+    ejection_velocity: Option<f64>,
+) {
     let shape_velocity = shapes[t.shape_index as usize].velocity;
+    let base_velocity = ejection_velocity.unwrap_or(shape_velocity);
     for _ in 0..GARBAGE_PER_TRIANGLE {
         let g = Garbage {
             position: t.real_center,
             radius: rng.r#gen::<f64>() * 2.0,
             direction: rng.r#gen::<f64>() * TAU,
-            velocity: shape_velocity * (1.0 + rng.r#gen::<f64>() * 3.0),
+            velocity: base_velocity * (1.0 + rng.r#gen::<f64>() * 3.0),
             orientation: rng.r#gen::<f64>() * TAU,
             // tournoiement propre : phase et vitesse angulaire aléatoires,
             // signe aléatoire (les éclats tournent dans les deux sens)
             angle: rng.r#gen::<f64>() * TAU,
             spin_rate: GARBAGE_SPIN * (1.0 - 2.0 * rng.r#gen::<f64>()),
             life: ((rng.r#gen::<f64>() * 255.0) as i32) / 7,
-            rgba_color: 0xFFFFFFFF,
+            rgba_color,
         };
         // cherche un slot mort à réutiliser
         let mut reused = None;
@@ -198,5 +236,33 @@ mod tests {
             if g.spin_rate > 0.0 { pos += 1; } else { neg += 1; }
         }
         assert!(pos > 0 && neg > 0, "les deux signes de rotation doivent apparaître");
+    }
+
+    #[test]
+    fn station_impact_garbages_are_colored_and_ejected() {
+        // les particules d'un impact sur la base portent la couleur dédiée
+        // (éclats rouille) et une vitesse d'éjection propre : la station est
+        // immobile (velocity 0), sans elle elles resteraient sur place
+        let mut rng = ::rand_chacha::ChaCha12Rng::seed_from_u64(42);
+        let mut shapes = Vec::new();
+        let station = Shape {
+            velocity: 0.0,
+            ..Default::default()
+        };
+        shapes.push(station);
+        let mut t = Triangle::default();
+        t.create(
+            crate::geom::Point::new(0.0, 0.0),
+            crate::geom::Point::new(10.0, 0.0),
+            crate::geom::Point::new(5.0, 8.0),
+        );
+        t.shape_index = 0;
+        let mut garbages = Vec::new();
+        generate_station_impact_garbages(&mut garbages, &t, &shapes, &mut rng);
+        assert_eq!(garbages.len(), GARBAGE_PER_TRIANGLE);
+        for g in &garbages {
+            assert_eq!(g.rgba_color, STATION_IMPACT_DEBRIS_COLOR);
+            assert!(g.velocity > 0.0, "éclat sans vitesse d'éjection");
+        }
     }
 }

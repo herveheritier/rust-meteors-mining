@@ -923,8 +923,28 @@ fn draw_textured_triangle(
     let uv_a = uv(t.a.x, t.a.y);
     let uv_b = uv(t.b.x, t.b.y);
     let uv_c = uv(t.c.x, t.c.y);
-    // teinte blanche à l'opacité demandée (fondu enchaîné de la récupération)
-    draw_triangle_texture(texture, a, b, c, uv_a, uv_b, uv_c, Color::new(1.0, 1.0, 1.0, fade));
+    // teinte blanche à l'opacité demandée (fondu enchaîné de la récupération) ;
+    // NB base endommagée : la teinte s'assombrit vers le brun/rouille à mesure
+    // que les impacts s'accumulent (`t.damage` / `STATION_TRIANGLE_DAMAGE_MAX`),
+    // comme le style MESH rougeoie les arêtes (les triangles morts ont déjà
+    // disparu - la branche `t.life <= 0` ci-dessus).
+    let tint = if shape.who_i_am == WHOIAM_STATION && t.damage > 0 {
+        let f = (t.damage as f32 / STATION_TRIANGLE_DAMAGE_MAX as f32).min(1.0);
+        // 1.0 (blanc) → teinte sombre brûlée : le vert de la texture s'éteint
+        // et le rouge/marron des dommages prend le dessus au fil des impacts
+        Color::new(1.0 - 0.65 * f, 1.0 - 0.45 * f, 1.0 - 0.55 * f, fade)
+    } else {
+        Color::new(1.0, 1.0, 1.0, fade)
+    };
+    draw_triangle_texture(texture, a, b, c, uv_a, uv_b, uv_c, tint);
+
+    // fissures de la base endommagée : traits sombres en pointillés, de plus
+    // en plus nombreux et opaques à mesure que les dégâts s'accumulent
+    // (`t.damage` / `STATION_TRIANGLE_DAMAGE_MAX`) - dessinés par-dessus la
+    // texture du triangle, comme le style MESH rougeoie les arêtes
+    if shape.who_i_am == WHOIAM_STATION && t.damage > 0 {
+        draw_station_cracks(a, b, c, t, fade);
+    }
 
     if t.element > 0 {
         let center = screen_point(t.real_center, camera, world);
@@ -934,6 +954,45 @@ fn draw_textured_triangle(
             1.2,
             argb_to_color(elements[t.element as usize].color),
         );
+    }
+}
+
+/// Fissures d'un triangle endommagé de la base (style TEXTURED) : deux
+/// segments de fissure par niveau de dégâts (`t.damage`), orientés depuis le
+/// centre du triangle vers deux de ses arêtes - l'anneau se fissure de façon
+/// visible avant de céder (le triangle meurt à `STATION_TRIANGLE_DAMAGE_MAX`,
+/// un trou s'ouvre). Traits sombres semi-transparents, en pointillés
+/// (`draw_dashed_line`), dont l'opacité croît avec les dégâts. La fissure est
+/// générée de façon **déterministe** à partir de `t.id` : stable d'une frame
+/// à l'autre (pas de scintillement). Dessinée dans l'espace écran.
+fn draw_station_cracks(a: Vec2, b: Vec2, c: Vec2, t: &Triangle, fade: f32) {
+    // prétire pseudo-aléatoire déterministe depuis l.id du triangle
+    let mut s = (t.id as u32).wrapping_mul(2654435761);
+    let mut next = |range: f32| {
+        // xorshift simple : assez bon pour positionner des fissures
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        (s as f32 / u32::MAX as f32) * range
+    };
+    let f = (t.damage as f32 / STATION_TRIANGLE_DAMAGE_MAX as f32).min(1.0);
+    let alpha = (0.35 + 0.55 * f) * fade;
+    let color = Color::new(0.10, 0.06, 0.05, alpha);
+    // segments : du centre du triangle vers un point d.un côté (2 par niveau)
+    for _ in 0..t.damage * 2 {
+        let side = (next(3.0) as usize) % 3;
+        let along = 0.2 + next(0.6); // 0.2..0.8 le long du côté choisi
+        // point d.arrivée sur un des trois côtés (barycentrique)
+        let p = match side {
+            0 => vec2(a.x + (b.x - a.x) * along, a.y + (b.y - a.y) * along),
+            1 => vec2(b.x + (c.x - b.x) * along, b.y + (c.y - b.y) * along),
+            _ => vec2(c.x + (a.x - c.x) * along, c.y + (a.y - c.y) * along),
+        };
+        // point de départ : centre du triangle, décalé (fissure pas trop
+        // régulière)
+        let center = vec2((a.x + b.x + c.x) / 3.0, (a.y + b.y + c.y) / 3.0);
+        let jitter = vec2(next(6.0) - 3.0, next(6.0) - 3.0);
+        draw_dashed_line(center + jitter, p, color);
     }
 }
 
@@ -1014,8 +1073,27 @@ fn draw_colored_triangle(
         return;
     }
     // NB : chemin complet - `draw_triangle` (macroquad) est masqué par la
-    // fonction locale du même nom (triangles non texturés de l'original)
-    macroquad::shapes::draw_triangle(a, b, c, fade_color(triangle_color(t, shape, elements), fade));
+    // fonction locale du même nom (triangles non texturés de l'original).
+    // NB base endommagée : les triangles de la station deviennent de plus en
+    // plus **transparents** à mesure que les impacts s'accumulent
+    // (`t.damage` / `STATION_TRIANGLE_DAMAGE_MAX`) - comme le style TEXTURED
+    // les brunit et le style MESH rougeoie leurs arêtes. À `STATION_TRIANGLE_DAMAGE_MAX`,
+    // le triangle meurt (le trou s'ouvre dans l'anneau, pointillés ci-dessus).
+    let base_color = triangle_color(t, shape, elements);
+    let color = if shape.who_i_am == WHOIAM_STATION && t.damage > 0 {
+        let f = (t.damage as f32 / STATION_TRIANGLE_DAMAGE_MAX as f32).min(1.0);
+        // opacité résiduelle : 100 % → 25 % sur les 4 impacts qui précèdent
+        // la destruction (à 5 le triangle est mort)
+        Color::new(
+            base_color.r,
+            base_color.g,
+            base_color.b,
+            base_color.a * (1.0 - 0.75 * f),
+        )
+    } else {
+        base_color
+    };
+    macroquad::shapes::draw_triangle(a, b, c, fade_color(color, fade));
     draw_element_dot(t, camera, elements, world);
 }
 

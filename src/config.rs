@@ -242,9 +242,23 @@ pub const STATION_DOCK_DISTANCE: f64 = 15.0;
 
 /// Nombre d'impacts de météore qu'un triangle de la **base** encaisse avant
 /// d'être détruit : chaque collision météore/station ajoute 1 point de dégât
-/// au triangle percuté ; à `STATION_TRIANGLE_DAMAGE_MAX`, le triangle meurt
-/// (un trou s'ouvre dans l'anneau - les météores peuvent passer à travers).
+/// au triangle percuté, **propagé** aux triangles qui partagent un **segment
+/// de côté** avec lui (2 sommets communs - l'impact fissure l'anneau autour
+/// du point percuté) ;
+/// à `STATION_TRIANGLE_DAMAGE_MAX`, le triangle meurt (un trou s'ouvre dans
+/// l'anneau - les météores peuvent passer à travers).
 pub const STATION_TRIANGLE_DAMAGE_MAX: i32 = 5;
+
+/// Couleur ARGB (AARRGGBB) des éclats projetés par un triangle de la base
+/// percuté par un météore : teinte rouille/brûlée (comme la teinte de dégâts
+/// du style TEXTURED), distincte des débris blancs du météore qui explose.
+pub const STATION_IMPACT_DEBRIS_COLOR: u32 = 0xFFFF9040;
+
+/// Vitesse d'éjection des éclats d'un impact sur la base (unités, comme
+/// `GARBAGE_PER_TRIANGLE`) : la station est immobile, les éclats reçoivent
+/// une vitesse propre pour jaillir du point d'impact (les débris de météore
+/// héritent, eux, de la vitesse de leur forme).
+pub const STATION_IMPACT_DEBRIS_SPEED: f64 = 2.5;
 
 /// Fraction de la **largeur du monde** franchie par un saut de portail
 /// (`WHOIAM_WARP_GATE`) : le vaisseau est téléporté d'environ 25 % de la
