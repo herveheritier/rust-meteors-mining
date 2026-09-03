@@ -390,11 +390,10 @@ pub fn draw_docking_line(
 /// rejoint la base) : pendant la récupération (`state.eva_recovery > 0`), un
 /// cordon **orange** jaillit de l'anneau vers le cosmonaute (déploiement sur
 /// les ~30 % du début, pendant lesquels il **continue sur son élan** - le
-/// cordon suit sa position qui dérive) puis, tendu, le **ramène sur l'anneau**
-/// - son ondulation s'affaisse à mesure que la tension monte ; pendant le
-/// fondu enchaîné (`state.eva_crossfade > 0`), il reste tendu et **s'efface
-/// avec le cosmonaute**. Dessiné **sous le cosmonaute** (appelé avant son
-/// rendu).
+/// cordon suit sa position qui dérive) puis, tendu, le **ramène sur l'anneau** ;
+/// son ondulation s'affaisse à mesure que la tension monte. Pendant le fondu
+/// enchaîné (`state.eva_crossfade > 0`), il reste tendu et **s'efface avec le
+/// cosmonaute**. Dessiné **sous le cosmonaute** (appelé avant son rendu).
 pub fn draw_eva_recovery_cable(
     state: &GameState,
     camera: Point,
