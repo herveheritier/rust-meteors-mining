@@ -140,8 +140,11 @@ cp web/index.html web/gl.js target/wasm32-unknown-unknown/release/rust-meteors-m
 python3 -m http.server 8000 --directory /tmp/site   # ouvrir http://localhost:8000/
 ```
 
-Sur le web, la télécommande HTTP, la manette et le son sont désactivés
+Sur le web, la télécommande HTTP et la manette sont désactivées
 (compatibilité plateforme) ; restent le clavier et le joystick tactile.
+Le son, lui, fonctionne (Web Audio API, imports JS définis dans
+`web/index.html`) : il démarre au premier clic ou touche, la politique
+d'autoplay des navigateurs bloquant tout son avant un geste utilisateur.
 Les réglages et la progression des scénarios sont **persistés dans le
 navigateur** (localStorage, clé `meteors-mining/config` - le même contenu
 texte `clé=valeur` que le fichier natif, lu et écrit via deux imports JS

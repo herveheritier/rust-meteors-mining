@@ -18,7 +18,8 @@ Le portage suit la boucle du BASIC original (`mainLoop` / `titleLoop`) :
 - **rendu** : `render.rs` et ses sous-modules `hud`, `dock_render`,
   `shop_render`, `ui_boxes` (découpage maintenabilité du 20/08/2026),
   police embarquée `font.rs` ;
-- **audio** : `audio.rs` (backends quad-snd/miniaudio, no-op sur wasm).
+- **audio** : `audio.rs` (backends quad-snd/miniaudio ; sur wasm, la Web
+  Audio API est branchée par les imports JS de `web/index.html`).
 
 ## 2. Structure du dépôt
 
@@ -36,7 +37,8 @@ docs/PORTAGE.md  ce document
 - Natif : `cargo run --release` (édition 2024, MSRV 1.85).
 - Web : `cargo build --release --target wasm32-unknown-unknown` (la
   télécommande HTTP, le gamepad et X11 sont gated `cfg` hors wasm ; le son
-  est silencieux sur le web - shims no-op `src/wasm_audio_shims.rs`).
+  est branché sur la Web Audio API par `web/index.html` - décodage
+  asynchrone, reprise au premier geste utilisateur pour l'autoplay).
 - CI : `cargo fmt --check`, `cargo clippy --all-targets -D warnings`,
   `cargo test`, builds natif + wasm ; release sur tag `v*`.
 

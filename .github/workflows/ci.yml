@@ -35,14 +35,18 @@ jobs:
       # Tests unitaires (physique, collisions, minage, accostage, scénarios…)
       - name: Tests
         run: cargo test --all-targets
-      # Validation syntaxique des pages des outils (HTML+JS autonomes) :
-      # le script Node extrait et compile chaque bloc <script> inline.
-      - name: Synthaxe JS des éditeurs
+      # Validation syntaxique des pages HTML+JS autonomes (éditeurs + page web
+      # du jeu) : le script Node extrait et compile chaque bloc <script> inline.
+      # web/index.html embarque la glue audio Web Audio (mm_audio_*) du build
+      # wasm : une erreur de syntaxe y rendrait le son muet sans échec de
+      # compilation Rust, d'où sa présence ici.
+      - name: Synthaxe JS des pages
         run: |
           set -e
           node .github/scripts/validate-editor-js.mjs \
             tools/marketplace-editor/index.html \
-            tools/scenario-editor/index.html
+            tools/scenario-editor/index.html \
+            web/index.html
       # Build release complet (binaire autonome) : compile au moins une fois
       # avec le profil release (lto + strip)
       - name: Build release

@@ -129,6 +129,157 @@
             }
         };
     </script>
+    <!-- Audio (quad-snd) : les 9 fonctions C de `quad-snd` (src/web_snd.rs -
+         `audio_init`, `audio_add_buffer`…) sont définies côté Rust par
+         `src/wasm_audio_shims.rs` (sans quoi rust-lld échoue : ces extern "C"
+         n'ont pas d'attribut d'import wasm) et relayent vers les imports
+         `env.mm_audio_*` fournis ici, adossés à la Web Audio API. Sans ce
+         bloc, le jeu est muet sur le web. Mêmes conventions que la
+         persistance (`env.mmcfg_*`) : imports bruts sous `env`, pas de
+         wasm-bindgen. -->
+    <script>
+        (function () {
+            "use strict";
+            var audioCtx = null;
+            var buffers = [];   // id -> { raw, audioBuffer, loading }
+            var playbacks = []; // id -> { source, gain, bufferId }
+            var nextBufferId = 1;
+            var nextPlaybackId = 1;
+
+            function getCtx() {
+                if (audioCtx) return audioCtx;
+                var AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) return null;
+                audioCtx = new AC();
+                // Politique d'autoplay des navigateurs : le contexte démarre
+                // « suspended » tant qu'aucun geste utilisateur n'a eu lieu.
+                // On le reprend au premier clic / touche / écran tactile (le
+                // jeu attend une touche sur l'écran titre, donc très tôt).
+                var resume = function () {
+                    if (!audioCtx || audioCtx.state !== "suspended") return;
+                    audioCtx.resume().catch(function () {});
+                    // Safari refuse parfois `decodeAudioData` sur un contexte
+                    // suspendu : on relance les décodages restés en attente.
+                    for (var i = 1; i < buffers.length; i++) {
+                        var b = buffers[i];
+                        if (b && b.raw) decodeBuffer(i, b);
+                    }
+                };
+                window.addEventListener("pointerdown", resume);
+                window.addEventListener("keydown", resume);
+                window.addEventListener("touchstart", resume);
+                return audioCtx;
+            }
+
+            // Lance (ou relance) le décodage du buffer `id`. `b.raw` garde les
+            // octets tant que le décodage n'a pas abouti : un échec temporaire
+            // (contexte suspendu) sera retenté au premier geste utilisateur ;
+            // un échec définitif rend `is_loaded` vrai (le jeu continue, muet
+            // pour ce son seulement) sans jamais bloquer l'attente.
+            function decodeBuffer(id, b) {
+                var c = getCtx();
+                if (!c) { b.loading = false; return; }
+                var raw = b.raw;
+                b.loading = true;
+                try {
+                    c.decodeAudioData(raw, function (buf) {
+                        b.audioBuffer = buf;
+                        b.raw = null;
+                        b.loading = false;
+                    }, function () {
+                        b.raw = null; // échec définitif : on ne retentera pas
+                        b.loading = false;
+                        console.warn("MM audio : décodage impossible du buffer " + id);
+                    });
+                } catch (e) {
+                    // contexte suspendu (Safari) : `raw` est conservé, le
+                    // décodage sera retenté au résumé (premier geste)
+                    b.loading = false;
+                }
+            }
+
+            var env = importObject["env"];
+
+            env.mm_audio_init = function () { getCtx(); };
+
+            env.mm_audio_add_buffer = function (ptr, len) {
+                var id = nextBufferId++;
+                var bytes = new Uint8Array(wasm_memory.buffer, ptr, len);
+                var copy = new ArrayBuffer(bytes.byteLength);
+                new Uint8Array(copy).set(bytes);
+                var b = { raw: copy, audioBuffer: null, loading: true };
+                buffers[id] = b;
+                decodeBuffer(id, b);
+                return id;
+            };
+
+            env.mm_audio_source_is_loaded = function (buffer) {
+                var b = buffers[buffer];
+                return !b || !b.loading;
+            };
+
+            env.mm_audio_play_buffer = function (buffer, volume, repeat) {
+                var pid = nextPlaybackId++;
+                var b = buffers[buffer];
+                if (!b || !b.audioBuffer) return pid; // pas encore décodé / échec
+                var c = getCtx();
+                if (!c) return pid;
+                try {
+                    var source = c.createBufferSource();
+                    source.buffer = b.audioBuffer;
+                    source.loop = !!repeat;
+                    var gain = c.createGain();
+                    gain.gain.value = volume;
+                    source.connect(gain);
+                    gain.connect(c.destination);
+                    source.start();
+                    var pb = { source: source, gain: gain, bufferId: buffer };
+                    playbacks[pid] = pb;
+                    source.onended = function () {
+                        if (playbacks[pid] === pb) playbacks[pid] = null;
+                    };
+                } catch (e) {
+                    console.warn("MM audio : lecture impossible", e);
+                }
+                return pid;
+            };
+
+            env.mm_audio_source_stop = function (buffer) {
+                for (var i = 0; i < playbacks.length; i++) {
+                    var pb = playbacks[i];
+                    if (pb && pb.bufferId === buffer) {
+                        try { pb.source.stop(); } catch (e) {}
+                        playbacks[i] = null;
+                    }
+                }
+            };
+
+            env.mm_audio_source_set_volume = function (buffer, volume) {
+                for (var i = 0; i < playbacks.length; i++) {
+                    var pb = playbacks[i];
+                    if (pb && pb.bufferId === buffer) pb.gain.gain.value = volume;
+                }
+            };
+
+            env.mm_audio_source_delete = function (buffer) {
+                env.mm_audio_source_stop(buffer);
+                buffers[buffer] = null;
+            };
+
+            env.mm_audio_playback_stop = function (playback) {
+                var pb = playbacks[playback];
+                if (pb) {
+                    try { pb.source.stop(); } catch (e) {}
+                    playbacks[playback] = null;
+                }
+            };
+
+            env.mm_audio_playback_set_volume = function (playback, volume) {
+                var pb = playbacks[playback];
+                if (pb) pb.gain.gain.value = volume;
+            };
+        })();
+    </script>
     <script>load("rust-meteors-mining.wasm");</script>
 </body>
 
