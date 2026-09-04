@@ -668,8 +668,8 @@ pub fn draw_shape(
 
 /// Radar de **contrôleur aérien** (version ATC du radar de bord - achetée au
 /// magasin en scénario à économie, `scenario::RadarKind::Atc`) : un **scope
-/// circulaire** compact et très translucide **collé au coin supérieur
-/// gauche** de l'écran (sous la ligne du HUD et des baies de soute, loin des
+/// circulaire** compact et très translucide **décolé du bord gauche de
+/// l'écran** (sous la ligne du HUD et des baies de soute, loin des
 /// zones tactiles - joystick bas-gauche et FIRE bas-droit de `touch.rs`)
 /// avec **anneaux de distance**, croix cardinales et repères N/E/S/W, un
 /// **balayage rotatif**
@@ -695,7 +695,7 @@ pub fn draw_atc_radar(state: &mut GameState, camera: Point, shapes: &[Shape]) {
         return;
     }
     // scope : instrument circulaire **compact et très translucide** (45 px)
-    // **collé au coin supérieur gauche** de l'écran - sous la ligne du HUD
+    // **décolé du bord gauche de l'écran** (~10 px) - sous la ligne du HUD
     // (y ≈ 14-30) et des baies de soute (y ≈ 50), loin des zones tactiles :
     // le joystick bas-gauche et FIRE bas-droit de `touch.rs` restent
     // entièrement dégagés, et le disque laisse voir le jeu derrière (étoiles
@@ -703,7 +703,7 @@ pub fn draw_atc_radar(state: &mut GameState, camera: Point, shapes: &[Shape]) {
     // Teintes du jeu : vert « radar » (vert d'accostage / succès du magasin
     // `SHOP_OK`) sur un disque bleu sombre.
     let r = 45.0; // compact : ~47 % plus petit que l'ancien scope (85)
-    let cx = r; // bord gauche de l'écran
+    let cx = r + 10.0; // décollé du bord gauche de l'écran (~10 px)
     let cy = 115.0; // haut de l'écran : sous le HUD et la ligne de soute
     let tau = std::f32::consts::TAU;
     let green = |alpha: f32| Color::new(0.22, 1.00, 0.53, alpha); // 0xFF39FF88
