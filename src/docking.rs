@@ -576,13 +576,18 @@ mod tests {
     #[test]
     fn trajectory_deviation_measures_the_angle_to_the_station() {
         let world = World::define(1000.0, 1000.0, -500.0, -500.0, 500.0, 500.0);
-        let mut station = Shape::default();
-        station.position = Point::new(0.0, 0.0);
-        let mut player = Shape::default();
-        player.position = Point::new(100.0, 0.0); // à l'est de la station
-        player.velocity = 1.0;
-        // fonce droit sur le centre (convention moving_shape : x += cos, y -= sin)
-        player.direction = std::f64::consts::PI; // vers l'ouest
+        // station au centre, vaisseau à l'est qui fonce vers l'ouest
+        // (convention moving_shape : x += cos, y -= sin)
+        let station = Shape {
+            position: Point::new(0.0, 0.0),
+            ..Default::default()
+        };
+        let mut player = Shape {
+            position: Point::new(100.0, 0.0),
+            velocity: 1.0,
+            direction: std::f64::consts::PI, // vers le centre (l'ouest)
+            ..Default::default()
+        };
         assert_eq!(approach_trajectory_deviation(&player, &station, &world), 0.0);
         // à l'opposé (vers l'est) : écart maximal π
         player.direction = 0.0;
