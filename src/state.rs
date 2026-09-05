@@ -367,6 +367,17 @@ pub struct GameState {
     /// à `docking::docking` de n'envoyer les messages d'aide au pilote qu'au
     /// changement de situation (front montant).
     pub dock_hint: DockHint,
+    /// Prochain **bip de proximité** de l'accostage (heure `get_time()`, s) :
+    /// les messages clignotants au-dessus du vaisseau sont accompagnés de
+    /// bips d'autant plus rapprochés que le vaisseau est près du centre de la
+    /// station (voir `docking::update_dock_approach`). Mis à jour à chaque
+    /// frame tant que le guide d'accostage est actif.
+    pub dock_approach_beep_at: f64,
+    /// Son « accostage réussi » déjà émis pour l'animation d'accostage en
+    /// cours : le bip distinct est joué une seule fois au moment où le
+    /// vaisseau est **capturé** (front montant de `dock_anim`) - remis à faux
+    /// quand l'animation se termine (aucun son après l'accostage).
+    pub dock_approach_ok_sounded: bool,
     /// Vaisseau détruit, le joueur contrôle le **cosmonaute EVA éjecté** : son
     /// seul objectif est de rejoindre la base (zone d'accostage au centre) où
     /// il est secouru et le vaisseau reconstruit (voir `eva::rescue_cosmonaut`).
@@ -579,6 +590,8 @@ impl GameState {
             docking_guide: false, // pas encore revenu à la base
             dock_was_outside: false,
             dock_hint: DockHint::Docked, // à quai au lancement : pas d'aide
+            dock_approach_beep_at: 0.0, // premier bip dès l'entrée dans la base
+            dock_approach_ok_sounded: false,
             cosmonaut_active: false,
             eva_cosmonaut: -1, // créé par main.rs au démarrage
             eva_recovery: 0.0,

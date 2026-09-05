@@ -386,6 +386,27 @@ pub const STATION_SPAWN_EXCLUSION_RADIUS: f64 = 300.0;
 /// dans la zone - voir `docking`).
 pub const STATION_DOCK_SPEED: f64 = 0.5;
 
+/// Période minimale des bips de proximité de l'accostage (s), atteinte au
+/// cercle d'accostage (le vaisseau est au centre de la base) : plus le
+/// vaisseau est **près**, plus les bips se rapprochent (voir
+/// `docking::dock_approach_beep_period` - interpolation linéaire sur tout
+/// le rayon de la station).
+pub const DOCK_APPROACH_BEEP_PERIOD_MIN: f64 = 0.12;
+/// Période maximale des bips de proximité (s), au bord du rayon de la
+/// station : l'entrée, le vaisseau vient de franchir la limite extérieure
+/// de la base en revenant (guide d'accostage activé).
+pub const DOCK_APPROACH_BEEP_PERIOD_MAX: f64 = 1.0;
+
+/// Écart angulaire maximal (degrés) entre la trajectoire du vaisseau
+/// (direction de déplacement) et la direction du centre de la station pour
+/// que l'approche soit jugée **bonne** : « TRAJ: ON COURSE » en dessous,
+/// « TRAJ: N° OFF » au-dessus (voir `docking::approach_traj_text`).
+pub const DOCK_APPROACH_TRAJ_OK_DEGREES: f64 = 45.0;
+/// Plancher du gain de volume du bip d'approche selon la trajectoire : le
+/// bip reste audible mais discret quand la trajectoire s'écarte beaucoup de
+/// l'optimum (voir `docking::approach_beep_traj_gain`).
+pub const DOCK_APPROACH_BEEP_TRAJ_MIN_GAIN: f32 = 0.15;
+
 /// Vitesse à partir de laquelle l'approche est jugée « mauvaise » : la mire
 /// d'accostage est entièrement **rouge** (qualité 0) à cette vitesse ou au
 /// delà, et passe progressivement au **vert** (qualité 1) à mesure que le

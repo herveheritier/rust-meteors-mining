@@ -226,6 +226,16 @@ pub fn update(
     // est détruit.
     let mut camera = camera_for(state, &shapes[pilot_index(state)]);
 
+    // Approche d'accostage - **messages clignotants** au-dessus du vaisseau
+    // et **sons** (bips d'autant plus rapprochés que le vaisseau est près du
+    // centre + son distinct au moment où il est capturé, voir
+    // `docking::update_dock_approach`) : traité en tête de frame, **avant
+    // les retours anticipés** des boîtes et des animations - il lit l'état
+    // posé par `update_docking_guide` / `docking` de la frame précédente et
+    // couvre aussi les frames de l'animation d'accostage (où le « ok » vert
+    // reste affiché, sans bip)
+    crate::docking::update_dock_approach(state, shapes, sounds.as_deref_mut());
+
     // Écran de **briefing pré-partie** (scénarios custom avec objectifs,
     // affiché au lancement de la partie) : seul l'input de l'écran est traité
     // - ENTRÉE / ÉCHAP / clic sur CLOSE ferment le briefing et libèrent la

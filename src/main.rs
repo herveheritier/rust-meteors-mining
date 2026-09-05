@@ -770,6 +770,21 @@ async fn main() {
             }
         }
 
+        // Messages d'information au pilote pendant l'accostage : textes
+        // **clignotants** au-dessus du vaisseau, centrés horizontalement -
+        // vitesse (rouge : approche trop rapide, vert : c'est bon) puis
+        // trajectoire (vert : alignée, rouge : écart en degrés), du retour à
+        // la base jusqu'à la fin de l'animation d'accostage (les bips de
+        // proximité et le son « accostage réussi » sont gérés dans `update` -
+        // `docking::update_dock_approach`)
+        render::draw_dock_approach_message(
+            &state,
+            &shapes[PLAYER_INDEX],
+            &shapes[STATION_INDEX],
+            &triangles,
+            camera,
+        );
+
         // débris
         for g in &garbages {
             render::draw_garbage(g, camera, &state.world);

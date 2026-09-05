@@ -6,7 +6,11 @@ use macroquad::prelude::*;
 use crate::config::*;
 use crate::render::*;
 use crate::font::measure_text;
-use crate::geom::{Point, World};
+use crate::geom::{Point, Triangle, World};
+use crate::docking::{
+    approach_traj_text, approach_trajectory_deviation, approach_trajectory_ok, dock_approach_active,
+    dock_in_range_text, dock_slow_down_text,
+};
 use crate::scenario;
 use crate::shape::Shape;
 use crate::state::GameState;
@@ -394,6 +398,100 @@ pub fn draw_docking_line(
 /// son ondulation s'affaisse à mesure que la tension monte. Pendant le fondu
 /// enchaîné (`state.eva_crossfade > 0`), il reste tendu et **s'efface avec le
 /// cosmonaute**. Dessiné **sous le cosmonaute** (appelé avant son rendu).
+/// Couleur **verte** du message d'approche clignotant (« c'est bon » :
+/// quasi immobile dans le rayon de la base, ou capturé par l'animation
+/// d'accostage) - même vert que le HUD d'accostage.
+const DOCK_APPROACH_OK_COLOR: u32 = 0xFF40FF40;
+/// Couleur **rouge** du message d'approche clignotant (« à corriger » :
+/// approche trop rapide pour accoster) - même rouge que le HUD d'accostage.
+const DOCK_APPROACH_WARN_COLOR: u32 = 0xFFFF3C00;
+/// Marge (px écran) entre le haut de la coque du vaisseau et le message.
+const DOCK_APPROACH_MARGIN: f32 = 6.0;
+/// Interligne (px écran) entre les deux lignes de message (vitesse puis
+/// trajectoire, empilées au-dessus du vaisseau).
+const DOCK_APPROACH_LINE_GAP: f32 = 4.0;
+
+/// Messages d'information au pilote pendant l'accostage : textes **clignotants**
+/// affichés **au-dessus du vaisseau** (ancrés sur sa boîte englobante écran) et
+/// **centrés horizontalement** sur lui, empilés en deux lignes :
+///
+/// - la **vitesse** (« DOCK: SLOW DOWN… » : approche trop rapide, ou
+///   « DOCK: IN RANGE… » : quasi immobile ou vaisseau capturé par l'animation
+///   d'accostage) - **rouge** pour ce qui doit être corrigé, **vert** quand
+///   c'est bon ;
+/// - la **trajectoire** au-dessus (« TRAJ: ON COURSE » : alignée sur le
+///   centre de la zone d'accostage, ou « TRAJ: N° OFF » : l'**écart en
+///   degrés** à corriger, voir `docking::approach_traj_text`) - même code de
+///   couleurs.
+///
+/// Affichés dès que le vaisseau **entre dans la station** (guide d'accostage
+/// actif) et jusqu'à la fin de l'animation d'accostage (`dock_approach_active`,
+/// le vert reste clignotant pendant la capture). Désactivés une fois
+/// l'accostage réussi (boîte DOCK STATION) et jamais affichés au départ (le
+/// vaisseau sort de la base, guide coupé). La **partie sonore** (bips
+/// d'autant plus rapprochés que le vaisseau est près, plus forts quand la
+/// trajectoire est bonne + son distinct à la capture) est gérée par
+/// `docking::update_dock_approach`. Dessiné par-dessus le vaisseau (appelé
+/// après son rendu, avant le HUD).
+pub fn draw_dock_approach_message(
+    state: &GameState,
+    player: &Shape,
+    station: &Shape,
+    triangles: &[Triangle],
+    camera: Point,
+) {
+    if !dock_approach_active(state) {
+        return;
+    }
+    // clignotement : moitié du temps visible, comme les alertes du HUD
+    // (les deux lignes clignotent ensemble)
+    if (get_time() * HUD_BLINK_HZ) as i64 % 2 != 0 {
+        return;
+    }
+    // vert si l'approche est bonne (quasi immobile, ou déjà capturé par
+    // l'animation d'accostage), rouge pour ce qui doit être corrigé
+    let ok = state.dock_anim > 0.0 || player.velocity.abs() < STATION_DOCK_SPEED;
+    let speed_text = if ok {
+        dock_in_range_text().to_string()
+    } else {
+        dock_slow_down_text()
+    };
+    let speed_color = argb_to_color(if ok { DOCK_APPROACH_OK_COLOR } else { DOCK_APPROACH_WARN_COLOR });
+    // trajectoire : alignée sur le centre de la zone d'accostage (vert) ou
+    // écart en degrés à corriger (rouge)
+    let traj_dev = approach_trajectory_deviation(player, station, &state.world);
+    let traj_ok = approach_trajectory_ok(traj_dev);
+    let traj_text = approach_traj_text(traj_dev);
+    let traj_color = argb_to_color(if traj_ok { DOCK_APPROACH_OK_COLOR } else { DOCK_APPROACH_WARN_COLOR });
+    // ancre « au-dessus du vaisseau » : boîte englobante écran des triangles
+    // du vaisseau (positions réelles de la frame) - le texte est centré
+    // horizontalement sur le vaisseau (la caméra suit le pilote)
+    let mut top = f32::MAX;
+    let mut left = f32::MAX;
+    let mut right = f32::MIN;
+    for t in &triangles[player.first_triangle..=player.last_triangle] {
+        let a = screen_point(t.real_min, camera, &state.world);
+        let b = screen_point(t.real_max, camera, &state.world);
+        top = top.min(a.y);
+        left = left.min(a.x);
+        right = right.max(b.x);
+    }
+    if top == f32::MAX {
+        return; // aucun triangle vivant : pas de vaisseau à survoler
+    }
+    // ligne du bas (vitesse), juste au-dessus de la coque : hauteur de ligne
+    // (~16 px à la police 8 px du jeu) + petite marge, sans chevaucher le
+    // vaisseau ; ligne du haut (trajectoire) empilée par-dessus
+    let y_speed = top - 16.0 - DOCK_APPROACH_MARGIN;
+    let w_speed = measure_text(&speed_text, None, 16, 1.0).width;
+    let x_speed = ((left + right) / 2.0 - w_speed / 2.0).round();
+    draw_text_shadow(&speed_text, x_speed, y_speed, 16.0, speed_color);
+    let y_traj = y_speed - 16.0 - DOCK_APPROACH_LINE_GAP;
+    let w_traj = measure_text(&traj_text, None, 16, 1.0).width;
+    let x_traj = ((left + right) / 2.0 - w_traj / 2.0).round();
+    draw_text_shadow(&traj_text, x_traj, y_traj, 16.0, traj_color);
+}
+
 pub fn draw_eva_recovery_cable(
     state: &GameState,
     camera: Point,

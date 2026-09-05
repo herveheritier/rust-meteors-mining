@@ -25,6 +25,17 @@ pub struct Sounds {
     reverse: Sound,
     ambient: Sound,
     music: Sound,
+    /// Bip d'approche de l'accostage - **synthétisé en mémoire** au
+    /// chargement (aucun fichier : courte impulsion sinusoïdale, voir
+    /// `synth_approach_beep`). Émis d'autant plus souvent que le vaisseau est
+    /// près du centre de la station (messages clignotants au-dessus du
+    /// vaisseau lors du retour à la base).
+    approach_beep: Sound,
+    /// Son « accostage réussi » - **synthétisé en mémoire** (deux notes
+    /// ascendantes, distinctes du bip d'approche, voir `synth_dock_ok`). Émis
+    /// une seule fois au moment où le vaisseau est capturé (début de
+    /// l'animation d'accostage) ; après l'accostage, plus aucun son.
+    dock_ok: Sound,
     /// Musique en lecture (touche M, ex `_sndpaused(sh7&)`).
     pub music_on: bool,
     /// Volume maître (0.0..=1.0), réglable dans l'écran de paramétrage
@@ -86,6 +97,14 @@ impl Sounds {
             reverse: load(include_bytes!("../assets/fffff.ogg"), "fffff.ogg").await,
             ambient: load(include_bytes!("../assets/bruitDeFond.ogg"), "bruitDeFond.ogg").await,
             music: load(include_bytes!("../assets/music1.ogg"), "music1.ogg").await,
+            // sons synthétisés en code (aucun fichier `assets/`) : le backend
+            // quad-snd/miniaudio décode le WAV PCM comme l'Ogg Vorbis
+            approach_beep: audio::load_sound_from_bytes(&synth_approach_beep())
+                .await
+                .expect("bip d'approche synthétisé illisible"),
+            dock_ok: audio::load_sound_from_bytes(&synth_dock_ok())
+                .await
+                .expect("son d'accostage synthétisé illisible"),
             music_on: false,
             volume: 1.0,
             music_volume: 1.0,
@@ -211,6 +230,37 @@ impl Sounds {
         );
     }
 
+    /// Bip de proximité de l'accostage (messages clignotants au-dessus du
+    /// vaisseau lors du retour à la base) : son court et discret (× 0.6), au
+    /// volume maître × effets, **modulé par la trajectoire** (`traj_gain` de
+    /// `docking::approach_beep_traj_gain` : plus le vaisseau est aligné sur le
+    /// centre de la zone d'accostage, plus le bip est fort) - émis d'autant
+    /// plus souvent que le vaisseau approche du centre
+    /// (`docking::update_dock_approach`).
+    pub fn play_approach_beep(&self, traj_gain: f32) {
+        audio::play_sound(
+            &self.approach_beep,
+            PlaySoundParams {
+                looped: false,
+                volume: 0.6 * self.effects_gain() * traj_gain,
+            },
+        );
+    }
+
+    /// Son « accostage réussi » : distinct du bip d'approche, émis une seule
+    /// fois au moment où le vaisseau est **capturé** (l'animation d'accostage
+    /// démarre) - après l'accostage, plus aucun son (`docking` coupe le
+    /// guide).
+    pub fn play_dock_ok(&self) {
+        audio::play_sound(
+            &self.dock_ok,
+            PlaySoundParams {
+                looped: false,
+                volume: 0.8 * self.effects_gain(),
+            },
+        );
+    }
+
     // ─── Boucles ────────────────────────────────────────────────────────────
 
     /// Ambiance de fond (ex `_sndloop sh6&` au démarrage).
@@ -293,4 +343,78 @@ impl Sounds {
             self.toggle_music();
         }
     }
+}
+
+// ─── Synthèse en code (aucun fichier `assets/`) ─────────────────────────────
+
+/// Construit un `.wav` PCM 16 bits mono en mémoire (44 octets d'en-tête + les
+/// échantillons) : le backend quad-snd/miniaudio décode le WAV comme l'Ogg
+/// Vorbis des autres sons. `gen` reçoit le temps `t` (s) et renvoie
+/// l'échantillon dans [-1, 1]. Les deux nouveaux sons de l'accostage (bip de
+/// proximité + « accostage réussi ») sont générés ainsi au chargement - pas
+/// d'asset à ajouter au dépôt.
+fn synth_wav(duration: f32, sample_rate: u32, mut sample: impl FnMut(f32) -> f32) -> Vec<u8> {
+    let n = (duration * sample_rate as f32) as usize;
+    let data_len = n * 2; // mono 16 bits
+    let mut wav = Vec::with_capacity(44 + data_len);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len as u32).to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes()); // taille du bloc fmt
+    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    wav.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // débit (octets/s)
+    wav.extend_from_slice(&2u16.to_le_bytes()); // alignement bloc
+    wav.extend_from_slice(&16u16.to_le_bytes()); // bits par échantillon
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(data_len as u32).to_le_bytes());
+    for i in 0..n {
+        let t = i as f32 / sample_rate as f32;
+        let s = (sample(t) * 32767.0).clamp(-32768.0, 32767.0) as i16;
+        wav.extend_from_slice(&s.to_le_bytes());
+    }
+    wav
+}
+
+/// Enveloppe d'amplitude en trapèze (attaque rapide, relâchement progressif)
+/// pour éviter les clics en début/fin d'échantillon.
+fn trapezoid_env(t: f32, attack: f32, release: f32) -> f32 {
+    let a = (t / attack).min(1.0);
+    let r = ((1.0 - t) / release).clamp(0.0, 1.0);
+    a * r
+}
+
+/// Bip d'approche de l'accostage : courte impulsion sinusoïdale aiguë
+/// (~880 Hz, 70 ms) avec une fondamentale et une petite octave au-dessus
+/// (timbre métallique léger).
+fn synth_approach_beep() -> Vec<u8> {
+    const DURATION: f32 = 0.07;
+    const FREQ: f32 = 880.0;
+    synth_wav(DURATION, 22050, |t| {
+        let env = trapezoid_env(t / DURATION, 0.08, 0.15);
+        let s = (std::f32::consts::TAU * FREQ * t).sin()
+            + 0.5 * (std::f32::consts::TAU * 2.0 * FREQ * t).sin();
+        0.45 * env * s / 1.5
+    })
+}
+
+/// Son « accostage réussi » : deux notes **ascendantes** (660 → 990 Hz,
+/// ~0,4 s) bien distinctes du bip d'approche - « c'est bon », l'accostage
+/// est engagé. Chaque note a sa propre enveloppe (pas de clic entre les deux).
+fn synth_dock_ok() -> Vec<u8> {
+    const DURATION: f32 = 0.42;
+    const NOTE_1: f32 = 660.0; // mi5
+    const NOTE_2: f32 = 990.0; // si5
+    synth_wav(DURATION, 22050, |t| {
+        // deux segments de hauteur distincte, enchaînés sans silence
+        let (freq, start) = if t < 0.16 { (NOTE_1, 0.0) } else { (NOTE_2, 0.16) };
+        let lt = t - start;
+        let seg_len = if t < 0.16 { 0.16 } else { DURATION - 0.16 };
+        let env = trapezoid_env(lt / seg_len, 0.08, 0.2);
+        let s = (std::f32::consts::TAU * freq * lt).sin()
+            + 0.4 * (std::f32::consts::TAU * 2.0 * freq * lt).sin();
+        0.5 * env * s / 1.4
+    })
 }
