@@ -58,6 +58,13 @@ pub fn draw_cargo(state: &GameState, elements: &[Element]) {
 /// l'abscisse de départ - l'emplacement fixe du statut, renvoyé par
 /// `draw_hud`. La distance occupe une largeur fixe de 4 chiffres (alignée à
 /// droite) : l'affichage ne tremble pas quand elle change.
+///
+/// Une **deuxième ligne** (juste sous le statut) aide concrètement le pilote
+/// : « HEAD TO THE STATION » (bleu) loin de la zone, « SPEED: 2.3 / MAX 0.5 »
+/// (rouge) dans la zone mais trop rapide, « STOP THRUST - DOCKING » (vert)
+/// presque immobile, « PRESS ENTER: DOCK BOX » à quai au lancement (les
+/// liens sont attachés, la boîte s'ouvre à ENTRÉE). Rien pendant la
+/// rétraction des liens au départ ni la récupération du cosmonaute.
 pub fn draw_docking_hud(
     state: &GameState,
     player_position: Point,
@@ -84,6 +91,37 @@ pub fn draw_docking_hud(
         (format!("DOCK DIST: {:>4.0}", dist), 0xFFFFFFFF)
     };
     draw_text(&text, x, 14.0, 16.0, argb_to_color(color));
+    // deuxième ligne : aide concrète au pilote (vitesse vs max autorisée,
+    // conseil à suivre) - rien à quai (la boîte DOCK STATION recouvre), ni
+    // pendant la rétraction des liens au départ (le vaisseau est déjà à
+    // quai, pas en approche) ni la récupération du cosmonaute
+    let (hint, hint_color) = if state.dock_box
+        || state.shop_box
+        || state.dock_retract > 0.0
+        || state.eva_recovery > 0.0
+        || state.eva_crossfade > 0.0
+    {
+        (String::new(), 0)
+    } else if state.dock_links {
+        // au lancement/respawn, liens attachés : la boîte s'ouvre à ENTRÉE
+        ("PRESS ENTER: DOCK BOX".to_string(), 0xFF40FF40)
+    } else if in_zone && player_speed.abs() < STATION_DOCK_SPEED {
+        ("STOP THRUST - DOCKING".to_string(), 0xFF40FF40)
+    } else if in_zone {
+        (
+            format!(
+                "SPEED: {:.1} / MAX {:.1}",
+                player_speed.abs(),
+                STATION_DOCK_SPEED
+            ),
+            0xFFFF3C00,
+        )
+    } else {
+        ("HEAD TO THE STATION".to_string(), 0xFF40C0FF)
+    };
+    if !hint.is_empty() {
+        draw_text(&hint, x, 30.0, 16.0, argb_to_color(hint_color));
+    }
 }
 
 /// Abscisse (px) d'une colonne de la grille 8 px (x = 8+(col-1)*8).

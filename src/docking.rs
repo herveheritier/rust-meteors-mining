@@ -8,7 +8,7 @@ use crate::geom::{Point, Triangle};
 use crate::render::{choice_box_layout, mouse_to_game};
 use crate::scenario;
 use crate::shape::{compute_real_positions, Shape};
-use crate::state::{Element, GameState};
+use crate::state::{DockHint, Element, GameState};
 use crate::eva::start_eva_recovery;
 
 /// Détecte le retour à la base (ex « detect return to the base » de
@@ -25,6 +25,17 @@ use crate::eva::start_eva_recovery;
 /// UNLOAD de la boîte le vide immédiatement). Le ravitaillement (carburant +
 /// munitions), lui, n'est plus automatique : il s'achète indépendamment au
 /// magasin (section RAVITAILLEMENT).
+///
+/// Messages d'aide au pilote : lors du **retour à la base** (guide
+/// d'accostage actif, `state.docking_guide` - le vaisseau est **dans le
+/// rayon de la base**, ~162), un message est envoyé à chaque **changement**
+/// de situation (`state.dock_hint`), la vitesse étant jugée sur **tout le
+/// rayon de la base** (comme la mire, rouge→vert) et non seulement dans le
+/// petit cercle d'accostage au centre : « DOCK: SLOW DOWN » dès que le
+/// vaisseau franchit l'anneau trop vite, « DOCK: IN RANGE » dès qu'il est
+/// assez lent, « DOCK: ZONE LEFT » s'il ressort de la base sans accoster.
+/// Hors retour (vol libre, à quai, animation d'accostage), aucune aide
+/// n'est envoyée.
 pub fn docking(
     state: &mut GameState,
     shapes: &mut [Shape],
@@ -55,6 +66,51 @@ pub fn docking(
         &state.world,
     );
     let in_zone = delta.x * delta.x + delta.y * delta.y < STATION_DOCK_DISTANCE * STATION_DOCK_DISTANCE;
+    // messages d'aide au pilote : uniquement lors du RETOUR à la base (guide
+    // d'accostage actif - le vaisseau est DANS le rayon de la base, ~162) et
+    // au changement de situation (front montant - pas un message par frame).
+    // La vitesse est jugée sur TOUT le rayon de la base (comme la mire,
+    // rouge→vert), pas seulement dans le petit cercle d'accostage au centre :
+    // « SLOW DOWN » dès qu'on franchit l'anneau trop vite, « IN RANGE » dès
+    // qu'on est assez lent, « ZONE LEFT » si on ressort sans accoster
+    let dock_held = state.dock_anim > 0.0
+        || state.dock_box
+        || state.shop_box
+        || state.dock_retract > 0.0
+        || state.dock_links;
+    if !dock_held && state.docking_guide {
+        let situation = if shapes[PLAYER_INDEX].velocity.abs() < STATION_DOCK_SPEED {
+            DockHint::InRange
+        } else {
+            DockHint::TooFast
+        };
+        if situation != state.dock_hint {
+            match situation {
+                DockHint::TooFast => state.send_message(&format!(
+                    "DOCK: SLOW DOWN - MAX SPEED {:.1}",
+                    STATION_DOCK_SPEED
+                )),
+                DockHint::InRange => {
+                    state.send_message("DOCK: IN RANGE - CUT THRUST TO DOCK");
+                }
+                _ => {}
+            }
+            state.dock_hint = situation;
+        }
+    } else if !dock_held
+        && state.dock_was_outside
+        && matches!(state.dock_hint, DockHint::TooFast | DockHint::InRange)
+    {
+        // le guide vient d'être coupé parce que le vaisseau est RESSORTI de
+        // la base (limite extérieure franchie en sortant) sans avoir accosté
+        state.send_message("DOCK: ZONE LEFT - HEAD BACK TO THE STATION");
+        state.dock_hint = DockHint::Docked;
+    } else if state.dock_hint != DockHint::Docked {
+        // vaisseau tenu par la station (accostage, liens, boîtes) ou guide
+        // coupé (vol libre…) : on repart d'un état propre pour le prochain
+        // retour
+        state.dock_hint = DockHint::Docked;
+    }
     // l'accostage se termine seulement si le vaisseau est presque immobile
     if in_zone && shapes[PLAYER_INDEX].velocity.abs() < STATION_DOCK_SPEED {
         if state.player_at_station == 0 {

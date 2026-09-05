@@ -184,6 +184,27 @@ pub struct RadarEcho {
     pub age: f32,
 }
 
+/// Situation d'accostage du vaisseau, pour les **messages d'aide au pilote**
+/// (`docking::docking`) : le message n'est envoyé qu'au **changement** de
+/// situation (front montant - pas à chaque frame). La vitesse est jugée sur
+/// **tout le rayon de la base** (comme la mire, rouge→vert - pas seulement
+/// dans le petit cercle d'accostage au centre) : « SLOW DOWN » quand le
+/// vaisseau est trop rapide pour accoster, « IN RANGE » quand il ralentit
+/// assez, « ZONE LEFT » s'il ressort de la base sans accoster. Ne vaut que
+/// lors du **retour à la base** (`docking_guide` actif) : en vol libre ou à
+/// quai, aucune aide n'est envoyée.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DockHint {
+    /// À quai, en vol libre, ou guide d'accostage coupé : pas de message.
+    #[default]
+    Docked,
+    /// Dans la base (guide actif) mais trop rapide pour accoster.
+    TooFast,
+    /// Dans la base (guide actif) et presque immobile : l'accostage peut se
+    /// terminer dès que le vaisseau atteint la zone au centre.
+    InRange,
+}
+
 /// État dynamique du jeu (ex `context_type`, sans les constantes).
 #[derive(Clone, Debug)]
 pub struct GameState {
@@ -342,6 +363,10 @@ pub struct GameState {
     /// frame précédente : détection du franchissement **en entrant** (retour)
     /// par `docking::update_docking_guide` (front montant de la distance).
     pub dock_was_outside: bool,
+    /// Situation d'accostage courante (`DockHint`) : l'état précédent permet
+    /// à `docking::docking` de n'envoyer les messages d'aide au pilote qu'au
+    /// changement de situation (front montant).
+    pub dock_hint: DockHint,
     /// Vaisseau détruit, le joueur contrôle le **cosmonaute EVA éjecté** : son
     /// seul objectif est de rejoindre la base (zone d'accostage au centre) où
     /// il est secouru et le vaisseau reconstruit (voir `eva::rescue_cosmonaut`).
@@ -553,6 +578,7 @@ impl GameState {
             dock_links: true, // le vaisseau démarre à quai, liens attachés
             docking_guide: false, // pas encore revenu à la base
             dock_was_outside: false,
+            dock_hint: DockHint::Docked, // à quai au lancement : pas d'aide
             cosmonaut_active: false,
             eva_cosmonaut: -1, // créé par main.rs au démarrage
             eva_recovery: 0.0,

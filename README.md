@@ -29,6 +29,16 @@ soute, puis revenez à la station pour décharger et gagner des crédits.
   vert au centre et presque immobile) ; la distance est au HUD
   (`DOCK DIST: 123` - sans unité - / `DOCK: SLOW DOWN` / `DOCK: IN RANGE` /
   `DOCKED`).
+  Une **deuxième ligne HUD** guide le pilote lors du retour : `HEAD TO THE
+  STATION` loin de la zone, `SPEED: 2.3 / MAX 0.5` (rouge) dans la zone mais
+  trop rapide, `STOP THRUST - DOCKING` (vert) presque immobile, `PRESS
+  ENTER: DOCK BOX` à quai au lancement ; et des **messages** sont envoyés en
+  bas de l'écran à chaque changement de situation, la vitesse étant jugée
+  sur **tout le rayon de la base** (comme la mire) et pas seulement dans le
+  petit cercle d'accostage : `DOCK: SLOW DOWN - MAX SPEED 0.5` dès qu'on
+  franchit l'anneau trop vite, `DOCK: IN RANGE - CUT THRUST TO DOCK` dès
+  qu'on ralentit assez, `DOCK: ZONE LEFT - HEAD BACK TO THE STATION` si on
+  ressort de la base sans accoster.
   L'accostage se termine seulement **presque immobile dans la zone** : la
   mire **disparaît** et une **animation de 3 s** (monde vivant) **projette**
   les **4 liens** en diagonale (**NO, SO, SE, NE**) : ils jaillissent de
