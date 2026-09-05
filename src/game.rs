@@ -2213,9 +2213,11 @@ mod tests {
             shapes[idx].life,
             initial_life
         );
-        // la station est désormais un mesh de `assets/anneauStation.json`
-        // (`station.rs`) : 48 faces vivantes (24 segments × 2 triangles)
-        assert_eq!(shapes[STATION_INDEX].life, 48);
+        // la station est un mesh de `assets/anneauStation.json` (`station.rs`)
+        // : 64 faces vivantes (32 segments × 2 triangles - l'anneau a été
+        // re-découpé en 32 segments, ex-48 faces/24 segments) - l'impact du
+        // météore n'en a détruit aucune
+        assert_eq!(shapes[STATION_INDEX].life, 64);
         assert_eq!(triangles[shapes[STATION_INDEX].first_triangle].life, 1);
     }
 

@@ -1165,8 +1165,9 @@ mod tests {
         let player_faces = crate::vaisseau::vaisseau_visible_face_count(&state);
         assert_eq!(shapes[PLAYER_INDEX].life as usize, player_faces);
         assert_eq!(shapes[STATION_INDEX].who_i_am, WHOIAM_STATION);
-        // joueur (plage maximale) + station (48 faces de `assets/anneauStation.json`)
-        assert_eq!(triangles.len(), crate::vaisseau::vaisseau_face_count() + 48);
+        // joueur (plage maximale) + station (64 faces de
+        // `assets/anneauStation.json` - l'anneau re-découpé en 32 segments)
+        assert_eq!(triangles.len(), crate::vaisseau::vaisseau_face_count() + 64);
         // le rayon de la station couvre l'anneau visible (r ≈ 110-162) : la
         // collision est décidée par la détection de triangles (SAT), pas par
         // un petit rayon forcé (dérive volontaire - voir `create_station`).
