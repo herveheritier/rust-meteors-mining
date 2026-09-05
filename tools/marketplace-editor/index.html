@@ -762,6 +762,19 @@
 
 /* ─── Données par défaut = valeurs actuelles du jeu (src/marketplace.rs) ──── */
 
+// Éjection de gaz du cosmonaute EVA - un seul marqueur (le propulseur de la
+// combinaison, pas de marche arrière ni de jets latéraux) : position **par
+// défaut** en % de la boîte englobante de la composition (même repère que
+// les propulseurs du vaisseau, y vers le haut dans l'éditeur - la position
+// actuelle de la flamme du jeu, derrière le dos), couleur, et direction
+// d'éjection (`angle`/`angleDeg` : 180° = gaz vers l'arrière, le dos).
+// Position, **couleur** et **direction d'éjection** sont éditables
+// (`cfg.cosmonaut.thrusters`, exportées dans `COSMONAUTE_THRUSTERS` - le
+// jeu dessine la flamme avec ces réglages, src/main.rs).
+const COSMONAUT_THRUST_MARKERS = [
+  { key: "", x: -30, y: 59, color: "#ff9020", angle: Math.PI, angleDeg: 180, label: "poussée (dos)" },
+];
+
 const DEFAULT_DATA = {
   app: "meteors-mining-marketplace-editor",
   version: 1,
@@ -921,6 +934,14 @@ const DEFAULT_DATA = {
     orientationDeg: 0, // angle de l'avant du mesh dans l'éditeur (0 = droite, +90 = haut)
     centerXPercent: 50, // centre de rotation, % de la largeur du mesh (50 = centre)
     centerYPercent: 50, // centre de rotation, % de la hauteur du mesh
+    // éjection de gaz (le propulseur de la combinaison) : position en % de la
+    // boîte englobante (le dos du cosmonaute), direction d'éjection (180° =
+    // gaz vers l'arrière) et couleur de la flamme. Vide = repli du jeu (la
+    // flamme classique sur le dos).
+    thrusters: [
+      { name: "DOS", x: -30, y: 59, ejectionAngleDeg: 180, color: "#ff9020" },
+    ],
+    thrustMarkers: COSMONAUT_THRUST_MARKERS, // marqueur de l'aperçu (position, direction, couleur)
     planes: null, // composition des plans (indices) : « always » / « excluded »
     planesForAsset: null,
   },
@@ -1796,8 +1817,9 @@ function drawMeshPreview(canvas, mesh, cfg) {
     const bh = (bounds.maxy - bounds.miny) || 1;
     // point local (repère du vaisseau transformé) d'une position d'écran
     const localOf = sp => [(sp.sx - ox) / s, (sp.sy - oy) / s];
+    const markers = cfg.thrustMarkers || THRUST_MARKERS;
     const pts = thrustScreenPoints(canvas, mesh, cfg);
-    THRUST_MARKERS.forEach((m, i) => {
+    markers.forEach((m, i) => {
       const sp = pts[i];
       if (!sp) return;
       const sx = sp.sx, sy = sp.sy;
@@ -1840,10 +1862,12 @@ function drawMeshPreview(canvas, mesh, cfg) {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = "#e8ecf5";
-        ctx.font = "9px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(m.key, sx, sy + 14);
+        if (m.key) {
+          ctx.fillStyle = "#e8ecf5";
+          ctx.font = "9px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(m.key, sx, sy + 14);
+        }
       }
       // gouttelettes de gaz dans la direction d'éjection **configurée**
       // (repère de l'éditeur, tournée avec le vaisseau par tf) - depuis la
@@ -2003,7 +2027,8 @@ function thrustScreenPoints(canvas, mesh, cfg) {
   const toPx = p => [ox + p[0] * s, oy + p[1] * s];
   const b = view.bounds;
   const bw = (b.maxx - b.minx) || 1, bh = (b.maxy - b.miny) || 1;
-  THRUST_MARKERS.forEach((m, i) => {
+  const markers = cfg.thrustMarkers || THRUST_MARKERS;
+  markers.forEach((m, i) => {
     const t = cfg.thrusters[i];
     const x = t && Number.isFinite(t.x) ? t.x : m.x;
     const y = t && Number.isFinite(t.y) ? t.y : m.y;
@@ -2576,10 +2601,10 @@ function meshCard(opts) {
   // sur le vaisseau à un emplacement de tir et tire sa propre munition
   if (opts.weapons) card.appendChild(weaponsSection(cfg, opts));
 
-  // éjection des gaz (vaisseau uniquement) : 4 propulseurs (mesh, échelle,
-  // orientation, position), un par touche de contrôle (↑ ↓ ← →) - exportés
-  // dans `VAISSEAU_THRUSTERS`
-  if (opts.thrust) card.appendChild(thrustSection(cfg));
+  // éjection des gaz (vaisseau : 4 propulseurs ↑ ↓ ← → avec mesh - cosmonaute
+  // EVA : un seul propulseur de la combinaison) - exportés dans
+  // `VAISSEAU_THRUSTERS` / `COSMONAUTE_THRUSTERS`
+  if (opts.thrust) card.appendChild(thrustSection(cfg, opts));
 
   // composition des plans (vaisseau : liens vers les lignes d'atelier)
   card.appendChild(compositionSection(cfg, currentMeshFor(cfg), opts));
@@ -2644,31 +2669,41 @@ function spawnsSection(cfg, opts) {
   return sec;
 }
 
-// Section « Éjection des gaz » du vaisseau (4 touches de contrôle) : un point
-// par touche - où les gaz sortent du vaisseau, positions en % de la boîte
-// englobante de la composition (50/50 = centre), tournées avec le vaisseau.
-// Ordre fixe : ↑ poussée avant (gaz orange à l'arrière), ↓ frein/recul (bleu
-// à l'avant), ← rotation gauche, → rotation droite (jets latéraux). Chaque
-// propulseur a son **mesh** (JSON), son échelle, son orientation et sa
-// position en % de la boîte englobante. Réglage souris : sur l'aperçu,
-// glisser un propulseur le déplace (la direction d'éjection, elle, est
-// fixe). Exportés dans `VAISSEAU_THRUSTERS`.
-function thrustSection(cfg) {
+// Section « Éjection des gaz » - un point par propulseur, où les gaz sortent
+// de la forme, positions en % de la boîte englobante de la composition
+// (50/50 = centre), tournées avec la forme. Vaisseau (`VAISSEAU_THRUSTERS`, 4
+// touches ↑↓←→) : chaque propulseur a son **mesh** (JSON), son échelle, son
+// orientation et sa position. Cosmonaute EVA (`COSMONAUTE_THRUSTERS`, un seul
+// propulseur de la combinaison, `opts.thrustMesh = false`) : position,
+// direction et couleur seulement - la flamme est dessinée par le jeu
+// (`render::draw_cosmonaut_thruster_at`), pas de mesh. Réglage souris : sur
+// l'aperçu, glisser un propulseur le déplace (la direction d'éjection, elle,
+// est fixe).
+function thrustSection(cfg, opts) {
   const sec = el("section", "card-section");
   const h = el("h3");
   h.appendChild(el("span", "dot", "", { style: "background:#ffa020" }));
-  h.appendChild(document.createTextNode("Éjection des gaz (4 touches)"));
-  h.appendChild(el("span", "const", "VAISSEAU_THRUSTERS"));
+  const markers = cfg.thrustMarkers || THRUST_MARKERS;
+  const title = markers.length === 1 ? "Éjection des gaz (1 propulseur)" : "Éjection des gaz (4 touches)";
+  h.appendChild(document.createTextNode(title));
+  h.appendChild(el("span", "const", opts.thrustConst || "VAISSEAU_THRUSTERS"));
   sec.appendChild(h);
   sec.appendChild(el("p", "desc",
-    "Un **propulseur** par touche de contrôle - son mesh (JSON, la flamme du gaz) est affiché " +
-    "**seulement quand il tire** (scintillant, allongé le long de la direction d'éjection) - " +
-    "sinon il n'apparaît pas en jeu. Réglages : mesh, échelle, " +
-    "orientation et position en % de la boîte englobante de la composition (50/50 = centre - " +
-    "<b>valeurs libres</b> : négatives ou &gt; 100 % possibles, le propulseur sort alors du " +
-    "gabarit), tournés avec le vaisseau, plus la <b>direction d'éjection</b> : <b>↑</b> " +
-    "poussée avant (gaz orange à l'arrière), <b>↓</b> frein/recul " +
-    "(bleu à l'avant), <b>←</b> et <b>→</b> jets latéraux des rotations. Sur l'aperçu, les " +
+    (opts.thrustMesh === false
+      ? "Le **propulseur de la combinaison EVA** - où les gaz sortent du cosmonaute quand il " +
+        "pousse (↑). Position en % de la boîte englobante de la composition (50/50 = centre - " +
+        "<b>valeurs libres</b> : négatives ou &gt; 100 % possibles, le propulseur sort alors du " +
+        "gabarit), tournée avec la figure, plus la <b>direction d'éjection</b> (par défaut " +
+        "<b>180°</b> : gaz vers l'arrière, le dos)."
+      : "Un **propulseur** par touche de contrôle - son mesh (JSON, la flamme du gaz) est affiché " +
+        "**seulement quand il tire** (scintillant, allongé le long de la direction d'éjection) - " +
+        "sinon il n'apparaît pas en jeu. Réglages : mesh, échelle, " +
+        "orientation et position en % de la boîte englobante de la composition (50/50 = centre - " +
+        "<b>valeurs libres</b> : négatives ou &gt; 100 % possibles, le propulseur sort alors du " +
+        "gabarit), tournés avec le vaisseau, plus la <b>direction d'éjection</b> : <b>↑</b> " +
+        "poussée avant (gaz orange à l'arrière), <b>↓</b> frein/recul " +
+        "(bleu à l'avant), <b>←</b> et <b>→</b> jets latéraux des rotations.") +
+    " Sur l'aperçu, les " +
     "flammes sont dessinées en permanence pour le positionnement ; <b>glisser un propulseur le " +
     "déplace</b> (gouttelettes = direction configurée)."));
 
@@ -2676,11 +2711,11 @@ function thrustSection(cfg) {
   const render = () => {
     list.textContent = "";
     if (!Array.isArray(cfg.thrusters)) return;
-    THRUST_MARKERS.forEach((m, i) => {
+    markers.forEach((m, i) => {
       const t = cfg.thrusters[i];
       if (!t) return;
       const row = el("div", "spawn-row weapon-row thrust-row");
-      const sw = el("span", "spawn-idx", m.key, { style: "color:" + m.color });
+      const sw = el("span", "spawn-idx", m.key || "•", { style: "color:" + m.color });
       row.appendChild(sw);
       // nom du propulseur
       const name = el("input", "weapon-name");
@@ -2689,14 +2724,16 @@ function thrustSection(cfg) {
       name.placeholder = "Nom";
       name.addEventListener("input", () => { t.name = name.value; afterEdit(); });
       row.appendChild(field("Nom", "ship-thrust-" + i + "-name", name));
-      // mesh du propulseur
-      const mesh = meshAssetInput(t, "ship-thrust-" + i, undefined, "asset");
-      row.appendChild(field("Mesh (JSON)", "ship-thrust-" + i + "-asset", mesh));
-      // échelle et orientation
-      row.appendChild(field("Échelle (%)", "ship-thrust-" + i + "-scale",
-        meshNumberInput(t, "ship-thrust-" + i, "scalePercent", 1, 1000)));
-      row.appendChild(field("Orientation (°)", "ship-thrust-" + i + "-orient",
-        meshNumberInput(t, "ship-thrust-" + i, "orientationDeg", -360, 360)));
+      // mesh, échelle et orientation : propulseurs du vaisseau uniquement
+      // (la flamme du cosmonaute est dessinée par le jeu, sans mesh)
+      if (opts.thrustMesh !== false) {
+        const mesh = meshAssetInput(t, "ship-thrust-" + i, undefined, "asset");
+        row.appendChild(field("Mesh (JSON)", "ship-thrust-" + i + "-asset", mesh));
+        row.appendChild(field("Échelle (%)", "ship-thrust-" + i + "-scale",
+          meshNumberInput(t, "ship-thrust-" + i, "scalePercent", 1, 1000)));
+        row.appendChild(field("Orientation (°)", "ship-thrust-" + i + "-orient",
+          meshNumberInput(t, "ship-thrust-" + i, "orientationDeg", -360, 360)));
+      }
       // direction d'éjection du gaz (repère de l'éditeur, y vers le haut -
       // 0 = avant, +90 = haut) - `ejection_flow` (src/main.rs). La couleur
       // reste une valeur interne par défaut du catalogue, non éditable ici.
@@ -2704,7 +2741,7 @@ function thrustSection(cfg) {
         meshNumberInput(t, "ship-thrust-" + i, "ejectionAngleDeg", -360, 360)));
       // position (X %, Y %) - glissable sur l'aperçu ; valeurs **libres** :
       // négatives ou > 100 % possibles (le jeu les accepte, le propulseur
-      // sort alors du gabarit du vaisseau)
+      // sort alors du gabarit)
       row.appendChild(field("X (%)", "ship-thrust-" + i + "-x",
         meshNumberInput(t, "ship-thrust-" + i, "x", -1000, 1000)));
       row.appendChild(field("Y (%)", "ship-thrust-" + i + "-y",
@@ -2873,19 +2910,26 @@ function cosmonautCard() {
     badge: "COSMONAUTE_*",
     links: false, // pas de lignes d'atelier : plans visibles ou exclus uniquement
     defaultTrack: "cargo",
+    thrust: true, // éjection des gaz (le propulseur de la combinaison - COSMONAUTE_THRUSTERS)
+    thrustConst: "COSMONAUTE_THRUSTERS",
+    thrustMesh: false, // pas de mesh : la flamme du cosmonaute est dessinée par le jeu
     desc: "Mesh du cosmonaute EVA (pilote éjecté, vaisseau détruit - format « meshes-designer », " +
-      "assets/*.json), échelle, orientation de l'avant, centre de rotation et **composition des " +
-      "plans** - constantes COSMONAUTE_JSON / COSMONAUTE_EVA_SCALE / COSMONAUTE_ORIENTATION_DEGREES / " +
-      "COSMONAUTE_CENTER_X/Y_PERCENT / COSMONAUTE_PLANES de src/marketplace.rs (lues par " +
-      "src/cosmonaut.rs).",
+      "assets/*.json), échelle, orientation de l'avant, centre de rotation, **éjection des gaz** " +
+      "(le propulseur de la combinaison) et **composition des plans** - constantes COSMONAUTE_JSON / " +
+      "COSMONAUTE_EVA_SCALE / COSMONAUTE_ORIENTATION_DEGREES / COSMONAUTE_CENTER_X/Y_PERCENT / " +
+      "COSMONAUTE_THRUSTERS / COSMONAUTE_PLANES de src/marketplace.rs (lues par " +
+      "src/cosmonaut.rs et src/main.rs).",
     compositionHint: "Chaque plan du mesh est <b>visible</b> ou <b>exclu</b> (jamais construit ni animé - " +
       "un bras exclu ne s'agite plus). L'aperçu et le centre de rotation ne portent que sur les plans " +
       "retenus. Liste vide à l'export = tous les plans (repli).",
     hint: "L'aperçu montre le cosmonaute tel qu'il apparaîtra en jeu (debout, axe y du jeu). " +
-      "Orientation = angle de l'avant du mesh dans l'éditeur : 0 = face à droite, +90 = vers le haut - " +
+      "Le **propulseur** de la combinaison est dessiné à sa position (l'éjection de gaz du dos - " +
+      "COSMONAUTE_THRUSTERS) ; le jeu dessine la poussée à cet emplacement. Orientation = angle de " +
+      "l'avant du mesh dans l'éditeur : 0 = face à droite, +90 = vers le haut - " +
       "le jeu tourne le mesh pour ramener l'avant à droite. Le centre de rotation est le pivot autour " +
       "duquel le cosmonaute pivote (50/50 = centre de la boîte englobante de la composition). Sur " +
-      "l'aperçu : <b>molette = rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), " +
+      "l'aperçu : <b>glisser un propulseur = déplacer une éjection de gaz</b>, " +
+      "<b>molette = rotation</b> (orientation), <b>Ctrl/Cmd + molette = zoom</b> (échelle), " +
       "<b>clic = centre de rotation au point visé</b>.",
   });
 }
@@ -3656,6 +3700,33 @@ pub struct VaisseauThruster {
     /// (src/main.rs).
     pub color: u32,
 }
+
+/// Le propulseur de la combinaison EVA du cosmonaute éjecté : position de
+/// l'éjection des gaz (en **pourcentage de la boîte englobante de la
+/// composition**, 50/50 = centre, repère du mesh de l'éditeur, y vers le
+/// haut - valeurs libres, négatives ou > 100 % possibles), direction
+/// d'éjection et couleur de la flamme (pas de mesh : la flamme est dessinée
+/// par le jeu - \`render::draw_cosmonaut_thruster_at\`). Le gaz sort de la
+/// position quand le cosmonaute pousse (↑, src/main.rs) ; **liste vide =
+/// repli** sur la petite flamme classique sur le dos. Générée par l'outil de
+/// gestion. Le champ \`name\` n'est lu que par les tests et l'outil -
+/// \`dead_code\` quand la liste est vide.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub struct CosmonautThruster {
+    /// Nom du propulseur (outil, export).
+    pub name: &'static str,
+    /// Position sur le cosmonaute : en % de la boîte englobante de la
+    /// composition (50/50 = centre), dans le repère de l'éditeur.
+    pub position: (f64, f64),
+    /// Direction d'éjection du gaz (degrés, repère de l'éditeur y vers le
+    /// haut : 0 = avant, +90 = haut) - convertie par le jeu pour
+    /// \`ejection_flow\` (src/main.rs).
+    pub ejection_angle_degrees: f64,
+    /// Couleur du gaz d'éjection (ARGB, ex 0xFFFF9020) - \`ejection_flow\`
+    /// (src/main.rs).
+    pub color: u32,
+}
 `;
 
 // Constantes économiques du scénario Progression (valeur des minerais, coûts
@@ -3886,10 +3957,57 @@ function shipConsts() {
   ].join("\n");
 }
 
-// Constantes du cosmonaute EVA : mesh, échelle, orientation et centre de
-// rotation - lues par src/cosmonaut.rs à la construction du pilote éjecté.
-// Même format que shipConsts (le chemin du mesh est relatif à la racine du
-// projet ; l'include_str! est résolu depuis src/, d'où le « ../ »).
+// Export Rust de l'éjection de gaz du cosmonaute EVA (`COSMONAUTE_THRUSTERS`) :
+// le propulseur de la combinaison - position en % de la boîte englobante de
+// la composition, direction d'éjection et couleur de la flamme (pas de mesh :
+// la flamme est dessinée par le jeu). Vide → liste vide (repli du jeu : la
+// flamme classique sur le dos). Renvoie un tableau de lignes Rust.
+function cosmonautThrustersConsts(cfg) {
+  const thrusters = Array.isArray(cfg.thrusters) ? cfg.thrusters : [];
+  if (thrusters.length === 0) {
+    return [
+      "/// Éjection de gaz du cosmonaute EVA - le propulseur de la combinaison :",
+      "/// **Liste vide = repli** : pas de propulseur configuré, la petite flamme",
+      "/// classique sur le dos (position et couleur par défaut du jeu -",
+      "/// `render::draw_cosmonaut_thruster`). Générée par l'outil de gestion.",
+      "pub const COSMONAUTE_THRUSTERS: &[CosmonautThruster] = &[];",
+    ];
+  }
+  const lines = [];
+  const markers = cfg.thrustMarkers || COSMONAUT_THRUST_MARKERS;
+  lines.push(
+    "/// Éjection de gaz du cosmonaute EVA - le propulseur de la combinaison :",
+    "/// position en **pourcentage de la boîte englobante de la composition**",
+    "/// (50/50 = centre, repère du mesh de l'éditeur, y vers le haut - valeurs",
+    "/// libres, négatives ou > 100 % possibles), **direction d'éjection** du",
+    "/// gaz (degrés, repère de l'éditeur) et **couleur** de la flamme (ARGB).",
+    "/// Le gaz sort de la position (la flamme est dessinée à cet endroit quand",
+    "/// le cosmonaute pousse - src/main.rs). **Liste vide = repli** : la petite",
+    "/// flamme classique sur le dos, position et couleur par défaut du jeu",
+    "/// (`render::draw_cosmonaut_thruster`). Générée par l'outil de gestion.",
+    "pub const COSMONAUTE_THRUSTERS: &[CosmonautThruster] = &[",
+  );
+  thrusters.forEach((t, i) => {
+    const m = markers[i] || { color: "#ff9020" };
+    lines.push(
+      "    CosmonautThruster {",
+      "        name: \"" + rustEscape(String(t.name || ("PROPULSEUR " + (i + 1)))) + "\",",
+      "        position: (" + fmtFloat(Number(t.x) || 0) + ", "
+        + fmtFloat(Number(t.y) || 0) + "),",
+      "        ejection_angle_degrees: " + fmtFloat(Number(t.ejectionAngleDeg) || 0) + ",",
+      "        color: 0xFF" + String(t.color || m.color).replace(/^#/, "").slice(0, 6) + ",",
+      "    },",
+    );
+  });
+  lines.push("];");
+  return lines;
+}
+
+// Constantes du cosmonaute EVA : mesh, échelle, orientation, centre de
+// rotation et éjection de gaz - lues par src/cosmonaut.rs à la construction
+// du pilote éjecté (et src/main.rs pour la poussée). Même format que
+// shipConsts (le chemin du mesh est relatif à la racine du projet ;
+// l'include_str! est résolu depuis src/, d'où le « ../ »).
 function cosmonautConsts() {
   const c = data.cosmonaut;
   const scale = c.scalePercent / 100;
@@ -3920,6 +4038,8 @@ function cosmonautConsts() {
     "/// Centre de rotation du cosmonaute EVA (voir `COSMONAUTE_CENTER_X_PERCENT`),",
     "/// axe y.",
     "pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = " + fmtFloat(c.centerYPercent) + ";",
+    "",
+    ...cosmonautThrustersConsts(c),
     "",
     "/// Plans du cosmonaute EVA construits (composition - indices des plans du",
     "/// fichier mesh `COSMONAUTE_JSON`) : un plan absent n'est jamais construit",
@@ -4666,6 +4786,29 @@ function parseRust(text) {
   if (ccx) out.cosmonaut.centerXPercent = parseFloat(ccx);
   const ccy = grab(/pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = (-?[0-9.]+);/);
   if (ccy) out.cosmonaut.centerYPercent = parseFloat(ccy);
+  // éjection de gaz du cosmonaute EVA (`COSMONAUTE_THRUSTERS`) : nom,
+  // position (x, y) en %, direction d'éjection et couleur de la flamme -
+  // pas de mesh (la flamme est dessinée par le jeu). Vide = &[] → valeurs
+  // par défaut via normalize (comme le vaisseau)
+  const cThrustBlock = grab(/pub const COSMONAUTE_THRUSTERS: &\[CosmonautThruster\] = &\[([^\]]*)\]/);
+  if (cThrustBlock && cThrustBlock.trim() !== "") {
+    const cnames = [...cThrustBlock.matchAll(/name: "([^"]+)"/g)].map(m => m[1]);
+    const cposRe = /\(\s*(-?[0-9.]+)\s*,\s*(-?[0-9.]+)\s*\)/g;
+    const cpositions = [];
+    let cm;
+    while ((cm = cposRe.exec(cThrustBlock)) !== null) cpositions.push([cm[1], cm[2]]);
+    const cangles = [...cThrustBlock.matchAll(/ejection_angle_degrees: (-?[0-9.]+)/g)].map(m => m[1]);
+    const ccolors = [...cThrustBlock.matchAll(/color: (0x[0-9A-Fa-f]+)/g)].map(m => m[1]);
+    out.cosmonaut.thrusters = cpositions.map((p, i) => ({
+      name: cnames[i] || "DOS",
+      x: parseFloat(p[0]),
+      y: parseFloat(p[1]),
+      color: ccolors[i] ? "#" + ccolors[i].slice(-6) : COSMONAUT_THRUST_MARKERS[i].color,
+      ejectionAngleDeg: Number.isFinite(parseFloat(cangles[i]))
+        ? parseFloat(cangles[i])
+        : COSMONAUT_THRUST_MARKERS[i].angleDeg,
+    }));
+  }
 
   // ── portail de distorsion (warp gate - mesh, échelle, orientation, centre) ──
   const wasset = grab(/pub const WARP_GATE_JSON: &str = include_str!\("([^"]+)"\)/);
@@ -4960,6 +5103,25 @@ function normalize(parsed) {
   if (Number.isFinite(cosmonaut.centerYPercent)) {
     out.cosmonaut.centerYPercent = Math.max(0, Math.min(100, cosmonaut.centerYPercent));
   }
+  // éjection de gaz du cosmonaute EVA : toujours 1 propulseur (la combinaison)
+  // - les valeurs manquantes ou invalides retombent sur les défauts (dos)
+  out.cosmonaut.thrusters = COSMONAUT_THRUST_MARKERS.map((m, i) => {
+    const p = Array.isArray(cosmonaut.thrusters) ? cosmonaut.thrusters[i] : null;
+    return {
+      name: p && typeof p.name === "string" && p.name ? p.name : "DOS",
+      // positions libres : négatives et > 100 % sont acceptées (le jeu les
+      // interprète hors de la boîte englobante - propulseur sorti du gabarit)
+      x: Number.isFinite(p && p.x) ? p.x : m.x,
+      y: Number.isFinite(p && p.y) ? p.y : m.y,
+      // affichage du gaz : couleur (hex #rrggbb) et direction d'éjection en
+      // degrés (repère de l'éditeur, y vers le haut) - le jeu les utilise
+      // pour dessiner la flamme (src/main.rs)
+      color: p && /^#([0-9a-fA-F]{6})$/.test(p.color) ? p.color : m.color,
+      ejectionAngleDeg: Number.isFinite(p && p.ejectionAngleDeg)
+        ? p.ejectionAngleDeg
+        : m.angleDeg,
+    };
+  });
   // composition des plans (vaisseau : « always » / « upgrade » / « excluded »
   // + ligne et niveau ; cosmonaute : « always » / « excluded ») - rattachée
   // au mesh courant si l'import ne précise pas son asset d'origine

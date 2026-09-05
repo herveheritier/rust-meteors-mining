@@ -425,12 +425,20 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
 - **régler le cosmonaute EVA** (le pilote éjecté quand le vaisseau est
   détruit) : même principe que le vaisseau - choix du mesh (`assets/*.json`,
   aperçu en direct, pivot marqué d'une croix), échelle en % (150 % par
-  défaut : ~17 unités éditeur → ~26 unités monde), orientation en degrés et
-  centre de rotation en % de la boîte englobante (mêmes réglages souris :
-  molette = orientation, Ctrl/Cmd + molette = zoom, clic = centre) - constantes
-  `COSMONAUTE_JSON`, `COSMONAUTE_EVA_SCALE`, `COSMONAUTE_ORIENTATION_DEGREES`,
-  `COSMONAUTE_CENTER_X/Y_PERCENT` de `src/marketplace.rs`, lues par
-  `src/cosmonaut.rs` (l'animation bras/jambes suit le mesh) ;
+  défaut : ~17 unités éditeur → ~26 unités monde), orientation en degrés,
+  centre de rotation en % de la boîte englobante et **éjection de gaz** : le
+  propulseur de la combinaison, comme les propulseurs du vaisseau (marqué
+  d'un losange coloré, **glissable sur l'aperçu**) - position en % de la
+  boîte englobante (valeurs libres, négatives ou > 100 %), **direction
+  d'éjection** (par défaut 180° : gaz vers l'arrière, le dos) et couleur de
+  la flamme (dessinée par le jeu quand il pousse, pas de mesh) - mêmes
+  réglages souris : molette = orientation, Ctrl/Cmd + molette = zoom, clic =
+  centre - constantes `COSMONAUTE_JSON`, `COSMONAUTE_EVA_SCALE`,
+  `COSMONAUTE_ORIENTATION_DEGREES`, `COSMONAUTE_CENTER_X/Y_PERCENT`,
+  `COSMONAUTE_THRUSTERS` (type `CosmonautThruster`) de
+  `src/marketplace.rs`, lues par `src/cosmonaut.rs` (l'animation
+  bras/jambes suit le mesh) et `src/main.rs` (la poussée sort du point
+  configuré) ;
 - **charger / enregistrer directement** : `src/marketplace.rs` est **chargé
   automatiquement à l'ouverture** (mode serveur) et « 💾 Enregistrer le
   fichier » l'écrit dans le projet (fetch GET/PUT en mode serveur, API File
@@ -446,9 +454,11 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   catalogue d'armes `VAISSEAU_WEAPONS` + meshes d'armes
   `VAISSEAU_WEAPON_MESH_i` / `VAISSEAU_WEAPON_AMMO_MESH_i` + composition
   `VAISSEAU_PLANES_ALWAYS` / `VAISSEAU_PLANE_LINKS`) et `COSMONAUTE_*` du
-  cosmonaute EVA (dont `COSMONAUTE_PLANES`), types `ShipUpgrade` +
+  cosmonaute EVA (dont `COSMONAUTE_THRUSTERS` et `COSMONAUTE_PLANES`),
+  types `ShipUpgrade` +
   `UpgradeTrack` + `ReputationRank` + `PlaneUpgradeTrack` +
-  `PlaneUpgradeLink` + `VaisseauWeapon` + `VaisseauThruster` et lignes
+  `PlaneUpgradeLink` + `VaisseauWeapon` + `VaisseauThruster` +
+  `CosmonautThruster` et lignes
   `FUEL_UPGRADE_TRACK` … `CARGO_UPGRADE_TRACK`)
   dans le style exact du code du jeu ; on recompile ensuite
   (`cargo build --release` - les tests `cargo test` valident les nouvelles

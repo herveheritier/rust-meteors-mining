@@ -21,12 +21,14 @@
 //! false`, jamais détruit), il n'est jamais affiché à côté de la base.
 
 use serde::Deserialize;
+use std::sync::OnceLock;
 
 use crate::config::{argb32, TEXTURE_NONE, WHOIAM_COSMONAUT};
 use crate::geom::{Point, Triangle};
 use crate::marketplace::{
     COSMONAUTE_CENTER_X_PERCENT, COSMONAUTE_CENTER_Y_PERCENT, COSMONAUTE_EVA_SCALE,
-    COSMONAUTE_JSON, COSMONAUTE_ORIENTATION_DEGREES, COSMONAUTE_PLANES,
+    COSMONAUTE_JSON, COSMONAUTE_ORIENTATION_DEGREES, COSMONAUTE_PLANES, COSMONAUTE_THRUSTERS,
+    CosmonautThruster,
 };
 use crate::shape::{compute_shape_center, free_shape, Shape};
 
@@ -104,6 +106,101 @@ fn cosmonaut_visible_mask(file: &CosmonautFile) -> Vec<bool> {
     }
 }
 
+/// Charge le fichier mesh embarqué (une seule fois, en cache `OnceLock`) -
+/// même schéma que `vaisseau::vaisseau_file`.
+fn cosmonaut_file() -> &'static CosmonautFile {
+    static COSMONAUTE_FILE: OnceLock<CosmonautFile> = OnceLock::new();
+    COSMONAUTE_FILE.get_or_init(|| {
+        serde_json::from_str(COSMONAUTE_JSON).expect("assets/cosmonaute.json : JSON invalide")
+    })
+}
+
+/// Boîte englobante de la composition (repère de l'éditeur, y vers le haut) :
+/// `(minx, miny, maxx, maxy)` - sert à situer le centre de rotation et les
+/// éjections de gaz en pourcentage (même schéma que `vaisseau::composition_bbox`).
+fn cosmonaut_bbox(file: &CosmonautFile, visible: &[bool]) -> (f64, f64, f64, f64) {
+    let mut minx = f64::MAX;
+    let mut miny = f64::MAX;
+    let mut maxx = f64::MIN;
+    let mut maxy = f64::MIN;
+    for (i, plane) in file.planes.iter().enumerate() {
+        if !visible.get(i).copied().unwrap_or(false) {
+            continue;
+        }
+        for v in &plane.verts {
+            minx = minx.min(v[0]);
+            miny = miny.min(v[1]);
+            maxx = maxx.max(v[0]);
+            maxy = maxy.max(v[1]);
+        }
+    }
+    (minx, miny, maxx, maxy)
+}
+
+/// Éjection de gaz du cosmonaute EVA (`COSMONAUTE_THRUSTERS`) : chaque
+/// propulseur + son **point local** sur le cosmonaute - sa `position` (en %
+/// de la boîte englobante de la composition) convertie par la même
+/// transformation que les sommets (pivot en %, rotation `−orientation`,
+/// échelle, axe y retourné - voir `build_cosmonaut`). Le gaz sort de ce
+/// point, tourné avec la figure (src/main.rs). **Liste vide = repli** : pas
+/// de propulseur configuré, la flamme classique sur le dos
+/// (`render::draw_cosmonaut_thruster`).
+pub fn cosmonaut_thrusters() -> Vec<(CosmonautThruster, Point)> {
+    cosmonaut_thrusters_with(
+        COSMONAUTE_THRUSTERS,
+        COSMONAUTE_EVA_SCALE,
+        COSMONAUTE_ORIENTATION_DEGREES,
+        Point::new(COSMONAUTE_CENTER_X_PERCENT, COSMONAUTE_CENTER_Y_PERCENT),
+    )
+}
+
+/// Variante pure de `cosmonaut_thrusters` (tests) : propulseur + point local
+/// de sa position pour des réglages **explicites** (échelle, orientation,
+/// centre de rotation en % de la boîte englobante). Liste vide → aucune.
+fn cosmonaut_thrusters_with(
+    thrusters: &[CosmonautThruster],
+    scale: f64,
+    orientation_degrees: f64,
+    center_percent: Point,
+) -> Vec<(CosmonautThruster, Point)> {
+    if thrusters.is_empty() {
+        return Vec::new();
+    }
+    let file = cosmonaut_file();
+    let visible = cosmonaut_visible_mask(file);
+    let (minx, miny, maxx, maxy) = cosmonaut_bbox(file, &visible);
+    // centre de rotation : pivot en % de la boîte englobante (50/50 = centre)
+    let pivot_editor = Point::new(
+        minx + center_percent.x / 100.0 * (maxx - minx),
+        miny + center_percent.y / 100.0 * (maxy - miny),
+    );
+    // orientation : angle de l'avant du mesh dans l'éditeur (degrés, sens
+    // trigonométrique : 0 = à droite, +90 = en haut) - le mesh est tourné de
+    // −orientation autour du pivot pour ramener l'avant sur +x (l'orientation
+    // 0 du jeu, celle du départ)
+    let angle = -orientation_degrees.to_radians();
+    let (sin_a, cos_a) = angle.sin_cos();
+    // sommet éditeur (y↑) → repère local du jeu (y↓) : rotation autour du
+    // pivot, mise à l'échelle, axe y retourné (même `pt` que `build_cosmonaut`)
+    let pt = |v: [f64; 2]| {
+        let dx = v[0] - pivot_editor.x;
+        let dy = v[1] - pivot_editor.y;
+        Point::new(
+            (pivot_editor.x + dx * cos_a - dy * sin_a) * scale,
+            -(pivot_editor.y + dx * sin_a + dy * cos_a) * scale,
+        )
+    };
+    thrusters
+        .iter()
+        .map(|t| {
+            let (x, y) = t.position;
+            let ex = minx + x / 100.0 * (maxx - minx);
+            let ey = miny + y / 100.0 * (maxy - miny);
+            (*t, pt([ex, ey]))
+        })
+        .collect()
+}
+
 /// Construit le cosmonaute EVA - le pilote contrôlé quand le vaisseau est
 /// détruit (`game.rs`) : petit, garé hors écran jusqu'à l'éjection. Garé, il
 /// est cullé (hors limites de dessin) ; une fois éjecté, la caméra le suit
@@ -137,12 +234,11 @@ fn build_cosmonaut(
     center_percent: Point,
     position: Point,
 ) -> usize {
-    let file: CosmonautFile =
-        serde_json::from_str(COSMONAUTE_JSON).expect("assets/cosmonaute.json : JSON invalide");
+    let file = cosmonaut_file();
     // composition des plans (`COSMONAUTE_PLANES`) : un plan exclu n'est ni
     // construit ni animé - la boîte englobante (centre de rotation) et
     // l'allocation ne portent que sur les plans retenus
-    let visible = cosmonaut_visible_mask(&file);
+    let visible = cosmonaut_visible_mask(file);
     let nbr: usize = file
         .planes
         .iter()
@@ -570,5 +666,85 @@ mod tests {
         assert_eq!(s.velocity, 0.0);
         assert_eq!(s.rotation, 0.0);
         assert_eq!(s.orientation, 0.0);
+    }
+
+    #[test]
+    fn cosmonaut_thrusters_map_percent_to_local_points() {
+        // la position d'un propulseur (en % de la boîte englobante, repère
+        // éditeur y↑) est convertie par la **même transformation que les
+        // sommets du mesh** (rotation autour du centre de rotation, mise à
+        // l'échelle, axe y retourné - `build_cosmonaut`) : le gaz sort du
+        // point local visé, tourné avec la figure. Testé sur des réglages
+        // **explicites** (données synthétiques) pour rester valable quel que
+        // soit le réglage enregistré depuis l'outil.
+        let mk = |position: (f64, f64)| CosmonautThruster {
+            name: "DOS",
+            position,
+            ejection_angle_degrees: 180.0,
+            color: 0xFFFF9020,
+        };
+        let file = cosmonaut_file();
+        let visible = cosmonaut_visible_mask(file);
+        let (minx, miny, maxx, maxy) = cosmonaut_bbox(file, &visible);
+        // échelle 1, orientation 0, pivot au coin 0 %/0 % : pt = identité +
+        // axe y retourné. 0 %/0 % (coin haut-gauche de l'éditeur) → (minx, -miny)
+        let pts = cosmonaut_thrusters_with(&[mk((0.0, 0.0))], 1.0, 0.0, Point::new(0.0, 0.0));
+        assert_eq!(pts.len(), 1);
+        let p = pts[0].1;
+        assert!(
+            (p.x - minx).abs() < 1e-9 && (p.y + miny).abs() < 1e-9,
+            "0 %/0 % → {:?} attendu ({}, {})",
+            p,
+            minx,
+            -miny
+        );
+        // 100 %/100 % (coin bas-droit de l'éditeur) → (maxx, -maxy)
+        let pts = cosmonaut_thrusters_with(&[mk((100.0, 100.0))], 1.0, 0.0, Point::new(0.0, 0.0));
+        let p = pts[0].1;
+        assert!(
+            (p.x - maxx).abs() < 1e-9 && (p.y + maxy).abs() < 1e-9,
+            "100 %/100 % → {:?} attendu ({}, {})",
+            p,
+            maxx,
+            -maxy
+        );
+        // rotation autour du pivot : orientation 90 (l'avant du mesh vers le
+        // haut est tourné de −90°). Le bord droit (100 %/50 %) passe au-dessus
+        // du pivot : point (cx, w/2 − cy) avec w = largeur de la boîte.
+        let (cx, cy, w) = (
+            minx + (maxx - minx) / 2.0,
+            miny + (maxy - miny) / 2.0,
+            maxx - minx,
+        );
+        let pts = cosmonaut_thrusters_with(&[mk((100.0, 50.0))], 1.0, 90.0, Point::new(50.0, 50.0));
+        let p = pts[0].1;
+        assert!(
+            (p.x - cx).abs() < 1e-9 && (p.y - (w / 2.0 - cy)).abs() < 1e-9,
+            "rotation 90° → {:?} attendu ({}, {})",
+            p,
+            cx,
+            w / 2.0 - cy
+        );
+        // l'échelle s'applique au point comme aux sommets : au centre
+        // (50/50) avec pivot (50/50), le point est le pivot local du mesh
+        // (centre de rotation), quelle que soit l'orientation
+        let pts = cosmonaut_thrusters_with(
+            &[mk((50.0, 50.0))],
+            COSMONAUTE_EVA_SCALE,
+            30.0,
+            Point::new(50.0, 50.0),
+        );
+        let p = pts[0].1;
+        assert!(
+            (p.x - cx * COSMONAUTE_EVA_SCALE).abs() < 1e-9
+                && (p.y + cy * COSMONAUTE_EVA_SCALE).abs() < 1e-9,
+            "centre → {:?}",
+            p
+        );
+        // liste vide = repli (aucun propulseur)
+        assert!(cosmonaut_thrusters_with(&[], 1.0, 0.0, Point::new(0.0, 0.0)).is_empty());
+        // données réelles (`COSMONAUTE_THRUSTERS`) : un point par propulseur
+        // configuré (vide si la liste est vide) - indépendant des valeurs
+        assert_eq!(cosmonaut_thrusters().len(), COSMONAUTE_THRUSTERS.len());
     }
 }

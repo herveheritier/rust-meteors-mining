@@ -1296,15 +1296,67 @@ pub fn draw_thruster_gas(
 /// Le cosmonaute n'a qu'**un seul propulseur** (pas de marche arrière - voir
 /// `input::cosmonaut_controls`) : une flamme extérieure orange semi-transparente
 /// et un cœur jaune, dont la longueur et la largeur **vacillent** (sinus
-/// rapide + bruit) pour un effet de combustion animé.
+/// rapide + bruit) pour un effet de combustion animé. **Repli** : utilisé
+/// quand `COSMONAUTE_THRUSTERS` est vide (position/couleur par défaut du jeu).
 pub fn draw_cosmonaut_thruster(shape: &Shape, camera: Point, world: &World) {
     // dos du cosmonaute : opposé à l'orientation (déplacement inverse) - la
     // flamme tourne avec la figure, toujours dans son dos
     let back = shape.orientation + TAU / 2.0;
     let (dx, dy) = (back.cos(), back.sin());
-    let (px, py) = (-dy, dx); // perpendiculaire : largeur de la flamme
     let x = shape.position.x + shape.center.x;
     let y = shape.position.y + shape.center.y;
+    // base de la flamme sur le dos du corps (légèrement derrière le centre)
+    let nozzle = shape.radius * 0.9;
+    let base = Point::new(x + dx * nozzle, y + dy * nozzle);
+    draw_cosmonaut_flame(base, (dx, dy), 0xA0FF9020, 0xFFFFD050, camera, world);
+}
+
+/// Propulseur de la combinaison EVA **configuré** (`COSMONAUTE_THRUSTERS`,
+/// src/main.rs) : la flamme sort du **point local** `local` (position en % de
+/// la boîte englobante de la composition, même repère que les sommets du
+/// mesh) tourné avec la figure autour de son centre de rotation, dans la
+/// direction d'éjection `flow_angle` (repère local du cosmonaute, ex `π` =
+/// vers l'arrière), teintée de la couleur configurée `color` (ARGB - la
+/// flamme extérieure semi-transparente, le cœur éclairci).
+pub fn draw_cosmonaut_thruster_at(
+    shape: &Shape,
+    local: Point,
+    flow_angle: f64,
+    color: u32,
+    camera: Point,
+    world: &World,
+) {
+    // point local → monde : tourné autour du centre de rotation puis translaté
+    // (même calcul que les balles et les gaz du vaisseau - `ejection_flow`)
+    let mut p = local;
+    p.rotate_around(Point::new(shape.center.x, shape.center.y), shape.orientation);
+    let base = Point::new(shape.position.x + p.x, shape.position.y + p.y);
+    // direction d'éjection dans le repère local, tournée avec la figure
+    let a = shape.orientation + flow_angle;
+    let (dx, dy) = (a.cos(), a.sin());
+    // flamme extérieure : la couleur configurée, semi-transparente (comme
+    // l'orange du repli) ; cœur : couleur éclaircie (comme le jaune du repli)
+    let outer = (color & 0x00FF_FFFF) | 0xA000_0000;
+    let inner = lighten_argb(color, 0.55);
+    draw_cosmonaut_flame(base, (dx, dy), outer, inner, camera, world);
+}
+
+/// Flamme animée d'un propulseur EVA : deux triangles (extérieur
+/// semi-transparent + cœur éclairci, plus court et plus étroit) depuis la
+/// base `base` (point monde) dans la direction `dir`, longueur et largeur
+/// **vacillantes** (sinus rapide + bruit) - partagée par le repli
+/// (`draw_cosmonaut_thruster`) et le propulseur configuré
+/// (`draw_cosmonaut_thruster_at`).
+fn draw_cosmonaut_flame(
+    base: Point,
+    dir: (f64, f64),
+    outer_color: u32,
+    inner_color: u32,
+    camera: Point,
+    world: &World,
+) {
+    let (dx, dy) = dir;
+    let (px, py) = (-dy, dx); // perpendiculaire : largeur de la flamme
 
     // la flamme danse : longueur et demi-largeur animées (sinus rapide + bruit)
     let t = get_time();
@@ -1312,38 +1364,47 @@ pub fn draw_cosmonaut_thruster(shape: &Shape, camera: Point, world: &World) {
     let len = 5.0 + 2.0 * (t * 22.0).sin() + 1.5 * n;
     let half = 1.6 + 0.5 * (t * 15.0 + 1.0).sin() + 0.4 * n;
 
-    // base de la flamme sur le dos du corps, pointe dans l'axe arrière
-    let nozzle = shape.radius * 0.9;
     let to_screen = |p: Point| {
         let mut q = Point::new(p.x + camera.x, p.y + camera.y);
         q.normalize_world(world);
         vec2(q.x as f32, q.y as f32)
     };
-    let base = Point::new(x + dx * nozzle, y + dy * nozzle);
-    let tip = Point::new(x + dx * (nozzle + len), y + dy * (nozzle + len));
+    let tip = Point::new(base.x + dx * len, base.y + dy * len);
     let l1 = Point::new(base.x + px * half, base.y + py * half);
     let l2 = Point::new(base.x - px * half, base.y - py * half);
-    // flamme extérieure orange (semi-transparente) - chemin complet : la
-    // fonction locale `draw_triangle` (triangles non texturés) masque celle de
-    // macroquad
+    // flamme extérieure (semi-transparente) - chemin complet : la fonction
+    // locale `draw_triangle` (triangles non texturés) masque celle de macroquad
     macroquad::shapes::draw_triangle(
         to_screen(l1),
         to_screen(l2),
         to_screen(tip),
-        argb_to_color(0xA0FF9020),
+        argb_to_color(outer_color),
     );
-    // cœur jaune, plus court et plus étroit (le centre de la flamme)
-    let inner_len = nozzle + len * 0.55;
+    // cœur éclairci, plus court et plus étroit (le centre de la flamme)
+    let inner_len = len * 0.55;
     let inner_half = half * 0.45;
-    let itip = Point::new(x + dx * inner_len, y + dy * inner_len);
+    let itip = Point::new(base.x + dx * inner_len, base.y + dy * inner_len);
     let i1 = Point::new(base.x + px * inner_half, base.y + py * inner_half);
     let i2 = Point::new(base.x - px * inner_half, base.y - py * inner_half);
     macroquad::shapes::draw_triangle(
         to_screen(i1),
         to_screen(i2),
         to_screen(itip),
-        argb_to_color(0xFFFFD050),
+        argb_to_color(inner_color),
     );
+}
+
+/// Éclaircit une couleur ARGB vers le blanc : chaque canal RGB est tiré de
+/// `f` (0 = inchangé, 1 = blanc) vers 255 - l'alpha est conservé. Sert au
+/// cœur de la flamme EVA (le jaune du repli, l'éclairci de la couleur
+/// configurée).
+fn lighten_argb(color: u32, f: f64) -> u32 {
+    let channel = |c: u32| (c as f64 + (255.0 - c as f64) * f).round() as u32;
+    let a = (color >> 24) & 0xFF;
+    let r = channel((color >> 16) & 0xFF);
+    let g = channel((color >> 8) & 0xFF);
+    let b = channel(color & 0xFF);
+    (a << 24) | (r << 16) | (g << 8) | b
 }
 
 /// Dessine un débris : pixel blanc 1×1 (ex `drawGarbage` du portage QB64).

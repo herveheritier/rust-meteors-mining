@@ -61,7 +61,7 @@ pub const ATC_RADAR_COST: i32 = 30;
 /// Données générées par l'outil de gestion : lues par `src/game.rs`
 /// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et
 /// `src/state.rs` (génération et population).
-///
+
 /// Force de réaction d'un météore qui percute la **station** : le triangle
 /// qui collisionne explose et le météore est repoussé - sa composante de
 /// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,
@@ -303,6 +303,24 @@ pub const COSMONAUTE_CENTER_X_PERCENT: f64 = 51.0;
 /// axe y.
 pub const COSMONAUTE_CENTER_Y_PERCENT: f64 = 59.0;
 
+/// Éjection de gaz du cosmonaute EVA - le propulseur de la combinaison :
+/// position en **pourcentage de la boîte englobante de la composition**
+/// (50/50 = centre, repère du mesh de l'éditeur, y vers le haut - valeurs
+/// libres, négatives ou > 100 % possibles), **direction d'éjection** du
+/// gaz (degrés, repère de l'éditeur) et **couleur** de la flamme (ARGB).
+/// Le gaz sort de la position (la flamme est dessinée à cet endroit quand
+/// le cosmonaute pousse - src/main.rs). **Liste vide = repli** : la petite
+/// flamme classique sur le dos, position et couleur par défaut du jeu
+/// (`render::draw_cosmonaut_thruster`). Générée par l'outil de gestion.
+pub const COSMONAUTE_THRUSTERS: &[CosmonautThruster] = &[
+    CosmonautThruster {
+        name: "DOS",
+        position: (26.0, 57.0),
+        ejection_angle_degrees: 180.0,
+        color: 0xFFFF9020,
+    },
+];
+
 /// Plans du cosmonaute EVA construits (composition - indices des plans du
 /// fichier mesh `COSMONAUTE_JSON`) : un plan absent n'est jamais construit
 /// (ni animé). **Liste vide = tous les plans** (repli : composition non
@@ -507,6 +525,33 @@ pub struct VaisseauThruster {
     /// `ejection_flow` (src/main.rs).
     pub ejection_angle_degrees: f64,
     /// Couleur du gaz d'éjection (ARGB, ex 0xFFFFA000) - `ejection_flow`
+    /// (src/main.rs).
+    pub color: u32,
+}
+
+/// Le propulseur de la combinaison EVA du cosmonaute éjecté : position de
+/// l'éjection des gaz (en **pourcentage de la boîte englobante de la
+/// composition**, 50/50 = centre, repère du mesh de l'éditeur, y vers le
+/// haut - valeurs libres, négatives ou > 100 % possibles), direction
+/// d'éjection et couleur de la flamme (pas de mesh : la flamme est dessinée
+/// par le jeu - `render::draw_cosmonaut_thruster_at`). Le gaz sort de la
+/// position quand le cosmonaute pousse (↑, src/main.rs) ; **liste vide =
+/// repli** sur la petite flamme classique sur le dos. Générée par l'outil de
+/// gestion. Le champ `name` n'est lu que par les tests et l'outil -
+/// `dead_code` quand la liste est vide.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub struct CosmonautThruster {
+    /// Nom du propulseur (outil, export).
+    pub name: &'static str,
+    /// Position sur le cosmonaute : en % de la boîte englobante de la
+    /// composition (50/50 = centre), dans le repère de l'éditeur.
+    pub position: (f64, f64),
+    /// Direction d'éjection du gaz (degrés, repère de l'éditeur y vers le
+    /// haut : 0 = avant, +90 = haut) - convertie par le jeu pour
+    /// `ejection_flow` (src/main.rs).
+    pub ejection_angle_degrees: f64,
+    /// Couleur du gaz d'éjection (ARGB, ex 0xFFFF9020) - `ejection_flow`
     /// (src/main.rs).
     pub color: u32,
 }

@@ -716,7 +716,25 @@ async fn main() {
         {
             if state.cosmonaut_active {
                 if state.player.thrusted != 0 {
-                    render::draw_cosmonaut_thruster(&shapes[pilot], camera, &state.world);
+                    // éjection de gaz du cosmonaute EVA : le propulseur
+                    // configuré (`COSMONAUTE_THRUSTERS` - position, direction
+                    // d'éjection et couleur) sort de son point local tourné
+                    // avec la figure ; liste vide = repli : la petite flamme
+                    // classique sur le dos
+                    // (voir `render::draw_cosmonaut_thruster`)
+                    match crate::cosmonaut::cosmonaut_thrusters().first() {
+                        Some((t, local)) => render::draw_cosmonaut_thruster_at(
+                            &shapes[pilot],
+                            *local,
+                            -t.ejection_angle_degrees.to_radians(),
+                            t.color,
+                            camera,
+                            &state.world,
+                        ),
+                        None => {
+                            render::draw_cosmonaut_thruster(&shapes[pilot], camera, &state.world)
+                        }
+                    }
                 }
             } else {
                 // gaz d'éjection : le mesh configuré de chaque propulseur
