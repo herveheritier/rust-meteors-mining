@@ -55,6 +55,12 @@ const SWING_OMEGA: f64 = 14.0;
 /// et les membres **retombent au repos** (constante de temps ~1/14 s) quand
 /// elle cesse.
 const SWING_CHASE: f64 = 14.0;
+/// Inclinaison (radians) des membres quand le cosmonaute **tourne** sur
+/// lui-même (réorientation, touches ←/→ en mode EVA) : les bras et les
+/// jambes **basculent dans le sens du tour** (~20°, en plus du balancement
+/// de poussée) tant que la rotation est demandée, puis retombent à la pose
+/// d'origine quand elle s'arrête (voir `animate_eva_cosmonaut`).
+const TURN_LEAN_ANGLE: f64 = 0.35;
 
 /// Racine du fichier « meshes-designer » - seuls les plans portent le mesh.
 #[derive(Deserialize)]
@@ -416,21 +422,30 @@ fn build_cosmonaut(
 
 /// Anime les membres du cosmonaute EVA : les **bras et les jambes s'agitent**
 /// (bascule de leurs triangles autour de leurs articulations, `Triangle.limb`/
-/// `pivot`) tant qu'il pousse, puis **retombent au repos** - l'angle cible
-/// oscille pendant la poussée et vaut 0 sinon (`Shape.anim_angle` rattrape la
-/// cible : la pose s'installe à la montée, retombe doucement à l'arrêt).
-/// `time` est l'horloge (ex `get_time()`), `dt` le pas de la frame ; les
-/// sommets locaux sont tournés en place, `moving_shape` recalcule les
-/// positions réelles dans la foulée. Sans effet (ni coût) une fois au repos.
+/// `pivot`) tant qu'il pousse et, quand il **se réoriente** (`turn` ≠ 0),
+/// **basculent dans le sens du tour** - l'inclinaison de réorientation
+/// (`TURN_LEAN_ANGLE` × le sens) s'ajoute à l'oscillation de poussée dans la
+/// cible poursuivie. Quand la poussée cesse et/ou que la rotation s'arrête,
+/// les membres **retombent au repos** (`Shape.anim_angle` rattrape la cible :
+/// la pose s'installe à la montée, retombe doucement à l'arrêt).
+/// `turn` est le sens de rotation demandé (-1, 0, +1 : +1 = orientation
+/// croissante, touche →), `time` l'horloge (ex `get_time()`), `dt` le pas de
+/// la frame ; les sommets locaux sont tournés en place, `moving_shape`
+/// recalcule les positions réelles dans la foulée. Sans effet (ni coût) une
+/// fois au repos.
 pub fn animate_eva_cosmonaut(
     shape: &mut Shape,
     triangles: &mut [Triangle],
     thrusting: bool,
+    turn: i32,
     time: f64,
     dt: f64,
 ) {
-    // cible : oscillation pendant la poussée, 0 au repos
-    let target = if thrusting { SWING_ARMS * (time * SWING_OMEGA).sin() } else { 0.0 };
+    // cibles cumulées : inclinaison de réorientation (constante, dans le sens
+    // du tour) + oscillation de la poussée ; 0 (repos) quand rien n'est demandé
+    let lean = TURN_LEAN_ANGLE * turn as f64;
+    let swing = if thrusting { SWING_ARMS * (time * SWING_OMEGA).sin() } else { 0.0 };
+    let target = lean + swing;
     // rattrapage lissé : la pose s'installe à la poussée et retombe au repos
     let step = (target - shape.anim_angle) * (1.0 - (-dt * SWING_CHASE).exp());
     shape.anim_angle += step;
@@ -564,7 +579,7 @@ mod tests {
         let mut t = 0.0;
         for _ in 0..120 {
             t += dt;
-            animate_eva_cosmonaut(&mut shape, &mut triangles, true, t, dt);
+            animate_eva_cosmonaut(&mut shape, &mut triangles, true, 0, t, dt);
         }
         assert!(
             (triangles[arm].center.x - arm_rest.x).abs() > 0.3
@@ -583,7 +598,7 @@ mod tests {
         // repos : les membres retombent à la pose d'origine
         for _ in 0..600 {
             t += dt;
-            animate_eva_cosmonaut(&mut shape, &mut triangles, false, t, dt);
+            animate_eva_cosmonaut(&mut shape, &mut triangles, false, 0, t, dt);
         }
         assert!(
             (triangles[arm].center.x - arm_rest.x).abs() < 0.1
@@ -595,6 +610,87 @@ mod tests {
             (triangles[leg].center.x - leg_rest.x).abs() < 0.1
                 && (triangles[leg].center.y - leg_rest.y).abs() < 0.1,
             "la jambe doit revenir au repos"
+        );
+        assert_eq!(triangles[fixed].a, fixed_rest);
+    }
+
+    #[test]
+    fn eva_cosmonaut_limbs_lean_into_the_turn_and_settle() {
+        // réorientation (←/→, `turn` ≠ 0) : les membres **basculent dans le
+        // sens du tour** (un bras pivote autour de son articulation : tour +1 →
+        // bascule +, tour -1 → bascule opposée), puis retombent à la pose
+        // d'origine quand la rotation s'arrête - le buste reste fixe
+        let mut shapes = Vec::new();
+        let mut triangles = Vec::new();
+        create_eva_cosmonaut(&mut shapes, &mut triangles);
+        let s = &shapes[0];
+        let mut arm_tri = None;
+        let mut fixed_tri = None;
+        for (i, t) in triangles[s.first_triangle..=s.last_triangle].iter().enumerate() {
+            let i = s.first_triangle + i;
+            match t.limb {
+                1 if arm_tri.is_none() => arm_tri = Some(i),
+                0 if fixed_tri.is_none() => fixed_tri = Some(i),
+                _ => {}
+            }
+        }
+        let (arm, fixed) = (arm_tri.unwrap(), fixed_tri.unwrap());
+        let arm_rest = triangles[arm].center;
+        let pivot = triangles[arm].pivot;
+        let fixed_rest = triangles[fixed].a;
+        let dt = 1.0 / 60.0;
+        // bras au repos : un vecteur non nul depuis son articulation (l'angle
+        // de bascule se lit par le produit vectoriel v_repos × v_actuel)
+        let v_rest = Point::new(arm_rest.x - pivot.x, arm_rest.y - pivot.y);
+        assert!(v_rest.x.abs() + v_rest.y.abs() > 1.0, "bras étendu : {:?}", v_rest);
+        let cross = |p: Point| v_rest.x * (p.y - pivot.y) - v_rest.y * (p.x - pivot.x);
+        let lean = |v: Point| (v.x - pivot.x).hypot(v.y - pivot.y) > 0.5;
+
+        // tour +1 (touche →) : le bras bascule dans le sens + autour de son
+        // articulation (produit vectoriel > 0) et le buste reste immobile
+        let mut shape = shapes[0].clone();
+        let mut t = 0.0;
+        for _ in 0..240 {
+            t += dt;
+            animate_eva_cosmonaut(&mut shape, &mut triangles, false, 1, t, dt);
+        }
+        let p_pos = triangles[arm].center;
+        assert!(lean(p_pos) && cross(p_pos) > 0.5, "tour +1 : bascule + ({:?})", p_pos);
+        assert_eq!(triangles[fixed].a, fixed_rest, "le buste reste immobile");
+
+        // la rotation s'arrête : les membres reviennent à la pose d'origine
+        for _ in 0..300 {
+            t += dt;
+            animate_eva_cosmonaut(&mut shape, &mut triangles, false, 0, t, dt);
+        }
+        assert!(
+            (triangles[arm].center.x - arm_rest.x).abs() < 0.1
+                && (triangles[arm].center.y - arm_rest.y).abs() < 0.1,
+            "le bras doit revenir au repos après le tour ({:?})",
+            triangles[arm].center
+        );
+        assert_eq!(triangles[fixed].a, fixed_rest);
+
+        // tour -1 (touche ←) : bascule opposée (produit vectoriel < 0)
+        let mut shape = shapes[0].clone();
+        for _ in 0..240 {
+            t += dt;
+            animate_eva_cosmonaut(&mut shape, &mut triangles, false, -1, t, dt);
+        }
+        let p_neg = triangles[arm].center;
+        assert!(lean(p_neg) && cross(p_neg) < -0.5, "tour -1 : bascule - ({:?})", p_neg);
+        assert_eq!(triangles[fixed].a, fixed_rest);
+
+        // arrêt : retour à la pose d'origine (mêmes membres, même buste)
+        for _ in 0..300 {
+            t += dt;
+            animate_eva_cosmonaut(&mut shape, &mut triangles, false, 0, t, dt);
+        }
+        assert!(
+            (triangles[arm].center.x - arm_rest.x).abs() < 0.1
+                && (triangles[arm].center.y - arm_rest.y).abs() < 0.1,
+            "le bras doit revenir au repos après le tour inverse ({:?})",
+            triangles[arm].center
         );
         assert_eq!(triangles[fixed].a, fixed_rest);
     }

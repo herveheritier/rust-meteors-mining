@@ -759,13 +759,16 @@ pub fn update(
     }
 
     // animation des membres du cosmonaute EVA : bras et jambes qui **s'agitent
-    // pendant la poussée** puis retombent au repos (`cosmonaut::animate_eva_cosmonaut`)
-    // - avant la physique : `moving_shape` recalcule les positions réelles des
-    // triangles animés dans la foulée. Garé (vaisseau intact), il revient au repos.
+    // pendant la poussée** et **basculent dans le sens du tour** pendant une
+    // réorientation (←/→, `cosmonaut_turn`), puis retombent au repos
+    // (`cosmonaut::animate_eva_cosmonaut`) - avant la physique : `moving_shape`
+    // recalcule les positions réelles des triangles animés dans la foulée.
+    // Garé (vaisseau intact), il revient au repos (aucune rotation demandée).
     if state.eva_cosmonaut >= 0 {
         let eva = state.eva_cosmonaut as usize;
         let thrusting = state.cosmonaut_active && state.player.thrusted != 0;
-        animate_eva_cosmonaut(&mut shapes[eva], triangles, thrusting, get_time(), dt);
+        let turn = if state.cosmonaut_active { state.cosmonaut_turn } else { 0 };
+        animate_eva_cosmonaut(&mut shapes[eva], triangles, thrusting, turn, get_time(), dt);
     }
 
     // scénario à économie : le carburant est consommé tant que le moteur

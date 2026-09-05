@@ -386,6 +386,13 @@ pub struct GameState {
     /// Index de la forme « cosmonaute EVA » dans `shapes` (-1 tant qu'elle
     /// n'est pas créée par `main.rs`).
     pub eva_cosmonaut: i32,
+    /// Sens de réorientation demandé par le joueur en mode EVA (-1, 0, +1) :
+    /// +1 = touche → (l'orientation augmente), -1 = touche ←, 0 = aucune
+    /// rotation (ou les deux). État **transitoire**, écrit par
+    /// `input::cosmonaut_controls` à chaque frame - lu par
+    /// `game.rs` pour pencher les membres du cosmonaute dans le sens du tour
+    /// (`cosmonaut::animate_eva_cosmonaut`). Toujours 0 hors mode EVA.
+    pub cosmonaut_turn: i32,
     /// Récupération du cosmonaute EVA en cours (secondes restantes, 0 =
     /// aucune) : vaisseau détruit, il a rejoint la zone d'accostage - un
     /// cordon jaillit de l'anneau jusqu'à lui et le ramène sur l'anneau
@@ -594,6 +601,7 @@ impl GameState {
             dock_approach_ok_sounded: false,
             cosmonaut_active: false,
             eva_cosmonaut: -1, // créé par main.rs au démarrage
+            cosmonaut_turn: 0, // aucune rotation tant que le mode EVA n'est pas actif
             eva_recovery: 0.0,
             eva_recovery_from_pos: Point::new(0.0, 0.0),
             eva_recovery_to_pos: Point::new(0.0, 0.0),

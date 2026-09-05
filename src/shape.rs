@@ -146,9 +146,10 @@ pub struct Shape {
     /// (`create_gem`), détruits eux par la station.
     pub ejected_cargo: bool,
     /// Angle (radians) de balancement actuel des membres du cosmonaute EVA :
-    /// poursuit la cible oscillante pendant la poussée et décroît vers 0 au
-    /// repos (voir `cosmonaut::animate_eva_cosmonaut`). 0 pour les autres
-    /// formes.
+    /// poursuit la cible oscillante pendant la poussée, augmentée de
+    /// l'inclinaison de réorientation quand il tourne (←/→), et décroît vers
+    /// 0 au repos (voir `cosmonaut::animate_eva_cosmonaut`). 0 pour les
+    /// autres formes.
     pub anim_angle: f64,
     pub show_all_parts: bool,
     pub who_i_am: i32,

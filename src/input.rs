@@ -284,13 +284,19 @@ pub fn cosmonaut_controls(state: &mut GameState, shapes: &mut [Shape], dt: f64) 
         thrust_vector(c, PLAYER_ACCELERATION * 60.0 * dt, c.orientation, 1.0, -1.0);
     }
     // orientation seule : la figure tourne, la trajectoire ne change pas
-    // (elle ne sera déviée que par une poussée ultérieure)
-    if right_pressed() {
+    // (elle ne sera déviée que par une poussée ultérieure). Le sens demandé
+    // est mémorisé (transitoire, `cosmonaut_turn`) pour que les membres
+    // basculent dans le sens du tour (`animate_eva_cosmonaut`, game.rs).
+    let turn_right = right_pressed();
+    let turn_left = left_pressed();
+    if turn_right {
         c.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
     }
-    if left_pressed() {
+    if turn_left {
         c.orientation -= PLAYER_ROTATION_SPEED * 60.0 * dt;
     }
+    // +1 = touche →, -1 = touche ←, 0 = aucune (ou les deux, qui s'annulent)
+    state.cosmonaut_turn = turn_right as i32 - turn_left as i32;
 }
 
 /// Convertit un `KeyCode` macroquad en keycode QB64 (ex `inp(96)`) : codes

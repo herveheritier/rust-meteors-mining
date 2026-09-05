@@ -74,6 +74,7 @@ pub fn activate_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles
         compute_real_positions(t, c.position, c.center, c.orientation);
     }
     state.cosmonaut_active = true;
+    state.cosmonaut_turn = 0; // aucune réorientation demandée à l'éjection
     state.docking_guide = true; // la mire guide le retour
     state.send_message("SHIP DESTROYED - RETURN TO THE STATION");
 }
@@ -95,6 +96,7 @@ pub fn rescue_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles: 
         compute_real_positions(t, c.position, c.center, c.orientation);
     }
     state.cosmonaut_active = false;
+    state.cosmonaut_turn = 0;
     state.send_message("RESCUED - THE STATION REBUILT YOUR SHIP");
 }
 
@@ -113,6 +115,7 @@ pub fn start_eva_recovery(state: &mut GameState, shapes: &mut [Shape], _triangle
         return; // cosmonaute EVA absent : rien à récupérer
     }
     let c = &shapes[idx];
+    state.cosmonaut_turn = 0; // plus de réorientation pendant la récupération
     // point de l'anneau dans la direction du cosmonaute (le cordon le ramène
     // radialement sur le bord intérieur de l'anneau, comme les liens) -
     // recalculé au début de la traction, depuis la position atteinte pendant
