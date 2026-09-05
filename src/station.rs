@@ -66,6 +66,26 @@ struct Face {
     v: [usize; 3],
 }
 
+/// Parse le fichier mesh embarqué (`STATION_JSON`).
+fn parse_station_file() -> StationFile {
+    serde_json::from_str(STATION_JSON).expect("assets/anneauStation.json : JSON invalide")
+}
+
+/// Nombre total de faces (triangles) de l'anneau (`assets/anneauStation.json`) :
+/// une `Triangle` par face dans `build_station`. Les tests d'allocation et
+/// d'intégrité (`generate.rs`, `game.rs`) s'y réfèrent plutôt que de coder le
+/// compte en dur, qui a déjà changé deux fois (48 → 64 faces) : la CI ne casse
+/// plus quand l'anneau est re-découpé dans l'éditeur. (`#[cfg(test)]` : aide
+/// de test - le code de production dérive le compte du fichier qu'il parse.)
+#[cfg(test)]
+pub fn station_face_count() -> usize {
+    parse_station_file()
+        .planes
+        .iter()
+        .map(|p| p.faces.len())
+        .sum()
+}
+
 /// Construit la station à partir du mesh `STATION_JSON` : une `Triangle` par
 /// face du fichier, mise à l'échelle pour couvrir l'anneau du jeu (bord
 /// extérieur `STATION_OUTER_RADIUS`), axe y retourné (éditeur y↑ → jeu y↓) et
@@ -77,8 +97,7 @@ struct Face {
 /// détruite au même nombre de triangles quand c'est possible, comme
 /// `warp_gate::build_warp_gate`).
 pub fn build_station(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) -> usize {
-    let file: StationFile =
-        serde_json::from_str(STATION_JSON).expect("assets/anneauStation.json : JSON invalide");
+    let file = parse_station_file();
     let nbr: usize = file.planes.iter().map(|p| p.faces.len()).sum();
 
     // boîte englobante du mesh dans le repère de l'éditeur (y vers le haut) -

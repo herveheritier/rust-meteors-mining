@@ -2214,10 +2214,13 @@ mod tests {
             initial_life
         );
         // la station est un mesh de `assets/anneauStation.json` (`station.rs`)
-        // : 64 faces vivantes (32 segments × 2 triangles - l'anneau a été
-        // re-découpé en 32 segments, ex-48 faces/24 segments) - l'impact du
-        // météore n'en a détruit aucune
-        assert_eq!(shapes[STATION_INDEX].life, 64);
+        // : aucune face détruite par l'impact - le compte attendu est lu sur
+        // le mesh (`station_face_count`), pas codé en dur (l'anneau a été
+        // re-découpé en 32 segments/64 faces, ex-24 segments/48 faces)
+        assert_eq!(
+            shapes[STATION_INDEX].life as usize,
+            crate::station::station_face_count()
+        );
         assert_eq!(triangles[shapes[STATION_INDEX].first_triangle].life, 1);
     }
 
