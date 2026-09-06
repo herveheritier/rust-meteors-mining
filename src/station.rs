@@ -14,10 +14,13 @@
 //!
 //! Le mesh ne porte que la **géométrie** : le rendu est inchangé - anneau
 //! texturé `station.png` dans le style TEXTURED (mapping radial de
-//! `draw_textured_triangle`, teinte brûlée et fissures de dégâts), opacité
-//! décroissante dans COLORED, arêtes rougies dans MESH. Les faces ne portent
-//! pas de couleur (`t.color` reste 0) : le rendu lit la texture du style
-//! TEXTURED, sinon la couleur de la forme (`shape.shape_color`).
+//! `draw_textured_triangle`, teinte brûlée par triangle endommagé),
+//! arêtes rougies dans MESH. Les **dégâts des impacts** (griffures
+//! continues créées à l'impact par `game.rs`, dessinées par-dessus l'anneau
+//! entier dans tous les styles - `render::draw_station_scratch_overlay`)
+//! sont portés par la station elle-même, pas par ses triangles. Les faces
+//! ne portent pas de couleur (`t.color` reste 0) : le rendu lit la texture
+//! du style TEXTURED, sinon la couleur de la forme (`shape.shape_color`).
 //!
 //! `build_station` construit la station posée au centre du monde (statique :
 //! ni vitesse ni rotation). `generate.rs` (`create_station`) l'appelle

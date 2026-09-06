@@ -292,12 +292,16 @@ pub struct Triangle {
     pub a_shape_border: bool,
     pub b_shape_border: bool,
     pub c_shape_border: bool,
-    /// Niveau de dégâts du triangle (base uniquement - `WHOIAM_STATION`) :
-    /// chaque impact de météore ajoute 1, **propagé** aux triangles qui
-    /// partagent un **segment de côté** avec le triangle percuté (2 sommets
-    /// communs, `game.rs`) ; à `STATION_TRIANGLE_DAMAGE_MAX`, le triangle
-    /// meurt (un trou s'ouvre dans l'anneau). Affiché par le style MESH
-    /// (teinte vers le rouge). 0 pour toutes les autres formes.
+/// Niveau de dégâts du triangle (base uniquement - `WHOIAM_STATION`) :
+/// chaque impact de météore ajoute 1, **propagé** aux triangles qui
+/// partagent un **segment de côté** avec le triangle percuté (2 sommets
+/// communs, `game.rs`) ; à `STATION_TRIANGLE_DAMAGE_MAX`, le triangle
+/// meurt (un trou s'ouvre dans l'anneau). Le rendu des dégâts est **global**
+/// à la station (griffures continues créées par `game.rs`, dessinées sur
+/// l'anneau entier par `render.rs` - la teinte brûlée du style TEXTURED et
+/// les arêtes rougies du style MESH restent, elles, par triangle) ; ce
+/// compteur ne sert plus qu'à la mort du triangle. 0 pour toutes les autres
+/// formes.
     pub damage: i32,
     /// Armure d'un triangle du météore spécial (boss) : nombre de **balles**
     /// restantes avant que la balle suivante ne détruise le triangle (0 =
@@ -305,6 +309,17 @@ pub struct Triangle {
     /// `BOSS_TRIANGLE_HIT_POINTS - 1` (paramétrable - carte « Météores &
     /// collisions » de l'outil de gestion). 0 pour toutes les autres formes.
     pub armor: i32,
+    /// **Énergie cinétique accumulée** des impacts de météore subis par un
+    /// triangle de la base (`WHOIAM_STATION`) : `½·m·v²` avec `m` = triangles
+    /// vivants du météore percutant et `v` = sa vitesse au moment du choc,
+    /// cumulée à chaque impact par `game.rs` (`apply_station_damage`). Lue à
+    /// la création des **griffures continues** de la station (`game.rs`,
+    /// `spawn_station_scratches`) pour en ajouter quand la dépendance à
+    /// l'énergie cinétique est active (`STATION_SCRATCHES_ENERGY_DEPENDENT`,
+    /// carte « Météores & collisions » de l'outil de gestion) : un choc
+    /// violent raye davantage qu'un contact mou. 0 pour toutes les autres
+    /// formes.
+    pub impact_energy: f64,
     /// Position de base dans la texture (ex `textureBasePosition`) - posée
     /// mais non relue (le rendu texturé du port ne s'en sert pas).
     #[allow(dead_code)]
@@ -342,6 +357,7 @@ impl Default for Triangle {
             c_shape_border: false,
             damage: 0,
             armor: 0,
+            impact_energy: 0.0,
             texture_base_position: 0,
         }
     }

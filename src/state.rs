@@ -184,6 +184,30 @@ pub struct RadarEcho {
     pub age: f32,
 }
 
+/// Une **griffure continue** de la station (dégât d'un impact de météore) :
+/// trait sombre stocké en coordonnées **monde** (la base est statique au
+/// centre du monde, sans rotation - monde = repère local), dessiné
+/// **par-dessus l'anneau entier** dans tous les styles de rendu
+/// (`render::draw_station_scratch_overlay`). Contrairement aux anciens traits
+/// par triangle, une griffure **traverse les frontières des triangles** et
+/// raye l'anneau d'un seul tenant. Créée une seule fois à l'impact par
+/// `game.rs` (`spawn_station_scratches` - paramètres `STATION_SCRATCH_*` de
+/// la carte « Météores & collisions » de l'outil de gestion), puis conservée
+/// jusqu'à la prochaine construction de la station (`generate::prepare` vide
+/// la liste).
+#[derive(Clone, Copy, Debug)]
+pub struct StationScratch {
+    /// Départ du trait (monde).
+    pub a: Point,
+    /// Fin du trait (monde).
+    pub b: Point,
+    /// Épaisseur du trait (px écran - 1 px écran = 1 unité monde).
+    pub width: f32,
+    /// Couleur ARGB du trait (alpha déjà fondu selon les dégâts locaux au
+    /// moment de l'impact, comme l'ancien rendu par triangle).
+    pub color: u32,
+}
+
 /// Situation d'accostage du vaisseau, pour les **messages d'aide au pilote**
 /// (`docking::docking`) : le message n'est envoyé qu'au **changement** de
 /// situation (front montant - pas à chaque frame). La vitesse est jugée sur
@@ -235,6 +259,12 @@ pub struct GameState {
     /// du balayage + âge du fondu (`RadarEcho`) - un écho ne bouge que quand
     /// le balayage le rafraîchit (voir `render::draw_atc_radar`).
     pub radar_echoes: Vec<RadarEcho>,
+    /// Griffures continues des impacts de météores subis par la **station**
+    /// (`StationScratch`, voir `render::draw_station_scratch_overlay`) :
+    /// créées à l'impact par `game.rs` (carte « Météores & collisions » de
+    /// l'outil de gestion - `STATION_SCRATCH_*`), vidées quand la station est
+    /// reconstruite (`generate::prepare`).
+    pub station_scratches: Vec<StationScratch>,
     /// Ressources économiques du scénario (carburant, munitions, minerais,
     /// réputation) - ignorées en jeu libre (`has_economy` = false).
     pub resources: Resources,
@@ -567,6 +597,7 @@ impl GameState {
             scenario: ScenarioId::FreePlay,
             radar_kind: RadarKind::Minimap,
             radar_echoes: Vec::new(),
+            station_scratches: Vec::new(),
             resources: Resources::default(),
             unlocked_modes: [true; MOVING_MODE_COUNT as usize],
             supplies_shortage_cost: 0,

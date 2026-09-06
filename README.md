@@ -12,6 +12,15 @@ soute, puis revenez à la station pour décharger et gagner des crédits.
 - **Monde torique** : l'espace se reboucle sur lui-même (3960 × 3540), aucun bord.
 - **Météores destructibles** : 6 à 16 triangles par météore, générés
   procéduralement, avec choc élastique entre eux et débris à chaque impact.
+  Les **dégâts entre météores** dépendent de l'**énergie cinétique** de
+  l'impact (`½·μ·v_rel²` - masses en triangles vivants, vitesse relative) et
+  de la **résistance** propre de chaque roche (dureté tirée à la génération,
+  voir `src/config.rs`) : un contact lent ne brise rien (le choc reste
+  élastique), un impact violent détruit les triangles du point de contact
+  (plafonné aux triangles réellement en contact). Quand un météore perd des
+  triangles et que les restants ne sont plus **adjacents**, chaque groupe de
+  triangles devient un **météore indépendant** (minerais partagés
+  proportionnellement) - la séparation est prise en compte par la physique.
 - **Minage** : les triangles minéraux (or, fer…) laissent des minerais à ramasser.
 - **Soute** : 5 éléments maximum - pleine, il faut décharger à la station.
 - **Station** : au lancement (et après respawn) le vaisseau est **à quai**
@@ -469,8 +478,11 @@ d'ouverture, d'enregistrement et d'export/import JSON) ;
   `marketplace.json` ; la **carte ouverte** (vaisseau, soute, réputation…)
   est aussi mémorisée et **retrouvée au prochain lancement** de la page.
 
-La seule constante liée non éditée par l'outil est `CARGO_SIZE`
-(`src/config.rs`, capacité de base de la soute) - rappelée en pied de page.
+Les seules constantes liées non éditées par l'outil sont `CARGO_SIZE`
+(`src/config.rs`, capacité de base de la soute, rappelée en pied de page) et
+les constantes de dégâts de collision entre météores `METEOR_COLLISION_*`
+(`src/config.rs` - résistance moyenne, variation à la génération, énergie par
+triangle détruit).
 
 **Serveur local** : pour charger et enregistrer `src/marketplace.rs` du projet
 directement (sans copier/coller ni API de navigateur), lancez
@@ -509,8 +521,10 @@ du serveur, y est masquée).
 - 100 000 étoiles précalculées sur 15 couches de parallaxe.
 - Génération procédurale **déterministe** (PRNG ChaCha12 seedé) - parties
   reproductibles.
-- Collisions par séparation de triangles (SAT) + choc élastique ; le centre
-  des formes est recalculé après chaque impact.
+- Collisions par séparation de triangles (SAT) + choc élastique ; les dégâts
+  entre météores sont résolus par l'énergie cinétique de l'impact et la
+  résistance de la roche (`METEOR_COLLISION_*` de `src/config.rs`) et le
+  centre des formes est recalculé après chaque impact.
 - Plein écran : mode **zoomé** (vue 960 × 540 rendue dans une texture puis
   étirée, letterbox) ou **natif** (rendu direct à la définition réelle de
   l'écran) ; la bascule EWMH passe par `src/x11.rs` (ClientMessage

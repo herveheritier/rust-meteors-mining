@@ -137,6 +137,16 @@ pub struct Shape {
     /// position du météore quand il est détruit par la collision d'un autre
     /// météore. 0 hors météores.
     pub minerals: i32,
+    /// **Résistance** d'un météore aux chocs avec d'autres météores :
+    /// l'énergie cinétique de l'impact (`½·μ·v_rel²`, voir
+    /// `game::meteor_collision_damage`) doit la dépasser pour détruire des
+    /// triangles - un contact lent ne brise rien (choc élastique seul).
+    /// Tirée à la génération autour de `METEOR_COLLISION_RESISTANCE`
+    /// (`generate::generate_shape`, ± `METEOR_COLLISION_RESISTANCE_SPREAD` -
+    /// chaque roche a sa dureté propre) ; le boss la surcharge très haute
+    /// (il est de toute façon immunisé aux chocs de météores). 0 hors
+    /// météores.
+    pub resistance: f64,
     /// Minerai **relâché de la soute** du vaisseau détruit
     /// (`eject_cargo_minerals`) : marqueur du relâchement au crash - il suit
     /// les règles du monde (absorbé par le météore qui le percute, ramassé par
@@ -186,6 +196,7 @@ impl Default for Shape {
             life: 0,
             element: 0,
             minerals: 0,
+            resistance: 0.0,
             ejected_cargo: false,
             anim_angle: 0.0,
             show_all_parts: false,

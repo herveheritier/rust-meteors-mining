@@ -28,7 +28,7 @@ use crate::font::draw_text;
 use crate::garbage::Garbage;
 use crate::geom::{Point, Triangle, World};
 use crate::shape::{get_border_segments, Shape};
-use crate::state::{Element, GameState, RadarEcho, RenderStyle, ViewMode};
+use crate::state::{Element, GameState, RadarEcho, RenderStyle, StationScratch, ViewMode};
 
 /// Taille d'une tuile d'étoiles précalculée (pixels monde = pixels écran).
 pub const STAR_TILE: u32 = 1024;
@@ -615,12 +615,16 @@ pub fn draw_shape(
         }
     }
 
+    // au moins un triangle de la station est passé le culling (à l'écran) :
+    // la couche de griffures n'est dessinée que dans ce cas
+    let mut station_parts_visible = false;
     for t in &triangles[shape.first_triangle..=shape.last_triangle] {
         let p = screen_point(t.real_center, camera, &state.world);
         if shape.show_all_parts
             || (t.life > 0
                 && inner_draw_limit(Point::new(p.x as f64, p.y as f64)))
         {
+            station_parts_visible |= shape.who_i_am == WHOIAM_STATION && t.life > 0;
             // style de rendu (écran de paramétrage) : texturé (défaut),
             // colorisé (remplissage uni) ou mesh (arêtes seules)
             match state.render_style {
@@ -637,6 +641,14 @@ pub fn draw_shape(
                 RenderStyle::Mesh => draw_mesh_triangle(t, shape, camera, elements, &state.world, fade),
             }
         }
+    }
+
+    // griffures continues des impacts de météores subis par la station :
+    // dessinées une fois par-dessus tous les triangles visibles, dans tous
+    // les styles de rendu (les traits traversent les frontières des
+    // triangles - voir `draw_station_scratch_overlay`)
+    if shape.who_i_am == WHOIAM_STATION && station_parts_visible && !state.station_scratches.is_empty() {
+        draw_station_scratch_overlay(&state.station_scratches, camera, &state.world, fade);
     }
 
     // mode D (ex options = "D" de drawShape) : id, indices de triangles puis
@@ -663,6 +675,39 @@ pub fn draw_shape(
             );
             draw_text(&line, x, y + 12.0 + (k + 1) as f32 * 10.0, 16.0, WHITE);
         }
+    }
+}
+
+/// Griffures continues des impacts de météores subis par la **station**
+/// (`state.station_scratches`, `StationScratch`) : traits sombres créés à
+/// l'impact par `game.rs` (`spawn_station_scratches` - paramètres
+/// `STATION_SCRATCH_*` de la carte « Météores & collisions » de l'outil de
+/// gestion) et dessinés **par-dessus l'anneau entier**, dans tous les styles
+/// de rendu. La base étant statique au centre du monde, les traits sont
+/// stockés en coordonnées **monde** et passent par la même conversion écran
+/// que les triangles (rebouclage torique inclus). Contrairement aux anciens
+/// traits par triangle, une griffure **traverse les frontières** des
+/// triangles : la rayure est continue d'un triangle à l'autre. `fade` (0..1)
+/// est l'opacité globale de la forme (fondu enchaîné de la récupération EVA,
+/// comme `draw_shape`).
+fn draw_station_scratch_overlay(
+    scratches: &[StationScratch],
+    camera: Point,
+    world: &World,
+    fade: f32,
+) {
+    for g in scratches {
+        let a = screen_point(g.a, camera, world);
+        let b = screen_point(g.b, camera, world);
+        let color = argb_to_color(g.color);
+        draw_line(
+            a.x,
+            a.y,
+            b.x,
+            b.y,
+            g.width,
+            Color::new(color.r, color.g, color.b, color.a * fade),
+        );
     }
 }
 
@@ -938,14 +983,6 @@ fn draw_textured_triangle(
     };
     draw_triangle_texture(texture, a, b, c, uv_a, uv_b, uv_c, tint);
 
-    // fissures de la base endommagée : traits sombres en pointillés, de plus
-    // en plus nombreux et opaques à mesure que les dégâts s'accumulent
-    // (`t.damage` / `STATION_TRIANGLE_DAMAGE_MAX`) - dessinés par-dessus la
-    // texture du triangle, comme le style MESH rougeoie les arêtes
-    if shape.who_i_am == WHOIAM_STATION && t.damage > 0 {
-        draw_station_cracks(a, b, c, t, fade);
-    }
-
     if t.element > 0 {
         let center = screen_point(t.real_center, camera, world);
         draw_circle(
@@ -954,45 +991,6 @@ fn draw_textured_triangle(
             1.2,
             argb_to_color(elements[t.element as usize].color),
         );
-    }
-}
-
-/// Fissures d'un triangle endommagé de la base (style TEXTURED) : deux
-/// segments de fissure par niveau de dégâts (`t.damage`), orientés depuis le
-/// centre du triangle vers deux de ses arêtes - l'anneau se fissure de façon
-/// visible avant de céder (le triangle meurt à `STATION_TRIANGLE_DAMAGE_MAX`,
-/// un trou s'ouvre). Traits sombres semi-transparents, en pointillés
-/// (`draw_dashed_line`), dont l'opacité croît avec les dégâts. La fissure est
-/// générée de façon **déterministe** à partir de `t.id` : stable d'une frame
-/// à l'autre (pas de scintillement). Dessinée dans l'espace écran.
-fn draw_station_cracks(a: Vec2, b: Vec2, c: Vec2, t: &Triangle, fade: f32) {
-    // prétire pseudo-aléatoire déterministe depuis l.id du triangle
-    let mut s = (t.id as u32).wrapping_mul(2654435761);
-    let mut next = |range: f32| {
-        // xorshift simple : assez bon pour positionner des fissures
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        (s as f32 / u32::MAX as f32) * range
-    };
-    let f = (t.damage as f32 / STATION_TRIANGLE_DAMAGE_MAX as f32).min(1.0);
-    let alpha = (0.35 + 0.55 * f) * fade;
-    let color = Color::new(0.10, 0.06, 0.05, alpha);
-    // segments : du centre du triangle vers un point d.un côté (2 par niveau)
-    for _ in 0..t.damage * 2 {
-        let side = (next(3.0) as usize) % 3;
-        let along = 0.2 + next(0.6); // 0.2..0.8 le long du côté choisi
-        // point d.arrivée sur un des trois côtés (barycentrique)
-        let p = match side {
-            0 => vec2(a.x + (b.x - a.x) * along, a.y + (b.y - a.y) * along),
-            1 => vec2(b.x + (c.x - b.x) * along, b.y + (c.y - b.y) * along),
-            _ => vec2(c.x + (a.x - c.x) * along, c.y + (a.y - c.y) * along),
-        };
-        // point de départ : centre du triangle, décalé (fissure pas trop
-        // régulière)
-        let center = vec2((a.x + b.x + c.x) / 3.0, (a.y + b.y + c.y) / 3.0);
-        let jitter = vec2(next(6.0) - 3.0, next(6.0) - 3.0);
-        draw_dashed_line(center + jitter, p, color);
     }
 }
 
@@ -1074,25 +1072,14 @@ fn draw_colored_triangle(
     }
     // NB : chemin complet - `draw_triangle` (macroquad) est masqué par la
     // fonction locale du même nom (triangles non texturés de l'original).
-    // NB base endommagée : les triangles de la station deviennent de plus en
-    // plus **transparents** à mesure que les impacts s'accumulent
-    // (`t.damage` / `STATION_TRIANGLE_DAMAGE_MAX`) - comme le style TEXTURED
-    // les brunit et le style MESH rougeoie leurs arêtes. À `STATION_TRIANGLE_DAMAGE_MAX`,
-    // le triangle meurt (le trou s'ouvre dans l'anneau, pointillés ci-dessus).
-    let base_color = triangle_color(t, shape, elements);
-    let color = if shape.who_i_am == WHOIAM_STATION && t.damage > 0 {
-        let f = (t.damage as f32 / STATION_TRIANGLE_DAMAGE_MAX as f32).min(1.0);
-        // opacité résiduelle : 100 % → 25 % sur les 4 impacts qui précèdent
-        // la destruction (à 5 le triangle est mort)
-        Color::new(
-            base_color.r,
-            base_color.g,
-            base_color.b,
-            base_color.a * (1.0 - 0.75 * f),
-        )
-    } else {
-        base_color
-    };
+    // NB base endommagée : les triangles de la station ne perdent **pas**
+    // d'opacité sous les impacts (plus de baisse du canal alpha) - les dégâts
+    // sont dessinés par-dessus l'anneau entier après les triangles, en
+    // **griffures continues** (`draw_station_scratch_overlay`, voir
+    // `draw_shape`), quel que soit le style de rendu. À
+    // `STATION_TRIANGLE_DAMAGE_MAX`, le triangle meurt (le trou s'ouvre dans
+    // l'anneau, pointillés ci-dessus).
+    let color = triangle_color(t, shape, elements);
     macroquad::shapes::draw_triangle(a, b, c, fade_color(color, fade));
     draw_element_dot(t, camera, elements, world);
 }

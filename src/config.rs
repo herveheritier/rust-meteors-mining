@@ -302,6 +302,24 @@ pub const MINE_RADIUS: f64 = 130.0;
 /// à chaque palier, la vitesse maximale des météores, leur nombre et la
 /// densité de génération augmentent (voir `difficulty.rs`).
 pub const DIFFICULTY_RAMP_SECONDS: f64 = 120.0;
+
+/// Résistance moyenne d'un météore aux **chocs entre météores** (voir
+/// `game::collisions` et `Shape::resistance`) : l'**énergie cinétique** de
+/// l'impact - `E = ½·μ·v_rel²` avec `μ` la masse réduite (masses en
+/// triangles vivants) et `v_rel` la vitesse relative - doit dépasser la
+/// résistance de la roche pour briser des triangles. Un contact lent ne
+/// détruit rien (le choc reste élastique).
+pub const METEOR_COLLISION_RESISTANCE: f64 = 4.0;
+/// Variation de la résistance d'un météore à la génération (facteur ±, voir
+/// `generate::generate_shape`) : chaque roche a sa dureté propre -
+/// `résistance = METEOR_COLLISION_RESISTANCE × (1 ± ce facteur)`.
+pub const METEOR_COLLISION_RESISTANCE_SPREAD: f64 = 0.5;
+/// Énergie d'impact supplémentaire (au-delà de la résistance) nécessaire pour
+/// détruire **un triangle de plus** au point de contact d'un choc entre
+/// météores (`game::meteor_collision_damage`) : le premier triangle ne
+/// demande que de dépasser la résistance, chaque tranche d'énergie suivante
+/// en détruit un autre, plafonné aux triangles réellement en contact.
+pub const METEOR_COLLISION_DAMAGE_ENERGY: f64 = 5.0;
 /// Nombre d'événements conservés dans le **journal de bord** (touche L,
 /// `GameState::event_log`).
 pub const EVENT_LOG_LEN: usize = 20;

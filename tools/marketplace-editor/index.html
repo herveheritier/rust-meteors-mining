@@ -689,7 +689,11 @@
     <code>METEOR_VELOCITY_MAX</code>/<code>TRIANGLES_IN_SHAPE_*</code>/<code>TRIANGLE_*</code>,
     population <code>INITIAL_MAX_METEOR_SHAPES</code>/<code>SHAPES_COUNT</code> - lus par
     <code>src/game.rs</code>, <code>src/garbage.rs</code>, <code>src/generate.rs</code>,
-    <code>src/state.rs</code>),
+    <code>src/state.rs</code> - et les dégâts de la station sous les impacts
+    <code>STATION_SCRATCH_*</code> : longueur (min/max), épaisseur (min/max), espace de
+    couleur (min/max) et nombre des griffures des triangles endommagés, avec ou sans
+    dépendance à l'énergie cinétique du météore qui percute - lus par
+    <code>src/render.rs</code>),
     le vaisseau joueur
     (<code>VAISSEAU_JSON</code>, <code>VAISSEAU_SCALE</code>, <code>VAISSEAU_ORIENTATION_DEGREES</code>,
     <code>VAISSEAU_CENTER_X/Y_PERCENT</code>, <code>VAISSEAU_BULLET_SPAWNS</code> - emplacements de
@@ -859,6 +863,17 @@ const DEFAULT_DATA = {
     baseMax: 40, // TRIANGLE_BASE_MAX
     heightMin: 11, // TRIANGLE_HEIGHT_MIN
     heightMax: 22, // TRIANGLE_HEIGHT_MAX
+    // dégâts de la station (griffures des triangles percutés par les
+    // météores - rendu dans src/render.rs)
+    scratchLengthMin: 0.6, // STATION_SCRATCH_LENGTH_MIN - longueur min d'une griffure (fraction de ~2 triangles de l'anneau)
+    scratchLengthMax: 1.0, // STATION_SCRATCH_LENGTH_MAX - longueur max (1.0 = ~26 px monde)
+    scratchWidthMin: 1.0, // STATION_SCRATCH_WIDTH_MIN - épaisseur min (px écran)
+    scratchWidthMax: 1.2, // STATION_SCRATCH_WIDTH_MAX - épaisseur max (px écran)
+    scratchColorMin: "#211612", // STATION_SCRATCH_COLOR_MIN - espace de couleur : teinte min (brun sombre)
+    scratchColorMax: "#68552c", // STATION_SCRATCH_COLOR_MAX - espace de couleur : teinte max
+    scratchesPerDamage: 2, // STATION_SCRATCHES_PER_DAMAGE - griffures par niveau de dégât
+    scratchesEnergyDependent: true, // STATION_SCRATCHES_ENERGY_DEPENDENT - griffures liées à l'énergie cinétique du météore
+    scratchesEnergyFactor: 0.4, // STATION_SCRATCHES_ENERGY_FACTOR - griffures ajoutées par unité d'énergie (½·m·v²)
     // population de météores
     initialMax: 15, // INITIAL_MAX_METEOR_SHAPES
     shapesCount: 150, // SHAPES_COUNT - plafond dur
@@ -3103,6 +3118,7 @@ function summaryCard() {
     { k: "Débris par explosion", v: String(int(gp.debrisPerTriangle)), cls: "", sub: "éclats générés par triangle détruit" },
     { k: "Balles par triangle du boss", v: String(int(gp.bossTriangleHp)), cls: "", sub: "armure du météore spécial - il ne peut être détruit que par les balles du vaisseau" },
     { k: "Météores en jeu", v: gp.initialMax + " → " + gp.shapesCount, cls: "", sub: "limite au départ → plafond dur · vitesse max " + fmtFloat(gp.meteorVelocityMax) + " · triangles " + gp.trianglesMin + "–" + gp.trianglesMax },
+    { k: "Griffures de la station", v: int(gp.scratchesPerDamage) + "/niveau · " + fmtFloat(gp.scratchWidthMin) + "–" + fmtFloat(gp.scratchWidthMax) + " px", cls: "", sub: "dégâts des impacts de météores : griffures continues × " + fmtFloat(gp.scratchLengthMin) + "–" + fmtFloat(gp.scratchLengthMax) + " (≈ 26 px) · " + (gp.scratchesEnergyDependent ? "liées à l'énergie cinétique (×" + fmtFloat(gp.scratchesEnergyFactor) + ")" : "nombre fixe par niveau de dégât") },
   );
   for (const it of items) {
     const box = el("div", "kv");
@@ -3126,6 +3142,26 @@ function economyNumber(id, setter, value, min, step, title) {
   input.value = value;
   if (title) input.title = title;
   input.addEventListener("input", () => { setter(input.value); afterEdit(); });
+  return input;
+}
+
+function colorInput(id, setter, value, title) {
+  const input = document.createElement("input");
+  input.type = "color";
+  input.id = id;
+  input.value = /^#[0-9a-fA-F]{6}$/.test(String(value)) ? value : "#000000";
+  if (title) input.title = title;
+  input.addEventListener("input", () => { setter(input.value.toLowerCase()); afterEdit(); });
+  return input;
+}
+
+function checkboxInput(id, setter, checked, title) {
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.id = id;
+  input.checked = !!checked;
+  if (title) input.title = title;
+  input.addEventListener("change", () => { setter(input.checked); afterEdit(); });
   return input;
 }
 
@@ -3277,6 +3313,54 @@ function gameplayCard() {
     "rebondit sur l'anneau au lieu de le labourer - constante METEOR_STATION_RESTITUTION, lue par " +
     "src/game.rs. Les débris de l'explosion (GARBAGE_PER_TRIANGLE) sont lus par src/garbage.rs."));
   host.appendChild(collisions);
+
+  // dégâts de la station : griffures **continues** laissées sur l'anneau (les
+  // impacts de météores rayent la base avant qu'elle ne cède - chaque
+  // triangle meurt à STATION_TRIANGLE_DAMAGE_MAX ; les traits sont créés à
+  // l'impact par src/game.rs, dessinés par-dessus l'anneau entier par
+  // src/render.rs dans tous les styles de rendu)
+  const scratches = el("div", "eco-group");
+  scratches.appendChild(el("h4", "", "Dégâts de la station (griffures des impacts)"));
+  const scGrid = el("div", "field-grid");
+  scGrid.appendChild(field("Longueur min (× réf.)", "gp-scratch-length-min",
+    economyNumber("gp-scratch-length-min", floatSetter("scratchLengthMin"), g.scratchLengthMin, 0, "0.05",
+      "Longueur minimale d'une griffure, en fraction de la longueur de référence (≈ 26 px monde = la largeur de deux triangles de l'anneau - STATION_SCRATCH_LENGTH_MIN). 1.0 = la griffure traverse plusieurs triangles.")));
+  scGrid.appendChild(field("Longueur max (× réf.)", "gp-scratch-length-max",
+    economyNumber("gp-scratch-length-max", floatSetter("scratchLengthMax"), g.scratchLengthMax, 0, "0.05",
+      "Longueur maximale d'une griffure (STATION_SCRATCH_LENGTH_MAX) - chaque griffure tire sa longueur dans l'intervalle [min, max] × la référence.")));
+  scGrid.appendChild(field("Épaisseur min (px)", "gp-scratch-width-min",
+    economyNumber("gp-scratch-width-min", floatSetter("scratchWidthMin"), g.scratchWidthMin, 0, "0.1",
+      "Épaisseur minimale du trait d'une griffure, en pixels écran (STATION_SCRATCH_WIDTH_MIN).")));
+  scGrid.appendChild(field("Épaisseur max (px)", "gp-scratch-width-max",
+    economyNumber("gp-scratch-width-max", floatSetter("scratchWidthMax"), g.scratchWidthMax, 0, "0.1",
+      "Épaisseur maximale du trait d'une griffure (STATION_SCRATCH_WIDTH_MAX) - chaque griffure tire son épaisseur dans l'intervalle [min, max].")));
+  scGrid.appendChild(field("Couleur min", "gp-scratch-color-min",
+    colorInput("gp-scratch-color-min", v => { g.scratchColorMin = v; }, g.scratchColorMin,
+      "Teinte minimale de l'espace de couleur des griffures (STATION_SCRATCH_COLOR_MIN) - extrémité sombre.")));
+  scGrid.appendChild(field("Couleur max", "gp-scratch-color-max",
+    colorInput("gp-scratch-color-max", v => { g.scratchColorMax = v; }, g.scratchColorMax,
+      "Teinte maximale de l'espace de couleur des griffures (STATION_SCRATCH_COLOR_MAX) - chaque griffure tire sa couleur entre min et max.")));
+  scGrid.appendChild(field("Griffures par niveau de dégât", "gp-scratch-per-damage",
+    economyNumber("gp-scratch-per-damage", intSetter("scratchesPerDamage"), g.scratchesPerDamage, 0, "1",
+      "Nombre de griffures créées à chaque impact, par niveau de dégât (STATION_SCRATCHES_PER_DAMAGE) : le triangle percuté - et chacun de ses voisins propagés - reçoit ce nombre de traits à chaque impact, conservés sur l'anneau.")));
+  scGrid.appendChild(field("Liées à l'énergie cinétique", "gp-scratch-energy",
+    checkboxInput("gp-scratch-energy", v => { g.scratchesEnergyDependent = v; }, g.scratchesEnergyDependent,
+      "Quand actif, chaque impact ajoute en plus des griffures proportionnelles à l'énergie cinétique du météore qui percute (½·m·v², masse = triangles vivants, accumulée par src/game.rs sur Triangle.impact_energy) : un choc violent raye davantage qu'un contact mou (STATION_SCRATCHES_ENERGY_DEPENDENT).")));
+  scGrid.appendChild(field("Griffures par unité d'énergie", "gp-scratch-energy-factor",
+    economyNumber("gp-scratch-energy-factor", floatSetter("scratchesEnergyFactor"), g.scratchesEnergyFactor, 0, "0.1",
+      "Griffures supplémentaires ajoutées par unité d'énergie cinétique de l'impact (STATION_SCRATCHES_ENERGY_FACTOR) - utilisé seulement quand la dépendance à l'énergie est active. Énergie typique d'un météore moyen : ~5 (½·m·v²).")));
+  scratches.appendChild(scGrid);
+  scratches.appendChild(el("p", "hint",
+    "Les impacts de météores **rayent** l'anneau : chaque triangle percuté gagne 1 point de dégât " +
+    "(propagé aux triangles voisins par un côté), qui s'affiche par des **griffures continues** - " +
+    "des traits créés une seule fois à l'impact, qui **traversent les frontières des triangles** " +
+    "et rayent la base d'un seul tenant (ils suivent surtout l'anneau). Les dégâts s'accumulent " +
+    "(plus les traits sont nombreux et opaques) jusqu'à la mort du triangle " +
+    "(STATION_TRIANGLE_DAMAGE_MAX, un trou s'ouvre - constante hors outil, src/config.rs). " +
+    "Longueur, épaisseur, couleur et nombre des griffures sont réglés ici - constantes " +
+    "STATION_SCRATCH_* créées par src/game.rs (spawn_station_scratches), dessinées par " +
+    "src/render.rs (draw_station_scratch_overlay)."));
+  host.appendChild(scratches);
 
   // génération procédurale des météores
   const gen = el("div", "eco-group");
@@ -4164,9 +4248,10 @@ function gameplayConsts() {
   return [
     "/// Météores - collisions avec la station et génération (mise au point).",
     "/// Données générées par l'outil de gestion : lues par `src/game.rs`",
-    "/// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et",
-    "/// `src/state.rs` (génération et population).",
-    "",
+    "/// (réaction à la base et dégâts), `src/garbage.rs` (débris),",
+    "/// `src/generate.rs` et `src/state.rs` (génération et population) et",
+    "/// `src/render.rs` (griffures de dégâts de la station).",
+    "///",
     "/// Force de réaction d'un météore qui percute la **station** : le triangle",
     "/// qui collisionne explose et le météore est repoussé - sa composante de",
     "/// vitesse **radiale** (vers la base) est réfléchie avec cette restitution,",
@@ -4178,6 +4263,48 @@ function gameplayConsts() {
     "/// Débris générés par triangle détruit (l'explosion d'un triangle de",
     "/// météore sur la base ou un autre météore).",
     "pub const GARBAGE_PER_TRIANGLE: usize = " + i32(g.debrisPerTriangle) + ";",
+    "",
+    "/// Dégâts de la **station** sous les impacts de météores - **griffures",
+    "/// continues** laissées sur l'anneau : traits sombres créés à chaque impact",
+    "/// par `game.rs` (`spawn_station_scratches`) puis dessinés **par-dessus",
+    "/// l'anneau entier** dans tous les styles de rendu",
+    "/// (`render::draw_station_scratch_overlay`) - contrairement à un trait par",
+    "/// triangle, une griffure **traverse les frontières** des triangles et raye",
+    "/// la base d'un seul tenant. Longueur d'une griffure : fraction d'une",
+    "/// longueur de référence (~ 26 px monde, la largeur de deux triangles de",
+    "/// l'anneau), tirée par griffure dans",
+    "/// [STATION_SCRATCH_LENGTH_MIN, STATION_SCRATCH_LENGTH_MAX].",
+    "pub const STATION_SCRATCH_LENGTH_MIN: f64 = " + flt(g.scratchLengthMin) + ";",
+    "pub const STATION_SCRATCH_LENGTH_MAX: f64 = " + flt(g.scratchLengthMax) + ";",
+    "",
+    "/// Épaisseur d'une griffure (px écran - 1 px écran = 1 unité monde), tirée",
+    "/// par griffure dans [STATION_SCRATCH_WIDTH_MIN, STATION_SCRATCH_WIDTH_MAX].",
+    "pub const STATION_SCRATCH_WIDTH_MIN: f64 = " + flt(g.scratchWidthMin) + ";",
+    "pub const STATION_SCRATCH_WIDTH_MAX: f64 = " + flt(g.scratchWidthMax) + ";",
+    "",
+    "/// Espace de couleur des griffures : la couleur de chaque griffure est",
+    "/// tirée (par griffure) dans l'intervalle [STATION_SCRATCH_COLOR_MIN,",
+    "/// STATION_SCRATCH_COLOR_MAX] (ARGB - interpolation linéaire, du brun",
+    "/// sombre à la teinte plus claire).",
+    "pub const STATION_SCRATCH_COLOR_MIN: u32 = 0xFF" + String(g.scratchColorMin).replace(/^#/, "").toUpperCase() + ";",
+    "pub const STATION_SCRATCH_COLOR_MAX: u32 = 0xFF" + String(g.scratchColorMax).replace(/^#/, "").toUpperCase() + ";",
+    "",
+    "/// Nombre de griffures d'un impact de météore, par **niveau de dégât** : le",
+    "/// triangle percuté (et chacun de ses voisins propagés) gagne",
+    "/// `STATION_SCRATCHES_PER_DAMAGE` griffures par impact - créées une seule",
+    "/// fois puis conservées sur l'anneau, elles s'accumulent à mesure que les",
+    "/// impacts le rayent avant qu'il ne cède (`STATION_TRIANGLE_DAMAGE_MAX`).",
+    "pub const STATION_SCRATCHES_PER_DAMAGE: i32 = " + i32(g.scratchesPerDamage) + ";",
+    "",
+    "/// Griffures **dépendantes de l'énergie cinétique** du météore qui a",
+    "/// percuté : quand `true`, chaque impact ajoute en plus",
+    "/// `énergie × STATION_SCRATCHES_ENERGY_FACTOR` griffures au triangle",
+    "/// percuté et à chacun de ses voisins propagés (énergie = ½·m·v², masse =",
+    "/// triangles vivants du météore - calculée par `game.rs`) - un choc violent",
+    "/// raye davantage qu'un contact mou. `false` = nombre fixe par niveau de",
+    "/// dégât.",
+    "pub const STATION_SCRATCHES_ENERGY_DEPENDENT: bool = " + (g.scratchesEnergyDependent ? "true" : "false") + ";",
+    "pub const STATION_SCRATCHES_ENERGY_FACTOR: f64 = " + flt(g.scratchesEnergyFactor) + ";",
     "",
     "/// Nombre de **balles** nécessaires pour détruire un triangle du météore",
     "/// spécial (boss) : chaque balle qui le touche dégrade l'armure du",
@@ -4664,6 +4791,26 @@ function parseRust(text) {
   if (initial !== null) out.gameplay.initialMax = initial;
   if (count !== null) out.gameplay.shapesCount = count;
 
+  // ── dégâts de la station (griffures des triangles percutés) ──
+  const scratchLenMin = price("STATION_SCRATCH_LENGTH_MIN");
+  const scratchLenMax = price("STATION_SCRATCH_LENGTH_MAX");
+  const scratchWMin = price("STATION_SCRATCH_WIDTH_MIN");
+  const scratchWMax = price("STATION_SCRATCH_WIDTH_MAX");
+  if (scratchLenMin !== null) out.gameplay.scratchLengthMin = scratchLenMin;
+  if (scratchLenMax !== null) out.gameplay.scratchLengthMax = scratchLenMax;
+  if (scratchWMin !== null) out.gameplay.scratchWidthMin = scratchWMin;
+  if (scratchWMax !== null) out.gameplay.scratchWidthMax = scratchWMax;
+  const scratchColorMin = grab(/pub const STATION_SCRATCH_COLOR_MIN: u32 = 0x([0-9A-Fa-f]{8});/);
+  const scratchColorMax = grab(/pub const STATION_SCRATCH_COLOR_MAX: u32 = 0x([0-9A-Fa-f]{8});/);
+  if (scratchColorMin) out.gameplay.scratchColorMin = "#" + scratchColorMin.slice(-6);
+  if (scratchColorMax) out.gameplay.scratchColorMax = "#" + scratchColorMax.slice(-6);
+  const scratchPerDamage = price("STATION_SCRATCHES_PER_DAMAGE");
+  if (scratchPerDamage !== null) out.gameplay.scratchesPerDamage = scratchPerDamage;
+  const scratchEnergy = grab(/pub const STATION_SCRATCHES_ENERGY_DEPENDENT: bool = (true|false);/);
+  if (scratchEnergy !== null) out.gameplay.scratchesEnergyDependent = scratchEnergy === "true";
+  const scratchEnergyFactor = price("STATION_SCRATCHES_ENERGY_FACTOR");
+  if (scratchEnergyFactor !== null) out.gameplay.scratchesEnergyFactor = scratchEnergyFactor;
+
   // ── réputation (poids de précision + rangs : seuil, nom, remise) ──
   const precWeight = grab(/pub const DISCOUNT_PRECISION_WEIGHT: f64 = ([0-9.]+);/);
   if (precWeight) out.reputation.discountPrecisionWeight = parseFloat(precWeight);
@@ -4997,6 +5144,23 @@ function normalize(parsed) {
   gpInt("heightMax", 1);
   gpInt("initialMax", 1);
   gpInt("shapesCount", 1);
+  // dégâts de la station - griffures des triangles percutés (valeurs
+  // manquantes → valeurs du jeu)
+  const scratchFlt = key => {
+    if (Number.isFinite(gameplay[key]) && gameplay[key] >= 0) out.gameplay[key] = gameplay[key];
+  };
+  scratchFlt("scratchLengthMin");
+  scratchFlt("scratchLengthMax");
+  scratchFlt("scratchWidthMin");
+  scratchFlt("scratchWidthMax");
+  const hexColor = v => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
+  if (hexColor(gameplay.scratchColorMin)) out.gameplay.scratchColorMin = gameplay.scratchColorMin.toLowerCase();
+  if (hexColor(gameplay.scratchColorMax)) out.gameplay.scratchColorMax = gameplay.scratchColorMax.toLowerCase();
+  gpInt("scratchesPerDamage", 0);
+  if (typeof gameplay.scratchesEnergyDependent === "boolean") {
+    out.gameplay.scratchesEnergyDependent = gameplay.scratchesEnergyDependent;
+  }
+  scratchFlt("scratchesEnergyFactor");
   // réputation (valeurs manquantes → valeurs du jeu) : poids de précision,
   // puis rangs aux seuils triés croissants (le jeu prend le plus haut palier
   // dont le seuil est atteint)

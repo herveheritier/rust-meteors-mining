@@ -173,6 +173,12 @@ pub fn generate_shape(
     }
 
     shape.life = (shape.last_triangle - shape.first_triangle + 1) as i32;
+    // résistance aux chocs entre météores : chaque roche a sa dureté propre,
+    // tirée autour de `METEOR_COLLISION_RESISTANCE` (± le facteur de
+    // variation) - l'énergie cinétique de l'impact doit la dépasser pour
+    // briser des triangles (voir `game::meteor_collision_damage`).
+    shape.resistance = METEOR_COLLISION_RESISTANCE
+        * (1.0 + (rng.r#gen::<f64>() * 2.0 - 1.0) * METEOR_COLLISION_RESISTANCE_SPREAD);
     shapes[shape_index] = shape;
 
     shape_index
@@ -305,6 +311,9 @@ pub fn create_boss_meteor(
     shape.who_i_am = WHOIAM_METEOR;
     shape.is_collider = true;
     shape.is_boss = true;
+    // résistance très haute (il est de toute façon immunisé aux chocs de
+    // météores - cohérence de la donnée)
+    shape.resistance = METEOR_COLLISION_RESISTANCE * 10.0;
     shape.position = Point::new(x, y);
     shape.direction = TAU * rng.r#gen::<f64>();
     shape.velocity = METEOR_VELOCITY_MAX * 0.6 * rng.r#gen::<f64>();
@@ -471,8 +480,11 @@ pub fn create_alien(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
 /// extérieur ~162), comme le vaisseau, le cosmonaute et le portail : elle
 /// remplace l'ancien anneau codé en dur (`STATION_MESH`, retiré de
 /// `shape.rs`). Le mesh ne porte que la **géométrie** : le rendu est inchangé
-/// (anneau texturé `station.png` dans le style TEXTURED, opacité décroissante
-/// dans COLORED, arêtes rougies dans MESH - voir `station.rs`).
+/// (anneau texturé `station.png` dans le style TEXTURED, teinte brûlée par
+/// triangle endommagé, arêtes rougies dans MESH - voir `station.rs`) ; les
+/// dégâts des impacts de météores (griffures continues, dessinées sur
+/// l'anneau entier dans tous les styles) sont créés à l'impact par
+/// `game.rs` et portés par la station elle-même.
 pub fn create_station(shapes: &mut Vec<Shape>, triangles: &mut Vec<Triangle>) {
     // `build_station` construit la forme (slot réutilisé ou alloué) puis
     // recalcule centre et rayon comme l'ancien chemin (`meshes_to_shape` +
@@ -767,7 +779,9 @@ pub fn prepare(
         ));
     }
 
-    // station (shapes[1])
+    // station (shapes[1]) - les griffures d'impacts de la partie précédente
+    // sont effacées avec elle (`StationScratch`, voir `game.rs`)
+    state.station_scratches.clear();
     create_station(shapes, triangles);
 }
 

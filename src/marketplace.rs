@@ -59,8 +59,9 @@ pub const ATC_RADAR_COST: i32 = 30;
 
 /// Météores - collisions avec la station et génération (mise au point).
 /// Données générées par l'outil de gestion : lues par `src/game.rs`
-/// (réaction à la base), `src/garbage.rs` (débris), `src/generate.rs` et
-/// `src/state.rs` (génération et population).
+/// (réaction à la base et dégâts), `src/garbage.rs` (débris),
+/// `src/generate.rs` et `src/state.rs` (génération et population) et
+/// `src/render.rs` (griffures de dégâts de la station).
 ///
 /// Force de réaction d'un météore qui percute la **station** : le triangle
 /// qui collisionne explose et le météore est repoussé - sa composante de
@@ -73,6 +74,48 @@ pub const METEOR_STATION_RESTITUTION: f64 = 0.2;
 /// Débris générés par triangle détruit (l'explosion d'un triangle de
 /// météore sur la base ou un autre météore).
 pub const GARBAGE_PER_TRIANGLE: usize = 12;
+
+/// Dégâts de la **station** sous les impacts de météores - **griffures
+/// continues** laissées sur l'anneau : traits sombres créés à chaque impact
+/// par `game.rs` (`spawn_station_scratches`) puis dessinés **par-dessus
+/// l'anneau entier** dans tous les styles de rendu
+/// (`render::draw_station_scratch_overlay`) - contrairement à un trait par
+/// triangle, une griffure **traverse les frontières** des triangles et raye
+/// la base d'un seul tenant. Longueur d'une griffure : fraction d'une
+/// longueur de référence (~ 26 px monde, la largeur de deux triangles de
+/// l'anneau), tirée par griffure dans
+/// [STATION_SCRATCH_LENGTH_MIN, STATION_SCRATCH_LENGTH_MAX].
+pub const STATION_SCRATCH_LENGTH_MIN: f64 = 0.6;
+pub const STATION_SCRATCH_LENGTH_MAX: f64 = 1.0;
+
+/// Épaisseur d'une griffure (px écran - 1 px écran = 1 unité monde), tirée
+/// par griffure dans [STATION_SCRATCH_WIDTH_MIN, STATION_SCRATCH_WIDTH_MAX].
+pub const STATION_SCRATCH_WIDTH_MIN: f64 = 1.0;
+pub const STATION_SCRATCH_WIDTH_MAX: f64 = 1.2;
+
+/// Espace de couleur des griffures : la couleur de chaque griffure est
+/// tirée (par griffure) dans l'intervalle [STATION_SCRATCH_COLOR_MIN,
+/// STATION_SCRATCH_COLOR_MAX] (ARGB - interpolation linéaire, du brun
+/// sombre à la teinte plus claire).
+pub const STATION_SCRATCH_COLOR_MIN: u32 = 0xFF211612;
+pub const STATION_SCRATCH_COLOR_MAX: u32 = 0xFF68552C;
+
+/// Nombre de griffures d'un impact de météore, par **niveau de dégât** : le
+/// triangle percuté (et chacun de ses voisins propagés) gagne
+/// `STATION_SCRATCHES_PER_DAMAGE` griffures par impact - créées une seule
+/// fois puis conservées sur l'anneau, elles s'accumulent à mesure que les
+/// impacts le rayent avant qu'il ne cède (`STATION_TRIANGLE_DAMAGE_MAX`).
+pub const STATION_SCRATCHES_PER_DAMAGE: i32 = 2;
+
+/// Griffures **dépendantes de l'énergie cinétique** du météore qui a
+/// percuté : quand `true`, chaque impact ajoute en plus
+/// `énergie × STATION_SCRATCHES_ENERGY_FACTOR` griffures au triangle
+/// percuté et à chacun de ses voisins propagés (énergie = ½·m·v², masse =
+/// triangles vivants du météore - calculée par `game.rs`) - un choc violent
+/// raye davantage qu'un contact mou. `false` = nombre fixe par niveau de
+/// dégât.
+pub const STATION_SCRATCHES_ENERGY_DEPENDENT: bool = true;
+pub const STATION_SCRATCHES_ENERGY_FACTOR: f64 = 0.4;
 
 /// Nombre de **balles** nécessaires pour détruire un triangle du météore
 /// spécial (boss) : chaque balle qui le touche dégrade l'armure du

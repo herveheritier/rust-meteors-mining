@@ -16,6 +16,7 @@
 
 use macroquad::prelude::*;
 use ::rand::Rng;
+use std::collections::HashMap;
 
 use crate::audio::Sounds;
 use crate::config::*;
@@ -36,9 +37,10 @@ use crate::scenario;
 use crate::geom::{Point, Triangle};
 use crate::render::{camera_for, cycle_view_mode, help_box_layout, mouse_to_game};
 use crate::shape::{
-    compute_shape_center, detect_collision, moving_shape, resolve_elastic_collision, Shape,
+    compute_real_positions, compute_shape_center, detect_collision, free_shape, moving_shape,
+    resolve_elastic_collision, Shape,
 };
-use crate::state::{Element, GameState};
+use crate::state::{Element, GameState, StationScratch};
 // sous-modules issus du découpage de ce fichier : accostage (`docking`),
 // cosmonaute EVA (`eva`), contrôles (`input`), écran de paramétrage
 // (`settings`) et magasin de la station (`shop`) - voir `main.rs`
@@ -935,10 +937,142 @@ fn who_i_am_label(who: i32) -> &'static str {
 /// Applique 1 point de dégât à un triangle de la base : à
 /// `STATION_TRIANGLE_DAMAGE_MAX`, le triangle meurt (un trou s'ouvre dans
 /// l'anneau - les météores suivants peuvent passer à travers).
-fn apply_station_damage(tri: &mut Triangle) {
+///
+/// L'**énergie cinétique** du météore qui percute (`½·m·v²`, masse =
+/// triangles vivants - même modèle que les chocs entre météores) est en plus
+/// **accumulée** sur le triangle (`Triangle::impact_energy`) : elle nourrit
+/// les griffures quand la dépendance à l'énergie est active
+/// (`STATION_SCRATCHES_ENERGY_DEPENDENT`, carte « Météores & collisions » de
+/// l'outil de gestion).
+fn apply_station_damage(tri: &mut Triangle, impact_energy: f64) {
     tri.damage += 1;
+    tri.impact_energy += impact_energy;
     if tri.damage >= STATION_TRIANGLE_DAMAGE_MAX {
         tri.life = 0;
+    }
+}
+
+/// Bande radiale (unités monde) où les **griffures continues** de la station
+/// peuvent se dessiner : l'anneau réel couvre r ≈ 110-162 (`station.rs`) -
+/// une petite marge intérieure/extérieure évite aux traits de déborder sur
+/// le vide (le trou central de la base) ou dans l'espace.
+const STATION_SCRATCH_R_MIN: f64 = 114.0;
+const STATION_SCRATCH_R_MAX: f64 = 158.0;
+
+/// Longueur de référence d'une griffure continue : la fraction réglée dans
+/// l'outil de gestion (`STATION_SCRATCH_LENGTH_MIN`/`_MAX`, 0.9-1.0 par
+/// défaut) est multipliée par cette longueur (~ la largeur de **deux
+/// triangles** de l'anneau - ≈ 13 px chacun à mi-rayon) : une griffure
+/// traverse ainsi les frontières de triangles sans traverser l'anneau de
+/// part en part.
+const STATION_SCRATCH_LENGTH_REF: f64 = 26.0;
+
+/// Dispersion des points de départ des griffures autour du centre du
+/// triangle percuté (unités monde) : les impacts successifs sur une même
+/// zone couvrent toute la zone au lieu de se superposer au même point.
+const STATION_SCRATCH_SPREAD: f64 = 10.0;
+
+/// Interpole linéairement les canaux RVB de deux couleurs ARGB (AARRGGBB -
+/// l'alpha est ignoré) : `t` 0..1, 0 = `min`, 1 = `max`. Tire la couleur des
+/// griffures continues dans l'espace de couleur réglé par l'outil
+/// (`STATION_SCRATCH_COLOR_MIN` → `STATION_SCRATCH_COLOR_MAX`).
+fn mix_station_scratch_rgb(min: u32, max: u32, t: f64) -> u32 {
+    let t = t.clamp(0.0, 1.0);
+    let channel = |shift: u32| -> u32 {
+        let a = ((min >> shift) & 0xFF) as f64;
+        let b = ((max >> shift) & 0xFF) as f64;
+        ((a + (b - a) * t).round() as u32).min(0xFF)
+    };
+    (channel(16) << 16) | (channel(8) << 8) | channel(0)
+}
+
+/// Crée les **griffures continues** d'un impact de météore sur la base
+/// (`StationScratch` - paramètres `STATION_SCRATCH_*` de la carte « Météores
+/// & collisions » de l'outil de gestion) : traits sombres générés **une
+/// seule fois à l'impact** autour du centre du triangle percuté (`anchor`,
+/// monde), puis conservés sur l'anneau entier et dessinés par
+/// `render::draw_station_scratch_overlay` - contrairement aux anciens traits
+/// par triangle, une griffure **traverse les frontières** des triangles et
+/// raye la base d'un seul tenant.
+///
+/// Chaque trait tire sa longueur dans [STATION_SCRATCH_LENGTH_MIN,
+/// STATION_SCRATCH_LENGTH_MAX] × `STATION_SCRATCH_LENGTH_REF`, son épaisseur
+/// dans [STATION_SCRATCH_WIDTH_MIN, STATION_SCRATCH_WIDTH_MAX] et sa couleur
+/// dans l'espace de couleur [STATION_SCRATCH_COLOR_MIN,
+/// STATION_SCRATCH_COLOR_MAX] (interpolation par trait). L'opacité monte
+/// avec les dégâts locaux (`damage` / `STATION_TRIANGLE_DAMAGE_MAX`, même
+/// rampe que l'ancien rendu par triangle). La direction suit surtout
+/// l'**anneau** (tangente ± ~40°, un peu de radial) : un météore qui
+/// laboure la base laisse de longues griffures dans le sens du frottement.
+///
+/// `count` = nombre de traits de cet impact pour ce triangle :
+/// `STATION_SCRATCHES_PER_DAMAGE` par niveau de dégât, augmenté - quand
+/// `STATION_SCRATCHES_ENERGY_DEPENDENT` est actif - des traits liés à
+/// l'énergie cinétique du météore (`½·m·v²` × `STATION_SCRATCHES_ENERGY_FACTOR`).
+fn spawn_station_scratches(
+    scratches: &mut Vec<StationScratch>,
+    anchor: Point,
+    count: usize,
+    damage: i32,
+    rng: &mut impl Rng,
+) {
+    // les traits restent sur la bande de l'anneau : projection radiale du
+    // point dans [STATION_SCRATCH_R_MIN, STATION_SCRATCH_R_MAX]
+    let clamp_ring = |p: Point| -> Point {
+        let r = p.x.hypot(p.y);
+        if r < 1.0 {
+            return p;
+        }
+        let target = r.clamp(STATION_SCRATCH_R_MIN, STATION_SCRATCH_R_MAX);
+        Point::new(p.x * target / r, p.y * target / r)
+    };
+    // opacité : plus la zone est endommagée, plus les traits ressortent
+    let f = (damage as f32 / STATION_TRIANGLE_DAMAGE_MAX as f32).min(1.0);
+    let alpha = ((0.55 + 0.45 * f) * 255.0).round() as u32;
+    let len_min = STATION_SCRATCH_LENGTH_MIN.max(0.0);
+    let len_max = STATION_SCRATCH_LENGTH_MAX.max(len_min);
+    let w_min = STATION_SCRATCH_WIDTH_MIN.max(0.0);
+    let w_max = STATION_SCRATCH_WIDTH_MAX.max(w_min);
+    // repère local de l'anneau au point d'impact : rayon et tangente
+    let r = anchor.x.hypot(anchor.y);
+    let (ux, uy) = if r > 1.0 { (anchor.x / r, anchor.y / r) } else { (1.0, 0.0) };
+    for _ in 0..count {
+        // point de départ : près du centre du triangle percuté, décalé
+        let jitter_x = (rng.r#gen::<f64>() * 2.0 - 1.0) * STATION_SCRATCH_SPREAD;
+        let jitter_y = (rng.r#gen::<f64>() * 2.0 - 1.0) * STATION_SCRATCH_SPREAD;
+        let start = clamp_ring(Point::new(anchor.x + jitter_x, anchor.y + jitter_y));
+        // direction : surtout le long de l'anneau (tangente ± ~40°), signe
+        // tiré au hasard, parfois radiale (griffures de travers)
+        let (dx, dy) = if rng.r#gen::<f64>() < 0.7 {
+            let sign = if rng.r#gen::<bool>() { -1.0 } else { 1.0 };
+            (-uy * sign, ux * sign)
+        } else {
+            (ux, uy)
+        };
+        let spread = rng.r#gen::<f64>() * TAU / 4.5 - TAU / 9.0; // ± 40°
+        let ca = spread.cos();
+        let sa = spread.sin();
+        let (dx, dy) = (dx * ca - dy * sa, dx * sa + dy * ca);
+        // longueur : fraction réglée × référence (~ 2 triangles de l'anneau)
+        let len = (len_min + rng.r#gen::<f64>() * (len_max - len_min)) * STATION_SCRATCH_LENGTH_REF;
+        let end = clamp_ring(Point::new(start.x + dx * len, start.y + dy * len));
+        // épaisseur et couleur : tirées par trait dans les intervalles réglés
+        let width = (w_min + rng.r#gen::<f64>() * (w_max - w_min)).max(0.1) as f32;
+        let mix = rng.r#gen::<f64>();
+        let rgb = mix_station_scratch_rgb(STATION_SCRATCH_COLOR_MIN, STATION_SCRATCH_COLOR_MAX, mix);
+        scratches.push(StationScratch {
+            a: start,
+            b: end,
+            width,
+            color: (alpha << 24) | rgb,
+        });
+    }
+    // nombre total borné : au-delà, les plus anciennes griffures s'effacent
+    // (le rendu redessine la liste entière à chaque frame)
+    const MAX_STATION_SCRATCHES: usize = 2000;
+    if scratches.len() > MAX_STATION_SCRATCHES {
+        let over = scratches.len() - MAX_STATION_SCRATCHES;
+        scratches.drain(..over);
     }
 }
 
@@ -1065,6 +1199,13 @@ fn collisions(
     // triangles de la base déjà endommagés cette frame (un impact par
     // météore par frame - pas de cumul multiple pour un même chevauchement)
     let mut damaged_station_tris: Vec<usize> = Vec::new();
+    // dégâts d'un choc météore↔météore : budget de triangles à détruire par
+    // météore et par adversaire, calculé **une seule fois par paire par
+    // frame** depuis l'énergie cinétique de l'impact et la résistance de la
+    // roche (`meteor_collision_damage`) puis consommé triangle par triangle
+    // au fil de la boucle (le premier triangle en collision de la paire
+    // initialise le budget, les suivants le consomment)
+    let mut meteor_pair_damage: HashMap<(usize, usize), usize> = HashMap::new();
     // le bouclier temporaire (consommable) absorbe au plus un impact par frame
     let mut temp_absorbed = false;
     for i in 0..triangles.len() {
@@ -1116,7 +1257,40 @@ fn collisions(
             // l'endommagent pas. Une seule fois par triangle par frame.
             if collid_by_who == WHOIAM_METEOR && !damaged_station_tris.contains(&i) {
                 damaged_station_tris.push(i);
-                apply_station_damage(&mut triangles[i]);
+                // énergie cinétique du météore qui percute (½·m·v², masse =
+                // triangles vivants) : la vitesse n'est pas modifiée par le
+                // choc avec la base (seule la direction rebondit), elle reste
+                // celle de l'impact. Accumulée sur le triangle, elle nourrit
+                // les griffures dépendantes de l'énergie
+                // (`STATION_SCRATCHES_ENERGY_DEPENDENT`).
+                let meteor_idx = collid_by as usize;
+                let impact_energy = 0.5
+                    * shapes[meteor_idx].life.max(0) as f64
+                    * shapes[meteor_idx].velocity
+                    * shapes[meteor_idx].velocity;
+                // griffures continues de cet impact : `STATION_SCRATCHES_PER_DAMAGE`
+                // traits par niveau de dégât (le triangle percuté ET chacun de
+                // ses voisins propagés en gagnent), plus les traits liés à
+                // l'énergie cinétique quand le réglage est actif - créés une
+                // seule fois, puis dessinés sur l'anneau entier
+                let scratch_count = STATION_SCRATCHES_PER_DAMAGE.max(0) as usize
+                    + if STATION_SCRATCHES_ENERGY_DEPENDENT {
+                        (impact_energy * STATION_SCRATCHES_ENERGY_FACTOR)
+                            .round()
+                            .max(0.0) as usize
+                    } else {
+                        0
+                    };
+                apply_station_damage(&mut triangles[i], impact_energy);
+                if scratch_count > 0 {
+                    spawn_station_scratches(
+                        &mut state.station_scratches,
+                        triangles[i].real_center,
+                        scratch_count,
+                        triangles[i].damage,
+                        rng,
+                    );
+                }
                 // explosion : le triangle de la base percuté **éjecte ses
                 // propres particules** (éclats rouille, distincts des débris
                 // blancs du météore qui explose) depuis son centre - la
@@ -1128,9 +1302,10 @@ fn collisions(
                 // triangle percuté (même forme, vivants, partage d'un
                 // **segment de côté** - un simple contact par un point ne
                 // compte pas) : un impact fissure l'anneau autour du point
-                // percuté - chaque voisin subit le même dégât, lui aussi une
-                // seule fois par frame (`damaged_station_tris` couvre les
-                // impacts directs et la propagation)
+                // percuté - chaque voisin subit le même dégât (et les mêmes
+                // griffures), lui aussi une seule fois par frame
+                // (`damaged_station_tris` couvre les impacts directs et la
+                // propagation)
                 for j in shapes[shape_index].first_triangle..=shapes[shape_index].last_triangle {
                     if j != i
                         && !damaged_station_tris.contains(&j)
@@ -1138,7 +1313,16 @@ fn collisions(
                         && station_triangles_share_edge(&triangles[i], &triangles[j])
                     {
                         damaged_station_tris.push(j);
-                        apply_station_damage(&mut triangles[j]);
+                        apply_station_damage(&mut triangles[j], impact_energy);
+                        if scratch_count > 0 {
+                            spawn_station_scratches(
+                                &mut state.station_scratches,
+                                triangles[j].real_center,
+                                scratch_count,
+                                triangles[j].damage,
+                                rng,
+                            );
+                        }
                     }
                 }
             }
@@ -1342,11 +1526,53 @@ fn collisions(
                 }
                 generate_garbages(garbages, &triangles[i], shapes, rng);
             }
+        } else if who == WHOIAM_METEOR && collid_by_who == WHOIAM_METEOR {
+            // choc entre **météores** : les dégâts dépendent de l'**énergie
+            // cinétique** de l'impact (masses = triangles vivants, vitesse
+            // relative - `meteor_collision_damage`) et de la **résistance**
+            // propre de chaque roche : un contact lent ne brise rien (le
+            // choc reste élastique), un impact violent détruit les triangles
+            // du point de contact. Le budget de dégâts de la paire est
+            // consommé triangle par triangle - les triangles en contact
+            // au-delà du budget survivent. Le boss ne passe pas ici (branche
+            // dédiée ci-dessous) : il est immunisé contre les chocs de
+            // météores - le météore normal qui le percute, lui, subit les
+            // dégâts calculés ici.
+            if !shapes[shape_index].is_boss {
+                let other = collid_by as usize;
+                let budget = meteor_pair_damage
+                    .entry((shape_index, other))
+                    .or_insert_with(|| {
+                        meteor_collision_damage(shapes, triangles, shape_index, other)
+                    });
+                if *budget > 0 {
+                    *budget -= 1;
+                    triangles[i].life = 0;
+                    if shapes[shape_index].life > 0 {
+                        shapes[shape_index].life -= 1;
+                    }
+                    // débris + son d'impact (comme la branche générique)
+                    if let Some(sounds) = sounds.as_mut() {
+                        let dx = shapes[shape_index].position.x - shapes[PLAYER_INDEX].position.x;
+                        let dy = shapes[shape_index].position.y - shapes[PLAYER_INDEX].position.y;
+                        let dist = dx.hypot(dy);
+                        let v = (1.0 - dist / WORLD_WIDTH.hypot(WORLD_HEIGHT)).powi(3) as f32;
+                        sounds.play_explosion(rng, v);
+                    }
+                    generate_garbages(garbages, &triangles[i], shapes, rng);
+                    // le météore détruit par un choc de météore libère ses
+                    // minerais absorbés (jamais détruits avec lui)
+                    if shapes[shape_index].life <= 0 {
+                        release_meteor_minerals(shapes, triangles, elements, shape_index, rng);
+                    }
+                }
+            }
         } else if who == WHOIAM_METEOR && shapes[shape_index].is_boss && collid_by_who == WHOIAM_METEOR {
             // le boss est **immunisé contre les chocs de météores** : un
-            // météore normal qui le percute explose (traité de son côté),
-            // mais le boss ne perd aucun triangle - il ne peut être détruit
-            // que par les balles du vaisseau (voir la branche BULLET)
+            // météore normal qui le percute subit les dégâts calculés dans la
+            // branche météore ci-dessus (traité de son côté), mais le boss ne
+            // perd aucun triangle - il ne peut être détruit que par les
+            // balles du vaisseau (voir la branche BULLET)
         } else if who == WHOIAM_METEOR
             && shapes[shape_index].is_boss
             && collid_by_who == WHOIAM_BULLET
@@ -1513,10 +1739,233 @@ fn collisions(
         }
     }
 
+    // un météore qui a perdu des triangles (tir, collision, mine) peut se
+    // retrouver en plusieurs groupes de triangles **non adjacents** : chaque
+    // groupe devient alors un météore indépendant (voir
+    // `split_disconnected_meteors`)
+    split_disconnected_meteors(shapes, triangles, rng);
+
     // NB : le **cosmonaute EVA ne ramasse pas les minerais** - ceux relâchés
     // au crash restent dans l'espace (`eject_cargo_minerals`) et ne seront
     // récupérés que par le vaisseau reconstruit (ou ressuscité en Survival)
     // à son retour, par collision.
+}
+
+/// Écart maximal de direction appliqué aux fragments d'un météore séparé
+/// (radians, ± la moitié - ex ±0.15 rad ≈ ±8,6°) : les fragments se
+/// détachent de la trajectoire d'origine sans changer radicalement de cap.
+const SPLIT_DIRECTION_SPREAD: f64 = 0.15;
+/// Variation relative de vitesse des fragments (vitesse × (1 ± jitter)) :
+/// sans elle, des fragments à trajectoire identique resteraient en formation
+/// serrée et la séparation ne serait jamais visible.
+const SPLIT_SPEED_JITTER: f64 = 0.05;
+
+/// Deux triangles d'un même météore sont-ils **adjacents** - partagent-ils
+/// une **arête** (2 sommets communs) ? Un simple contact par un point ne
+/// compte pas (comme `station_triangles_share_edge` pour la base). Les
+/// sommets locaux des triangles d'un même météore sont posés depuis les
+/// mêmes points (`generate_shape`) : ils coïncident à l'identique, la
+/// comparaison exacte suffit.
+fn meteor_triangles_share_edge(a: &Triangle, b: &Triangle) -> bool {
+    let a_vertices = [a.a, a.b, a.c];
+    let b_vertices = [b.a, b.b, b.c];
+    a_vertices.iter().filter(|p| b_vertices.contains(p)).count() >= 2
+}
+
+/// Regroupe les triangles **vivants** d'un météore en composantes connexes
+/// (adjacence par arête commune - `meteor_triangles_share_edge`). Chaque
+/// composante est la liste des indices de ses triangles (dans la plage de la
+/// forme) - parcours en profondeur, coût négligeable (≤ ~32 triangles).
+fn meteor_components(shape: &Shape, triangles: &[Triangle]) -> Vec<Vec<usize>> {
+    let alive: Vec<usize> = (shape.first_triangle..=shape.last_triangle)
+        .filter(|&i| triangles[i].life > 0)
+        .collect();
+    let mut visited = vec![false; alive.len()];
+    let mut comps: Vec<Vec<usize>> = Vec::new();
+    for (k, &ti) in alive.iter().enumerate() {
+        if visited[k] {
+            continue;
+        }
+        visited[k] = true;
+        let mut stack = vec![k];
+        let mut comp = vec![ti];
+        while let Some(k) = stack.pop() {
+            for (j, &tj) in alive.iter().enumerate() {
+                if !visited[j] && meteor_triangles_share_edge(&triangles[alive[k]], &triangles[tj])
+                {
+                    visited[j] = true;
+                    stack.push(j);
+                    comp.push(tj);
+                }
+            }
+        }
+        comps.push(comp);
+    }
+    comps
+}
+
+/// **Séparation des météores** : quand un météore perd des triangles (tir,
+/// collision, mine, base), les triangles restants peuvent ne plus être
+/// **adjacents** - on se retrouve alors avec plusieurs groupes de triangles
+/// qui ne forment qu'une seule forme : un seul tir détruit tout le groupe
+/// (et le météore entier « explose » au premier triangle qui meurt). Cette
+/// fonction prend la séparation en compte : chaque groupe de triangles
+/// adjacents devient un **météore indépendant** (sa propre forme - pose,
+/// trajectoire et minerais partagés), que le joueur peut détruire
+/// séparément. Appelée après la résolution des collisions pour tous les
+/// météores vivants. Le météore spécial (`is_boss`) est exclu : il doit
+/// rester un corps unique (armure, immunité aux chocs).
+fn split_disconnected_meteors(
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    rng: &mut impl Rng,
+) {
+    // météores à séparer, avec leurs composantes (calculées avant toute
+    // mutation - les indices restent valides après ajouts)
+    let mut splits: Vec<(usize, Vec<Vec<usize>>)> = Vec::new();
+    for (i, s) in shapes.iter().enumerate() {
+        if s.who_i_am != WHOIAM_METEOR || s.life <= 0 || s.is_boss {
+            continue;
+        }
+        let comps = meteor_components(s, triangles);
+        if comps.len() > 1 {
+            splits.push((i, comps));
+        }
+    }
+    for (meteor_idx, comps) in splits {
+        split_meteor_components(shapes, triangles, meteor_idx, comps, rng);
+    }
+}
+
+/// Applique la séparation d'un météore en `comps` composantes : la plus
+/// grande composante garde la forme d'origine (trajectoire intacte), chaque
+/// autre composante devient un nouveau météore (trajectoire légèrement
+/// déviée pour que les fragments se séparent) ; les minerais contenus
+/// (`minerals`) sont répartis proportionnellement aux triangles vivants.
+fn split_meteor_components(
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    meteor_idx: usize,
+    mut comps: Vec<Vec<usize>>,
+    rng: &mut impl Rng,
+) {
+    // la plus grande composante reste la forme d'origine
+    comps.sort_by_key(|c| std::cmp::Reverse(c.len()));
+    let kept = comps.remove(0);
+    let total_alive: usize = kept.len() + comps.iter().map(Vec::len).sum::<usize>();
+    let minerals = shapes[meteor_idx].minerals;
+    // part de minerais des fragments (répartition proportionnelle aux
+    // triangles - le reste reste à la forme d'origine)
+    let mut fragments_minerals = 0i32;
+    for c in &comps {
+        fragments_minerals += (minerals * c.len() as i32) / total_alive as i32;
+    }
+
+    for c in &comps {
+        let nbr = c.len();
+        // slot du fragment : forme détruite de même taille réutilisée, sinon
+        // nouvelle forme + triangles alloués (comme `generate_shape`)
+        let (slot, first) = match free_shape(shapes, nbr) {
+            Some(slot) => (slot, shapes[slot].first_triangle),
+            None => {
+                shapes.push(Shape::default());
+                let slot = shapes.len() - 1;
+                let first = triangles.len();
+                triangles.resize(first + nbr, Triangle::default());
+                shapes[slot].first_triangle = first;
+                shapes[slot].last_triangle = first + nbr - 1;
+                (slot, first)
+            }
+        };
+        let last = first + nbr - 1;
+        // les triangles du fragment quittent la forme d'origine : copiés dans
+        // le slot, l'original est tué (la forme d'origine ne « voit » plus le
+        // fragment)
+        for (k, &ti) in c.iter().enumerate() {
+            let dest = first + k;
+            triangles[dest] = triangles[ti];
+            triangles[dest].shape_index = slot as i32;
+            triangles[dest].id = dest as i32;
+            triangles[ti].life = 0;
+        }
+        // nouveau météore : hérite de la pose et de la trajectoire de la
+        // forme d'origine, avec une légère déviation pour que les fragments
+        // se détachent
+        let mut ns = shapes[meteor_idx].clone();
+        ns.id = slot as i32;
+        ns.life = nbr as i32;
+        ns.first_triangle = first;
+        ns.last_triangle = last;
+        ns.is_boss = false;
+        ns.minerals = (minerals * nbr as i32) / total_alive as i32;
+        let d = ns.direction + (rng.r#gen::<f64>() - 0.5) * 2.0 * SPLIT_DIRECTION_SPREAD;
+        ns.direction = if d < 0.0 { d + TAU } else if d >= TAU { d - TAU } else { d };
+        ns.velocity *= 1.0 - SPLIT_SPEED_JITTER + rng.r#gen::<f64>() * 2.0 * SPLIT_SPEED_JITTER;
+        shapes[slot] = ns;
+        // centre et positions monde du fragment (il tourne autour de son
+        // propre centre dès la séparation)
+        compute_shape_center(&mut shapes[slot], triangles);
+        shapes[slot].center = shapes[slot].target_center;
+        for t in &mut triangles[first..=last] {
+            compute_real_positions(
+                t,
+                shapes[slot].position,
+                shapes[slot].center,
+                shapes[slot].orientation,
+            );
+        }
+    }
+
+    // la forme d'origine ne garde que sa composante principale
+    shapes[meteor_idx].life = kept.len() as i32;
+    shapes[meteor_idx].minerals = minerals - fragments_minerals;
+    compute_shape_center(&mut shapes[meteor_idx], triangles);
+}
+
+/// Dégâts d'un choc entre deux météores (`a` percuté par `b`) : nombre de
+/// triangles de `a` détruits au point de contact.
+///
+/// L'**énergie cinétique** de l'impact est calculée dans le référentiel du
+/// **centre de masse** : `E = ½·μ·v_rel²` avec `μ` la **masse réduite**
+/// (`ma·mb/(ma+mb)`, masses en triangles **vivants**) et `v_rel` la
+/// **vitesse relative** des deux météores. Tant que `E` reste sous la
+/// **résistance** de `a` (`Shape::resistance`, tirée à la génération), le
+/// choc est purement élastique (aucun triangle détruit). Au-delà, le
+/// premier triangle du point de contact se brise, puis un triangle de plus
+/// par tranche d'énergie `METEOR_COLLISION_DAMAGE_ENERGY` - plafonné aux
+/// triangles de `a` réellement en contact avec `b` cette frame.
+fn meteor_collision_damage(shapes: &[Shape], triangles: &[Triangle], a: usize, b: usize) -> usize {
+    let sa = &shapes[a];
+    let sb = &shapes[b];
+    // masses = triangles vivants (le choc élastique se fonde sur la même
+    // notion de masse)
+    let ma = sa.life.max(1) as f64;
+    let mb = sb.life.max(1) as f64;
+    // vitesse relative en composantes monde - même convention que
+    // `moving_shape` (`position.y -= sin(direction)·vitesse·60·dt`)
+    let vax = sa.velocity * sa.direction.cos();
+    let vay = -sa.velocity * sa.direction.sin();
+    let vbx = sb.velocity * sb.direction.cos();
+    let vby = -sb.velocity * sb.direction.sin();
+    let v_rel = (vax - vbx).hypot(vay - vby);
+    // énergie cinétique de l'impact (référentiel du centre de masse)
+    let reduced_mass = ma * mb / (ma + mb);
+    let energy = 0.5 * reduced_mass * v_rel * v_rel;
+    if energy <= sa.resistance {
+        return 0;
+    }
+    // triangles détruits : un pour dépasser la résistance, puis un par
+    // tranche d'énergie supplémentaire
+    let excess = energy - sa.resistance;
+    let damage = 1 + (excess / METEOR_COLLISION_DAMAGE_ENERGY) as usize;
+    // plafonné aux triangles de `a` réellement en contact avec `b` cette
+    // frame (le choc ne brise que la zone de contact)
+    let colliding = (sa.first_triangle..=sa.last_triangle)
+        .filter(|&k| {
+            triangles[k].life > 0 && triangles[k].collid && triangles[k].collid_by == b as i32
+        })
+        .count();
+    damage.min(colliding)
 }
 
 /// Météore vivant le plus proche d'une position donnée - utilisé par
@@ -1824,13 +2273,20 @@ mod tests {
 
     #[test]
     fn collision_destroys_triangles_and_spawns_debris() {
-        // deux météores de deux triangles qui se chevauchent → les triangles
-        // meurent, les formes perdent de la vie, des débris apparaissent
+        // deux météores de deux triangles qui se chevauchent à **vitesse
+        // opposée** → l'énergie cinétique de l'impact (E = ½·μ·v_rel² =
+        // ½·1·16 = 8, masses 2/2) dépasse la résistance (0 en test) : les
+        // triangles du point de contact meurent, les formes perdent de la
+        // vie, des débris apparaissent
         let mut state = GameState::new();
         let mut shapes = vec![
             test_shape(WHOIAM_METEOR, 0, 1, 0.0, 0.0),
             test_shape(WHOIAM_METEOR, 2, 3, 2.0, 2.0),
         ];
+        shapes[0].velocity = 2.0;
+        shapes[0].direction = 0.0;
+        shapes[1].velocity = 2.0;
+        shapes[1].direction = TAU / 2.0; // vers la gauche (vers l'autre météore)
         let mut triangles = vec![
             test_triangle(0, 0, 0.0, 0.0),
             test_triangle(1, 0, 0.0, 0.0),
@@ -1859,6 +2315,77 @@ mod tests {
     }
 
     #[test]
+    fn gentle_meteor_collision_breaks_nothing() {
+        // deux météores qui se touchent **sans vitesse relative** : l'énergie
+        // cinétique de l'impact est nulle - le choc reste élastique, aucun
+        // triangle ne meurt ni débris n'apparaît (le chevauchement seul ne
+        // suffit plus à briser les roches)
+        let mut state = GameState::new();
+        let mut shapes = vec![
+            test_shape(WHOIAM_METEOR, 0, 1, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 2, 3, 2.0, 2.0),
+        ];
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 0, 0.0, 0.0),
+            test_triangle(2, 1, 2.0, 2.0),
+            test_triangle(3, 1, 2.0, 2.0),
+        ];
+        let mut garbages = Vec::new();
+        let mut elements = default_elements();
+        let mut rng = seed();
+
+        collisions(&mut state, &mut shapes, &mut triangles, &mut garbages, &mut elements, &mut rng, None, 0.0);
+
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(triangles[1].life, 1);
+        assert_eq!(triangles[2].life, 1);
+        assert_eq!(triangles[3].life, 1);
+        assert_eq!(shapes[0].life, 2);
+        assert_eq!(shapes[1].life, 2);
+        assert!(garbages.is_empty(), "aucun débris sans dégât");
+    }
+
+    #[test]
+    fn meteor_collision_damage_scales_with_energy_and_resistance() {
+        // test direct de `meteor_collision_damage` : deux météores de 2
+        // triangles à vitesses opposées de 2 (v_rel = 4) - l'énergie de
+        // l'impact dans le référentiel du centre de masse vaut
+        // E = ½·μ·v² = ½·(2·2/4)·16 = 8
+        let mut shapes = vec![
+            test_shape(WHOIAM_METEOR, 0, 1, 0.0, 0.0),
+            test_shape(WHOIAM_METEOR, 2, 3, 2.0, 2.0),
+        ];
+        shapes[0].velocity = 2.0;
+        shapes[0].direction = 0.0;
+        shapes[1].velocity = 2.0;
+        shapes[1].direction = TAU / 2.0;
+        // les deux triangles du météore a sont en contact avec b
+        let mut triangles = vec![
+            test_triangle(0, 0, 0.0, 0.0),
+            test_triangle(1, 0, 0.0, 0.0),
+            test_triangle(2, 1, 2.0, 2.0),
+            test_triangle(3, 1, 2.0, 2.0),
+        ];
+        triangles[0].collid = true;
+        triangles[0].collid_by = 1;
+        triangles[1].collid = true;
+        triangles[1].collid_by = 1;
+
+        // sans résistance : les 2 triangles en contact sont détruits
+        assert_eq!(meteor_collision_damage(&shapes, &triangles, 0, 1), 2);
+        // un contact sans vitesse relative ne brise rien
+        shapes[0].velocity = 0.0;
+        shapes[1].velocity = 0.0;
+        assert_eq!(meteor_collision_damage(&shapes, &triangles, 0, 1), 0);
+        // une résistance supérieure à l'énergie de l'impact annule les dégâts
+        shapes[0].velocity = 2.0;
+        shapes[1].velocity = 2.0;
+        shapes[0].resistance = 100.0;
+        assert_eq!(meteor_collision_damage(&shapes, &triangles, 0, 1), 0);
+    }
+
+    #[test]
     fn boss_is_immune_to_normal_meteor_collisions() {
         // un météore normal percute le boss : le météore explose (il perd ses
         // triangles) mais le boss ne subit **aucun dégât** - il ne peut être
@@ -1877,6 +2404,11 @@ mod tests {
         shapes[0].is_boss = true;
         shapes[0].radius = 30.0;
         shapes[1].radius = 10.0;
+        // le météore percute le boss à vitesse suffisante (E = ½·μ·9 ≈ 7,5)
+        // pour que ses triangles de contact se brisent - le boss, lui, ne
+        // perd rien
+        shapes[1].velocity = 3.0;
+        shapes[1].direction = TAU / 2.0; // vers la gauche (vers le boss)
         let mut triangles = Vec::new();
         for i in 0..12 {
             let (shape_index, x, y) = if i < 10 {
@@ -2017,6 +2549,105 @@ mod tests {
         assert_eq!(triangles[1].life, 1);
     }
 
+    /// Construit un triangle avec des sommets locaux donnés (pour les tests
+    /// de séparation - `test_triangle` donne à tous le même sommet local).
+    fn tri(a: (f64, f64), b: (f64, f64), c: (f64, f64), id: i32, shape_index: i32) -> Triangle {
+        let mut t = Triangle::default();
+        t.create(Point::new(a.0, a.1), Point::new(b.0, b.1), Point::new(c.0, c.1));
+        t.id = id;
+        t.shape_index = shape_index;
+        t
+    }
+
+    #[test]
+    fn disconnected_meteor_triangles_become_separate_meteors() {
+        // météore de 3 triangles : (0,0)/(10,0)/(0,10) et (10,0)/(0,10)/
+        // (-10,10) partagent l'arête (10,0)-(0,10) → adjacents ; le
+        // troisième, (100,0)/(110,0)/(105,8), n'a aucun sommet commun →
+        // isolé. Après séparation, il doit devenir un météore à part entière
+        // (détruisible séparément), avec sa part de minerais.
+        let mut shapes = vec![test_shape(WHOIAM_METEOR, 0, 2, 0.0, 0.0)];
+        shapes[0].minerals = 3;
+        let mut triangles = vec![
+            tri((0.0, 0.0), (10.0, 0.0), (0.0, 10.0), 0, 0),
+            tri((10.0, 0.0), (0.0, 10.0), (-10.0, 10.0), 1, 0),
+            tri((100.0, 0.0), (110.0, 0.0), (105.0, 8.0), 2, 0),
+        ];
+        let mut rng = seed();
+
+        split_disconnected_meteors(&mut shapes, &mut triangles, &mut rng);
+
+        // la forme d'origine garde la plus grande composante (2 triangles)
+        assert_eq!(shapes.len(), 2);
+        assert_eq!(shapes[0].life, 2, "la forme d'origine garde sa composante");
+        assert_eq!(shapes[0].minerals, 2, "le reste des minerais reste à la forme d'origine");
+        // le fragment isolé est devenu un météore indépendant
+        assert_eq!(shapes[1].who_i_am, WHOIAM_METEOR);
+        assert!(shapes[1].is_collider);
+        assert_eq!(shapes[1].life, 1);
+        assert_eq!(shapes[1].first_triangle, 3);
+        assert_eq!(shapes[1].last_triangle, 3);
+        assert_eq!(shapes[1].minerals, 1, "le fragment emporte sa part de minerais");
+        // il hérite de la position et de la vitesse de la forme d'origine
+        assert_eq!(shapes[1].position, Point::new(0.0, 0.0));
+        assert_eq!(shapes[1].velocity, 0.0);
+        // direction déviée au plus de `SPLIT_DIRECTION_SPREAD` autour de 0
+        assert!(
+            shapes[1].direction <= SPLIT_DIRECTION_SPREAD
+                || shapes[1].direction >= TAU - SPLIT_DIRECTION_SPREAD,
+            "fragment dévié autour de la direction d'origine"
+        );
+        // le triangle isolé a quitté la forme d'origine (tué à sa place)
+        assert_eq!(triangles[2].life, 0);
+        assert_eq!(triangles[3].life, 1);
+        assert_eq!(triangles[3].shape_index, 1);
+        assert_eq!(triangles[3].id, 3);
+        // le centre du fragment est recalculé (aucun triangle perdu)
+        assert!(shapes[1].radius > 0.0);
+        compute_shape_center(&mut shapes[0], &triangles);
+    }
+
+    #[test]
+    fn adjacent_meteor_triangles_are_not_split() {
+        // contrôle : trois triangles tous adjacents (chaîne) restent un seul
+        // météore - la séparation ne s'applique qu'aux groupes non adjacents
+        let mut shapes = vec![test_shape(WHOIAM_METEOR, 0, 2, 0.0, 0.0)];
+        let mut triangles = vec![
+            tri((0.0, 0.0), (10.0, 0.0), (0.0, 10.0), 0, 0),
+            tri((10.0, 0.0), (0.0, 10.0), (-10.0, 10.0), 1, 0),
+            tri((0.0, 10.0), (10.0, 0.0), (5.0, 20.0), 2, 0),
+        ];
+        let mut rng = seed();
+
+        split_disconnected_meteors(&mut shapes, &mut triangles, &mut rng);
+
+        assert_eq!(shapes.len(), 1, "aucune séparation pour un météore connexe");
+        assert_eq!(shapes[0].life, 3);
+        assert_eq!(triangles[0].life, 1);
+        assert_eq!(triangles[1].life, 1);
+        assert_eq!(triangles[2].life, 1);
+    }
+
+    #[test]
+    fn boss_meteor_is_never_split() {
+        // le météore spécial (boss) reste un corps unique même si ses
+        // triangles ne sont plus tous adjacents (armure, immunité aux chocs)
+        let mut shapes = vec![test_shape(WHOIAM_METEOR, 0, 2, 0.0, 0.0)];
+        shapes[0].is_boss = true;
+        let mut triangles = vec![
+            tri((0.0, 0.0), (10.0, 0.0), (0.0, 10.0), 0, 0),
+            tri((10.0, 0.0), (0.0, 10.0), (-10.0, 10.0), 1, 0),
+            tri((100.0, 0.0), (110.0, 0.0), (105.0, 8.0), 2, 0),
+        ];
+        let mut rng = seed();
+
+        split_disconnected_meteors(&mut shapes, &mut triangles, &mut rng);
+
+        assert_eq!(shapes.len(), 1, "le boss n'est jamais séparé");
+        assert_eq!(shapes[0].life, 3);
+        assert_eq!(triangles[2].life, 1);
+    }
+
     #[test]
     fn portal_apparent_size_and_ship_flies_through() {
         // Mesures + vol de contrôle : vaisseau réel (mesh) et portail réel
@@ -2103,6 +2734,12 @@ mod tests {
             test_shape(WHOIAM_METEOR, 2, 3, 2.0, 2.0),
         ];
         shapes[0].minerals = 2; // le premier météore contient 2 minerais
+        // impact violent (E = ½·μ·v_rel² = ½·1·16 = 8, masses 2/2) : les
+        // deux météores sont détruits, leurs minerais libérés
+        shapes[0].velocity = 2.0;
+        shapes[0].direction = 0.0;
+        shapes[1].velocity = 2.0;
+        shapes[1].direction = TAU / 2.0;
         let mut triangles = vec![
             test_triangle(0, 0, 0.0, 0.0),
             test_triangle(1, 0, 0.0, 0.0),
@@ -3524,6 +4161,9 @@ mod tests {
         let mut garbages = Vec::new();
         let mut elements = default_elements();
         let mut rng = seed();
+        // vitesse du météore : chaque impact porte l'énergie cinétique
+        // ½·m·v² = ½·1·2² = 2, accumulée sur le triangle (griffures)
+        shapes[1].velocity = 2.0;
 
         for _ in 0..STATION_TRIANGLE_DAMAGE_MAX - 1 {
             shapes[1].life = 1;
@@ -3542,6 +4182,26 @@ mod tests {
         // dégâts cumulés, triangle encore vivant sous le seuil
         assert_eq!(triangles[0].damage, STATION_TRIANGLE_DAMAGE_MAX - 1);
         assert_eq!(triangles[0].life, 1);
+        // l'énergie cinétique de chaque impact s'accumule (2 par impact)
+        assert!(
+            (triangles[0].impact_energy - 2.0 * (STATION_TRIANGLE_DAMAGE_MAX - 1) as f64).abs()
+                < 1e-9,
+            "énergie d'impact accumulée : {}",
+            triangles[0].impact_energy
+        );
+        // griffures continues : chaque impact a créé ses traits autour du
+        // triangle percuté (une seule fois - `STATION_SCRATCH_*` de l'outil)
+        let scratches_per_impact = STATION_SCRATCHES_PER_DAMAGE.max(0) as usize
+            + if STATION_SCRATCHES_ENERGY_DEPENDENT {
+                (2.0 * STATION_SCRATCHES_ENERGY_FACTOR).round().max(0.0) as usize
+            } else {
+                0
+            };
+        assert_eq!(
+            state.station_scratches.len(),
+            scratches_per_impact * (STATION_TRIANGLE_DAMAGE_MAX - 1) as usize,
+            "une griffure par unité de dégât, créée à l'impact"
+        );
         // l'impact éjecte ses propres particules depuis le triangle percuté
         // (éclats rouille, distincts des débris blancs du météore qui explose)
         assert!(
@@ -3569,6 +4229,17 @@ mod tests {
             0.0,
         );
         assert_eq!(triangles[0].life, 0, "le triangle de la base doit mourir au seuil");
+        assert_eq!(
+            triangles[0].impact_energy,
+            2.0 * STATION_TRIANGLE_DAMAGE_MAX as f64,
+            "l'énergie d'impact reste accumulée jusqu'à la destruction"
+        );
+        // les griffures persistent (conservées sur l'anneau, dessinées par
+        // le rendu même une fois le triangle mort)
+        assert_eq!(
+            state.station_scratches.len(),
+            scratches_per_impact * STATION_TRIANGLE_DAMAGE_MAX as usize
+        );
     }
 
     #[test]
@@ -3631,6 +4302,9 @@ mod tests {
         let mut garbages = Vec::new();
         let mut elements = default_elements();
         let mut rng = seed();
+        // vitesse du météore : chaque impact porte l'énergie cinétique
+        // ½·m·v² = ½·1·2² = 2, propagée avec le dégât (griffures)
+        shapes[1].velocity = 2.0;
 
         collisions(
             &mut state,
@@ -3653,6 +4327,30 @@ mod tests {
         assert_eq!(triangles[1].life, 1);
         assert_eq!(triangles[2].life, 1);
         assert_eq!(triangles[3].life, 1);
+        // l'énergie cinétique de l'impact est propagée avec le dégât (elle
+        // alimente les griffures dépendantes de l'énergie) : le percuté et
+        // son voisin par un côté la portent, les autres non
+        assert!(
+            (triangles[0].impact_energy - 2.0).abs() < 1e-9,
+            "énergie sur le triangle percuté : {}",
+            triangles[0].impact_energy
+        );
+        assert_eq!(triangles[1].impact_energy, triangles[0].impact_energy);
+        assert_eq!(triangles[2].impact_energy, 0.0);
+        assert_eq!(triangles[3].impact_energy, 0.0);
+        // griffures continues : le percuté ET le voisin propagé en créent
+        // chacun à l'impact (le contact par un point et l'isolé, non)
+        let scratches_per_impact = STATION_SCRATCHES_PER_DAMAGE.max(0) as usize
+            + if STATION_SCRATCHES_ENERGY_DEPENDENT {
+                (2.0 * STATION_SCRATCHES_ENERGY_FACTOR).round().max(0.0) as usize
+            } else {
+                0
+            };
+        assert_eq!(
+            state.station_scratches.len(),
+            2 * scratches_per_impact,
+            "le percuté et son voisin par un côté créent chacun leurs griffures"
+        );
 
         // série d'impacts : le voisin par un côté suit le percuté et meurt
         // avec lui au seuil (le trou s'ouvre autour de l'impact) ; le
@@ -3677,8 +4375,18 @@ mod tests {
         assert_eq!(triangles[3].damage, 0);
         assert_eq!(triangles[0].life, 0, "le triangle percuté meurt au seuil");
         assert_eq!(triangles[1].life, 0, "le voisin par un côté meurt au seuil");
+        assert_eq!(
+            triangles[0].impact_energy,
+            2.0 * STATION_TRIANGLE_DAMAGE_MAX as f64,
+            "l'énergie s'accumule impact après impact sur le percuté"
+        );
+        assert_eq!(triangles[1].impact_energy, triangles[0].impact_energy);
         assert_eq!(triangles[2].life, 1);
         assert_eq!(triangles[3].life, 1);
+        assert_eq!(
+            state.station_scratches.len(),
+            2 * scratches_per_impact * STATION_TRIANGLE_DAMAGE_MAX as usize
+        );
     }
 
     #[test]
@@ -3709,6 +4417,10 @@ mod tests {
         );
         assert_eq!(triangles[0].damage, 0, "une balle n'endommage pas la base");
         assert_eq!(triangles[0].life, 1);
+        assert!(
+            state.station_scratches.is_empty(),
+            "sans dégât de météore, aucune griffure n'est créée"
+        );
     }
 
     #[test]
