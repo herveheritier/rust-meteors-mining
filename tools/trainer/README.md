@@ -1,0 +1,134 @@
+# Auto-entraînement du pilote — entraîneur indépendant (`tools/trainer`)
+
+Système **indépendant de l'application** qui pilote le cosmonaute (le
+vaisseau **ou** le cosmonaute EVA) en utilisant le jeu comme environnement, à
+travers l'**interface de contrôle** HTTP de `src/driver.rs` (voir
+`docs/AUTOENTRAINEMENT.md` pour la démarche complète).
+
+Python **standard uniquement** (aucune dépendance - `urllib`, `random`,
+`math`).
+
+```
+tools/trainer/
+├── client.py     ← client du protocole (GET /obs, POST /cmd, POST /reset)
+├── eva_env.py    ← géométrie partagée + micro-simulateur de l'EVA (mêmes lois que le jeu)
+├── policies.py   ← politiques : idle / random / seek (contrôleur paramétré entraîné)
+├── evaluate.py   ← lignes de base : mesure une stratégie sur des épisodes
+├── cem.py        ← entraînement par croix-entropie (CEM) de la politique `seek`
+└── policy.json   ← politique entraînée (sortie de cem.py, rejouable)
+```
+
+## La tâche d'entraînement (milestone 1)
+
+Chaque **épisode** remet le monde à zéro (`POST /reset` : graine
+déterministe), fait « exploser » le vaisseau à une distance donnée de la
+station et donne le contrôle au **cosmonaute EVA** éjecté. Le pilote
+entraîné ne reçoit que l'**observation JSON** (`GET /obs` : cinématique du
+pilote, distance/deltas toriques vers la station, objets proches…) et
+renvoie des **actions** (`POST /cmd` : `up/right/left` - mêmes primitives
+que les touches). L'épisode réussit quand le cosmonaute entre dans le cercle
+d'accostage au centre de la station (récupération).
+
+Le **micro-simulateur** (`eva_env.py`) reproduit les formules exactes du jeu
+(poussée vectorielle le long de l'orientation, rotation ←/→, monde torique,
+récupération sous 15 unités) à 60 Hz - la cadence de l'interface réelle -
+pour itérer en quelques millisecondes par épisode. La **vraie partie**
+(`--backend live`, `cargo run` lancé) reste la référence : la politique
+entraînée en simulation se rejoue à l'identique contre le jeu.
+
+## Usage
+
+### 1. Lancer le jeu (interface sur `http://127.0.0.1:8643/`)
+
+```bash
+cargo run
+```
+
+(Un message en jeu annonce l'URL de l'interface au lancement.)
+
+### 2. Mesurer les lignes de base (simulateur, instantané)
+
+```bash
+cd tools/trainer
+python3 evaluate.py --strategy idle    --episodes 3
+python3 evaluate.py --strategy random  --episodes 3
+python3 evaluate.py --strategy seek    --episodes 3     # réglage robuste de départ
+python3 evaluate.py --strategy seek --policy policy.json --episodes 3   # politique entraînée
+```
+
+Résultat typique (départ à 300 unités, délai 60 s) :
+
+| stratégie                | succès | temps moyen | récompense |
+|--------------------------|--------|-------------|------------|
+| `idle`                   | 0/3    | –           | −200       |
+| `random`                 | 0/3    | –           | −247       |
+| `seek` (défauts)         | 3/3    | 7,4 s       | 900        |
+| `seek` entraîné (CEM)    | 3/3    | 11,6 s      | 977        |
+
+Récompense : +1000 récupéré − 2 s/épisode − pénalité d'arrivée trop rapide
+(le retour doit rester maîtrisé, comme le fait l'autopilote du jeu).
+
+Contre la **vraie partie** (le jeu fournit aussi la stratégie `autopilot`,
+la référence absolue - l'ordinateur du jeu pilote lui-même) :
+
+```bash
+python3 evaluate.py --backend live --strategy autopilot --episodes 3
+python3 evaluate.py --backend live --strategy seek --policy policy.json --episodes 3
+```
+
+**Validé en conditions réelles** (jeu lancé sur X11, `cargo run`) : la
+politique entraînée en simulateur **se transfère telle quelle dans le jeu** -
+à 300 unités du centre, elle ramène le cosmonaute EVA à la station en
+~11,6 s (vitesse d'entrée ~26 u/s). Les essais réels ont aussi révélé que
+l'**autopilote du jeu échouait** depuis cette distance (sans amortissement,
+il se mettait en orbite autour de la base et s'éloignait en accélérant) -
+comportement que le micro-simulateur avait prédit exactement. La loi EVA de
+l'autopilote a depuis été **corrigée** (bande d'alignement adaptative +
+frein tangentiel à hystérésis, `src/autopilot.rs`) et re-validée en live :
+retour réussi depuis 300 / 800 / 1500 unités, vitesse de pointe ≤ 25 u/s,
+plus aucune orbite. La politique `seek` reste utile comme ligne de base
+paramétrée et comme point de départ de l'entraînement par renforcement.
+
+### 3. Entraîner une politique (CEM)
+
+```bash
+python3 cem.py                       # simulateur : départ naïf → découvre une politique
+python3 cem.py --init expert         # départ près du réglage robuste de `policies.py`
+python3 cem.py --backend live        # contre la vraie partie (épisodes en temps réel - lents)
+```
+
+À chaque génération, des candidats (les 5 paramètres de `seek` : bandes
+d'alignement `turn_db`/`thrust_db`, croisière `cruise`, ralentissement
+`slow_zone`, hystérésis `band`) sont évalués sur des épisodes déterministes,
+et les meilleurs deviennent la moyenne suivante (première génération en
+exploration uniforme, élitisme du meilleur candidat). Sortie : `policy.json`
++ courbe d'apprentissage :
+
+```
+gén  4   meilleur   -233.5   moyenne élite   -244.6   cumulé   -233.5
+gén  5   meilleur    974.1   moyenne élite    247.8   cumulé    974.1
+gén  8   meilleur    975.8   moyenne élite    975.3   cumulé    975.8
+```
+
+## Ce que l'entraînement apprend
+
+Le réglage critique découvert par l'entraînement est la **bande
+d'alignement** (`turn_db`) : le cosmonaute n'a qu'une poussée vectorielle
+(↑) et pas de frein ; si le nez n'est pas visé assez juste, la trajectoire
+d'approche dérive et l'EVA se met en **orbite** autour de la base au lieu
+d'entrer dans le petit cercle d'accostage (15 unités) - c'est l'échec du
+départ naïf que la CEM doit surmonter. La politique entraînée (bande très
+serrée, croisière plus élevée) dépasse le réglage manuel sur la récompense.
+
+## Limites connues et suite
+
+- Le **simulateur** est une aide au développement : seule la **vraie partie**
+  fait foi. L'interface étant en temps réel (une observation par frame
+  rendue), valider une politique entraînée contre le jeu prend de vraies
+  secondes par épisode.
+- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md`) ajoutera un mode de pas
+  fixe accéléré (sans rendu) côté jeu, pour entraîner des centaines
+  d'épisodes à la seconde, puis des tâches plus riches (boucle complète de
+  minage du vaisseau, missions des objectifs DAG) et des apprenants plus
+  puissants (réseau de neurones, RL) qui remplaceront la politique `seek`
+  paramétrée.

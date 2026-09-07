@@ -1,0 +1,13 @@
+{
+  "policy": "seek",
+  "params": {
+    "band": 62.3868,
+    "cruise": 87.1511,
+    "slow_zone": 117.8245,
+    "thrust_db": 0.0608,
+    "turn_db": 0.0229
+  },
+  "task": "eva-return",
+  "spawn_dist": 300.0,
+  "reward": 975.85
+}

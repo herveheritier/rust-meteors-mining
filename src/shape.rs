@@ -106,11 +106,14 @@ pub struct Shape {
     pub last_triangle: usize,
     /// `pointsUsageIndicator` en bitmask : bit `i` = bord `i` déjà utilisé
     /// (bords de l'éventail partagés ou consommés par la génération).
-    /// `u128` : un météore de `n` triangles a `3n` bords, et la difficulté
-    /// monte à `TRIANGLES_IN_SHAPE_MAX × 2` = 32 triangles (96 bords) - un
-    /// `u64` débordait (repli silencieux du décalage en release, collision
-    /// de bits qui accélérait l'épuisement des bords libres).
-    pub border_mask: u128,
+    /// Deux mots `u128` (256 bords) : un météore de `n` triangles a `3n`
+    /// bords ; la difficulté monte à `TRIANGLES_IN_SHAPE_MAX × 2` = 32
+    /// triangles (96 bords) mais le **météore spécial** (boss) en a 60
+    /// (~180 bords) - un `u64` puis un `u128` débordaient (repli silencieux
+    /// du décalage en release, panique « shift left with overflow » en
+    /// debug, collision de bits qui accélérait l'épuisement des bords
+    /// libres). Les accès passent par `border_free` / `border_mark`.
+    pub border_mask: [u128; 2],
     /// Nombre de bits suivis (= 3 × nombre de triangles de la forme).
     pub border_len: usize,
     pub position: Point,
@@ -176,7 +179,7 @@ impl Default for Shape {
             id: 0,
             first_triangle: 0,
             last_triangle: 0,
-            border_mask: 0,
+            border_mask: [0, 0],
             border_len: 0,
             position: Point::default(),
             width: 0.0,
@@ -539,6 +542,28 @@ pub fn is_vertex_in_shape(shape: &Shape, triangles: &[Triangle], vertex: Point) 
         .any(|t| is_vertex_in_triangle(t, vertex))
 }
 
+impl Shape {
+    /// Le bord `i` est-il libre (bit du bitmask non posé) ? Au-delà de la
+    /// capacité du bitmask (256 bords), `false` - jamais bloquant.
+    pub(crate) fn border_free(&self, i: usize) -> bool {
+        let word = i / 128;
+        if word >= self.border_mask.len() {
+            return false;
+        }
+        self.border_mask[word] & (1u128 << (i % 128)) == 0
+    }
+
+    /// Marque le bord `i` utilisé (décalage borné - le bitmask couvre 256
+    /// bords ; au-delà, sans effet : la forme est déjà « saturée »).
+    pub(crate) fn border_mark(&mut self, i: usize) {
+        let word = i / 128;
+        if word >= self.border_mask.len() {
+            return;
+        }
+        self.border_mask[word] |= 1u128 << (i % 128);
+    }
+}
+
 /// Sélectionne un bord libre (bit 0 du bitmask) et le marque utilisé
 /// (ex `chooseBorderSegment`).
 ///
@@ -555,8 +580,8 @@ pub fn choose_border_segment(shape: &mut Shape, rng: &mut impl Rng) -> Option<us
     let l = len + 1;
     let mut i = (rng.r#gen::<f64>() * l as f64) as usize;
     for _ in 0..l {
-        if i < len && shape.border_mask & (1 << i) == 0 {
-            shape.border_mask |= 1 << i;
+        if i < len && shape.border_free(i) {
+            shape.border_mark(i);
             return Some(i);
         }
         i = (i + 1) % l;

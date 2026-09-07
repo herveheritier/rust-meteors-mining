@@ -40,6 +40,9 @@ pub enum SettingsClick {
     /// lieu de 1×1 - visibilité du champ d'étoiles selon la qualité de
     /// l'écran).
     StarsBig,
+    /// Bascule le pilote automatique (l'ordinateur joue à la place du
+    /// pilote - il protège la station, mine, collecte et rentre décharger).
+    AutoPilot,
     /// Ligne REMOTE PIN : arme la saisie du code de la télécommande (ou, si
     /// la saisie est déjà armée, valide le code tapé).
     PinEdit,
@@ -107,6 +110,9 @@ pub fn settings_box_click(state: &GameState) -> SettingsClick {
     }
     if l.stars_big.contains(m) {
         return SettingsClick::StarsBig;
+    }
+    if l.autopilot.contains(m) {
+        return SettingsClick::AutoPilot;
     }
     if state.antialias != state.antialias_applied && l.restart.contains(m) {
         return SettingsClick::Restart;
@@ -223,6 +229,15 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
             state.stars_big = !state.stars_big;
             let _ = persist::set_bool("stars_big", state.stars_big);
             state.send_message(if state.stars_big { "STARS 3x3" } else { "STARS 1x1" });
+        }
+        SettingsClick::AutoPilot => {
+            state.autopilot = !state.autopilot;
+            let _ = persist::set_bool("autopilot", state.autopilot);
+            state.send_message(if state.autopilot {
+                "AUTOPILOT ON"
+            } else {
+                "AUTOPILOT OFF"
+            });
         }
         SettingsClick::PinEdit => {
             if state.settings_pin_edit {
@@ -359,6 +374,7 @@ pub fn reset_settings_fields(state: &mut GameState) {
     state.touch_ui = true; // interface tactile affichée par défaut
     state.save_position = false; // position du vaisseau non sauvegardée
     state.stars_big = false; // étoiles du fond en 1×1 par défaut
+    state.autopilot = false; // pilote automatique éteint par défaut
 }
 
 /// Remet les réglages par défaut (bouton RESET) : champs par défaut
@@ -402,6 +418,7 @@ pub fn reset_settings(state: &mut GameState, sounds: Option<&mut Sounds>) {
         "touch_ui",
         "save_position",
         "stars_big",
+        "autopilot",
     ] {
         let _ = persist::delete_key(key);
     }

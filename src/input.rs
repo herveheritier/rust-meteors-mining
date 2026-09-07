@@ -37,11 +37,15 @@ pub fn pilot_index(state: &GameState) -> usize {
     }
 }
 
-/// Le joueur donne-t-il une commande de déplacement (flèches ↑/↓/←/→, tous
-/// les modes de déplacement) ? Utilisé pour déclencher la rétraction des
-/// liens quand le vaisseau démarre de la base (voir `update`).
+/// Le joueur (ou le pilote externe engagé, `driver.rs`) donne-t-il une
+/// commande de déplacement (flèches ↑/↓/←/→, tous les modes) ? Utilisé pour
+/// déclencher la rétraction des liens quand le vaisseau démarre de la base
+/// (voir `update`).
 pub fn player_moving_input() -> bool {
     up_pressed() || down_pressed() || left_pressed() || right_pressed()
+        || (crate::driver::engaged()
+            && (crate::driver::up() || crate::driver::down() || crate::driver::left()
+                || crate::driver::right()))
 }
 
 /// Commandes de déplacement : touche clavier, joystick tactile (`touch.rs`,
@@ -94,9 +98,62 @@ pub fn player_controls(
     // vaisseau détruit : le joueur contrôle le cosmonaute EVA éjecté (seul
     // objectif : rejoindre la base) - pas de tir ni de carburant
     if state.cosmonaut_active {
-        cosmonaut_controls(state, shapes, dt);
+        // pilote externe (auto-entraînement, `driver.rs`) : le système
+        // entraîné pilote le cosmonaute EVA comme le feraient les touches
+        // (poussée ↑ + rotations ←/→ - mêmes primitives que l'autopilote)
+        if crate::driver::engaged() {
+            cosmonaut_apply_inputs(
+                state,
+                shapes,
+                dt,
+                crate::driver::up(),
+                crate::driver::right(),
+                crate::driver::left(),
+            );
+        } else if state.autopilot {
+            // pilote automatique : l'ordinateur ramène le cosmonaute à la
+            // station (son seul objectif - mêmes primitives que les touches,
+            // voir `autopilot::autopilot_eva_inputs`)
+            let pilot = crate::autopilot::autopilot_eva_inputs(state, shapes, dt);
+            cosmonaut_apply_inputs(state, shapes, dt, pilot.up, pilot.right, pilot.left);
+        } else {
+            cosmonaut_controls(state, shapes, dt);
+        }
         return;
     }
+    // pilote externe (auto-entraînement, `driver.rs`) : quand il est engagé,
+    // ses actions remplacent le clavier / tactile / télécommande / manette
+    // ET le pilote automatique (il pilote le vaisseau à leur place - mêmes
+    // primitives que les touches, voir `driver.rs`)
+    let pilot = if crate::driver::engaged() {
+        crate::autopilot::PilotInputs {
+            up: crate::driver::up(),
+            down: crate::driver::down(),
+            left: crate::driver::left(),
+            right: crate::driver::right(),
+            fire: crate::driver::fire(),
+        }
+    } else if state.autopilot {
+        // pilote automatique (case AUTOPILOT / touche X) : l'ordinateur joue
+        // à la place du pilote - il calcule les mêmes primitives que les
+        // touches (↑/↓/←/→ + tir), les entrées clavier/tactile/télécommande/
+        // manette sont ignorées tant que l'option est active (voir
+        // `autopilot.rs`)
+        crate::autopilot::autopilot_inputs(state, shapes)
+    } else {
+        crate::autopilot::PilotInputs {
+            up: up_pressed(),
+            down: down_pressed(),
+            left: left_pressed(),
+            right: right_pressed(),
+            fire: fire_pressed(),
+        }
+    };
+    let up = pilot.up;
+    let down = pilot.down;
+    let left = pilot.left;
+    let right = pilot.right;
+    let fire = pilot.fire;
     state.player.thrust = 0.0;
 
     // carburant (scénarios à économie) : les poussées avant/arrière sont
@@ -115,17 +172,17 @@ pub fn player_controls(
             // les modes sans inertie angulaire ne laissent pas une ancienne
             // rotation de REALISTIC continuer après un changement de mode
             player.rotation = 0.0;
-            if fuel_ok && up_pressed() {
+            if fuel_ok && up {
                 player.velocity += PLAYER_ACCELERATION * 60.0 * dt * boost;
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
             }
-            if right_pressed() {
+            if right {
                 player.direction -= PLAYER_ROTATION_SPEED * 60.0 * dt;
                 player.orientation = -player.direction;
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
-            if fuel_ok && down_pressed() {
+            if fuel_ok && down {
                 if player.velocity > 0.0 {
                     // peut devenir négatif une frame (comme l'original), puis
                     // sera ramené à 0
@@ -135,7 +192,7 @@ pub fn player_controls(
                     player.velocity = 0.0;
                 }
             }
-            if left_pressed() {
+            if left {
                 player.direction += PLAYER_ROTATION_SPEED * 60.0 * dt;
                 player.orientation = -player.direction;
                 state.player.rotate_left_thrusted = -5; // jet latéral gauche
@@ -144,22 +201,22 @@ pub fn player_controls(
         MOVING_MODE_INERTIAL => {
             // INERTIAL tourne à vitesse imposée tant que la touche est tenue
             player.rotation = 0.0;
-            if fuel_ok && up_pressed() {
+            if fuel_ok && up {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt * boost, player.orientation, 1.0, -1.0);
             }
-            if right_pressed() {
+            if right {
                 player.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
-            if fuel_ok && down_pressed() {
+            if fuel_ok && down {
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt * boost, player.orientation, -1.0, 1.0);
                 if player.velocity > 0.0 {
                     state.player.revert_thrusted = -5;
                 }
             }
-            if left_pressed() {
+            if left {
                 player.orientation -= PLAYER_ROTATION_SPEED * 60.0 * dt;
                 state.player.rotate_left_thrusted = -5; // jet latéral gauche
             }
@@ -169,13 +226,13 @@ pub fn player_controls(
             // accélèrent progressivement la rotation ; la vitesse angulaire
             // reste ensuite dans `player.rotation` quand les touches sont
             // relâchées, et la poussée opposée permet de la compenser.
-            if fuel_ok && up_pressed() {
+            if fuel_ok && up {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt * boost, player.orientation, 1.0, -1.0);
             }
-            let rotate_right = right_pressed();
-            let rotate_left = left_pressed();
+            let rotate_right = right;
+            let rotate_left = left;
             // Le relâchement ne modifie pas la vitesse angulaire. Une poussée
             // opposée agit comme un frein : elle peut ramener la rotation à
             // zéro, puis la faire repartir dans l'autre sens si elle reste
@@ -189,7 +246,7 @@ pub fn player_controls(
             if rotate_right {
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
-            if fuel_ok && down_pressed() {
+            if fuel_ok && down {
                 thrust_vector(player, PLAYER_ACCELERATION * 60.0 * dt * boost, player.orientation, -1.0, 1.0);
                 if player.velocity > 0.0 {
                     state.player.revert_thrusted = -5;
@@ -201,7 +258,7 @@ pub fn player_controls(
         }
         MOVING_MODE_4_WAYS => {
             player.rotation = 0.0;
-            if fuel_ok && up_pressed() {
+            if fuel_ok && up {
                 state.player.thrust = 0.1;
                 state.player.thrusted = -5;
                 let dx = player.direction.cos() * player.velocity;
@@ -210,7 +267,7 @@ pub fn player_controls(
                 player.velocity = dx.hypot(dy);
                 player.orientation = -player.direction;
             }
-            if fuel_ok && right_pressed() {
+            if fuel_ok && right {
                 let dx = player.direction.cos() * player.velocity + PLAYER_ACCELERATION * 60.0 * dt * boost;
                 let dy = player.direction.sin() * player.velocity;
                 player.direction = dy.atan2(dx);
@@ -218,7 +275,7 @@ pub fn player_controls(
                 player.orientation = -player.direction;
                 state.player.rotate_right_thrusted = -5; // jet latéral droit
             }
-            if fuel_ok && down_pressed() {
+            if fuel_ok && down {
                 let dx = player.direction.cos() * player.velocity;
                 let dy = player.direction.sin() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt * boost;
                 player.direction = dy.atan2(dx);
@@ -228,7 +285,7 @@ pub fn player_controls(
                     state.player.revert_thrusted = -5;
                 }
             }
-            if fuel_ok && left_pressed() {
+            if fuel_ok && left {
                 let dx = player.direction.cos() * player.velocity - PLAYER_ACCELERATION * 60.0 * dt * boost;
                 let dy = player.direction.sin() * player.velocity;
                 player.direction = dy.atan2(dx);
@@ -247,7 +304,7 @@ pub fn player_controls(
     // armes qui ont tiré) et bloque le tir quand plus aucune arme n'a de
     // munitions (cooldown non réinitialisé - le tir part dès qu'une arme
     // est armée)
-    if fire_pressed() && state.player.fire <= 0.0 {
+    if fire && state.player.fire <= 0.0 {
         let fired = scenario::try_fire(state);
         if fired.iter().any(|&f| f) {
             fire_bullet(shapes, triangles, &fired);
@@ -270,6 +327,21 @@ pub fn player_controls(
 /// faut doser la poussée pour rejoindre la base (`docking`/`rescue_cosmonaut`).
 /// Sans tir ni carburant.
 pub fn cosmonaut_controls(state: &mut GameState, shapes: &mut [Shape], dt: f64) {
+    cosmonaut_apply_inputs(state, shapes, dt, up_pressed(), right_pressed(), left_pressed());
+}
+
+/// Applique des entrées données (poussée / réorientation) au cosmonaute EVA -
+/// même logique que `cosmonaut_controls`, mais avec des primitives fournies :
+/// le pilote automatique pilote ainsi le cosmonaute comme le joueur (voir
+/// `autopilot::autopilot_eva_inputs`).
+fn cosmonaut_apply_inputs(
+    state: &mut GameState,
+    shapes: &mut [Shape],
+    dt: f64,
+    up: bool,
+    right: bool,
+    left: bool,
+) {
     let idx = state.eva_cosmonaut as usize;
     if idx >= shapes.len() {
         return;
@@ -278,7 +350,7 @@ pub fn cosmonaut_controls(state: &mut GameState, shapes: &mut [Shape], dt: f64) 
     state.player.thrust = 0.0;
     // poussée vectorielle : la poussée (selon l'orientation) s'ajoute au
     // vecteur de déplacement actuel, direction et vitesse recalculées
-    if up_pressed() {
+    if up {
         state.player.thrust = 0.1;
         state.player.thrusted = -5;
         thrust_vector(c, PLAYER_ACCELERATION * 60.0 * dt, c.orientation, 1.0, -1.0);
@@ -287,16 +359,14 @@ pub fn cosmonaut_controls(state: &mut GameState, shapes: &mut [Shape], dt: f64) 
     // (elle ne sera déviée que par une poussée ultérieure). Le sens demandé
     // est mémorisé (transitoire, `cosmonaut_turn`) pour que les membres
     // basculent dans le sens du tour (`animate_eva_cosmonaut`, game.rs).
-    let turn_right = right_pressed();
-    let turn_left = left_pressed();
-    if turn_right {
+    if right {
         c.orientation += PLAYER_ROTATION_SPEED * 60.0 * dt;
     }
-    if turn_left {
+    if left {
         c.orientation -= PLAYER_ROTATION_SPEED * 60.0 * dt;
     }
     // +1 = touche →, -1 = touche ←, 0 = aucune (ou les deux, qui s'annulent)
-    state.cosmonaut_turn = turn_right as i32 - turn_left as i32;
+    state.cosmonaut_turn = right as i32 - left as i32;
 }
 
 /// Convertit un `KeyCode` macroquad en keycode QB64 (ex `inp(96)`) : codes

@@ -16,6 +16,7 @@
 //!   aide S, debug D/I), `title.rs` (écran titre).
 
 mod audio;
+mod autopilot;
 mod build_info;
 mod config;
 mod cosmonaut;
@@ -23,6 +24,7 @@ mod difficulty;
 mod modding;
 mod dock_render;
 mod docking;
+mod driver;
 mod eva;
 mod font;
 mod game;
@@ -177,6 +179,14 @@ fn announce_remote(state: &mut GameState, url: &str) {
     state.send_message(&format!("REMOTE CONTROL: {host_port}"));
 }
 
+/// Annonce l'URL de l'interface d'auto-entraînement (journal + message HUD) -
+/// même style que la télécommande (`announce_remote`).
+fn announce_driver(state: &mut GameState, url: &str) {
+    info!("Auto-training interface ready: {}", url);
+    let host_port = url.trim_start_matches("http://").trim_end_matches('/');
+    state.send_message(&format!("DRIVER: {host_port}"));
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     // ─── Phase 1 : modèle de données ────────────────────────────────────────
@@ -265,6 +275,12 @@ async fn main() {
     // sortie (voir plus bas, au lancement de la partie)
     if let Some(on) = persist::get_bool("save_position") {
         state.save_position = on;
+    }
+    // pilote automatique (case AUTOPILOT de l'écran de paramétrage, touche
+    // X, clé `autopilot`) : l'ordinateur joue à la place du pilote - protège
+    // la station, mine, collecte et rentre décharger (voir `autopilot.rs`)
+    if let Some(on) = persist::get_bool("autopilot") {
+        state.autopilot = on;
     }
     // PIN de la télécommande HTTP (ligne REMOTE PIN de l'écran de
     // paramétrage, clé `remote_pin`) : chargé au lancement - vide = aucune
@@ -398,6 +414,18 @@ async fn main() {
         Err(e) => info!("Remote control disabled: {e}"),
     }
 
+    // ─── Interface d'auto-entraînement (pilote externe) ────────────────────
+    // Le serveur local démarre au lancement (`driver.rs`) : le système
+    // d'auto-entraînement (indépendant de l'application) pilote le vaisseau
+    // ou le cosmonaute EVA via `POST /cmd` et lit l'observation de la frame
+    // (`GET /obs`) ; `POST /reset` relance un épisode déterministe. L'URL est
+    // annoncée (journal + message HUD). En cas d'échec (port occupé…), le jeu
+    // continue sans interface d'entraînement. Une seule fois par processus.
+    match crate::driver::start() {
+        Ok(url) => announce_driver(&mut state, &url),
+        Err(e) => info!("Auto-training interface disabled: {e}"),
+    }
+
     // ambiance + musique de la partie (ex `_sndloop sh6&/sh7&` de mainLoop).
     // La musique est relue du fichier : un changement fait pendant l'écran de
     // paramétrage du titre est pris en compte (`start_music` est sans effet
@@ -447,6 +475,26 @@ async fn main() {
         // Manette : gilrs met à jour l'état interne à la lecture de ses
         // événements - poll au début de la frame (no-op sur wasm)
         crate::gamepad::poll();
+        // interface d'auto-entraînement (`driver.rs`) : bascules du pilote
+        // automatique demandées par `POST /cmd` (appliquées à `state` avant
+        // `update` - seul le fil principal possède l'état) puis remise à zéro
+        // d'épisode demandée par `POST /reset` (monde régénéré déterministe
+        // avant la frame - graine, cible vaisseau/cosmonaute EVA)
+        crate::driver::sync_autopilot(&mut state);
+        if let Some(req) = crate::driver::take_reset() {
+            crate::driver::reset_episode(
+                &mut state,
+                &mut shapes,
+                &mut triangles,
+                &mut garbages,
+                &mut elements,
+                &mut stars,
+                &mut rng,
+                req,
+            );
+            // l'épisode repart sur un monde neuf : la caméra de la frame
+            // précédente est obsolète, `update` la recalcule
+        }
         let dt = get_frame_time() as f64;
         let (action, camera) = game::update(
             &mut state,
@@ -458,6 +506,10 @@ async fn main() {
             Some(&mut sounds),
             dt,
         );
+        // observation de la frame publiée pour l'interface d'auto-entraînement
+        // (`GET /obs` la lira) - après `update` : l'état vu est celui d'après
+        // les actions de la frame
+        crate::driver::publish_state(&state, &shapes);
         match action {
             game::Action::Quit => {
                 // filet de sécurité : la progression (minerais, modes,

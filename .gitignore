@@ -19,3 +19,7 @@ Thumbs.db
 .reference/
 .docs/
 raccourci vers meteors_mining.cfg
+
+# Python (outils d auto-entrainement) - artefacts de bytecode
+__pycache__/
+*.pyc

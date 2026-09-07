@@ -248,6 +248,15 @@ pub fn draw_hud(state: &GameState) -> f32 {
         crate::shop_render::draw_box_button("NEW GAME", restart);
         crate::shop_render::draw_box_button("TITLE", title);
     }
+    // pilote automatique actif (case AUTOPILOT de l'écran O / touche X) :
+    // indicateur jaune à droite, juste à gauche du bouton COMMANDES (coin
+    // supérieur droit) - le joueur sait que l'ordinateur est aux commandes
+    if state.autopilot {
+        let btn = game_commands_button_layout();
+        let txt = "AUTOPILOT";
+        let w = measure_text(txt, None, 16, 1.0).width;
+        draw_text_shadow(txt, btn.x - w - 10.0, 25.0, 16.0, argb_to_color(0xFFFFD000));
+    }
     hud_col_x(dock_col)
 }
 
@@ -353,6 +362,15 @@ pub fn available_commands(state: &GameState) -> Vec<CmdEntry> {
     commands.push(CmdEntry {
         cmd: Cmd::AutoGen,
         label: "AUTO-GÉN. (A)",
+    });
+    // pilote automatique : bascule affichant l'état courant (ON/OFF)
+    commands.push(CmdEntry {
+        cmd: Cmd::AutoPilot,
+        label: if state.autopilot {
+            "AUTOPILOT OFF (X)"
+        } else {
+            "AUTOPILOT ON (X)"
+        },
     });
     commands.push(CmdEntry {
         cmd: Cmd::SpawnMeteor,

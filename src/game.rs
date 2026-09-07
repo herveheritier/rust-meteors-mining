@@ -93,6 +93,9 @@ pub enum GameCommand {
     Music,
     /// Génération automatique des météores (touche A).
     AutoGen,
+    /// Bascule le pilote automatique (touche X) : l'ordinateur joue à la
+    /// place du pilote (protège la station, mine, collecte, rentre décharger).
+    AutoPilot,
     /// Génère un météore près du vaisseau (touche G).
     SpawnMeteor,
     /// Crée un alien (touche C).
@@ -160,6 +163,13 @@ pub fn execute_command(
             }
         }
         GameCommand::AutoGen => state.auto_generate = !state.auto_generate,
+        // X : pilote automatique (l'ordinateur joue à la place du pilote,
+        // case AUTOPILOT de l'écran de paramétrage) - persisté comme la touche X
+        GameCommand::AutoPilot => {
+            state.autopilot = !state.autopilot;
+            let _ = persist::set_bool("autopilot", state.autopilot);
+            state.send_message(if state.autopilot { "AUTOPILOT ON" } else { "AUTOPILOT OFF" });
+        }
         // G : génère un météore près du vaisseau (immobile, comme la touche G)
         GameCommand::SpawnMeteor => {
             let idx = create_shape(state, shapes, triangles, camera, elements, rng);
@@ -403,17 +413,24 @@ pub fn update(
     }
 
     // Le vaisseau démarre de la base (lancement ou respawn : liens attachés à
-    // quai, mire cachée - voir `state.dock_links`) : dès que le joueur donne
-    // une commande de déplacement (flèches, tous modes), les liens se
-    // rétractent (même animation qu'au départ après CLOSE), puis le vaisseau
-    // est libre. Entrée ouvre la boîte DOCK STATION (UNLOAD / SHOP / CLOSE)
-    // pour décharger ou faire ses achats sans quitter l'accostage - sinon la
-    // boîte ne s'ouvre qu'au bout de l'animation d'accostage automatique.
+    // quai, mire cachée - voir `state.dock_links`) : dès que le joueur (ou le
+    // pilote externe engagé) donne une commande de déplacement (flèches, tous
+    // modes), les liens se rétractent (même animation qu'au départ après
+    // CLOSE), puis le vaisseau est libre. Entrée ouvre la boîte DOCK STATION
+    // (UNLOAD / SHOP / CLOSE) pour décharger ou faire ses achats sans quitter
+    // l'accostage - sinon la boîte ne s'ouvre qu'au bout de l'animation
+    // d'accostage automatique.
     if state.dock_links {
         if is_key_pressed(KeyCode::Enter) {
             state.dock_box = true;
         } else if player_moving_input() {
             release_links(state);
+        } else if state.autopilot {
+            // pilote automatique : l'ordinateur démarre de lui-même (la soute
+            // est vidée à l'accostage - voir `docking`) - au lancement ou au
+            // respawn en scénario à économie, il passe d'abord par le magasin
+            // si les réserves sont basses et payables (voir `autopilot.rs`)
+            crate::autopilot::autopilot_start_depart(state);
         }
     }
 
@@ -443,6 +460,16 @@ pub fn update(
     // rétraction des liens garde elle aussi le monde vivant (vaisseau
     // protégé au centre).
     if state.dock_box {
+        // pilote automatique OU pilote externe engagé (auto-entraînement,
+        // `driver.rs`) : l'ordinateur gère l'accostage lui-même - décharger
+        // la soute, puis se ravitailler au magasin (scénario à économie)
+        // avant de repartir ; sans économie (ou rien à acheter), il referme
+        // la boîte et repart directement (voir `autopilot.rs`)
+        if state.autopilot || crate::driver::engaged() {
+            crate::autopilot::autopilot_handle_dock(state, elements);
+            collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
+            return (Action::Continue, camera);
+        }
         match choice_box_click() {
             ChoiceClick::None => {}
             ChoiceClick::Unload => {
@@ -506,6 +533,16 @@ pub fn update(
     // et les débris dérivent autour de la base (voir `collisions` - le
     // vaisseau à quai est protégé).
     if state.shop_box {
+        // pilote automatique OU pilote externe engagé (auto-entraînement,
+        // `driver.rs`) : l'ordinateur achète le maximum achetable de
+        // carburant et de munitions puis referme le magasin (retour à la
+        // boîte DOCK STATION, qui le fait repartir à la frame suivante - voir
+        // `autopilot.rs`)
+        if state.autopilot || crate::driver::engaged() {
+            crate::autopilot::autopilot_handle_shop(state);
+            collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
+            return (Action::Continue, camera);
+        }
         shop_update(state);
         match shop_box_click(state) {
             ShopClick::None => {}
@@ -649,6 +686,16 @@ pub fn update(
     // `main.rs` - non persistée)
     if is_key_pressed(KeyCode::A) {
         state.auto_generate = !state.auto_generate;
+    }
+
+    // X : pilote automatique (l'ordinateur joue à la place du pilote - case
+    // AUTOPILOT de l'écran de paramétrage, voir `autopilot.rs`) : les entrées
+    // clavier/tactile/télécommande/manette sont ignorées tant que l'option
+    // est active. Le réglage est persisté (clé `autopilot`).
+    if is_key_pressed(KeyCode::X) {
+        state.autopilot = !state.autopilot;
+        let _ = persist::set_bool("autopilot", state.autopilot);
+        state.send_message(if state.autopilot { "AUTOPILOT ON" } else { "AUTOPILOT OFF" });
     }
 
     // G : génère un météore près du vaisseau (ex `mainLoop`) : à

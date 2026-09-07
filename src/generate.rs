@@ -99,7 +99,7 @@ pub fn generate_shape(
         shape.last_triangle = idx;
     }
     shape.id = shape_index as i32;
-    shape.border_mask = 0;
+    shape.border_mask = [0, 0];
     shape.border_len = 3;
     shape.shape_color = argb32(
         64,
@@ -166,7 +166,7 @@ pub fn generate_shape(
                 shape.last_triangle = idx;
             }
             // arête commune au parent marquée utilisée : ajoute « 100 » au bitmask
-            shape.border_mask |= 1 << shape.border_len;
+            shape.border_mark(shape.border_len);
             shape.border_len += 3;
         }
         nbr -= 1;

@@ -75,6 +75,7 @@ pub fn activate_cosmonaut(state: &mut GameState, shapes: &mut [Shape], triangles
     }
     state.cosmonaut_active = true;
     state.cosmonaut_turn = 0; // aucune réorientation demandée à l'éjection
+    state.eva_tang_braking = false; // freinage tangentiel de l'autopilote réarmé
     state.docking_guide = true; // la mire guide le retour
     state.send_message("SHIP DESTROYED - RETURN TO THE STATION");
 }

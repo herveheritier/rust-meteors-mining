@@ -351,6 +351,13 @@ pub struct GameState {
     /// au lieu de 1×1 - pour les écrans (ou les réglages de l'OS) où le
     /// champ d'étoiles 1×1 est peu visible. Éteinte par défaut (1×1).
     pub stars_big: bool,
+    /// Pilote automatique actif (case AUTOPILOT de l'écran de paramétrage /
+    /// touche X, clé `autopilot`) : l'ordinateur joue à la place du pilote -
+    /// il protège la station, détruit les météores, récupère les minerais et
+    /// rentre décharger quand la soute est pleine (voir `autopilot.rs`).
+    /// Les entrées clavier/tactile/télécommande/manette sont ignorées tant
+    /// que l'option est active. Éteint par défaut.
+    pub autopilot: bool,
     /// Valeur d'anticrénelage effectivement appliquée par la fenêtre au
     /// lancement (`Conf.sample_count`). Si `antialias` en diffère, un
     /// redémarrage est nécessaire (bouton RESTART de l'écran de paramétrage).
@@ -423,6 +430,15 @@ pub struct GameState {
     /// `game.rs` pour pencher les membres du cosmonaute dans le sens du tour
     /// (`cosmonaut::animate_eva_cosmonaut`). Toujours 0 hors mode EVA.
     pub cosmonaut_turn: i32,
+    /// Verrou de freinage **tangentiel** de l'autopilote EVA (hystérésis,
+    /// `autopilot::autopilot_eva_inputs`) : quand la composante tangentielle
+    /// de la vitesse (perpendiculaire à la direction de la station) dépasse
+    /// `EVA_TANG_BRAKE_HI`, l'autopilote contre-pousse nez à l'opposé de la
+    /// **vitesse** pour casser l'orbite autour de la base ; le verrou ne se
+    /// relâche qu'une fois la composante retombée sous `EVA_TANG_BRAKE_LO` -
+    /// l'hystérésis évite d'alterner poussée/freinage à chaque frame sur la
+    /// frontière. Toujours faux hors mode EVA (réinitialisé à l'éjection).
+    pub eva_tang_braking: bool,
     /// Récupération du cosmonaute EVA en cours (secondes restantes, 0 =
     /// aucune) : vaisseau détruit, il a rejoint la zone d'accostage - un
     /// cordon jaillit de l'anneau jusqu'à lui et le ramène sur l'anneau
@@ -619,6 +635,7 @@ impl GameState {
             touch_ui: true, // interface tactile affichée par défaut
             save_position: false, // option SAVE POSITION éteinte par défaut
             stars_big: false, // étoiles du fond en 1×1 par défaut
+            autopilot: false, // pilote automatique éteint par défaut
             max_meteor_shapes: INITIAL_MAX_METEOR_SHAPES,
             dock_anim: 0.0,
             dock_anim_from_pos: Point::new(0.0, 0.0),
@@ -633,6 +650,7 @@ impl GameState {
             cosmonaut_active: false,
             eva_cosmonaut: -1, // créé par main.rs au démarrage
             cosmonaut_turn: 0, // aucune rotation tant que le mode EVA n'est pas actif
+            eva_tang_braking: false, // aucun freinage tangentiel hors mode EVA
             eva_recovery: 0.0,
             eva_recovery_from_pos: Point::new(0.0, 0.0),
             eva_recovery_to_pos: Point::new(0.0, 0.0),

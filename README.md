@@ -181,9 +181,10 @@ crédits, vies et réglages du navigateur au lancement suivant.
 | Manette (stick gauche / croix / A ou gâchette droite) | Déplacement / Tir (en plus du clavier, du tactile et de la télécommande) |
 | P | Pause (overlay PAUSE + rappel de la touche P) |
 | S | Aide (liste des touches, fermeture au clic sur CLOSE) |
-| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS / TOUCH UI / SAVE POSITION, volume maître + sous-volumes MUSIQUE / EFFETS / AMBIENCE (barres horizontales cliquables/glissables), ligne REMOTE PIN (code de la télécommande) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en PROGRESSION/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - crédits, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
+| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS / TOUCH UI / SAVE POSITION / AUTOPILOT (pilote automatique, touche X), volume maître + sous-volumes MUSIQUE / EFFETS / AMBIENCE (barres horizontales cliquables/glissables), ligne REMOTE PIN (code de la télécommande) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en PROGRESSION/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - crédits, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
 | G | Générer un météore près du vaisseau |
 | A | Activer/désactiver la génération automatique des météores |
+| X | Activer/désactiver le pilote automatique : l'ordinateur joue à la place du pilote - il protège la station, détruit les météores (en esquivant ceux qui croisent sa trajectoire), récupère les minerais et rentre à la station décharger quand la soute est pleine ou se ravitailler quand les réserves passent sous le seuil (carburant/munitions achetés au magasin en scénario à économie) ; vaisseau détruit, il ramène aussi le cosmonaute EVA à la station pour qu'il soit secouru - en **bornant sa vitesse** (croisière rapide loin de la station - 90 u/s -, gaz coupés pendant les réorientations, ralentissement à l'approche et freinage **anticipé par la distance** : demi-tour et contre-poussée nez à l'opposé assez tôt pour arriver à vitesse douce - il n'a pas de frein) (case AUTOPILOT de l'écran O) |
 | C | Créer un alien |
 | F | Cycler les modes d'affichage : fenêtré → plein écran zoomé → plein écran natif |
 | M | Couper/relancer la musique |
@@ -542,9 +543,10 @@ du serveur, y est masquée).
   boîte DOCK STATION), musique (touche M), volume maître + sous-volumes
   MUSIQUE / EFFETS / AMBIANCE, style de rendu, mode d'affichage, définition
   de fenêtre, anticrénelage, interface tactile (TOUCH UI), PIN de la
-  télécommande (REMOTE PIN) et option SAVE POSITION (le vaisseau repart de
-  sa dernière position à la sortie) - modifiables dans l'écran de
-  paramétrage (touche O) ou par les touches M/A, rechargés au lancement
+  télécommande (REMOTE PIN), option SAVE POSITION (le vaisseau repart de
+  sa dernière position à la sortie) et pilote automatique (AUTOPILOT -
+  l'ordinateur joue à la place du pilote) - modifiables dans l'écran de
+  paramétrage (touche O) ou par les touches M/A/X, rechargés au lancement
   suivant. NB : la génération automatique des météores (touche A ou
   case AUTO GENERATE) n'est **pas** persistée - elle repart **toujours
   active** à chaque lancement, pour que le monde ne soit jamais vide au
@@ -585,6 +587,31 @@ Une **application dédiée à la création de scénarios et d'enchaînements d'o
   ```
   Le serveur local (port 8124) s'exécute et ouvre automatiquement l'application dans le navigateur par défaut. Sa **console cargo** (panneau latéral « Actions & Tests Cargo ») lance `cargo test`, `cargo run`, `cargo run --release` ou le build **WASM local** (`cargo build --release --target wasm32-unknown-unknown` puis version web servie sous `http://localhost:8124/wasm/` pour tester le jeu dans le navigateur). Comme celui de la place de marché, le serveur **se redémarre tout seul** quand `server.mjs` change (`AUTO_RESTART=0` pour désactiver).
 
+## Auto-entraînement du pilote
+
+Un système **indépendant de l'application** peut s'entraîner à piloter le
+vaisseau et le cosmonaute EVA en utilisant le jeu comme environnement : le
+jeu expose une **interface de contrôle** (serveur HTTP localhost, port
+8643, `src/driver.rs`) qui sert l'observation de chaque frame (`GET /obs`),
+accepte les commandes du pilote externe (`POST /cmd`, mêmes primitives que
+les touches - engagé, il pilote à la place du clavier et de l'autopilote,
+pour le vaisseau **et** le cosmonaute EVA) et les remises à zéro d'épisode
+déterministes (`POST /reset`, graine + cible vaisseau/cosmonaute EVA).
+`tools/trainer/` contient l'entraîneur indépendant (client du protocole,
+micro-simulateur, lignes de base idle/aléatoire/autopilote et entraînement
+par croix-entropie d'un contrôleur de retour à la station).
+
+```bash
+cargo run                # le jeu démarre l'interface (annoncée en jeu)
+cd tools/trainer
+python3 evaluate.py --backend live --strategy autopilot   # ligne de base du jeu
+python3 cem.py           # entraîne une politique (simulateur) → policy.json
+python3 evaluate.py --strategy seek --policy policy.json  # mesure la politique
+```
+
+Démarche, protocole détaillé, décisions de cadrage et suite :
+**`docs/AUTOENTRAINEMENT.md`** (et `tools/trainer/README.md`).
+
 ## Structure du projet
 
 ```
@@ -595,7 +622,8 @@ rust-meteors-mining/
 ├── scenarios/              ← fichiers de scénarios JSON (.scenario.json)
 ├── tools/
 │   ├── marketplace-editor/ ← application de gestion de la place de marché (page unique, export Rust)
-│   └── scenario-editor/    ← application d'édition de scénarios et objectifs DAG (graphe, export Rust)
+│   ├── scenario-editor/    ← application d'édition de scénarios et objectifs DAG (graphe, export Rust)
+│   └── trainer/            ← auto-entraînement du pilote (client protocole, simulateur, CEM) - voir docs/AUTOENTRAINEMENT.md
 └── src/
     ├── main.rs             ← boucle principale (fenêtre 960×540, sans vsync)
     ├── config.rs           ← constantes (vue, monde torique, gameplay)
@@ -606,6 +634,7 @@ rust-meteors-mining/
     ├── state.rs            ← Player, Element, GameState, messages
     ├── generate.rs         ← génération procédurale des météores, prepare
     ├── game.rs             ← boucle de jeu (input, déplacement, collisions, pause)
+    ├── driver.rs           ← interface de contrôle pour l'auto-entraînement (serveur HTTP localhost : observation, commandes, épisodes)
     ├── render.rs           ← rendu (étoiles, triangles texturés, HUD, aide, debug)
     ├── scenario.rs         ← scénarios (définitions, survie) + sous-modules scenario/ (shop.rs, ranks.rs, workshop.rs, progression.rs, rules.rs, tests.rs) - API réexportée depuis scenario.rs
     ├── scenario_objectives.rs ← structures DAG, conditions, récompenses et validation des objectifs
