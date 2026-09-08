@@ -26,13 +26,18 @@
 //! # Protocole (localhost, JSON)
 //!
 //! - `GET /obs`      - dernière observation publiée (une par frame de jeu)
-//! - `GET /obs`      - dernière observation publiée (une par frame de jeu)
 //! - `POST /cmd`     - `{"up":bool,"down":..,"left":..,"right":..,"fire":..,
 //!   "autopilot":bool?,"driver":bool?}` - actions de la frame + bascules du
 //!   pilote automatique / pilote externe
 //! - `POST /reset`   - `{"seed":u64,"target":"ship"|"eva","x":..,"y":..,
 //!   "scenario":"free"|"economy"?}`
 //!   - nouvelle partie déterministe (consommée par le jeu)
+//! - `POST /bench`   - `{"episodes":u64,"seed":u64,"target":"ship"|"eva",
+//!   "x":..,"y":..,"scenario":"free"|"economy"?,"auto_generate":bool?,
+//!   "max_steps":u64?}` - **banc d'essai en continu** : un lot d'épisodes
+//!   exécuté de bout en bout dans le processus headless à pleine vitesse
+//!   (aucun aller-retour HTTP par pas - l'autopilote du jeu joue) ; rapport
+//!   servi par `GET /bench`
 
 use crate::config::{
     PLAYER_INDEX, STATION_INDEX, WHOIAM_ALIEN, WHOIAM_METEOR, WHOIAM_MINE, WHOIAM_MINERAL,
@@ -122,13 +127,84 @@ pub enum EpisodeOutcome {
 impl EpisodeOutcome {
     /// Libellé stable pour l'observation (`delivered` / `eva_recovered` /
     /// `destroyed`).
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             EpisodeOutcome::Delivered => "delivered",
             EpisodeOutcome::EvaRecovered => "eva_recovered",
             EpisodeOutcome::Destroyed => "destroyed",
         }
     }
+}
+
+/// Demande d'exécution d'un **banc d'essai en continu** (`POST /bench`) :
+/// `episodes` épisodes de bout en bout, exécutés **dans le processus headless**
+/// à pleine vitesse (aucun aller-retour HTTP par pas - l'autopilote du jeu
+/// joue chaque épisode jusqu'à sa terminaison explicite). Le rapport est servi
+/// par `GET /bench`.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BenchRequest {
+    /// Nombre d'épisodes à enchaîner (graines `seed..seed+episodes`).
+    pub episodes: u64,
+    /// Graine du premier épisode (les suivants +1).
+    pub seed: u64,
+    /// Entité pilotée (vaisseau à quai ou cosmonaute EVA éjecté).
+    pub target: ResetTarget,
+    /// Position du crash (mode EVA).
+    pub x: f64,
+    pub y: f64,
+    /// Monde vivant (météores générés au fil de l'épisode) - nécessaire à la
+    /// boucle de minage du vaisseau.
+    pub auto_generate: bool,
+    /// Règles de l'épisode (jeu libre ou économie).
+    pub scenario: EpisodeScenario,
+    /// Garde-fou : nombre maximal de pas par épisode (épisode « en échec » au
+    ///-delà - l'épisode ne termine pas et compte comme `timed_out`).
+    pub max_steps: u64,
+}
+
+/// Résultat d'un épisode d'un banc d'essai en continu.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct BenchEpisodeResult {
+    /// Graine de l'épisode.
+    pub seed: u64,
+    /// Dénouement (`delivered` / `eva_recovered` / `destroyed`), `None` si le
+    /// garde-fou `max_steps` a été atteint sans terminaison.
+    pub outcome: Option<String>,
+    /// Pas de simulation écoulés.
+    pub steps: u64,
+    /// Temps de partie (s) écoulé.
+    pub seconds: f64,
+    /// Livraisons effectuées (boucle de minage complète).
+    pub deliveries: u32,
+    /// Minerais collectés dans la soute.
+    pub collected: u32,
+}
+
+/// Rapport d'un banc d'essai en continu (`GET /bench`) : déroulé par épisode
+/// + agrégats (cadence en épisodes/s, répartition des dénouements).
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct BenchReport {
+    /// Nombre d'épisodes demandés.
+    pub episodes: u64,
+    /// Temps mur (s) de l'exécution du lot (le processus entier, pas le temps
+    /// de simulation).
+    pub wall_seconds: f64,
+    /// Cadence réelle : épisodes par seconde de mur - la mesure de
+    /// l'accélération headless (centaines d'épisodes/s).
+    pub episodes_per_second: f64,
+    /// Répartition des dénouements.
+    pub delivered: u64,
+    pub eva_recovered: u64,
+    pub destroyed: u64,
+    /// Épisodes arrêtés par le garde-fou `max_steps` (aucune terminaison).
+    pub timed_out: u64,
+    /// Temps de simulation moyen (s) des épisodes du lot.
+    pub mean_seconds: f64,
+    /// Déroulé par épisode (dans l'ordre des graines).
+    pub results: Vec<BenchEpisodeResult>,
 }
 
 /// Suivi d'un épisode d'auto-entraînement : compteurs et terminaison.
@@ -181,7 +257,7 @@ impl EpisodeTrack {
 
     /// Démarre un épisode : nouveau numéro, cible du `POST /reset`, compteurs
     /// à zéro, horloge ancrée au temps de partie courant.
-    fn begin(id: u64, target: ResetTarget, now: f64) -> Self {
+    pub(crate) fn begin(id: u64, target: ResetTarget, now: f64) -> Self {
         EpisodeTrack {
             id,
             target,
@@ -552,6 +628,11 @@ pub struct Shared {
     pending_episode: Option<(u64, ResetTarget)>,
     /// Numéro du dernier épisode posé (incrémenté à chaque `POST /reset`).
     last_episode_id: u64,
+    /// Banc d'essai demandé par un `POST /bench` (consommé par la boucle
+    /// headless, qui exécute le lot à pleine vitesse).
+    bench_req: Option<BenchRequest>,
+    /// Rapport du dernier banc d'essai exécuté (servi par `GET /bench`).
+    bench_report: Option<BenchReport>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -574,6 +655,8 @@ impl Shared {
             episode: EpisodeTrack::empty(),
             pending_episode: None,
             last_episode_id: 0,
+            bench_req: None,
+            bench_report: None,
         }
     }
 }
@@ -635,7 +718,9 @@ fn serve(server: tiny_http::Server) {
                 "Meteors Mining - interface d'auto-entrainement du pilote.\n\
                  GET /obs    observation de la frame courante (JSON)\n\
                  POST /cmd   actions {up,down,left,right,fire} + bascules driver/autopilot\n\
-                 POST /reset episode {seed,target:\"ship\"|\"eva\",x,y,scenario:\"free\"|\"economy\"}\n",
+                 POST /reset episode {seed,target:\"ship\"|\"eva\",x,y,scenario:\"free\"|\"economy\"}\n\
+                 POST /bench banc d'essai en continu {episodes,seed,target,scenario,max_steps?}\n\
+                 GET /bench  rapport du dernier banc d'essai (JSON)\n",
             ),
             (&Method::Get, "/obs") => {
                 let body = STATE
@@ -646,6 +731,26 @@ fn serve(server: tiny_http::Server) {
                     .map(|o| serde_json::to_string(o).unwrap_or_else(|_| "{}".to_string()))
                     .unwrap_or_else(|| "{}".to_string());
                 respond(request, "application/json", &body);
+            }
+            (&Method::Get, "/bench") => {
+                let body = STATE
+                    .lock()
+                    .unwrap()
+                    .bench_report
+                    .as_ref()
+                    .map(|r| serde_json::to_string(r).unwrap_or_else(|_| "{}".to_string()))
+                    .unwrap_or_else(|| "{}".to_string());
+                respond(request, "application/json", &body);
+            }
+            (&Method::Post, "/bench") => {
+                let mut body = Vec::new();
+                read_body(&mut request, &mut body);
+                let body = String::from_utf8_lossy(&body);
+                if apply_bench(&body) {
+                    respond(request, "text/plain", "ok");
+                } else {
+                    respond_status(request, 400, "bad json");
+                }
             }
             (&Method::Post, "/cmd") => {
                 let mut body = Vec::new();
@@ -826,6 +931,70 @@ pub fn publish_state(state: &GameState, shapes: &[Shape]) {
     #[cfg(target_arch = "wasm32")]
     {
         let _ = (state, shapes);
+    }
+}
+
+/// Applique un corps `POST /bench` à l'état partagé. Renvoie `false` si le
+/// corps n'est pas du JSON.
+#[cfg(not(target_arch = "wasm32"))]
+fn apply_bench(body: &str) -> bool {
+    apply_bench_to(&mut STATE.lock().unwrap(), body)
+}
+
+/// Applique un corps `POST /bench` à un état (pur - testable) : pose la
+/// demande de banc d'essai en continu. Corps illisible → `false`.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn apply_bench_to(s: &mut Shared, body: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    let episodes = v.get("episodes").and_then(|x| x.as_u64()).unwrap_or(1).max(1);
+    let seed = v.get("seed").and_then(|x| x.as_u64()).unwrap_or(0);
+    let target = match v.get("target").and_then(|x| x.as_str()) {
+        Some("eva") => ResetTarget::Eva,
+        _ => ResetTarget::Ship,
+    };
+    let x = v.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0);
+    let y = v.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0);
+    let auto_generate = v.get("auto_generate").and_then(|x| x.as_bool()).unwrap_or(false);
+    let scenario = match v.get("scenario").and_then(|x| x.as_str()) {
+        Some("economy" | "progression") => EpisodeScenario::Economy,
+        _ => EpisodeScenario::FreePlay,
+    };
+    let max_steps = v.get("max_steps").and_then(|x| x.as_u64()).unwrap_or(DEFAULT_BENCH_MAX_STEPS);
+    s.bench_req = Some(BenchRequest { episodes, seed, target, x, y, auto_generate, scenario, max_steps });
+    true
+}
+
+/// Garde-fou par défaut d'un banc d'essai (pas par épisode) : 120 s de
+/// simulation à 60 Hz - l'épisode qui n'a pas terminé au-delà est compté
+/// `timed_out`. Assez long pour la boucle complète de minage du vaisseau
+/// (aller-retour vers le champ minier, tir, collecte, déchargement).
+#[cfg(not(target_arch = "wasm32"))]
+pub const DEFAULT_BENCH_MAX_STEPS: u64 = 60 * 120;
+
+/// Prend le banc d'essai demandé (`POST /bench`), si un est en attente -
+/// consommé par la boucle headless.
+pub fn take_bench() -> Option<BenchRequest> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        STATE.lock().unwrap().bench_req.take()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+}
+
+/// Publie le rapport du banc d'essai exécuté (servi par `GET /bench`).
+pub fn publish_bench_report(report: BenchReport) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        STATE.lock().unwrap().bench_report = Some(report);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = report;
     }
 }
 
@@ -1237,6 +1406,36 @@ mod tests {
         let mut s = Shared::new();
         assert!(apply_reset_to(&mut s, r#"{"scenario":"economy"}"#));
         assert_eq!(s.reset_req.unwrap().scenario, EpisodeScenario::Economy);
+    }
+
+    #[test]
+    fn bench_parses_episodes_target_and_scenario() {
+        let mut s = Shared::new();
+        assert!(apply_bench_to(
+            &mut s,
+            r#"{"episodes":25,"seed":7,"target":"ship","scenario":"economy","max_steps":500}"#
+        ));
+        let req = s.bench_req.expect("la demande doit être posée");
+        assert_eq!(req.episodes, 25);
+        assert_eq!(req.seed, 7);
+        assert_eq!(req.target, ResetTarget::Ship);
+        assert_eq!(req.scenario, EpisodeScenario::Economy);
+        assert_eq!(req.max_steps, 500);
+
+        // défauts : 1 épisode, graine 0, vaisseau, jeu libre, garde-fou par défaut
+        let mut s = Shared::new();
+        assert!(apply_bench_to(&mut s, r#"{}"#));
+        let req = s.bench_req.unwrap();
+        assert_eq!(req.episodes, 1);
+        assert_eq!(req.target, ResetTarget::Ship);
+        assert_eq!(req.scenario, EpisodeScenario::FreePlay);
+        assert_eq!(req.max_steps, DEFAULT_BENCH_MAX_STEPS);
+        assert!(!req.auto_generate);
+
+        // un corps illisible est refusé sans rien changer
+        let mut s = Shared::new();
+        assert!(!apply_bench_to(&mut s, "pas du json"));
+        assert!(s.bench_req.is_none());
     }
 
     #[test]

@@ -219,6 +219,9 @@ Fonctionnement (`src/headless.rs`) :
   rapide pour accélérer la référence, assez lente pour que l'entraîneur
   puisse échantillonner les fenêtres transitoires de l'observation
   (récupération EVA, accostage…) ;
+- **banc d'essai en continu** (`POST /bench`) : le processus exécute un lot
+  d'épisodes **de bout en bout dans le processus** à pleine vitesse - aucun
+  aller-retour HTTP par pas (voir §5 ter) ;
 - aucune décision en attente : la boucle attend (le serveur HTTP vit dans son
   propre thread).
 
@@ -244,16 +247,65 @@ déclenche le pas d'attente (`wait_frame`). Tests dans `src/headless.rs` : la
 boucle tourne **sans fenêtre**, de façon **déterministe** (même graine →
 même déroulé) et les graines produisent des mondes différents.
 
+## 5 ter. Banc d'essai en continu — des centaines d'épisodes/s dans le processus
+
+Le pas-à-pas HTTP borne la cadence aux allers-retours locaux. Pour mesurer la
+**ligne de base à pleine vitesse**, le processus headless exécute maintenant
+les épisodes **dans le processus lui-même** : un lot d'épisodes enchaînés de
+bout en bout (remise à zéro → autopilote du jeu → terminaison explicite),
+**sans aucune publication ni commande HTTP par pas** - le coût d'un épisode se
+réduit au temps de la physique (`game::update`). C'est l'accélération au-delà
+du pas-à-pas.
+
+### Protocole (`POST /bench`, `GET /bench`)
+
+| Requête | Corps | Effet |
+|---|---|---|
+| `POST /bench` | `{"episodes":N,"seed":S,"target":"ship"\|"eva","x":..,"y":..,"scenario":"free"\|"economy"?,"auto_generate":bool?,"max_steps":N?}` | pose un lot : `episodes` épisodes (graines `S..S+N-1`) exécutés en continu dans le processus par l'autopilote du jeu |
+| `GET /bench` | – | rapport du lot : déroulé par épisode (graine, dénouement `delivered`/`eva_recovered`/`destroyed`/`delai`, pas, secondes) + agrégats (temps mur, **cadence en épisodes/s**, répartition des dénouements, temps simulé moyen) |
+
+Le lot est consommé par la boucle headless, qui **bloque** le temps de
+l'exécuter (le serveur HTTP continue de répondre dans son thread) ; le rapport
+est servi dès qu'il est prêt. `max_steps` est un garde-fou par épisode
+(défaut 120 s de simulation) : au-delà, l'épisode est compté `delai` (aucune
+terminaison atteinte).
+
+### Ligne de commande (`--bench N`)
+
+```bash
+# tâche EVA (départ à 300 u à l'est, comme evaluate.py) :
+cargo run --release -- --headless --bench 200 --target eva
+# boucle de minage du vaisseau (économie) :
+cargo run --release -- --headless --bench 20 --target ship --scenario economy
+# options utiles : --seed S (graine du premier épisode), --max-steps N (garde-fou)
+```
+
+Le lot s'exécute au démarrage, le rapport est imprimé puis l'interface
+continue de servir (l'entraîneur peut le relire via `GET /bench`).
+
+### Côté entraîneur (`tools/trainer/bench.py`)
+
+```bash
+python3 bench.py --episodes 200 --target eva        # tâche EVA
+python3 bench.py --episodes 20 --target ship --scenario economy  # boucle de minage
+```
+
+Mesures réelles (release, machine de dev) : **~140-230 épisodes/s** pour la
+tâche EVA (départ 300 u, ~5,6 s simulées et ~335 pas par épisode, secours
+systématique) ; **~4-11 épisodes/s** pour la boucle complète de minage du
+vaisseau en économie (aller-retour vers le champ minier, tir, collecte,
+déchargement - ~30-50 s simulées et ~1500-3300 pas par épisode, livraison
+systématique sur la plage de graines testée). Le lot est **déterministe à la
+graine** : même demande → même déroulé (dénouements, pas, temps simulé).
+
 ## 6. Suite (phases suivantes)
 
 - **Phase 2 (suite) — épisodes plus riches côté jeu.** Le mode headless
-  accélère le protocole existant. Reste à enrichir les épisodes eux-mêmes :
-  boucle complète du vaisseau (décoller → miner → décharger, cible `ship`),
-  missions portées par les objectifs DAG (`objective_tracker.rs`,
-  `.scenario.json`) comme langage de tâche/récompense, termination explicite
-  (accosté / EVA secouru / détruit / délai) exposée dans l'observation, et
-  exécution d'épisodes **en continu dans le processus headless** (au-delà du
-  pas-à-pas HTTP) pour viser des centaines d'épisodes à la seconde.
+  accélère le protocole existant et exécute maintenant des lots d'épisodes en
+  continu dans le processus (§5 ter, centaines d'épisodes/s pour la tâche
+  EVA). Reste à enrichir les épisodes eux-mêmes : missions portées par les
+  objectifs DAG (`objective_tracker.rs`, `.scenario.json`) comme langage de
+  tâche/récompense.
 - **Phase 3 — vrais apprenants.** La politique `seek` paramétrée est une
   preuve de la boucle. La suite : politiques plus riches (réseau de neurones,
   RL : DQN/PPO sur l'observation complète avec les objets proches),

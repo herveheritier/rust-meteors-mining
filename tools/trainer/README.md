@@ -10,10 +10,11 @@ Python **standard uniquement** (aucune dépendance - `urllib`, `random`,
 
 ```
 tools/trainer/
-├── client.py     ← client du protocole (GET /obs, POST /cmd, POST /reset)
+├── client.py     ← client du protocole (GET /obs, POST /cmd, POST /reset, POST/GET /bench)
 ├── eva_env.py    ← géométrie partagée + micro-simulateur de l'EVA (mêmes lois que le jeu)
 ├── policies.py   ← politiques : idle / random / seek (contrôleur paramétré entraîné)
 ├── evaluate.py   ← lignes de base : mesure une stratégie sur des épisodes
+├── bench.py      ← banc d'essai **en continu** dans le processus headless (POST /bench)
 ├── cem.py        ← entraînement par croix-entropie (CEM) de la politique `seek`
 └── policy.json   ← politique entraînée (sortie de cem.py, rejouable)
 ```
@@ -56,6 +57,25 @@ cargo run --release -- --headless --port 8643
 # puis, dans un autre terminal :
 python3 evaluate.py --backend live --strategy autopilot --episodes 3
 ```
+
+### 0 bis. Banc d'essai en continu (au-delà du pas-à-pas)
+
+Pour **mesurer la ligne de base à pleine vitesse**, le processus headless
+peut aussi exécuter des lots d'épisodes **en continu dans le processus** -
+aucun aller-retour HTTP par pas : `POST /bench` pose le lot, `GET /bench`
+sert le rapport (déroulé par épisode + cadence en épisodes/s).
+
+```bash
+python3 bench.py --episodes 200 --target eva        # tâche EVA
+python3 bench.py --episodes 20 --target ship --scenario economy  # boucle de minage
+```
+
+Mesures réelles (release) : **~140-230 épisodes/s** pour la tâche EVA
+(~5,6 s simulées par épisode, secours systématique), **~4-11 épisodes/s**
+pour la boucle complète de minage du vaisseau en économie (~30-50 s simulées
+par épisode, livraison systématique sur les graines testées). Le même lot est
+lancé au démarrage du processus par `cargo run --release -- --headless --bench N`
+(voir `docs/AUTOENTRAINEMENT.md` §5 ter).
 
 ### 1. Lancer le jeu (interface sur `http://127.0.0.1:8643/`)
 
@@ -145,11 +165,11 @@ serrée, croisière plus élevée) dépasse le réglage manuel sur la récompens
   fait foi. Le **mode headless** (cf. §0, `cargo run -- --headless`) lance
   cette même physique sans fenêtre : valider une politique contre le jeu prend
   maintenant des dixièmes de seconde par épisode au lieu de secondes réelles.
-  Le pas-à-pas HTTP (`POST /cmd` par pas) borne la cadence aux allers-retours
-  locaux - des centaines d'épisodes à la seconde visent une exécution **en
-  continu dans le processus** headless (Phase 2, suite).
-- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md` §5 bis et §6) enrichira les
-  épisodes côté jeu (boucle complète de minage du vaisseau, missions des
-  objectifs DAG, termination explicite), puis viendront des apprenants plus
-  puissants (réseau de neurones, RL) qui remplaceront la politique `seek`
-  paramétrée.
+  Le pas-à-pas HTTP (`POST /cmd` par pas) reste le canal des politiques
+  **externes** (Python) ; l'exécution **en continu dans le processus** (cf.
+  §0 bis, `POST /bench` / `bench.py`) mesure la ligne de base de l'autopilote
+  du jeu à des centaines d'épisodes par seconde.
+- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md` §5 bis, §5 ter et §6)
+  enrichira encore les épisodes côté jeu (missions des objectifs DAG comme
+  langage de tâche/récompense), puis viendront des apprenants plus puissants
+  (réseau de neurones, RL) qui remplaceront la politique `seek` paramétrée.

@@ -402,6 +402,7 @@ fn desired_speed(goal: Goal, d: f64) -> f64 {
 /// (tests) mission courante de l'autopilote, en texte - miroir du choix de
 /// mission d'`autopilot_inputs`, utilisé par les tests unitaires pour
 /// vérifier la priorité des missions.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn debug_current_goal(state: &GameState, shapes: &[Shape]) -> String {
     let player = &shapes[PLAYER_INDEX];
     let station = &shapes[STATION_INDEX];

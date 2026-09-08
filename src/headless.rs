@@ -105,6 +105,15 @@ pub struct HeadlessOptions {
     pub target_eva: bool,
     /// Monde qui se peuple dès le premier épisode (météores générés) ?
     pub auto_generate: bool,
+    /// Banc d'essai au démarrage : nombre d'épisodes exécutés en continu dans
+    /// le processus à pleine vitesse (0 = aucun - le serveur attend les
+    /// `POST /bench` de l'entraîneur).
+    pub bench: u64,
+    /// Scénario du banc d'essai (économie pour la boucle de minage du
+    /// vaisseau, jeu libre sinon).
+    pub bench_economy: bool,
+    /// Garde-fou du banc d'essai (pas par épisode - défaut `DEFAULT_BENCH_MAX_STEPS`).
+    pub bench_max_steps: u64,
 }
 
 impl Default for HeadlessOptions {
@@ -115,6 +124,9 @@ impl Default for HeadlessOptions {
             seed: 0,
             target_eva: false,
             auto_generate: false,
+            bench: 0,
+            bench_economy: false,
+            bench_max_steps: 60 * 120, // cf. driver::DEFAULT_BENCH_MAX_STEPS
         }
     }
 }
@@ -155,11 +167,147 @@ pub fn parse_args() -> HeadlessOptions {
                 i += 1;
             }
             "--auto-generate" => opts.auto_generate = true,
+            "--bench" => {
+                if let Some(v) = args.get(i + 1).and_then(|s| s.parse::<u64>().ok()) {
+                    opts.bench = v;
+                }
+                i += 1;
+            }
+            "--scenario" => {
+                if let Some(v) = args.get(i + 1) {
+                    opts.bench_economy = v == "economy" || v == "progression";
+                }
+                i += 1;
+            }
+            "--max-steps" => {
+                if let Some(v) = args.get(i + 1).and_then(|s| s.parse::<u64>().ok()) {
+                    opts.bench_max_steps = v.max(1);
+                }
+                i += 1;
+            }
             _ => {}
         }
         i += 1;
     }
     opts
+}
+
+/// Exécute un **banc d'essai en continu** : enchaîne `req.episodes` épisodes
+/// de bout en bout **dans le processus**, à pleine vitesse - chaque épisode
+/// est une remise à zéro (`reset_episode`, graine `req.seed + i`), joué par
+/// l'**autopilote du jeu** (`state.autopilot`) jusqu'à sa terminaison
+/// explicite (`advance_episode`) ou le garde-fou `req.max_steps`. Aucune
+/// publication d'observation ni d'aller-retour HTTP par pas : c'est
+/// l'accélération au-delà du pas-à-pas (centaines d'épisodes/s, mesurées par
+/// le rapport). Déterministe à la graine - même demande → même déroulé.
+/// (Même signature monde que `reset_episode` - les mêmes vecteurs.)
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::too_many_arguments)]
+fn run_bench(
+    state: &mut crate::state::GameState,
+    shapes: &mut Vec<crate::shape::Shape>,
+    triangles: &mut Vec<crate::geom::Triangle>,
+    garbages: &mut Vec<crate::garbage::Garbage>,
+    elements: &mut Vec<crate::state::Element>,
+    stars: &mut Vec<crate::geom::Point>,
+    rng: &mut rand_chacha::ChaCha12Rng,
+    req: &crate::driver::BenchRequest,
+) -> crate::driver::BenchReport {
+    let t_wall = std::time::Instant::now();
+    let dt = 1.0 / 60.0;
+    let mut results = Vec::with_capacity(req.episodes as usize);
+    for i in 0..req.episodes {
+        let seed = req.seed.wrapping_add(i);
+        // monde neuf à la graine + situation de départ (vaisseau / EVA),
+        // comme un `POST /reset` consommé par la boucle
+        crate::driver::reset_episode(
+            state,
+            shapes,
+            triangles,
+            garbages,
+            elements,
+            stars,
+            rng,
+            crate::driver::EpisodeReset {
+                seed,
+                target: req.target,
+                x: req.x,
+                y: req.y,
+                auto_generate: req.auto_generate,
+                scenario: req.scenario,
+            },
+        );
+        // l'autopilote du jeu joue l'épisode (la référence de la ligne de
+        // base - même pilote que `POST /cmd {"autopilot":true}`)
+        state.autopilot = true;
+        let t_episode = state.session_time;
+        let mut track = crate::driver::EpisodeTrack::begin(i + 1, req.target, t_episode);
+        // boucle de l'épisode : pas fixe à pleine vitesse (aucune attente),
+        // jusqu'à la terminaison explicite ou le garde-fou
+        while !track.done && track.steps < req.max_steps {
+            crate::game::update(
+                state,
+                shapes,
+                triangles,
+                garbages,
+                elements,
+                rng,
+                None,
+                dt,
+            );
+            crate::driver::advance_episode(&mut track, state, shapes);
+        }
+        results.push(crate::driver::BenchEpisodeResult {
+            seed,
+            outcome: track.outcome.map(|o| o.label().to_string()),
+            steps: track.steps,
+            seconds: (state.session_time - t_episode).max(0.0),
+            deliveries: track.deliveries,
+            collected: track.collected,
+        });
+    }
+    let wall_seconds = t_wall.elapsed().as_secs_f64();
+    let count = |o: &str| {
+        results
+            .iter()
+            .filter(|r| r.outcome.as_deref() == Some(o))
+            .count() as u64
+    };
+    let mean_seconds = if results.is_empty() {
+        0.0
+    } else {
+        results.iter().map(|r| r.seconds).sum::<f64>() / results.len() as f64
+    };
+    crate::driver::BenchReport {
+        episodes: req.episodes,
+        wall_seconds,
+        episodes_per_second: if wall_seconds > 0.0 {
+            req.episodes as f64 / wall_seconds
+        } else {
+            0.0
+        },
+        delivered: count("delivered"),
+        eva_recovered: count("eva_recovered"),
+        destroyed: count("destroyed"),
+        timed_out: req.episodes - count("delivered") - count("eva_recovered") - count("destroyed"),
+        mean_seconds,
+        results,
+    }
+}
+
+/// Imprime le rapport d'un banc d'essai (cadence réelle en épisodes/s, temps
+/// mur, répartition des dénouements) - format lisible du `--bench` CLI.
+#[cfg(not(target_arch = "wasm32"))]
+fn print_bench_report(report: &crate::driver::BenchReport) {
+    println!(
+        "banc d'essai terminé : {} épisodes en {:.2} s mur → {:.0} épisodes/s",
+        report.episodes, report.wall_seconds, report.episodes_per_second
+    );
+    println!(
+        "  livrés : {} · secourus EVA : {} · détruits : {} · délais (garde-fou) : {}",
+        report.delivered, report.eva_recovered, report.destroyed, report.timed_out
+    );
+    println!("  temps de simulation moyen : {:.1} s", report.mean_seconds);
 }
 
 /// Boucle headless : sert l'interface de contrôle (`driver.rs`) sur
@@ -221,6 +369,50 @@ pub fn run(opts: &HeadlessOptions) -> ! {
     let mut rng = rand_chacha::ChaCha12Rng::seed_from_u64(opts.seed);
     let mut world_ready = false;
 
+    // banc d'essai au démarrage (`--bench N`) : le lot s'exécute **en
+    // continu dans le processus** à pleine vitesse (reset → autopilote →
+    // terminaison explicite, aucun aller-retour HTTP par pas), le rapport est
+    // imprimé puis l'interface continue de servir (l'entraîneur peut le
+    // relire via `GET /bench`)
+    if opts.bench > 0 {
+        // mode EVA : le crash est posé à 300 unités à l'est par défaut (le
+        // même départ que `evaluate.py`) - un crash en (0, 0), centre de la
+        // station, serait récupéré au premier pas (épisodes triviaux)
+        let (x, y) = if opts.target_eva { (300.0, 0.0) } else { (0.0, 0.0) };
+        let req = crate::driver::BenchRequest {
+            episodes: opts.bench,
+            seed: opts.seed,
+            target: if opts.target_eva {
+                crate::driver::ResetTarget::Eva
+            } else {
+                crate::driver::ResetTarget::Ship
+            },
+            x,
+            y,
+            auto_generate: opts.auto_generate,
+            scenario: if opts.bench_economy {
+                crate::driver::EpisodeScenario::Economy
+            } else {
+                crate::driver::EpisodeScenario::FreePlay
+            },
+            max_steps: opts.bench_max_steps,
+        };
+        let report = run_bench(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut stars,
+            &mut rng,
+            &req,
+        );
+        crate::driver::publish_bench_report(report.clone());
+        crate::driver::publish_state(&state, &shapes);
+        print_bench_report(&report);
+        world_ready = true;
+    }
+
     let dt = 1.0 / opts.fps;
     // cadence du file libre (autopilote) en pas/seconde
     const FREE_RUN_FPS: f64 = 480.0;
@@ -240,6 +432,27 @@ pub fn run(opts: &HeadlessOptions) -> ! {
         // zéro d'épisode (`POST /reset`) - comme la boucle réelle
         crate::driver::sync_autopilot(&mut state);
         let mut step = false;
+        // banc d'essai demandé par `POST /bench` : le lot s'exécute **en
+        // continu dans le processus** à pleine vitesse (aucun aller-retour
+        // HTTP par pas - l'autopilote du jeu joue chaque épisode jusqu'à sa
+        // terminaison explicite), puis le rapport est publié pour `GET /bench`
+        if let Some(req) = crate::driver::take_bench() {
+            let report = run_bench(
+                &mut state,
+                &mut shapes,
+                &mut triangles,
+                &mut garbages,
+                &mut elements,
+                &mut stars,
+                &mut rng,
+                &req,
+            );
+            crate::driver::publish_bench_report(report);
+            // l'observation publiée reste celle de l'état final du dernier
+            // épisode du lot (le rapport, lui, est servi par `/bench`)
+            crate::driver::publish_state(&state, &shapes);
+            continue;
+        }
         if let Some(req) = crate::driver::take_reset() {
             crate::driver::reset_episode(
                 &mut state,
@@ -412,5 +625,139 @@ mod tests {
         assert_eq!(a.0, b.0, "le temps de session avance au même rythme");
     }
 
+    /// Environnement de banc d'essai : monde + vecteurs, comme la boucle
+    /// headless - renvoie aussi le RNG (réinitialisé à chaque appel par la
+    /// fonction elle-même via `reset_episode`).
+    fn bench_env() -> (
+        GameState,
+        Vec<crate::shape::Shape>,
+        Vec<crate::geom::Triangle>,
+        Vec<crate::garbage::Garbage>,
+        Vec<crate::state::Element>,
+        Vec<crate::geom::Point>,
+        rand_chacha::ChaCha12Rng,
+    ) {
+        crate::headless::activate();
+        (
+            GameState::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            rand_chacha::ChaCha12Rng::seed_from_u64(0),
+        )
+    }
+
+    /// Le banc d'essai **en continu dans le processus** enchaîne les épisodes
+    /// à pleine vitesse : chaque épisode EVA (graines 1..3) joué par
+    /// l'autopilote du jeu se termine en **secours** (`eva_recovered`), le
+    /// rapport expose le déroulé complet et la cadence mur.
+    #[test]
+    fn bench_runs_eva_episodes_to_completion() {
+        let (mut state, mut shapes, mut triangles, mut garbages, mut elements, mut stars, mut rng) =
+            bench_env();
+        let req = crate::driver::BenchRequest {
+            episodes: 3,
+            seed: 1,
+            target: crate::driver::ResetTarget::Eva,
+            x: 300.0,
+            y: 0.0,
+            auto_generate: false,
+            scenario: crate::driver::EpisodeScenario::FreePlay,
+            max_steps: 60 * 60, // garde-fou généreux : 60 s de simulation
+        };
+        let report = super::run_bench(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut stars,
+            &mut rng,
+            &req,
+        );
+        assert_eq!(report.episodes, 3);
+        assert_eq!(report.results.len(), 3);
+        assert_eq!(report.eva_recovered, 3, "l'autopilote ramène le cosmonaute");
+        assert_eq!(report.delivered, 0);
+        assert_eq!(report.timed_out, 0);
+        assert!(report.wall_seconds > 0.0, "temps mur mesuré");
+        assert!(report.episodes_per_second > 0.0, "cadence mesurée");
+        for r in &report.results {
+            assert_eq!(r.outcome.as_deref(), Some("eva_recovered"));
+            assert!(r.steps > 0);
+            assert!(r.seconds > 0.0);
+        }
+    }
+
+    /// Le banc d'essai est **déterministe à la graine** : même demande → même
+    /// déroulé (dénouements, pas, temps de simulation de chaque épisode) -
+    /// seule la cadence mur varie.
+    #[test]
+    fn bench_is_deterministic_per_seed() {
+        let req = crate::driver::BenchRequest {
+            episodes: 4,
+            seed: 100,
+            target: crate::driver::ResetTarget::Eva,
+            x: 300.0,
+            y: 0.0,
+            auto_generate: false,
+            scenario: crate::driver::EpisodeScenario::FreePlay,
+            max_steps: 60 * 60,
+        };
+        let (mut s1, mut sh1, mut tr1, mut g1, mut e1, mut st1, mut r1) = bench_env();
+        let a = super::run_bench(
+            &mut s1, &mut sh1, &mut tr1, &mut g1, &mut e1, &mut st1, &mut r1, &req,
+        );
+        let (mut s2, mut sh2, mut tr2, mut g2, mut e2, mut st2, mut r2) = bench_env();
+        let b = super::run_bench(
+            &mut s2, &mut sh2, &mut tr2, &mut g2, &mut e2, &mut st2, &mut r2, &req,
+        );
+        let strip = |rep: &crate::driver::BenchReport| {
+            rep.results
+                .iter()
+                .map(|r| (r.outcome.clone(), r.steps, (r.seconds * 100.0) as u64))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(strip(&a), strip(&b), "même graine → même déroulé");
+    }
+
+    /// Le banc d'essai vaisseau (économie) joue la **boucle de minage** : les
+    /// épisodes de la plage de graines se terminent (livraison ou destruction)
+    /// ou atteignent le garde-fou - le rapport compte chaque dénouement et les
+    /// livraisons effectuées.
+    #[test]
+    fn bench_ship_economy_episodes_reach_outcomes() {
+        let (mut state, mut shapes, mut triangles, mut garbages, mut elements, mut stars, mut rng) =
+            bench_env();
+        let req = crate::driver::BenchRequest {
+            episodes: 3,
+            seed: 500,
+            target: crate::driver::ResetTarget::Ship,
+            x: 0.0,
+            y: 0.0,
+            auto_generate: false,
+            scenario: crate::driver::EpisodeScenario::Economy,
+            max_steps: 60 * 90, // garde-fou : 90 s de simulation par épisode
+        };
+        let report = super::run_bench(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut stars,
+            &mut rng,
+            &req,
+        );
+        assert_eq!(report.results.len(), 3);
+        let sum = report.delivered + report.eva_recovered + report.destroyed + report.timed_out;
+        assert_eq!(sum, 3, "chaque épisode a un dénouement (ou le garde-fou)");
+        assert!(report.delivered > 0, "la boucle de minage livre au moins un épisode");
+        for r in &report.results {
+            assert!(r.steps > 0);
+        }
+    }
 
 }

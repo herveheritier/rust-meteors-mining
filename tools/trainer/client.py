@@ -119,6 +119,63 @@ class DriverClient:
              "auto_generate": bool(auto_generate), "scenario": scenario},
         )
 
+    def bench(
+        self,
+        episodes: int,
+        seed: int = 1,
+        target: str = "ship",
+        x: float = 0.0,
+        y: float = 0.0,
+        auto_generate: bool = False,
+        scenario: str = "free",
+        max_steps: Optional[int] = None,
+    ) -> None:
+        """Demande un **banc d'essai en continu** (`POST /bench`) : le
+        processus headless exécute `episodes` épisodes de bout en bout à
+        pleine vitesse dans le processus (aucun aller-retour HTTP par pas -
+        l'autopilote du jeu joue), puis sert le rapport par `bench_report()`.
+
+        `target` : "eva" (vaisseau détruit à (x, y), le pilote est le
+        cosmonaute EVA) ou "ship" (vaisseau à quai - scénario "economy" pour
+        la boucle de minage). `max_steps` : garde-fou par épisode (défaut du
+        serveur : 120 s de simulation)."""
+        payload: dict[str, Any] = {
+            "episodes": int(episodes),
+            "seed": int(seed),
+            "target": target,
+            "x": float(x),
+            "y": float(y),
+            "auto_generate": bool(auto_generate),
+            "scenario": scenario,
+        }
+        if max_steps is not None:
+            payload["max_steps"] = int(max_steps)
+        self.post("/bench", payload)
+
+    def bench_report(self) -> dict[str, Any]:
+        """Rapport du dernier banc d'essai (`GET /bench`), `{}` tant qu'aucun
+        banc n'a été demandé ou terminé : déroulé par épisode (graine,
+        dénouement, pas, secondes) + agrégats (cadence en épisodes/s, temps
+        mur, répartition des dénouements)."""
+        body = self.get("/bench")
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError as e:
+            raise DriverError(f"réponse /bench illisible : {e}") from e
+
+    def wait_bench(self, timeout: float = 120.0, poll: float = 0.01) -> dict[str, Any]:
+        """Attend la fin du banc d'essai demandé et renvoie le rapport
+        (poll `GET /bench` tant qu'aucun rapport n'est publié). Le temps mur
+        dépend du nombre d'épisodes et de leur longueur simulée."""
+        deadline = time.monotonic() + timeout
+        while True:
+            rep = self.bench_report()
+            if rep:
+                return rep
+            if time.monotonic() > deadline:
+                raise DriverError("banc d'essai trop long (délai dépassé)")
+            time.sleep(poll)
+
     def wait_next_obs(self, last_frame: int = 0, timeout: float = 5.0, poll: float = 0.002) -> dict[str, Any]:
         """Attend la publication de la frame suivante (le jeu publie une
         observation par frame) et la renvoie. `last_frame` = frame déjà vue."""
