@@ -357,7 +357,9 @@ pub enum ChoiceClick {
 /// ouvre le magasin de la station (le carburant et les munitions s'y
 /// achètent indépendamment).
 pub fn choice_box_click() -> ChoiceClick {
-    if !is_mouse_button_pressed(MouseButton::Left) {
+    // mode headless (sans fenêtre) : aucun clic - l'accostage est géré
+    // automatiquement (pilote externe / pilote automatique)
+    if crate::headless::active() || !is_mouse_button_pressed(MouseButton::Left) {
         return ChoiceClick::None;
     }
     let l = choice_box_layout();
@@ -496,7 +498,7 @@ pub fn update_dock_approach(state: &mut GameState, shapes: &[Shape], mut sounds:
     if !state.docking_guide || state.paused || !dock_approach_active(state) {
         return;
     }
-    let now = get_time();
+    let now = crate::headless::now();
     if state.dock_approach_beep_at <= now {
         // volume lié à la trajectoire : plus le vaisseau est aligné sur le
         // centre de la zone d'accostage, plus le bip est fort (voir

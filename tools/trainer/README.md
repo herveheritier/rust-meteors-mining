@@ -38,6 +38,25 @@ entraînée en simulation se rejoue à l'identique contre le jeu.
 
 ## Usage
 
+### 0. Mode headless (optionnel, accéléré - sans fenêtre)
+
+Le jeu peut aussi servir l'interface **sans fenêtre ni rendu** : la vraie
+physique tourne à **pas fixe** dans un mode headless
+(`cargo run --release -- --headless`, port 8643 par défaut), qui accélère
+l'entraînement - chaque
+`POST /cmd` fait avancer d'un pas quand le pilote externe est engagé
+(pas-à-pas à pleine vitesse), et l'autopilote de référence file à cadence
+bornée (480 pas/s, lisible par `GET /obs`). Le protocole est inchangé : les
+commandes `--backend live` ci-dessous fonctionnent telles quelles, mais les
+épisodes s'exécutent en quelques dixièmes de seconde au lieu du temps réel
+(voir `docs/AUTOENTRAINEMENT.md` §5 bis).
+
+```bash
+cargo run --release -- --headless --port 8643
+# puis, dans un autre terminal :
+python3 evaluate.py --backend live --strategy autopilot --episodes 3
+```
+
 ### 1. Lancer le jeu (interface sur `http://127.0.0.1:8643/`)
 
 ```bash
@@ -123,12 +142,14 @@ serrée, croisière plus élevée) dépasse le réglage manuel sur la récompens
 ## Limites connues et suite
 
 - Le **simulateur** est une aide au développement : seule la **vraie partie**
-  fait foi. L'interface étant en temps réel (une observation par frame
-  rendue), valider une politique entraînée contre le jeu prend de vraies
-  secondes par épisode.
-- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md`) ajoutera un mode de pas
-  fixe accéléré (sans rendu) côté jeu, pour entraîner des centaines
-  d'épisodes à la seconde, puis des tâches plus riches (boucle complète de
-  minage du vaisseau, missions des objectifs DAG) et des apprenants plus
+  fait foi. Le **mode headless** (cf. §0, `cargo run -- --headless`) lance
+  cette même physique sans fenêtre : valider une politique contre le jeu prend
+  maintenant des dixièmes de seconde par épisode au lieu de secondes réelles.
+  Le pas-à-pas HTTP (`POST /cmd` par pas) borne la cadence aux allers-retours
+  locaux - des centaines d'épisodes à la seconde visent une exécution **en
+  continu dans le processus** headless (Phase 2, suite).
+- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md` §5 bis et §6) enrichira les
+  épisodes côté jeu (boucle complète de minage du vaisseau, missions des
+  objectifs DAG, termination explicite), puis viendront des apprenants plus
   puissants (réseau de neurones, RL) qui remplaceront la politique `seek`
   paramétrée.

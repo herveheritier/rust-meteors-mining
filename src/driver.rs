@@ -30,7 +30,8 @@
 //! - `POST /cmd`     - `{"up":bool,"down":..,"left":..,"right":..,"fire":..,
 //!   "autopilot":bool?,"driver":bool?}` - actions de la frame + bascules du
 //!   pilote automatique / pilote externe
-//! - `POST /reset`   - `{"seed":u64,"target":"ship"|"eva","x":..,"y":..}`
+//! - `POST /reset`   - `{"seed":u64,"target":"ship"|"eva","x":..,"y":..,
+//!   "scenario":"free"|"economy"?}`
 //!   - nouvelle partie déterministe (consommée par le jeu)
 
 use crate::config::{
@@ -64,6 +65,19 @@ pub enum ResetTarget {
     Eva,
 }
 
+/// Règles de l'épisode (`POST /reset`) : le scénario de départ du monde.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::module_name_repetitions)]
+pub enum EpisodeScenario {
+    /// **Jeu libre** (défaut) : aucune économie, aucune soute - l'épisode de
+    /// référence EVA (le cosmonaute rejoint la station).
+    FreePlay,
+    /// **Économie** (Progression) : carburant/munitions/crédits, soute de
+    /// capacité de base - l'épisode de la **boucle de minage** du vaisseau
+    /// (décoller → miner → décharger, cible `ship`).
+    Economy,
+}
+
 /// Demande de remise à zéro d'un épisode (posée par `POST /reset`, consommée
 /// par la boucle de jeu - voir `main.rs`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -81,6 +95,105 @@ pub struct EpisodeReset {
     /// un épisode déterministe ; à allumer pour entraîner la boucle complète
     /// de minage (les météores n'existent qu'après génération).
     pub auto_generate: bool,
+    /// Règles de l'épisode (scénario de départ) - jeu libre par défaut.
+    pub scenario: EpisodeScenario,
+}
+
+/// Dénouement d'un épisode d'entraînement (terminaison **explicite**,
+/// verrouillée jusqu'à la remise à zéro suivante) : l'observation expose
+/// `episode_done` / `episode_outcome` pour qu'un entraîneur sache quand et
+/// pourquoi l'épisode s'est terminé, sans avoir à surveiller des fenêtres
+/// transitoires du jeu (récupération EVA, accostage…).
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EpisodeOutcome {
+    /// Le vaisseau a **livré** : une soute non vide (minerais collectés) a été
+    /// déchargée à la station - la boucle décoller → miner → décharger est
+    /// complète (cible `ship`).
+    Delivered,
+    /// Le cosmonaute EVA a été **secouru** : il est entré dans le cercle
+    /// d'accostage (cible `eva`).
+    EvaRecovered,
+    /// Le vaisseau a été **détruit** avant d'avoir livré (cible `ship`).
+    Destroyed,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl EpisodeOutcome {
+    /// Libellé stable pour l'observation (`delivered` / `eva_recovered` /
+    /// `destroyed`).
+    fn label(self) -> &'static str {
+        match self {
+            EpisodeOutcome::Delivered => "delivered",
+            EpisodeOutcome::EvaRecovered => "eva_recovered",
+            EpisodeOutcome::Destroyed => "destroyed",
+        }
+    }
+}
+
+/// Suivi d'un épisode d'auto-entraînement : compteurs et terminaison.
+/// Initialisé à chaque `POST /reset` (voir `take_reset` / `publish_state`),
+/// avancé d'un pas à chaque publication d'observation. Pur - testable sans
+/// fenêtre. Une fois terminé (`done`), l'état est verrouillé jusqu'au prochain
+/// `POST /reset`.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct EpisodeTrack {
+    /// Numéro de l'épisode (incrémenté à chaque `POST /reset` accepté).
+    pub id: u64,
+    /// Cible choisie au `POST /reset` (vaisseau ou cosmonaute EVA).
+    target: ResetTarget,
+    /// Pas de simulation écoulés depuis le début de l'épisode.
+    pub steps: u64,
+    /// Temps de partie (`state.session_time`) au début de l'épisode : sert à
+    /// exposer `episode_t` (secondes depuis le `POST /reset`).
+    start_t: f64,
+    /// Épisode terminé (dénouement atteint) - verrouillé jusqu'au prochain
+    /// `POST /reset`.
+    pub done: bool,
+    /// Dénouement de l'épisode, quand il est terminé.
+    pub outcome: Option<EpisodeOutcome>,
+    /// Livraisons effectuées (soutes non vides déchargées à la station).
+    pub deliveries: u32,
+    /// Minerais collectés dans la soute depuis le début de l'épisode.
+    pub collected: u32,
+    /// Soute de la publication précédente (détection déchargement / récolte).
+    prev_cargo: i32,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl EpisodeTrack {
+    /// État constant initial (avant tout `POST /reset`) : épisode 0, cible
+    /// vaisseau - sert au `Shared` au niveau `static STATE`.
+    const fn empty() -> Self {
+        EpisodeTrack {
+            id: 0,
+            target: ResetTarget::Ship,
+            steps: 0,
+            start_t: 0.0,
+            done: false,
+            outcome: None,
+            deliveries: 0,
+            collected: 0,
+            prev_cargo: 0,
+        }
+    }
+
+    /// Démarre un épisode : nouveau numéro, cible du `POST /reset`, compteurs
+    /// à zéro, horloge ancrée au temps de partie courant.
+    fn begin(id: u64, target: ResetTarget, now: f64) -> Self {
+        EpisodeTrack {
+            id,
+            target,
+            steps: 0,
+            start_t: now,
+            done: false,
+            outcome: None,
+            deliveries: 0,
+            collected: 0,
+            prev_cargo: 0,
+        }
+    }
 }
 
 /// Cinématique d'une entité pilotable (vaisseau ou cosmonaute EVA) :
@@ -181,6 +294,25 @@ pub struct Observation {
     /// Compteurs utiles aux récompenses de l'entraîneur.
     pub meteors_destroyed: i32,
     pub score: i32,
+    // ── suivi de l'épisode courant (terminaison explicite) ──
+    /// Numéro de l'épisode courant (incrémenté à chaque `POST /reset`).
+    pub episode_id: u64,
+    /// Pas de simulation écoulés depuis le début de l'épisode.
+    pub episode_steps: u64,
+    /// Temps de partie (s) écoulé depuis le début de l'épisode.
+    pub episode_t: f64,
+    /// Épisode terminé (`episode_outcome` renseigné) - verrouillé jusqu'au
+    /// prochain `POST /reset` : l'entraîneur n'a pas à surveiller une fenêtre
+    /// transitoire du jeu.
+    pub episode_done: bool,
+    /// Dénouement de l'épisode (`delivered` / `eva_recovered` / `destroyed`),
+    /// quand il est terminé.
+    pub episode_outcome: Option<String>,
+    /// Livraisons effectuées depuis le début de l'épisode (soute déchargée à
+    /// la station - la boucle de minage du vaisseau est complète).
+    pub episode_deliveries: i32,
+    /// Minerais collectés dans la soute depuis le début de l'épisode.
+    pub episode_collected: i32,
     /// Objets proches du pilote (≤ `MAX_NEARBY_OBJECTS`, les plus proches).
     pub nearby: Vec<NearbyObject>,
 }
@@ -310,8 +442,73 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
         cargo_cap: crate::scenario::cargo_capacity(state),
         meteors_destroyed: state.meteors_destroyed,
         score: state.meteors_destroyed,
+        // suivi d'épisode : posé par `publish_state` (le serveur possède la
+        // piste) - ici l'état neutre pour une observation pure
+        episode_id: 0,
+        episode_steps: 0,
+        episode_t: 0.0,
+        episode_done: false,
+        episode_outcome: None,
+        episode_deliveries: 0,
+        episode_collected: 0,
         nearby,
     }
+}
+
+/// Avance le suivi de l'épisode courant d'un pas (appelé à chaque publication
+/// d'observation) : compte les minerais récoltés et détecte la **terminaison
+/// explicite** de l'épisode -
+///
+/// - cible `eva` : le cosmonaute EVA est **secouru** (`eva_recovery > 0`) ;
+/// - cible `ship` : le vaisseau a **livré** (une soute non vide déchargée à
+///   la station) ou a été **détruit** avant d'avoir livré.
+///
+/// Une fois terminé, le dénouement est **verrouillé** (`done`) jusqu'à la
+/// remise à zéro suivante. Pur - testable sans fenêtre.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn advance_episode(track: &mut EpisodeTrack, state: &GameState, shapes: &[Shape]) {
+    track.steps += 1;
+    if track.done {
+        return; // dénouement verrouillé jusqu'au prochain `POST /reset`
+    }
+    let cargo = state.player.cargo_qty;
+    // minerais récoltés : la soute ne peut que se remplir en vol (elle est
+    // vidée à la station / au crash)
+    if cargo > track.prev_cargo {
+        track.collected += (cargo - track.prev_cargo) as u32;
+    }
+    // cible `eva` : le cosmonaute rentré dans le cercle d'accostage est
+    // secouru - l'épisode est réussi au moment où la récupération démarre
+    if track.target == ResetTarget::Eva && state.eva_recovery > 0.0 {
+        track.done = true;
+        track.outcome = Some(EpisodeOutcome::EvaRecovered);
+        track.prev_cargo = cargo;
+        return;
+    }
+    if track.target == ResetTarget::Ship {
+        // vaisseau détruit (météore, alien…) avant d'avoir livré : la boucle
+        // de minage s'arrête là (le cosmonaute EVA prendrait le relais, mais
+        // l'épisode vaisseau est terminé)
+        let ship_alive = shapes.get(PLAYER_INDEX).is_some_and(|s| s.life > 0);
+        if !ship_alive {
+            track.done = true;
+            track.outcome = Some(EpisodeOutcome::Destroyed);
+            track.prev_cargo = cargo;
+            return;
+        }
+        // livraison : une soute non vide (récolte précédente) est déchargée
+        // à la station - détectée à la frame où le cargo passe à 0 à quai
+        let at_station = state.player_at_station == -1
+            || state.dock_box
+            || state.dock_anim > 0.0
+            || state.dock_links;
+        if at_station && track.prev_cargo > 0 && cargo == 0 {
+            track.deliveries += 1;
+            track.done = true;
+            track.outcome = Some(EpisodeOutcome::Delivered);
+        }
+    }
+    track.prev_cargo = cargo;
 }
 
 // ─── état partagé + serveur HTTP (natif uniquement - hors wasm) ─────────────
@@ -343,6 +540,18 @@ pub struct Shared {
     pub started: bool,
     /// Compteur de frames du serveur (incrémenté à chaque publication).
     frame: u64,
+    /// Séquence de commandes : incrémentée à chaque `POST /cmd` accepté. Le
+    /// mode headless s'en sert pour faire avancer d'un pas à chaque commande
+    /// (le contenu peut ne pas changer - actions identiques rejouées).
+    cmd_seq: u64,
+    /// Suivi de l'épisode courant (compteurs + terminaison explicite).
+    episode: EpisodeTrack,
+    /// Nouvel épisode posé par un `POST /reset` consommé : (numéro, cible) -
+    /// consommé par `publish_state` (qui possède `state.session_time` pour
+    /// ancrer l'horloge de l'épisode).
+    pending_episode: Option<(u64, ResetTarget)>,
+    /// Numéro du dernier épisode posé (incrémenté à chaque `POST /reset`).
+    last_episode_id: u64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -361,6 +570,10 @@ impl Shared {
             reset_req: None,
             started: false,
             frame: 0,
+            cmd_seq: 0,
+            episode: EpisodeTrack::empty(),
+            pending_episode: None,
+            last_episode_id: 0,
         }
     }
 }
@@ -393,9 +606,10 @@ pub fn start() -> Result<String, String> {
 
 /// Démarre l'interface sur un port donné (0 = port éphémère choisi par le
 /// système - utilisé par les tests pour ne pas entrer en conflit avec une
-/// instance du jeu ouverte sur `DRIVER_PORT`).
+/// instance du jeu ouverte sur `DRIVER_PORT`, et par le mode headless qui
+/// écoute sur le port demandé en ligne de commande).
 #[cfg(not(target_arch = "wasm32"))]
-fn start_on(port: u16) -> Result<String, String> {
+pub(crate) fn start_on(port: u16) -> Result<String, String> {
     let server = Server::http(format!("127.0.0.1:{port}")).map_err(|e| e.to_string())?;
     let bound = match server.server_addr() {
         tiny_http::ListenAddr::IP(addr) => addr.port(),
@@ -421,7 +635,7 @@ fn serve(server: tiny_http::Server) {
                 "Meteors Mining - interface d'auto-entrainement du pilote.\n\
                  GET /obs    observation de la frame courante (JSON)\n\
                  POST /cmd   actions {up,down,left,right,fire} + bascules driver/autopilot\n\
-                 POST /reset episode {seed,target:\"ship\"|\"eva\",x,y}\n",
+                 POST /reset episode {seed,target:\"ship\"|\"eva\",x,y,scenario:\"free\"|\"economy\"}\n",
             ),
             (&Method::Get, "/obs") => {
                 let body = STATE
@@ -592,6 +806,21 @@ pub fn publish_state(state: &GameState, shapes: &[Shape]) {
         g.frame += 1;
         obs.frame = g.frame;
         obs.driver_engaged = g.engaged;
+        // épisode : un `POST /reset` consommé ouvre une nouvelle piste
+        // (numéro + cible), ancrée au temps de partie courant
+        if let Some((id, target)) = g.pending_episode.take() {
+            g.episode = EpisodeTrack::begin(id, target, state.session_time);
+        }
+        // terminaisons explicites et compteurs de l'épisode courant
+        advance_episode(&mut g.episode, state, shapes);
+        let ep = &g.episode;
+        obs.episode_id = ep.id;
+        obs.episode_steps = ep.steps;
+        obs.episode_t = (state.session_time - ep.start_t).max(0.0);
+        obs.episode_done = ep.done;
+        obs.episode_outcome = ep.outcome.map(|o| o.label().to_string());
+        obs.episode_deliveries = ep.deliveries as i32;
+        obs.episode_collected = ep.collected as i32;
         g.obs = Some(obs);
     }
     #[cfg(target_arch = "wasm32")]
@@ -605,11 +834,33 @@ pub fn publish_state(state: &GameState, shapes: &[Shape]) {
 pub fn take_reset() -> Option<EpisodeReset> {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        STATE.lock().unwrap().reset_req.take()
+        let mut g = STATE.lock().unwrap();
+        let req = g.reset_req.take();
+        if let Some(r) = &req {
+            // nouvelle piste d'épisode à la prochaine publication (le temps de
+            // partie au moment de la remise à zéro n'est connu que là)
+            g.last_episode_id += 1;
+            g.pending_episode = Some((g.last_episode_id, r.target));
+        }
+        req
     }
     #[cfg(target_arch = "wasm32")]
     {
         None
+    }
+}
+
+/// Séquence des commandes reçues (`POST /cmd` acceptés) : le mode headless
+/// avance d'un pas à chaque nouvelle valeur - même si les actions sont
+/// identiques à la commande précédente. `0` sur wasm (interface inactive).
+pub fn cmd_seq() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        STATE.lock().unwrap().cmd_seq
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
     }
 }
 
@@ -648,6 +899,7 @@ pub fn apply_cmd_to(s: &mut Shared, body: &str) -> bool {
             s.engaged = false; // autopilot reprend la main
         }
     }
+    s.cmd_seq += 1; // commande acceptée (même sans changement) : un pas demandé
     true
 }
 
@@ -673,22 +925,29 @@ pub fn apply_reset_to(s: &mut Shared, body: &str) -> bool {
     let x = v.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0);
     let y = v.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0);
     let auto_generate = v.get("auto_generate").and_then(|x| x.as_bool()).unwrap_or(false);
-    s.reset_req = Some(EpisodeReset { seed, target, x, y, auto_generate });
+    let scenario = match v.get("scenario").and_then(|x| x.as_str()) {
+        Some("economy" | "progression") => EpisodeScenario::Economy,
+        _ => EpisodeScenario::FreePlay,
+    };
+    s.reset_req = Some(EpisodeReset { seed, target, x, y, auto_generate, scenario });
     true
 }
 
 // ─── remise à zéro d'un épisode (consommée par `main.rs`) ───────────────────
 // Régénère un monde **déterministe** (graine) puis installe la situation de
 // départ demandée : vaisseau à quai (mode Ship) ou vaisseau détruit avec le
-// cosmonaute EVA éjecté à `(x, y)` (mode Eva). Le scénario repart en jeu
-// libre (règles de départ, progression non chargée) : chaque épisode
-// s'entraîne sur la même base, sans dépendre de la sauvegarde du joueur.
+// cosmonaute EVA éjecté à `(x, y)` (mode Eva). Le scénario repart sur ses
+// règles de départ - jeu libre ou économie (Progression) selon `POST /reset`
+// - sans jamais charger la progression enregistrée du joueur : chaque épisode
+// s'entraîne sur la même base.
 
 /// Remise à zéro complète d'un épisode : monde neuf (même graine → mêmes
 /// formes), vaisseau reconstruit à quai, puis mise en place de la cible.
 /// Appelée par la boucle de jeu (`main.rs`) quand `POST /reset` a posé une
-/// demande. Les éléments et les étoiles sont réinitialisés par
-/// `generate::prepare` (comme au lancement) - même graine → même monde.
+/// demande. Le scénario de départ est celui du `POST /reset` (jeu libre par
+/// défaut, économie pour la boucle de minage du vaisseau). Les éléments et
+/// les étoiles sont réinitialisés par `generate::prepare` (comme au
+/// lancement) - même graine → même monde.
 #[allow(clippy::too_many_arguments)]
 pub fn reset_episode(
     state: &mut GameState,
@@ -701,7 +960,7 @@ pub fn reset_episode(
     req: EpisodeReset,
 ) {
     use ::rand::SeedableRng;
-    use crate::scenario::{apply_start, start_mode, ScenarioId};
+    use crate::scenario::{apply_start, ScenarioId};
     // graine déterministe : même seed → même monde (génération + formes)
     *rng = rand_chacha::ChaCha12Rng::seed_from_u64(req.seed);
     // monde neuf : formes/triangles/débris/étoiles vidés
@@ -710,26 +969,65 @@ pub fn reset_episode(
     garbages.clear();
     elements.clear();
     stars.clear();
-    // scénario de référence pour l'entraînement : jeu libre (aucune économie)
-    // - règles de départ réappliquées, progression non chargée
-    state.scenario = ScenarioId::FreePlay;
+    // scénario de l'épisode : jeu libre (aucune économie) ou économie
+    // (Progression - carburant/munitions/crédits/soute, la boucle de minage) -
+    // règles de départ réappliquées, progression du joueur **non** chargée
+    // (chaque épisode s'entraîne sur la même base, sans dépendre de la
+    // sauvegarde réelle)
+    let scenario_id = match req.scenario {
+        EpisodeScenario::FreePlay => ScenarioId::FreePlay,
+        EpisodeScenario::Economy => ScenarioId::Progression,
+    };
+    state.scenario = scenario_id;
+    // `apply_start` initialise les ressources du scénario (crédits,
+    // carburant, munitions, soute et modes débloqués en Économie ; rien en
+    // jeu libre) et remet les compteurs de session/partie à zéro
     apply_start(state);
-    state.resources = crate::scenario::Resources::default();
-    state.player.cargo_size = crate::scenario::cargo_capacity(state);
+    if req.scenario == EpisodeScenario::FreePlay {
+        // jeu libre : aucune ressource ni soute, tous les modes débloqués,
+        // déplacement DIRECTIONAL (le défaut historique)
+        state.resources = crate::scenario::Resources::default();
+        state.player.cargo_size = crate::scenario::cargo_capacity(state);
+        state.moving_mode = crate::scenario::start_mode(ScenarioId::FreePlay);
+        state.unlocked_modes = [true; crate::config::MOVING_MODE_COUNT as usize];
+    }
     state.max_meteor_shapes = crate::marketplace::INITIAL_MAX_METEOR_SHAPES;
-    // mode de déplacement de référence (DIRECTIONAL - le défaut du jeu libre)
-    state.moving_mode = start_mode(ScenarioId::FreePlay);
-    state.unlocked_modes = [true; crate::config::MOVING_MODE_COUNT as usize];
-    // monde stable pour l'épisode : la génération automatique est éteinte -
-    // le contenu du monde ne dépend que de la graine (déterministe), pas du
-    // rythme des frames (l'entraîneur décide s'il veut un monde qui se peuple)
-    state.auto_generate = false;
+    // monde de l'épisode : figé (seul le contenu initial de la graine -
+    // déterministe, recommandé pour la récupération EVA) ou **vivant**
+    // (météores générés au fil de l'épisode - nécessaire à la boucle de
+    // minage du vaisseau, où les météores n'existent qu'après génération), au
+    // choix du `POST /reset` (`auto_generate`)
+    state.auto_generate = req.auto_generate;
     // monde régénéré : vaisseau + station + étoiles + éléments
     crate::generate::prepare(state, shapes, triangles, stars, elements, rng);
     // cosmonaute EVA recréé (sa forme a été vidée avec le monde) et garé
     state.eva_cosmonaut = crate::cosmonaut::create_eva_cosmonaut(shapes, triangles) as i32;
     // vaisseau reconstruit à quai au centre de la station (coque + liens)
     crate::eva::respawn_player(state, shapes, triangles);
+    // soute vidée : chaque épisode repart de zéro (la soute n'est pas une
+    // ressource du scénario - elle ne se vide qu'au déchargement en jeu ;
+    // sans ceci, les minerais collectés par l'épisode précédent se retrouvent
+    // dans la soute du suivant et la livraison est détectée dès le premier pas)
+    state.player.cargo_qty = 0;
+    // épisode vaisseau à économie : semer le **champ minier** - météores
+    // minéralisés répartis autour de la station, déterministes à la graine
+    // (même seed → même champ). C'est lui qui rend la boucle décoller → miner
+    // → décharger atteignable avec les ressources de départ (~30 munitions,
+    // ~100 carburant) : sans lui, l'épisode se joue dans un monde vide (aucun
+    // météore n'existe avant génération automatique) et la référence ne peut
+    // rien miner ni livrer.
+    if req.target == ResetTarget::Ship && req.scenario == EpisodeScenario::Economy {
+        crate::generate::seed_mining_field(state, shapes, triangles, &elements, rng);
+        // mode de déplacement de l'épisode : DIRECTIONAL (le défaut
+        // historique de FreePlay) - c'est le mode que le pilote automatique
+        // du vaisseau sait piloter pour la boucle décoller → miner →
+        // décharger (il **survole** les cibles en REALISTIC, mode de départ
+        // de Progression : le frein n'agit que nez pointé ; et la collecte
+        // des minerais n'aboutit pas). Comme l'épisode EVA, l'épisode
+        // définit ses conditions d'entraînement.
+        state.moving_mode = crate::config::MOVING_MODE_DIRECTIONAL;
+        state.unlocked_modes = [true; crate::config::MOVING_MODE_COUNT as usize];
+    }
     // état d'épisode propre : pas de pause, de boîtes ni d'animations
     // résiduelles de la partie précédente
     state.paused = false;
@@ -922,17 +1220,23 @@ mod tests {
         assert_eq!(req.target, ResetTarget::Eva);
         assert_eq!((req.x, req.y), (600.0, 200.0));
 
-        // défauts : vaisseau, graine 0, position 0, génération automatique éteinte
+        // défauts : vaisseau, graine 0, position 0, génération automatique
+        // éteinte, scénario jeu libre
         let mut s = Shared::new();
         assert!(apply_reset_to(&mut s, r#"{}"#));
         let req = s.reset_req.expect("la demande doit être posée");
         assert_eq!(req.target, ResetTarget::Ship);
         assert_eq!(req.seed, 0);
         assert!(!req.auto_generate);
+        assert_eq!(req.scenario, EpisodeScenario::FreePlay);
         // auto_generate:true est retenu
         let mut s = Shared::new();
         assert!(apply_reset_to(&mut s, r#"{"auto_generate":true}"#));
         assert!(s.reset_req.unwrap().auto_generate);
+        // scénario économie (Progression - boucle de minage du vaisseau)
+        let mut s = Shared::new();
+        assert!(apply_reset_to(&mut s, r#"{"scenario":"economy"}"#));
+        assert_eq!(s.reset_req.unwrap().scenario, EpisodeScenario::Economy);
     }
 
     #[test]
@@ -1029,7 +1333,14 @@ mod tests {
             &mut elements,
             &mut stars,
             &mut rng,
-            EpisodeReset { seed: 1, target: ResetTarget::Eva, x: 400.0, y: 250.0, auto_generate: false },
+            EpisodeReset {
+                seed: 1,
+                target: ResetTarget::Eva,
+                x: 400.0,
+                y: 250.0,
+                auto_generate: false,
+                scenario: EpisodeScenario::FreePlay,
+            },
         );
         assert!(state.cosmonaut_active, "le cosmonaute doit être éjecté");
         assert_eq!(state.eva_cosmonaut, 2, "index de la forme EVA après régénération");
@@ -1058,11 +1369,117 @@ mod tests {
             &mut elements,
             &mut stars,
             &mut rng,
-            EpisodeReset { seed: 2, target: ResetTarget::Ship, x: 0.0, y: 0.0, auto_generate: false },
+            EpisodeReset {
+                seed: 2,
+                target: ResetTarget::Ship,
+                x: 0.0,
+                y: 0.0,
+                auto_generate: false,
+                scenario: EpisodeScenario::FreePlay,
+            },
         );
         assert!(!state.cosmonaut_active, "le vaisseau est piloté");
         assert!(state.dock_links, "à quai (liens attachés)");
         assert!(shapes[PLAYER_INDEX].life > 0, "coque intacte");
         assert!(shapes[PLAYER_INDEX].position.x.abs() < 1e-6, "au centre de la station");
+    }
+
+    /// Scène minimale pour `advance_episode` : vaisseau vivant (cible vaisseau)
+    /// au centre, station présente - les états à tester sont posés ensuite.
+    fn ship_scene() -> (GameState, Vec<Shape>) {
+        let state = GameState::new();
+        let shapes = vec![
+            Shape {
+                position: Point::new(0.0, 0.0),
+                life: 1,
+                who_i_am: crate::config::WHOIAM_PLAYER,
+                is_collider: true,
+                ..Shape::default()
+            },
+            Shape {
+                position: Point::new(0.0, 0.0),
+                radius: 162.0,
+                life: 1,
+                who_i_am: crate::config::WHOIAM_STATION,
+                ..Shape::default()
+            },
+        ];
+        (state, shapes)
+    }
+
+    /// Cible `ship` : une soute déchargée à la station termine l'épisode en
+    /// **livraison** (`delivered`).
+    #[test]
+    fn episode_track_terminates_on_ship_delivery() {
+        let mut track = EpisodeTrack::begin(1, ResetTarget::Ship, 10.0);
+        track.prev_cargo = 4; // publication précédente : soute pleine en vol
+        let (mut state, shapes) = ship_scene();
+        state.player.cargo_qty = 0; // déchargée à la station cette frame
+        state.player_at_station = -1; // à quai
+        advance_episode(&mut track, &state, &shapes);
+        assert!(track.done, "la livraison termine l'épisode");
+        assert_eq!(track.outcome, Some(EpisodeOutcome::Delivered));
+        assert_eq!(track.deliveries, 1);
+    }
+
+    /// Cible `ship` : un vaisseau détruit avant d'avoir livré termine en
+    /// **destruction** (`destroyed`).
+    #[test]
+    fn episode_track_terminates_on_ship_destroyed() {
+        let mut track = EpisodeTrack::begin(1, ResetTarget::Ship, 0.0);
+        track.prev_cargo = 2;
+        let (mut state, mut shapes) = ship_scene();
+        state.cosmonaut_active = true; // le vaisseau vient d'être détruit
+        shapes[PLAYER_INDEX].life = 0;
+        advance_episode(&mut track, &state, &shapes);
+        assert!(track.done, "la destruction termine l'épisode");
+        assert_eq!(track.outcome, Some(EpisodeOutcome::Destroyed));
+    }
+
+    /// Cible `eva` : le cosmonaute EVA secouru (`eva_recovery > 0`) termine
+    /// l'épisode en **secours** (`eva_recovered`).
+    #[test]
+    fn episode_track_terminates_on_eva_recovery() {
+        let mut track = EpisodeTrack::begin(2, ResetTarget::Eva, 5.0);
+        let (mut state, shapes) = ship_scene();
+        state.eva_recovery = 0.5; // récupération en cours
+        advance_episode(&mut track, &state, &shapes);
+        assert!(track.done, "le secours EVA termine l'épisode");
+        assert_eq!(track.outcome, Some(EpisodeOutcome::EvaRecovered));
+        assert_eq!(track.steps, 1);
+    }
+
+    /// En vol, la soute qui se remplit est comptée (`collected`) sans terminer
+    /// l'épisode ; un déchargement complet la termine et **verrouille** le
+    /// dénouement (les pas suivants ne changent plus rien).
+    #[test]
+    fn episode_track_counts_collection_then_latches_delivery() {
+        let mut track = EpisodeTrack::begin(3, ResetTarget::Ship, 0.0);
+        let (mut state, shapes) = ship_scene();
+        // en vol (hors station), soute vide → se remplit de 3 minerais
+        state.dock_links = false;
+        state.player_at_station = 0;
+        state.player.cargo_qty = 3;
+        advance_episode(&mut track, &state, &shapes);
+        assert_eq!(track.collected, 3);
+        assert!(!track.done, "la récolte seule ne termine pas l'épisode");
+        assert_eq!(track.deliveries, 0);
+        // retour à la station : la soute est déchargée
+        state.player.cargo_qty = 0;
+        state.player_at_station = -1;
+        advance_episode(&mut track, &state, &shapes);
+        assert!(track.done);
+        assert_eq!(track.outcome, Some(EpisodeOutcome::Delivered));
+        assert_eq!(track.deliveries, 1);
+        assert_eq!(track.collected, 3, "la récolte est conservée au dénouement");
+        // dénouement verrouillé : les pas suivants ne changent plus rien
+        // (seul le compteur de pas avance)
+        let mut after = track.clone();
+        advance_episode(&mut after, &state, &shapes);
+        assert!(after.done);
+        assert_eq!(after.outcome, track.outcome);
+        assert_eq!(after.deliveries, track.deliveries);
+        assert_eq!(after.collected, track.collected);
+        assert_eq!(after.steps, track.steps + 1);
     }
 }

@@ -29,6 +29,7 @@ mod eva;
 mod font;
 mod game;
 mod gamepad;
+mod headless;
 mod garbage;
 mod generate;
 mod geom;
@@ -187,8 +188,40 @@ fn announce_driver(state: &mut GameState, url: &str) {
     state.send_message(&format!("DRIVER: {host_port}"));
 }
 
+// ─── Entrée ────────────────────────────────────────────────────────────────
+// Deux entrées possibles dans le même binaire natif :
+// - `cargo run -- --headless [--port …] [--fps …]` : mode d'auto-entraînement
+//   **sans fenêtre** (Phase 2) - la vraie physique du jeu (`game::update`)
+//   tourne à pas fixe, aussi vite que possible, derrière l'interface HTTP de
+//   `driver.rs`. Aucune macroquad n'est initialisée (pas d'écran, pas de
+//   rendu, pas d'audio) : `headless::run` boucle jusqu'à l'arrêt du
+//   processus ;
+// - sans argument : le jeu normal (fenêtre macroquad).
+//
+// Sur wasm, seule l'entrée macroquad existe (pas de mode headless dans le
+// bac à sable navigateur) : `#[macroquad::main]` fournit l'entrée exportée
+// pour le web.
+#[cfg(not(target_arch = "wasm32"))]
+fn main() {
+    if std::env::args().any(|a| a == "--headless") {
+        let opts = crate::headless::parse_args();
+        crate::headless::run(&opts);
+    }
+    // jeu normal : exactement l'entrée que générait `#[macroquad::main]`
+    // (`Window::from_config(conf, future)`) - fenêtre, rendu, audio
+    macroquad::Window::from_config(window_conf(), game_body());
+}
+
+#[cfg(target_arch = "wasm32")]
 #[macroquad::main(window_conf)]
 async fn main() {
+    game_body().await;
+}
+
+/// Corps du jeu (fenêtre macroquad) : boucle titre → partie. Partagé entre
+/// l'entrée native (via `Window::from_config`) et l'entrée wasm
+/// (`#[macroquad::main]`).
+async fn game_body() {
     // ─── Phase 1 : modèle de données ────────────────────────────────────────
     // L'état initial (monde torique, joueur, étoiles, station) est construit
     // par `prepare`, exactement comme le `prepare` du jeu QB64.

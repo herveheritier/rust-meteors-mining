@@ -230,7 +230,7 @@ pub fn update(
     dt: f64,
 ) -> (Action, Point) {
     // FPS mesurés (affichés au HUD, utilisés par les messages en Phase 4)
-    state.fps = get_fps();
+    state.fps = crate::headless::fps();
 
     // Caméra de la frame précédente - utilisée par la touche G comme
     // l'original (qui lit `camera` calculée à l'itération précédente). Elle
@@ -265,8 +265,8 @@ pub fn update(
             state.briefing_scroll = (state.briefing_scroll + crate::hud::briefing_scroll_delta())
                 .clamp(0.0, crate::hud::briefing_scroll_max(state));
         }
-        if is_key_pressed(KeyCode::Enter)
-            || is_key_pressed(KeyCode::Escape)
+        if crate::headless::key_pressed(KeyCode::Enter)
+            || crate::headless::key_pressed(KeyCode::Escape)
             || crate::hud::briefing_close_clicked()
         {
             state.briefing_box = false;
@@ -308,7 +308,7 @@ pub fn update(
     // d'aide) : les météores et les débris dérivent derrière le panneau
     // pendant le choix (voir `collisions` ci-dessous).
     if state.commands_box {
-        if is_key_pressed(KeyCode::Escape) {
+        if crate::headless::key_pressed(KeyCode::Escape) {
             state.commands_box = false;
             collisions(state, shapes, triangles, garbages, elements, rng, sounds.as_deref_mut(), dt);
             return (Action::Continue, camera);
@@ -336,7 +336,7 @@ pub fn update(
     }
 
     // ESC : quitter
-    if is_key_pressed(KeyCode::Escape) {
+    if crate::headless::key_pressed(KeyCode::Escape) {
         return (Action::Quit, camera);
     }
 
@@ -347,10 +347,10 @@ pub fn update(
     // actions (tactile inclus - le toucher génère un clic). Le HUD affiche
     // GAME OVER + le rappel des touches.
     if state.game_over {
-        if is_key_pressed(KeyCode::R) {
+        if crate::headless::key_pressed(KeyCode::R) {
             return (Action::NewGame, camera);
         }
-        if is_key_pressed(KeyCode::T) {
+        if crate::headless::key_pressed(KeyCode::T) {
             return (Action::BackToTitle, camera);
         }
         if let Some(action) = game_over_button_click() {
@@ -362,8 +362,8 @@ pub fn update(
     // dernier keycode pressé (affiché par le mode I, ex `keycode = inp(96)`
     // de l'original : codes ASCII pour les lettres, 72/75/77/80 pour les
     // flèches, 42/54 pour les shifts)
-    if let Some(k) = get_keys_pressed().iter().next() {
-        state.last_keycode = qb_keycode(*k);
+    if let Some(k) = crate::headless::first_key_pressed() {
+        state.last_keycode = qb_keycode(k);
     }
 
     // Fenêtre d'aide ouverte (touche S) : seul le bouton CLOSE est traité
@@ -421,7 +421,7 @@ pub fn update(
     // l'accostage - sinon la boîte ne s'ouvre qu'au bout de l'animation
     // d'accostage automatique.
     if state.dock_links {
-        if is_key_pressed(KeyCode::Enter) {
+        if crate::headless::key_pressed(KeyCode::Enter) {
             state.dock_box = true;
         } else if player_moving_input() {
             release_links(state);
@@ -668,7 +668,7 @@ pub fn update(
     }
 
     // M : bascule la musique (ex `M : mute music` de mainLoop) - persistée
-    if is_key_pressed(KeyCode::M) {
+    if crate::headless::key_pressed(KeyCode::M) {
         if let Some(sounds) = sounds.as_deref_mut() {
             sounds.toggle_music();
             state.send_message(if sounds.music_on { "MUSIC ON" } else { "MUSIC OFF" });
@@ -677,14 +677,14 @@ pub fn update(
     }
 
     // P : pause
-    if is_key_pressed(KeyCode::P) {
+    if crate::headless::key_pressed(KeyCode::P) {
         state.paused = !state.paused;
     }
 
     // A : génération automatique des météores (ex `autoGenerateShape%`) -
     // pour la session en cours uniquement (repart active au lancement, voir
     // `main.rs` - non persistée)
-    if is_key_pressed(KeyCode::A) {
+    if crate::headless::key_pressed(KeyCode::A) {
         state.auto_generate = !state.auto_generate;
     }
 
@@ -692,7 +692,7 @@ pub fn update(
     // AUTOPILOT de l'écran de paramétrage, voir `autopilot.rs`) : les entrées
     // clavier/tactile/télécommande/manette sont ignorées tant que l'option
     // est active. Le réglage est persisté (clé `autopilot`).
-    if is_key_pressed(KeyCode::X) {
+    if crate::headless::key_pressed(KeyCode::X) {
         state.autopilot = !state.autopilot;
         let _ = persist::set_bool("autopilot", state.autopilot);
         state.send_message(if state.autopilot { "AUTOPILOT ON" } else { "AUTOPILOT OFF" });
@@ -700,7 +700,7 @@ pub fn update(
 
     // G : génère un météore près du vaisseau (ex `mainLoop`) : à
     // `VIEWPORT_WIDTH \ 4` à droite du joueur, immobile.
-    if is_key_pressed(KeyCode::G) {
+    if crate::headless::key_pressed(KeyCode::G) {
         let idx = create_shape(state, shapes, triangles, camera, elements, rng);
         let player = &shapes[PLAYER_INDEX];
         shapes[idx].position = Point::new(player.position.x + VIEWPORT_WIDTH / 4.0, player.position.y);
@@ -708,31 +708,31 @@ pub fn update(
     }
 
     // C : crée un alien (ex `mainLoop` → `createAlien`)
-    if is_key_pressed(KeyCode::C) {
+    if crate::headless::key_pressed(KeyCode::C) {
         create_alien(shapes, triangles);
     }
 
     // S : fenêtre d'aide (ex `showKeys%` → `help`)
-    if is_key_pressed(KeyCode::S) {
+    if crate::headless::key_pressed(KeyCode::S) {
         state.help_box = true;
     }
 
     // L : journal de bord - les EVENT_LOG_LEN derniers événements (tirs,
     // minerais, accostages, achats…) dans un panneau consultable (la touche
     // n'est plus utilisée dans le jeu)
-    if is_key_pressed(KeyCode::L) {
+    if crate::headless::key_pressed(KeyCode::L) {
         state.log_box = !state.log_box;
     }
 
     // 1 / 2 / 3 : utiliser un consommable fabriqué (onglet FABRICATION du
     // magasin) - 1 = bouclier temporaire, 2 = boost de vitesse, 3 = mine
-    if is_key_pressed(KeyCode::Key1) {
+    if crate::headless::key_pressed(KeyCode::Key1) {
         scenario::use_consumable(state, shapes, triangles, CRAFT_SHIELD);
     }
-    if is_key_pressed(KeyCode::Key2) {
+    if crate::headless::key_pressed(KeyCode::Key2) {
         scenario::use_consumable(state, shapes, triangles, CRAFT_BOOST);
     }
-    if is_key_pressed(KeyCode::Key3) {
+    if crate::headless::key_pressed(KeyCode::Key3) {
         scenario::use_consumable(state, shapes, triangles, CRAFT_MINE);
     }
 
@@ -744,7 +744,7 @@ pub fn update(
     // haut de `update`). Au clic, l'entrée RÉGLAGES du panneau COMMANDES
     // (bouton du HUD, ci-dessous) ouvre le même écran - l'ancien bouton
     // OPTIONS du HUD a été remplacé par le bouton COMMANDES.
-    if is_key_pressed(KeyCode::O) {
+    if crate::headless::key_pressed(KeyCode::O) {
         state.settings_box = true;
         state.settings_pause_prev = state.paused;
         state.paused = true;
@@ -754,7 +754,7 @@ pub fn update(
     // bouton OPTIONS) : ouvre le panneau des commandes activables (équivalent
     // souris/tactile des touches du jeu - voir la branche `commands_box` en
     // tête d'`update`)
-    if crate::hud::commands_button_click() {
+    if !crate::headless::active() && crate::hud::commands_button_click() {
         state.commands_box = true;
     }
 
@@ -763,17 +763,17 @@ pub fn update(
     // (poursuivre, repartir, changer de scénario) avant de relancer la
     // partie (`Action::BackToTitle`, géré par `main.rs`). Aussi activable en
     // cliquant sur l'entrée TITRE du panneau COMMANDES.
-    if is_key_pressed(KeyCode::T) {
+    if crate::headless::key_pressed(KeyCode::T) {
         return (Action::BackToTitle, camera);
     }
 
     // D : affichage des données des formes (ex `showData%`)
-    if is_key_pressed(KeyCode::D) {
+    if crate::headless::key_pressed(KeyCode::D) {
         state.show_data = !state.show_data;
     }
 
     // I : affichage des informations de debug (ex `showInfo%`)
-    if is_key_pressed(KeyCode::I) {
+    if crate::headless::key_pressed(KeyCode::I) {
         state.show_info = !state.show_info;
     }
 
@@ -817,7 +817,7 @@ pub fn update(
         let eva = state.eva_cosmonaut as usize;
         let thrusting = state.cosmonaut_active && state.player.thrusted != 0;
         let turn = if state.cosmonaut_active { state.cosmonaut_turn } else { 0 };
-        animate_eva_cosmonaut(&mut shapes[eva], triangles, thrusting, turn, get_time(), dt);
+        animate_eva_cosmonaut(&mut shapes[eva], triangles, thrusting, turn, crate::headless::now(), dt);
     }
 
     // scénario à économie : le carburant est consommé tant que le moteur
@@ -1216,7 +1216,15 @@ fn collisions(
                     // pas de choc élastique entre un minerai et (vaisseau ou
                     // météore), ni avec la station - ni avec les portails
                     // (statiques, ils ne bougent pas) et les mines (posées,
-                    // elles explosent - voir la résolution)
+                    // elles explosent - voir la résolution). Ni avec les
+                    // **balles** : elles sont détruites à l'impact de toute
+                    // façon, et le rebond élastique (masses = triangles)
+                    // **propulse** le météore - léger (fragment, météore du
+                    // champ d'entraînement à 4-6 triangles), il encaisse
+                    // ~2 u/frame par tir (≈ 57 % de la vitesse de la balle)
+                    // et devient impossible à toucher (l'autopilote vide ses
+                    // munitions sur une cible qui fuit à plus de sa propre
+                    // croisière)
                     let no_elastic = (shapes[i].who_i_am == WHOIAM_MINERAL
                         && (shapes[j].who_i_am == WHOIAM_PLAYER || shapes[j].who_i_am == WHOIAM_METEOR))
                         || (shapes[j].who_i_am == WHOIAM_MINERAL
@@ -1226,7 +1234,9 @@ fn collisions(
                         || shapes[i].who_i_am == WHOIAM_WARP_GATE
                         || shapes[j].who_i_am == WHOIAM_WARP_GATE
                         || shapes[i].who_i_am == WHOIAM_MINE
-                        || shapes[j].who_i_am == WHOIAM_MINE;
+                        || shapes[j].who_i_am == WHOIAM_MINE
+                        || shapes[i].who_i_am == WHOIAM_BULLET
+                        || shapes[j].who_i_am == WHOIAM_BULLET;
                     if !no_elastic {
                         elastic_pairs.push((i, j));
                     }

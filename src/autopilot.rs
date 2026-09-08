@@ -90,6 +90,34 @@ const LOW_SUPPLY_RATIO: f64 = 0.30;
 /// Évitement de collision : rayon de détection autour du vaisseau (unités) -
 /// couvre la distance maximale parcourue par une approche relative dans la
 /// fenêtre de temps (vaisseau + météore au plus rapide).
+/// Zone de sécurité autour d'un minerai : un hostile plus près que cette
+/// distance (ex. un fragment survivant du météore détruit, à la position
+/// duquel les minerais apparaissent) doit être détruit avant de ramasser -
+/// la collecte au contact d'un météore vivant détruit le vaisseau
+/// (« 1 impact = détruit »).
+const MINERAL_CLEARANCE: f64 = 130.0;
+/// Cible d'attaque **quasi détruite** (triangles restants ≤ ce seuil) : on
+/// **retient le feu** - les balles déjà en vol l'achèvent, et une balle
+/// supplémentaire traverserait le point d'apparition des minerais (position
+/// du météore mort) et les **détruirait** (règle du jeu : une balle qui
+/// touche un minerai le détruit - mesuré : les minerais de la graine 2,
+/// détruits par les balles en vol du vaisseau, laissaient la soute vide).
+/// La retenue est conditionnelle (`HOLD_FIRE_*`) : si les balles en vol
+/// ratent, le feu reprend dès qu'elles sont passées (pas de blocage).
+const HOLD_FIRE_LIFE: i32 = 2;
+/// Rayon autour de la cible dans lequel une balle en vol compte comme
+/// « déjà partie pour l'achever » : couvre la portée de tir (les balles
+/// voyagent jusqu'à ~3,8 u/frame × ~35 frames depuis la distance de tir).
+const HOLD_FIRE_RADIUS: f64 = 150.0;
+/// Distance cible↔minerai sous laquelle on **retient le feu** : un météore
+/// qui se fragmente libère ses minerais **à la position des fragments
+/// voisins encore vivants** (ils étaient adjacents) - une balle tirée sur le
+/// fragment traverserait le point d'apparition et détruirait les minerais.
+/// En retenant le feu, le fragment **absorbe** les minerais (règle du jeu :
+/// un météore qui percute un minerai l'avale - ils ressortiront à sa
+/// destruction) et le tir reprend une fois la zone dégagée.
+const HOLD_FIRE_MINERAL_RADIUS: f64 = 60.0;
+
 const AVOID_RADIUS: f64 = 360.0;
 /// Évitement : séparation minimale au passage au plus près (unités) - en
 /// dessous, l'hostile est jugé dangereux (rayons du vaisseau et d'un gros
@@ -180,6 +208,19 @@ fn is_hostile(s: &Shape) -> bool {
     (s.who_i_am == WHOIAM_METEOR || s.who_i_am == WHOIAM_ALIEN) && s.life > 0
 }
 
+/// Centre du **corps** d'une forme (position + centre) : la position de
+/// collision réelle. Les triangles sont tournés autour de `shape.center` puis
+/// translatés par `shape.position` (`compute_real_positions`), et la détection
+/// de collision pré-filtre sur `position + center` (`game.rs`) : le corps d'un
+/// météore asymétrique (ou d'un fragment) est décalé de son `position`. Viser
+/// `position` seule ratait la cible de la distance du centre - mesuré : 27/30
+/// tirs ratés sur un météore à 72 u dont le corps était 37 u au-dessus du
+/// point visé. La station et les minerais ont un centre nul (le point visé est
+/// leur position) ; le vaisseau a un centre quasi nul (1,0).
+fn body_center(s: &Shape) -> Point {
+    Point::new(s.position.x + s.center.x, s.position.y + s.center.y)
+}
+
 /// Carburant ou munitions sous le seuil de ravitaillement (scénario à
 /// économie) ? Les munitions sont le **total des armes possédées** (voir
 /// `scenario::total_ammo` / `total_ammo_capacity`).
@@ -193,14 +234,23 @@ fn supplies_low(state: &GameState) -> bool {
 }
 
 /// Les crédits courants couvrent au moins un paquet de carburant ou de
-/// munitions d'une arme possédée ?
+/// munitions d'une arme possédée ? Le coût doit être **strictement positif**
+/// : une remise de réputation peut ramener le prix d'un paquet à 0 par
+/// troncature entière (`discounted_cost(1, 8) = 0`), mais le magasin refuse
+/// d.vendre à coût nul (`buy_fuel_qty` renvoie `Full`) - considérer ce
+/// paquet comme « achetable » faisait rentrer le vaisseau se ravitailler
+/// avec 0 crédit puis boucler magasin↔accostage sans rien acheter.
 fn supplies_affordable(state: &GameState) -> bool {
-    if scenario::affordable_fuel_qty(state) > 0.0 {
+    let fuel_qty = scenario::affordable_fuel_qty(state);
+    if fuel_qty > 0.0 && scenario::fuel_qty_cost(state, fuel_qty) > 0 {
         return true;
     }
     (0..scenario::weapon_slot_count())
         .filter(|&i| scenario::weapon_owned(state, i))
-        .any(|i| scenario::affordable_ammo_qty(state, i) > 0)
+        .any(|i| {
+            let qty = scenario::affordable_ammo_qty(state, i);
+            qty > 0 && scenario::ammo_qty_cost(state, i, qty) > 0
+        })
 }
 
 /// À la station : un ravitaillement est-il utile **et** possible ? (réservoirs
@@ -236,7 +286,7 @@ fn collision_threat(
         if i == PLAYER_INDEX || !is_hostile(s) {
             continue;
         }
-        let r = wrapped_delta(player.position, s.position, &state.world);
+        let r = wrapped_delta(body_center(player), body_center(s), &state.world);
         let rlen = r.x.hypot(r.y);
         if attack_idx == Some(i) && rlen >= ATTACK_STANDOFF {
             continue; // cible d'attaque en approche : pas une menace
@@ -274,7 +324,7 @@ fn avoid_aim(state: &GameState, shapes: &[Shape], i: usize) -> (f64, f64) {
     let s = &shapes[i];
     let pvx = player.direction.cos() * player.velocity * 60.0;
     let pvy = -player.direction.sin() * player.velocity * 60.0;
-    let r = wrapped_delta(player.position, s.position, &state.world);
+    let r = wrapped_delta(body_center(player), body_center(s), &state.world);
     let rlen = r.x.hypot(r.y);
     let tvx = s.direction.cos() * s.velocity * 60.0;
     let tvy = -s.direction.sin() * s.velocity * 60.0;
@@ -305,7 +355,7 @@ fn avoid_aim(state: &GameState, shapes: &[Shape], i: usize) -> (f64, f64) {
 /// dans le monde torique : la direction dans laquelle le nez du vaisseau doit
 /// pointer pour pousser / tirer vers la cible (l'orientation du vaisseau suit
 /// cette convention - voir `docs/PORTAGE.md` §6).
-fn screen_angle_to(from: Point, to: Point, state: &GameState) -> f64 {
+pub fn screen_angle_to(from: Point, to: Point, state: &GameState) -> f64 {
     let d = wrapped_delta(from, to, &state.world);
     d.y.atan2(d.x)
 }
@@ -324,9 +374,20 @@ fn desired_speed(goal: Goal, d: f64) -> f64 {
             }
         }
         // hostile : s'arrêter à distance de sécurité (le tir fait le travail)
-        Goal::Attack(_) => ((d - ATTACK_STANDOFF).max(0.0) * 0.2).min(CRUISE_SPEED),
-        // minerai : se poser dessus lentement (ramassé par collision)
-        Goal::Collect(_) => (d * 0.12).clamp(0.2, 1.4),
+        // hostile : s'arrêter à distance de sécurité (le tir fait le travail) -
+        // rampe **consciente du freinage** (0,05/frame² ≈ décélération du
+        // vaisseau) : à la croisière (1,8), la distance de freinage est
+        // ≈ 32 u - la rampe 0,05 × d arrête le vaisseau juste à la limite de
+        // tir (le profil 0,2 d'avant ne ralentissait que sur ~9 u et faisait
+        // **survoler** la cible à pleine vitesse : le vaisseau percutait le
+        // météore - contact = vaisseau détruit)
+        Goal::Attack(_) => ((d - ATTACK_STANDOFF).max(0.0) * 0.05).min(CRUISE_SPEED),
+        // minerai : se poser dessus **lentement** (ramassé par collision) -
+        // la vitesse visée décroît avec la distance pour que le vaisseau
+        // s'arrête sur le minerai au lieu de le traverser à vitesse de
+        // croisière (distance de freinage ≈ v²/(2·0,05) : à 0,6 ≈ 3,6 u -
+        // l'approche finale reste rattrapable même si le minerai dérive)
+        Goal::Collect(_) => (d * 0.12).clamp(0.3, 1.4),
         // stationnement : approcher puis s'arrêter hors de la zone d'accostage
         Goal::Patrol => {
             if d < PATROL_RADIUS {
@@ -336,6 +397,65 @@ fn desired_speed(goal: Goal, d: f64) -> f64 {
             }
         }
     }
+}
+
+/// (tests) mission courante de l'autopilote, en texte - miroir du choix de
+/// mission d'`autopilot_inputs`, utilisé par les tests unitaires pour
+/// vérifier la priorité des missions.
+pub fn debug_current_goal(state: &GameState, shapes: &[Shape]) -> String {
+    let player = &shapes[PLAYER_INDEX];
+    let station = &shapes[STATION_INDEX];
+    let world = &state.world;
+    let capacity = scenario::cargo_capacity(state);
+    let cargo_full = capacity > 0 && state.player.cargo_qty >= capacity;
+    let low_supplies =
+        scenario::has_economy(state) && supplies_low(state) && supplies_affordable(state);
+    let mut guard: Option<(f64, usize)> = None;
+    let mut mineral: Option<(f64, usize)> = None;
+    let mut hostile: Option<(f64, usize)> = None;
+    for (i, s) in shapes.iter().enumerate() {
+        if i == PLAYER_INDEX || s.life <= 0 {
+            continue;
+        }
+        if is_hostile(s) {
+            let ds = wrapped_distance(body_center(s), station.position, world);
+            if ds < STATION_GUARD_RADIUS && guard.is_none_or(|(bd, _)| ds < bd) {
+                guard = Some((ds, i));
+            }
+            let dp = wrapped_distance(body_center(s), body_center(player), world);
+            if hostile.is_none_or(|(bd, _)| dp < bd) {
+                hostile = Some((dp, i));
+            }
+        } else if s.who_i_am == WHOIAM_MINERAL {
+            let dp = wrapped_distance(body_center(s), body_center(player), world);
+            if mineral.is_none_or(|(bd, _)| dp < bd) {
+                mineral = Some((dp, i));
+            }
+        }
+    }
+    let hostile_in_range = hostile.is_some_and(|(d, _)| d < FIRE_RANGE);
+    let mineral_guarded = mineral.is_some_and(|(_, mi)| {
+        hostile.is_some_and(|(_, hi)| {
+            let d = wrapped_distance(body_center(&shapes[hi]), body_center(&shapes[mi]), world);
+            d < MINERAL_CLEARANCE
+        })
+    });
+    let goal = if cargo_full {
+        "Dock(cargo_plein)".to_string()
+    } else if guard.is_some() {
+        "Attack(protège station)".to_string()
+    } else if low_supplies {
+        "Dock(ravitaillement)".to_string()
+    } else if hostile_in_range || mineral_guarded {
+        "Attack(hostile à portée / minerai gardé)".to_string()
+    } else if mineral.is_some() {
+        format!("Collect(@{:.0})", mineral.unwrap().0)
+    } else if hostile.is_some() {
+        format!("Attack(@{:.0})", hostile.unwrap().0)
+    } else {
+        "Patrol".to_string()
+    };
+    goal
 }
 
 /// Entrées de pilotage de la frame pour le pilote automatique : mission
@@ -367,18 +487,18 @@ pub fn autopilot_inputs(state: &GameState, shapes: &[Shape]) -> PilotInputs {
         }
         if is_hostile(s) {
             // hostile menaçant la station (mission prioritaire)
-            let ds = wrapped_distance(s.position, station.position, world);
+            let ds = wrapped_distance(body_center(s), station.position, world);
             if ds < STATION_GUARD_RADIUS && guard.is_none_or(|(bd, _)| ds < bd) {
                 guard = Some((ds, i));
             }
             // hostile le plus proche (pour miner, et pour la cible de tir)
-            let dp = wrapped_distance(s.position, player.position, world);
+            let dp = wrapped_distance(body_center(s), body_center(player), world);
             if hostile.is_none_or(|(bd, _)| dp < bd) {
                 hostile = Some((dp, i));
             }
         } else if s.who_i_am == WHOIAM_MINERAL {
             // minerai libre à récupérer (soute pas pleine - sinon on rentre)
-            let dp = wrapped_distance(s.position, player.position, world);
+            let dp = wrapped_distance(body_center(s), body_center(player), world);
             if mineral.is_none_or(|(bd, _)| dp < bd) {
                 mineral = Some((dp, i));
             }
@@ -388,20 +508,40 @@ pub fn autopilot_inputs(state: &GameState, shapes: &[Shape]) -> PilotInputs {
     // prise) : ignorée par l'évitement tant qu'on s'en approche (voir
     // `collision_threat`)
     let mut attack_idx: Option<usize> = None;
+    // hostile à portée de tir : le vaisseau le **détruit avant de ramasser** -
+    // ramasser un minerai au contact d'un météore vivant détruit le vaisseau
+    // (« 1 impact = détruit »), et un météore à moitié détruit laisse des
+    // fragments ; finir la destruction (météore + fragments) libère les
+    // minerais dans une zone sans collision
+    let hostile_in_range = hostile.is_some_and(|(d, _)| d < FIRE_RANGE);
+    // minerai à ramasser trop près d'un hostile : on détruit l'hostile
+    // d'abord - ramasser au contact d'un fragment survivant (= position du
+    // météore détruit, où les minerais apparaissent) est mortel ; on ne
+    // s'approche d'un minerai que si sa zone est dégagée (`MINERAL_CLEARANCE`)
+    let mineral_guarded = mineral.is_some_and(|(_, mi)| {
+        hostile.is_some_and(|(_, hi)| {
+            let d = wrapped_distance(body_center(&shapes[hi]), body_center(&shapes[mi]), world);
+            d < MINERAL_CLEARANCE
+        })
+    });
     let goal = if cargo_full {
         Goal::Dock
     } else if let Some((_, i)) = guard {
         // protéger la station reste la mission prioritaire (le trajet de
         // retour se fera juste après)
         attack_idx = Some(i);
-        Goal::Attack(shapes[i].position)
+        Goal::Attack(body_center(&shapes[i]))
     } else if low_supplies {
         Goal::Dock
+    } else if hostile_in_range || mineral_guarded {
+        let (_, i) = hostile.expect("hostile_in_range/mineral_guarded impliquent un hostile");
+        attack_idx = Some(i);
+        Goal::Attack(body_center(&shapes[i]))
     } else if let Some((_, i)) = mineral {
-        Goal::Collect(shapes[i].position)
+        Goal::Collect(body_center(&shapes[i]))
     } else if let Some((_, i)) = hostile {
         attack_idx = Some(i);
-        Goal::Attack(shapes[i].position)
+        Goal::Attack(body_center(&shapes[i]))
     } else {
         Goal::Patrol
     };
@@ -413,19 +553,41 @@ pub fn autopilot_inputs(state: &GameState, shapes: &[Shape]) -> PilotInputs {
         if i == PLAYER_INDEX || !is_hostile(s) {
             continue;
         }
-        let d = wrapped_distance(s.position, player.position, world);
+        let d = wrapped_distance(body_center(s), body_center(player), world);
         if d < best_fire {
             best_fire = d;
             fire_target = Some(i);
         }
     }
     if let Some(i) = fire_target {
-        let aim = shortest_angle_delta(
-            player.orientation,
-            screen_angle_to(player.position, shapes[i].position, state),
-        );
-        if aim.abs() < AIM_TOLERANCE {
-            out.fire = true;
+        // cible quasi détruite avec des balles déjà en vol vers elle : on
+        // retient le feu (elles l'achèvent ; tirer encore ferait traverser
+        // le point d'apparition des minerais et les détruirait - voir
+        // `HOLD_FIRE_LIFE`)
+        // minerais dans le corridor de tir (le fragment vivant va les
+        // absorber - les détruire d'une balle les perdrait définitivement)
+        let minerals_near = shapes.iter().any(|m| {
+            m.who_i_am == WHOIAM_MINERAL
+                && m.life > 0
+                && wrapped_distance(body_center(m), body_center(&shapes[i]), world)
+                    < HOLD_FIRE_MINERAL_RADIUS
+        });
+        let holding = minerals_near
+            || (shapes[i].life <= HOLD_FIRE_LIFE
+                && shapes.iter().any(|b| {
+                    b.who_i_am == WHOIAM_BULLET
+                        && b.life > 0
+                        && wrapped_distance(body_center(b), body_center(&shapes[i]), world)
+                            < HOLD_FIRE_RADIUS
+                }));
+        if !holding {
+            let aim = shortest_angle_delta(
+                player.orientation,
+                screen_angle_to(body_center(player), body_center(&shapes[i]), state),
+            );
+            if aim.abs() < AIM_TOLERANCE {
+                out.fire = true;
+            }
         }
     }
 
@@ -442,7 +604,7 @@ pub fn autopilot_inputs(state: &GameState, shapes: &[Shape]) -> PilotInputs {
     // productif - on s'écarte, on n'attend pas le rattrapeur
     let threat_ahead = threat
         .map(|i| {
-            let r = wrapped_delta(player.position, shapes[i].position, &state.world);
+            let r = wrapped_delta(body_center(player), body_center(&shapes[i]), &state.world);
             let rlen = r.x.hypot(r.y);
             if rlen < 1e-9 {
                 return false;
@@ -456,21 +618,24 @@ pub fn autopilot_inputs(state: &GameState, shapes: &[Shape]) -> PilotInputs {
         Goal::Dock | Goal::Patrol => station.position,
         Goal::Attack(p) | Goal::Collect(p) => p,
     };
-    let d = wrapped_distance(player.position, target, world);
+    let d = wrapped_distance(body_center(player), target, world);
     let (aim, desired) = match avoid {
         Some((a, s)) => (a, s),
         None => (
-            screen_angle_to(player.position, target, state),
+            screen_angle_to(body_center(player), target, state),
             desired_speed(goal, d),
         ),
     };
     match state.moving_mode {
         // 4 WAYS : poussée dans les 4 directions de l'écran - on pousse vers
         // le vecteur de vitesse visé (direction + module), ce qui dirige et
-        // freine en même temps ; le nez suit automatiquement la trajectoire
+        // freine en même temps ; le nez suit automatiquement la trajectoire.
+        // Convention écran (y vers le bas - même que `input.rs` pour ce mode :
+        // ↑ pousse −y, ↓ pousse +y, → pousse +x) : les composantes de vitesse
+        // sont (cos, −sin) de la direction ; `aim` est un angle écran.
         MOVING_MODE_4_WAYS => {
             let vx = player.direction.cos() * player.velocity;
-            let vy = player.direction.sin() * player.velocity;
+            let vy = -player.direction.sin() * player.velocity;
             let tvx = aim.cos() * desired;
             let tvy = aim.sin() * desired;
             let ex = tvx - vx;
@@ -481,10 +646,10 @@ pub fn autopilot_inputs(state: &GameState, shapes: &[Shape]) -> PilotInputs {
                 } else {
                     out.left = true; // ← pousse vers -x
                 }
-            } else if ey < 0.0 {
-                out.up = true; // ↑ pousse vers -y (écran, y vers le bas)
+            } else if ey > 0.0 {
+                out.down = true; // ↓ pousse vers +y (écran)
             } else {
-                out.down = true; // ↓ pousse vers +y
+                out.up = true; // ↑ pousse vers -y
             }
         }
         // DIRECTIONAL / INERTIAL / REALISTIC : on oriente le nez vers la cible
@@ -505,10 +670,17 @@ pub fn autopilot_inputs(state: &GameState, shapes: &[Shape]) -> PilotInputs {
             let vx = player.direction.cos() * player.velocity;
             let vy = -player.direction.sin() * player.velocity;
             let v_along = vx * aim.cos() + vy * aim.sin();
+            // freiner **net** quand on est sur la cible : la bande
+            // d'hystérésis (`desired + 0,15`) laissait une vitesse résiduelle
+            // de 0,15 u/frame (9 u/s) qui faisait **dériver** le vaisseau
+            // droit dans sa cible (70 u → contact en ~7 s) ; sous ce seuil de
+            // vitesse visée, on freine jusqu'à l'arrêt complet
+            let overspeed = v_along > desired + 0.15;
+            let settle = desired < 0.4 && v_along > 0.02;
             if err.abs() < THRUST_DEADBAND {
                 if v_along < desired - 0.1 {
                     out.up = true;
-                } else if v_along > desired + 0.15 {
+                } else if overspeed || settle {
                     out.down = true;
                 }
             } else if threat.is_some() && threat_ahead && player.velocity > DODGE_BRAKE_SPEED {
@@ -518,12 +690,17 @@ pub fn autopilot_inputs(state: &GameState, shapes: &[Shape]) -> PilotInputs {
                 // (c'est la touche ↓, absente de l'ancienne esquive qui ne
                 // faisait que virer et pousser)
                 out.down = true;
-            } else if state.moving_mode == MOVING_MODE_DIRECTIONAL
-                && player.velocity > desired + 0.15
+            } else if state.moving_mode != MOVING_MODE_4_WAYS
+                && (player.velocity > desired + 0.15
+                    || (desired < 0.4 && player.velocity > 0.02))
             {
-                // DIRECTIONAL : la vitesse suit toujours la direction de
-                // déplacement - freiner pendant le virage reste sûr (pas de
-                // poussée vectorielle qui pourrait accentuer une fuite)
+                // DIRECTIONAL / INERTIAL / REALISTIC : la vitesse suit la
+                // direction de déplacement (le nez vise la cible) - freiner
+                // pendant le virage reste sûr quand le module dépasse la
+                // visée (le frein aligné ne suffit pas : il n'agit que nez
+                // pointé, ce qui laissait le vaisseau **survoler** les cibles
+                // à pleine vitesse en REALISTIC). Proche de la cible, on
+                // freine jusqu'à l'arrêt (voir `settle` ci-dessus).
                 out.down = true;
             }
             // REALISTIC : la rotation vit sa vie après le relâchement - quand
@@ -845,13 +1022,29 @@ mod tests {
     #[test]
     fn protects_the_station_before_mining() {
         // météore loin du vaisseau mais menaçant la station : il est visé en
-        // priorité, même si un minerai est plus proche du vaisseau
+        // priorité, même si un minerai est plus proche du vaisseau - la
+        // mission reste « protéger la station », pas « collecter »
         let (state, shapes) = scene(Point::new(100.0, 0.0), 0.0);
         let mut shapes = shapes;
         shapes.push(meteor_at(Point::new(150.0, 0.0))); // dans le rayon de garde
-        shapes.push(mineral_at(Point::new(120.0, 0.0)));
+        shapes.push(mineral_at(Point::new(120.0, 0.0))); // à 30 u de la cible
         let inputs = autopilot_inputs(&state, &shapes);
-        assert!(inputs.up || inputs.fire, "doit s'occuper du météore menaçant");
+        assert_eq!(
+            debug_current_goal(&state, &shapes),
+            "Attack(protège station)",
+            "le météore menaçant la station prime sur le minerai proche"
+        );
+        // déjà à la distance de tir (dans `ATTACK_STANDOFF`) : pas de poussée,
+        // et le feu est **retenu** (`HOLD_FIRE_MINERAL_RADIUS`) - le minerai
+        // est à moins de 60 u de la cible, une balle traverserait son point
+        // d'apparition et le détruirait
+        assert!(!inputs.up, "pas de poussée : déjà à portée de tir");
+        assert!(!inputs.fire, "feu retenu : minerai à 30 u de la cible");
+        // minerai éloigné (hors de la zone de rétention) : le tir reprend
+        let last = shapes.len() - 1;
+        shapes[last].position = Point::new(2460.0, -1500.0);
+        let inputs = autopilot_inputs(&state, &shapes);
+        assert!(inputs.fire, "zone dégagée : le feu reprend sur le météore menaçant");
     }
 
     #[test]

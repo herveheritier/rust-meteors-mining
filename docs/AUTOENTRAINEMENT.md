@@ -191,17 +191,69 @@ tangentielle dépasse 0.25 u/frame, relâchée sous 0.12) - voir
 | Ligne de base : pilote automatique du jeu mesurable depuis l'entraîneur | `POST /cmd {"autopilot":true}` | ✅ (en live) |
 | Documentation | ce document + `tools/trainer/README.md` | ✅ |
 
+## 5 bis. Phase 2 — épisodes accélérés sans rendu (mode headless, réalisé)
+
+Le premier jalon de la Phase 2 est en place : un **mode d'exécution headless**
+qui lance la **vraie physique du jeu** (`game::update`) à **pas fixe** (dt
+constant 1/60 par défaut) **sans fenêtre macroquad** - ni rendu, ni audio,
+ni lecture du clavier/souris. Le protocole de l'interface (`driver.rs`) est
+**inchangé** (`GET /obs`, `POST /cmd`, `POST /reset`) : un entraîneur externe
+s'y connecte exactement comme au jeu, mais sans le temps réel.
+
+```bash
+cargo run --release -- --headless [--port 8643] [--fps 60] [--seed 0]
+#   (le jeu normal démarre sans argument ; wasm : pas de mode headless)
+```
+
+Fonctionnement (`src/headless.rs`) :
+
+- **une observation par pas** publiée après chaque `update` (comme la boucle
+  réelle) ;
+- **`POST /reset`** fait toujours avancer d'un pas : l'observation du départ
+  de l'épisode est servie immédiatement ;
+- pilote externe **engagé** (`driver` vrai) : **chaque `POST /cmd` fait
+  avancer d'un pas** - l'épisode est piloté pas à pas par l'entraîneur, à la
+  cadence des allers-retours HTTP (au lieu du temps réel) ;
+- **autopilote du jeu** (`autopilot` vrai, sans pilote externe) : la ligne de
+  base **file en continu** à cadence bornée (480 pas/s par défaut) - assez
+  rapide pour accélérer la référence, assez lente pour que l'entraîneur
+  puisse échantillonner les fenêtres transitoires de l'observation
+  (récupération EVA, accostage…) ;
+- aucune décision en attente : la boucle attend (le serveur HTTP vit dans son
+  propre thread).
+
+Pour tenir sans fenêtre, `game::update` a été rendu **headless-compatible** :
+ses lectures clavier/souris et son horloge (`is_key_pressed`, `get_time`…)
+passent par des relais (`crate::headless::*`) qui les éteignent quand le mode
+est actif (le pilote externe agit via `driver.rs`) et relaient exactement
+macroquad sinon - le jeu fenêtré ne change pas. L'entrée native de `main.rs`
+aiguille `--headless` vers la boucle headless avant toute initialisation de
+macroquad (l'entrée wasm, elle, est inchangée). La configuration persistée du
+joueur est **isolée** : `XDG_CONFIG_HOME` pointe sur un dossier jetable -
+l'entraînement ne lit ni n'écrit jamais la sauvegarde réelle.
+
+**Validé** (`tools/trainer/evaluate.py --backend live` contre le mode
+headless) : autopilot et `seek` **tous réussis** (3/3 sur graines 1..3,
+8/8 sur graines 100..107) depuis 300 unités, avec des temps de simulation
+cohérents avec le micro-simulateur (~7,7 s pour `seek`, ~5 s autopilot) et
+~1-2 s **mur** pour plusieurs épisodes au lieu du temps réel - le coût
+restant est celui de la boucle physique (et des allers-retours HTTP du
+pilotage pas à pas). `evaluate.py --backend live` a été rendu compatible
+pas-à-pas : quand le pilote externe est engagé, une **commande vide**
+déclenche le pas d'attente (`wait_frame`). Tests dans `src/headless.rs` : la
+boucle tourne **sans fenêtre**, de façon **déterministe** (même graine →
+même déroulé) et les graines produisent des mondes différents.
+
 ## 6. Suite (phases suivantes)
 
-- **Phase 2 — épisodes accélérés côté jeu.** L'interface est aujourd'hui en
-  temps réel (une observation par frame rendue ~60-230 Hz). Pour entraîner
-  des centaines d'épisodes à la seconde : un **mode de pas fixe accéléré
-  sans rendu** (même boucle physique, dt constant, pas de macroquad), puis
-  des épisodes plus riches côté jeu : boucle complète du vaisseau
-  (décoller → miner → décharger, cible `ship`), missions portées par les
-  objectifs DAG (`objective_tracker.rs`, `.scenario.json`) comme langage de
-  tâche/récompense, termination explicite (accosté / EVA secouru / détruit /
-  délai).
+- **Phase 2 (suite) — épisodes plus riches côté jeu.** Le mode headless
+  accélère le protocole existant. Reste à enrichir les épisodes eux-mêmes :
+  boucle complète du vaisseau (décoller → miner → décharger, cible `ship`),
+  missions portées par les objectifs DAG (`objective_tracker.rs`,
+  `.scenario.json`) comme langage de tâche/récompense, termination explicite
+  (accosté / EVA secouru / détruit / délai) exposée dans l'observation, et
+  exécution d'épisodes **en continu dans le processus headless** (au-delà du
+  pas-à-pas HTTP) pour viser des centaines d'épisodes à la seconde.
 - **Phase 3 — vrais apprenants.** La politique `seek` paramétrée est une
   preuve de la boucle. La suite : politiques plus riches (réseau de neurones,
   RL : DQN/PPO sur l'observation complète avec les objets proches),

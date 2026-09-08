@@ -105,14 +105,18 @@ class DriverClient:
         x: float = 0.0,
         y: float = 0.0,
         auto_generate: bool = False,
+        scenario: str = "free",
     ) -> None:
         """Remise à zéro d'un épisode déterministe (monde régénéré à la graine
         à la frame suivante). `target` : "eva" (vaisseau détruit à (x, y), le
-        pilote est le cosmonaute EVA) ou "ship" (vaisseau à quai)."""
+        pilote est le cosmonaute EVA) ou "ship" (vaisseau à quai).
+        `scenario` : "free" (défaut, aucune économie) ou "economy"
+        (Progression - la boucle de minage du vaisseau : carburant, crédits,
+        soute à livrer)."""
         self.post(
             "/reset",
             {"seed": int(seed), "target": target, "x": float(x), "y": float(y),
-             "auto_generate": bool(auto_generate)},
+             "auto_generate": bool(auto_generate), "scenario": scenario},
         )
 
     def wait_next_obs(self, last_frame: int = 0, timeout: float = 5.0, poll: float = 0.002) -> dict[str, Any]:
@@ -133,5 +137,6 @@ def die(message: str, hint: bool = True) -> None:
     print(f"✗ {message}")
     if hint:
         print("  Le jeu doit tourner avec l'interface d'auto-entraînement")
-        print("  (`cargo run` - serveur sur http://127.0.0.1:8643/).")
+        print("  (`cargo run` - serveur sur http://127.0.0.1:8643/)")
+        print("  ou en mode headless accéléré sans fenêtre : `cargo run -- --headless`.")
     raise SystemExit(1)

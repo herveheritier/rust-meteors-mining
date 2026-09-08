@@ -27,13 +27,33 @@ import argparse
 import json
 import random
 import sys
+import time
 from typing import Any, Optional
 
-from client import DriverClient, die
+from client import DriverClient, DriverError, die
 from eva_env import EvaSim, episode_reward, spawn_position
 from policies import LIVE_AUTOPILOT, SIM_STRATEGIES, policy_for, seek
 
 EPISODE_TIMEOUT = 60.0  # secondes avant de déclarer l'épisode perdu
+
+
+def wait_frame(client: DriverClient, last_frame: int, paced: bool, timeout: float = 5.0) -> dict[str, Any]:
+    """Attend la publication de la frame suivante et la renvoie. Quand le
+    pilote externe est engagé (`paced`), chaque pas de l'épisode est déclenché
+    par une commande - dans le **mode headless** (pas-à-pas accéléré), il faut
+    donc poster une commande (même vide) pour faire avancer d'un pas. Contre
+    la partie temps réel, ces commandes vides sont sans effet (elles ne
+    changent aucune action)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        if paced:
+            client.cmd()  # un pas par commande (mode headless)
+        o = client.obs()
+        if o.get("frame", 0) > last_frame:
+            return o
+        if time.monotonic() > deadline:
+            raise DriverError("aucune nouvelle frame publiée (jeu en pause ?)")
+        time.sleep(0.002)
 
 
 def run_episode_sim(
@@ -74,14 +94,16 @@ def run_episode_live(
     client.reset(seed=seed, target="eva", x=x, y=y)
     if strategy == LIVE_AUTOPILOT:
         client.cmd(autopilot=True)  # l'ordinateur du jeu pilote
+        paced = False  # l'autopilote joue seul : les frames s'enchaînent
     else:
         client.cmd(driver=True)  # le pilote externe (évalué) pilote
+        paced = True  # un pas par commande (mode headless) : il faut piloter
     last = client.obs().get("frame", 0)
-    obs = client.wait_next_obs(last, timeout=5.0)
+    obs = wait_frame(client, last, paced)
     # attendre que l'épisode soit réellement en place (cosmonaute à l'écran)
     while obs.get("pilot") != "eva" or obs.get("station_dist", 0.0) < 15.0:
         last = obs.get("frame", 0)
-        obs = client.wait_next_obs(last, timeout=5.0)
+        obs = wait_frame(client, last, paced)
     t0 = obs.get("t", 0.0)
     entry_speed = 0.0
     while True:
@@ -98,6 +120,8 @@ def run_episode_live(
                 right=cmd["right"], fire=cmd["fire"],
             )
         last = obs.get("frame", 0)
+        # la commande ci-dessus a déclenché le pas (mode headless) : il ne
+        # reste qu'à attendre la frame publiée
         obs = client.wait_next_obs(last, timeout=5.0)
     seconds = obs.get("t", t0) - t0
     return {

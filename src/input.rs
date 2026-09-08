@@ -20,6 +20,11 @@ use crate::state::GameState;
 /// à vrai - le front montant rattrape la pression. `state.f_was_down` porte
 /// l'état de la frame précédente.
 pub fn f_pressed(state: &mut GameState) -> bool {
+    // mode headless (sans fenêtre) : aucune touche - l'auto-entraînement
+    // pilote via `driver.rs`
+    if crate::headless::active() {
+        return false;
+    }
     let down = is_key_down(KeyCode::F);
     let pressed = is_key_pressed(KeyCode::F) || (down && !state.f_was_down);
     state.f_was_down = down;
@@ -53,18 +58,30 @@ pub fn player_moving_input() -> bool {
 /// manette de jeu (`gamepad.rs`, stick gauche / croix directionnelle) - les
 /// quatre pilotent comme les flèches.
 pub fn up_pressed() -> bool {
+    if crate::headless::active() {
+        return false; // mode sans fenêtre : le pilote externe agit via `driver.rs`
+    }
     is_key_down(KeyCode::Up) || crate::touch::up() || crate::remote::up() || crate::gamepad::up()
 }
 
 pub fn down_pressed() -> bool {
+    if crate::headless::active() {
+        return false; // mode sans fenêtre : le pilote externe agit via `driver.rs`
+    }
     is_key_down(KeyCode::Down) || crate::touch::down() || crate::remote::down() || crate::gamepad::down()
 }
 
 pub fn left_pressed() -> bool {
+    if crate::headless::active() {
+        return false; // mode sans fenêtre : le pilote externe agit via `driver.rs`
+    }
     is_key_down(KeyCode::Left) || crate::touch::left() || crate::remote::left() || crate::gamepad::left()
 }
 
 pub fn right_pressed() -> bool {
+    if crate::headless::active() {
+        return false; // mode sans fenêtre : le pilote externe agit via `driver.rs`
+    }
     is_key_down(KeyCode::Right) || crate::touch::right() || crate::remote::right() || crate::gamepad::right()
 }
 
@@ -72,6 +89,9 @@ pub fn right_pressed() -> bool {
 /// télécommande (`remote.rs`) OU manette (bouton A / gâchette droite,
 /// `gamepad.rs`).
 pub fn fire_pressed() -> bool {
+    if crate::headless::active() {
+        return false; // mode sans fenêtre : le pilote externe agit via `driver.rs`
+    }
     is_key_down(KeyCode::LeftShift)
         || is_key_down(KeyCode::RightShift)
         || crate::touch::fire()

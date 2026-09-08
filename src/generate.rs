@@ -251,6 +251,107 @@ pub fn create_shape(
     shape_index
 }
 
+/// Champ minier des épisodes vaisseau à économie : nombre de météores
+/// **minéralisés** semés autour de la station à chaque `POST /reset`
+/// (cible `ship`, scénario `economy`).
+pub const MINING_FIELD_COUNT: usize = 8;
+/// Anneau du champ minier : rayon min/max autour de la station (u).
+pub const MINING_FIELD_RADIUS_MIN: f64 = 450.0;
+pub const MINING_FIELD_RADIUS_MAX: f64 = 1200.0;
+/// Taille des météores du champ (nombre de triangles) : petits, pour qu'un
+/// épisode de minage se termine avec les munitions de départ (~30).
+/// Triangles par météore du champ : **petits** (4-6) pour que la référence
+/// les détruise en une rafale (~5 tirs) - le météore meurt et libère tous
+/// ses minerais à sa position, où le vaisseau les ramasse sans risque (un
+/// météore plus gros survit à la rafale et ses minerais libérés par balle
+/// obligent le vaisseau à les récupérer **sur** le météore vivant, au
+/// contact duquel il se détruit).
+/// Vitesse minimale de dérive d'un minerai libéré (u/frame) : les minerais
+/// d'un météore immobile naissent empilés au même point et se détruiraient
+/// mutuellement par collision (minerai↔minerai) - ce scatter les disperse
+/// (voir `create_mineral`).
+pub const MINERAL_SCATTER_SPEED: f64 = 0.15;
+/// Dispersion des positions de naissance des minerais libérés en une fois par
+/// un météore détruit (`release_meteor_minerals`) : le jeu réel les libère un
+/// par triangle, répartis sur le corps du météore ; cette dispersion simule
+/// cette répartition (voir `release_meteor_minerals`).
+pub const MINERAL_SPAWN_SPREAD: f64 = 10.0;
+
+pub const MINING_FIELD_TRIANGLES_MIN: usize = 4;
+pub const MINING_FIELD_TRIANGLES_MAX: usize = 6;
+
+/// Sème le **champ minier** d'un épisode vaisseau à économie (cible `ship`,
+/// scénario `economy`) : `MINING_FIELD_COUNT` météores **minéralisés**, petits
+/// et lents, répartis sur un anneau autour de la station et **dérivant vers
+/// elle** (comme les météores d'une vraie partie qui s'approchent de la
+/// base). Tout est tiré du rng de l'épisode (seedé à la graine du
+/// `POST /reset`) : même graine → même champ, monde **figé** si
+/// `auto_generate` est éteint (le contenu de l'épisode ne dépend que de la
+/// graine). Les triangles minéralisés (or/fer/eau) garantissent que la boucle
+/// décoller → miner → décharger aboutit : chaque météore détruit libère
+/// assez de minerais pour remplir la soute de base (`CARGO_SIZE` = 5).
+pub fn seed_mining_field(
+    state: &GameState,
+    shapes: &mut Vec<Shape>,
+    triangles: &mut Vec<Triangle>,
+    elements: &[Element],
+    rng: &mut impl Rng,
+) {
+    let center = shapes[STATION_INDEX].position;
+    for i in 0..MINING_FIELD_COUNT {
+        let angle = TAU * i as f64 / MINING_FIELD_COUNT as f64;
+        let radius = MINING_FIELD_RADIUS_MIN
+            + (MINING_FIELD_RADIUS_MAX - MINING_FIELD_RADIUS_MIN) * rng.r#gen::<f64>();
+        let (x, y) = (center.x + radius * angle.cos(), center.y + radius * angle.sin());
+        // petit météore (8..=11 triangles) : détruit en quelques tirs
+        let nbr = MINING_FIELD_TRIANGLES_MIN
+            + (rng.r#gen::<f64>()
+                * (MINING_FIELD_TRIANGLES_MAX - MINING_FIELD_TRIANGLES_MIN) as f64)
+                as usize;
+        let idx = generate_shape(
+            shapes,
+            triangles,
+            nbr,
+            TRIANGLE_BASE_MIN,
+            TRIANGLE_BASE_MAX,
+            TRIANGLE_HEIGHT_MIN,
+            TRIANGLE_HEIGHT_MAX,
+            elements,
+            rng,
+        );
+        let shape = &mut shapes[idx];
+        shape.who_i_am = WHOIAM_METEOR;
+        shape.is_collider = true;
+        // position dans le monde torique (repliée dans les bornes - la
+        // station est au centre, le champ tient dans le monde)
+        let mut pos = Point::new(x, y);
+        pos.normalize_world(&state.world);
+        shape.position = pos;
+        shape.orientation = 0.0;
+        shape.rotation = meteor_spin(nbr) * (1.0 - 2.0 * rng.r#gen::<f64>());
+        shape.texture = TEXTURE_METEOR;
+        shape.is_boss = false;
+        // **aucune dérive** (vélocité nulle) : les météores du champ sont des
+        // cibles inertes - le vaisseau peut les approcher, s'arrêter à
+        // distance de tir et les détruire sans qu'un météore ne dérive vers
+        // lui pendant l'approche (une dérive - même lente - causait des
+        // collisions frontales qui détruisaient le vaisseau de référence)
+        shape.direction = TAU * rng.r#gen::<f64>();
+        shape.velocity = 0.0;
+        // triangles **non minéralisés** : chaque balle ne libère donc aucun
+        // minerai tant que le météore est vivant (un minerai libéré par balle
+        // apparaît sur le corps du météore et force le vaisseau à venir le
+        // ramasser **au contact du météore vivant** - contact = vaisseau
+        // détruit, « 1 impact = détruit »). Les minerais (un par triangle,
+        // `minerals`) ne sont libérés qu'à la **destruction** du météore
+        // (`release_meteor_minerals`), à sa position désormais sans
+        // collision : le vaisseau les ramasse sans risque. `nbr` ∈ [4, 6]
+        // minerais par météore - assez pour remplir la soute de base (5).
+        shape.minerals = shape.life;
+        compute_shape_center(shape, triangles);
+    }
+}
+
 /// Position aléatoire dans le monde, **hors de la vue actuelle** (ex la
 /// boucle de positionnement de `createShape`) - partagée par les météores,
 /// le météore spécial et les portails.
@@ -440,11 +541,21 @@ pub fn release_meteor_minerals(
         // fabrique un triangle source factice (élément aléatoire) pour
         // réutiliser `create_mineral` - `center = centre du météore` fait
         // tomber le minerai sur la position du météore (rotation autour de
-        // lui-même = lui-même)
+        // lui-même = lui-même), avec un **décalage aléatoire** : le jeu réel
+        // libère les minerais un par triangle (répartis sur le corps du
+        // météore), tandis qu'ici ils naissent tous au centre - parfaitement
+        // empilés, leurs triangles se chevauchent et la branche générique des
+        // collisions (minerai↔minerai) les détruit mutuellement. Le décalage
+        // (≤ ~10 u, l'ordre du rayon du minerai) les disperse comme dans le
+        // jeu réel, sans les éloigner de la zone de collecte.
+        let offset = Point::new(
+            (rng.r#gen::<f64>() - 0.5) * 2.0 * MINERAL_SPAWN_SPREAD,
+            (rng.r#gen::<f64>() - 0.5) * 2.0 * MINERAL_SPAWN_SPREAD,
+        );
         let source = Triangle {
             element: 1 + (rng.r#gen::<f64>() * 3.0) as i32, // 1..=3 (or/fer/eau)
             shape_index: meteor_index as i32,
-            center,
+            center: Point::new(center.x + offset.x, center.y + offset.y),
             ..Triangle::default()
         };
         create_mineral(shapes, triangles, elements, &source, rng);
@@ -530,7 +641,25 @@ pub fn create_mineral(
     );
     shape.direction =
         shapes[source_shape_index].direction + rng.r#gen::<f64>() * TAU / 4.0 - TAU / 8.0;
-    shape.velocity = shapes[source_shape_index].velocity * rng.r#gen::<f64>() * 2.0 - 1.0;
+    // jitter autour de la vitesse du météore source (`rand*2-1` ∈ [-1, 1] :
+    // un météore immobile libère des minerais immobiles - sans les parenthèses,
+    // la formule donnait `(v*rand*2)-1`, soit -1 u/frame (60 u/s) pour tout
+    // météore lent ou immobile)
+    let mut velocity =
+        shapes[source_shape_index].velocity * (rng.r#gen::<f64>() * 2.0 - 1.0);
+    // **scatter minimal** : des minerais libérés d'un météore immobile (champ
+    // minier d'entraînement, v=0) naissent tous au même point, parfaitement
+    // empilés - leurs triangles se chevauchent et la branche générique des
+    // collisions (minerai↔minerai) les **détruit mutuellement** (mesuré : 3
+    // minerais sur 4 empilés disparaissaient en ~10 frames). Comme dans le jeu
+    // réel (où les minerais héritent du mouvement du météore et se séparent),
+    // on garantit une petite dérive aléatoire - assez pour qu'ils se
+    // dispersent, assez lente (≤ 9 u/s) pour rester ramassables
+    // (vitesse de collecte jusqu'à 1,4 u/frame).
+    if velocity.abs() < MINERAL_SCATTER_SPEED {
+        velocity = MINERAL_SCATTER_SPEED * (2.0 * rng.r#gen::<f64>() - 1.0);
+    }
+    shape.velocity = velocity;
     shape.orientation = shapes[source_shape_index].orientation;
     shape.rotation = shapes[source_shape_index].rotation;
     shape.center = Point::new(0.0, 0.0);
@@ -950,6 +1079,78 @@ mod tests {
         );
         for t in &triangles[shapes[normal].first_triangle..=shapes[normal].last_triangle] {
             assert_eq!(t.armor, 0, "un météore normal n'a pas d'armure");
+        }
+    }
+
+    /// Monde minimal pour `seed_mining_field` : vaisseau (index 0) et station
+    /// (index 1, au centre) - comme après `prepare`.
+    fn mining_scene() -> (GameState, Vec<Shape>, Vec<Triangle>) {
+        let state = GameState::new();
+        let shapes = vec![
+            Shape {
+                position: Point::new(0.0, 0.0),
+                who_i_am: WHOIAM_PLAYER,
+                is_collider: true,
+                ..Shape::default()
+            },
+            Shape {
+                position: Point::new(0.0, 0.0),
+                radius: 162.0,
+                who_i_am: WHOIAM_STATION,
+                ..Shape::default()
+            },
+        ];
+        (state, shapes, Vec::new())
+    }
+
+    #[test]
+    fn mining_field_is_deterministic_and_mineral_rich() {
+        // le champ minier est déterministe à la graine (même seed → mêmes
+        // météores) et chaque météore porte assez de triangles minéralisés
+        // pour remplir la soute de base (CARGO_SIZE = 5)
+        let elements = default_elements();
+        let (state, mut shapes_a, mut triangles_a) = mining_scene();
+        let mut rng_a = seed();
+        seed_mining_field(&state, &mut shapes_a, &mut triangles_a, &elements, &mut rng_a);
+
+        let (_, mut shapes_b, mut triangles_b) = mining_scene();
+        let mut rng_b = seed();
+        seed_mining_field(&state, &mut shapes_b, &mut triangles_b, &elements, &mut rng_b);
+
+        // même graine → mêmes positions, mêmes tailles, mêmes minerais
+        assert_eq!(shapes_a.len(), shapes_b.len(), "même nombre de météores");
+        for (a, b) in shapes_a.iter().zip(shapes_b.iter()) {
+            if a.who_i_am != WHOIAM_METEOR {
+                continue;
+            }
+            assert!((a.position.x - b.position.x).abs() < 1e-9);
+            assert!((a.position.y - b.position.y).abs() < 1e-9);
+            assert_eq!(a.minerals, b.minerals);
+            // petits météores (4-6 triangles) : chacun libère `minerals`
+            // minerais à sa destruction - un météore seul ne remplit pas
+            // forcément la soute de base (5), mais le champ entier doit
+            // dépasser largement cette capacité
+            assert!(a.minerals >= MINING_FIELD_TRIANGLES_MIN as i32);
+            assert!(a.minerals <= MINING_FIELD_TRIANGLES_MAX as i32);
+        }
+
+        // le champ tient sur l'anneau autour de la station et dérive vers elle
+        let meteors: Vec<&Shape> = shapes_a.iter().filter(|s| s.who_i_am == WHOIAM_METEOR).collect();
+        assert_eq!(meteors.len(), MINING_FIELD_COUNT);
+        let field_minerals: i32 = meteors.iter().map(|m| m.minerals).sum();
+        assert!(
+            field_minerals >= 10,
+            "le champ entier doit dépasser la capacité de la soute (5) : {field_minerals}"
+        );
+        for m in &meteors {
+            let r = m.position.x.hypot(m.position.y);
+            assert!(
+                (MINING_FIELD_RADIUS_MIN - 1.0..=MINING_FIELD_RADIUS_MAX + 1.0).contains(&r),
+                "météore hors de l'anneau : r={r}"
+            );
+            // dérive très lente : le vaisseau peut les rejoindre et les
+            // détruire à distance sans collision frontale
+            assert!(m.velocity <= 0.11, "dérive très lente ({})", m.velocity);
         }
     }
 
