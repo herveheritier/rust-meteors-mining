@@ -161,6 +161,10 @@ pub struct BenchRequest {
     /// Garde-fou : nombre maximal de pas par épisode (épisode « en échec » au
     ///-delà - l'épisode ne termine pas et compte comme `timed_out`).
     pub max_steps: u64,
+    /// Enregistrer les **trajectoires** (observation + action de l'autopilote
+    /// à chaque pas) dans un fichier JSONL, pour l'entraînement RL - le
+    /// chemin est exposé dans le rapport (`trajectory_file`).
+    pub trajectories: bool,
 }
 
 /// Résultat d'un épisode d'un banc d'essai en continu.
@@ -180,10 +184,21 @@ pub struct BenchEpisodeResult {
     pub deliveries: u32,
     /// Minerais collectés dans la soute.
     pub collected: u32,
+    /// Vitesse d'entrée (u/s) du pilote au moment du dénouement : vitesse du
+    /// cosmonaute EVA à la récupération, ou du vaisseau à la livraison -
+    /// sert à la récompense (pénalité d'arrivée trop rapide) et à la
+    /// vérification de la qualité du retour.
+    pub entry_speed: f64,
+    /// Récompense de l'épisode - **les mêmes règles que l'entraîneur**
+    /// (`tools/trainer/eva_env.py::episode_reward`) : +1000 dénouement réussi
+    /// − 2 s/s − pénalité d'arrivée trop rapide (vitesse d'entrée > 30 u/s) ;
+    /// échec : −2 s/s − 50 − distance finale × 0,1.
+    pub reward: f64,
 }
 
 /// Rapport d'un banc d'essai en continu (`GET /bench`) : déroulé par épisode
-/// + agrégats (cadence en épisodes/s, répartition des dénouements).
+/// et agrégats (cadence en épisodes/s, répartition des dénouements,
+/// récompense moyenne).
 #[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct BenchReport {
@@ -203,8 +218,41 @@ pub struct BenchReport {
     pub timed_out: u64,
     /// Temps de simulation moyen (s) des épisodes du lot.
     pub mean_seconds: f64,
+    /// Récompense moyenne du lot (mêmes règles que l'entraîneur).
+    pub mean_reward: f64,
+    /// Chemin du fichier de trajectoires JSONL (`trajectories` demandé), pour
+    /// l'entraînement RL - `null` sinon.
+    pub trajectory_file: Option<String>,
     /// Déroulé par épisode (dans l'ordre des graines).
     pub results: Vec<BenchEpisodeResult>,
+}
+
+/// Récompense d'un épisode de banc d'essai - **les mêmes règles que
+/// l'entraîneur** (`tools/trainer/eva_env.py::episode_reward`) :
+///
+/// - dénouement **réussi** (livraison du vaisseau, secours du cosmonaute
+///   EVA) : `+1000 − 2·s − max(0, vitesse d'entrée − 30)·5` - le retour doit
+///   rester contrôlé (pénalité d'arrivée trop rapide) ;
+/// - **échec** (vaisseau détruit, garde-fou atteint) : `−2·s − 50 −
+///   distance finale × 0,1` - pénalité croissante avec le temps perdu et la
+///   distance restante.
+///
+/// La vitesse d'entrée est celle du pilote au moment du dénouement (vitesse
+/// du cosmonaute EVA à la récupération, ou du vaisseau à la livraison).
+#[cfg(not(target_arch = "wasm32"))]
+pub fn episode_reward(
+    outcome: Option<EpisodeOutcome>,
+    seconds: f64,
+    entry_speed: f64,
+    final_dist: f64,
+) -> f64 {
+    match outcome {
+        Some(EpisodeOutcome::Delivered) | Some(EpisodeOutcome::EvaRecovered) => {
+            let overshoot = (entry_speed - 30.0).max(0.0) * 5.0;
+            1000.0 - 2.0 * seconds - overshoot
+        }
+        Some(EpisodeOutcome::Destroyed) | None => -2.0 * seconds - 50.0 - final_dist * 0.1,
+    }
 }
 
 /// Suivi d'un épisode d'auto-entraînement : compteurs et terminaison.
@@ -962,7 +1010,18 @@ pub fn apply_bench_to(s: &mut Shared, body: &str) -> bool {
         _ => EpisodeScenario::FreePlay,
     };
     let max_steps = v.get("max_steps").and_then(|x| x.as_u64()).unwrap_or(DEFAULT_BENCH_MAX_STEPS);
-    s.bench_req = Some(BenchRequest { episodes, seed, target, x, y, auto_generate, scenario, max_steps });
+    let trajectories = v.get("trajectories").and_then(|x| x.as_bool()).unwrap_or(false);
+    s.bench_req = Some(BenchRequest {
+        episodes,
+        seed,
+        target,
+        x,
+        y,
+        auto_generate,
+        scenario,
+        max_steps,
+        trajectories,
+    });
     true
 }
 
@@ -1413,7 +1472,7 @@ mod tests {
         let mut s = Shared::new();
         assert!(apply_bench_to(
             &mut s,
-            r#"{"episodes":25,"seed":7,"target":"ship","scenario":"economy","max_steps":500}"#
+            r#"{"episodes":25,"seed":7,"target":"ship","scenario":"economy","max_steps":500,"trajectories":true}"#
         ));
         let req = s.bench_req.expect("la demande doit être posée");
         assert_eq!(req.episodes, 25);
@@ -1421,8 +1480,10 @@ mod tests {
         assert_eq!(req.target, ResetTarget::Ship);
         assert_eq!(req.scenario, EpisodeScenario::Economy);
         assert_eq!(req.max_steps, 500);
+        assert!(req.trajectories, "les trajectoires sont demandées");
 
-        // défauts : 1 épisode, graine 0, vaisseau, jeu libre, garde-fou par défaut
+        // défauts : 1 épisode, graine 0, vaisseau, jeu libre, garde-fou par
+        // défaut, pas de trajectoires
         let mut s = Shared::new();
         assert!(apply_bench_to(&mut s, r#"{}"#));
         let req = s.bench_req.unwrap();
@@ -1431,11 +1492,32 @@ mod tests {
         assert_eq!(req.scenario, EpisodeScenario::FreePlay);
         assert_eq!(req.max_steps, DEFAULT_BENCH_MAX_STEPS);
         assert!(!req.auto_generate);
+        assert!(!req.trajectories);
 
         // un corps illisible est refusé sans rien changer
         let mut s = Shared::new();
         assert!(!apply_bench_to(&mut s, "pas du json"));
         assert!(s.bench_req.is_none());
+    }
+
+    /// La récompense du banc d'essai applique **les mêmes règles que
+    /// l'entraîneur** (`eva_env.py::episode_reward`) : +1000 réussi − 2 s/s −
+    /// pénalité d'arrivée trop rapide (vitesse d'entrée > 30 u/s) ; échec :
+    /// −2 s/s − 50 − distance finale × 0,1.
+    #[test]
+    fn episode_reward_matches_trainer_rules() {
+        // réussi, arrivée contrôlée : +1000 − 2·10 − 0 = 980
+        let r = episode_reward(Some(EpisodeOutcome::EvaRecovered), 10.0, 20.0, 0.0);
+        assert!((r - 980.0).abs() < 1e-9, "{r}");
+        // réussi mais arrivée trop rapide (40 u/s) : +1000 − 2·10 − 5·(40−30)
+        let r = episode_reward(Some(EpisodeOutcome::Delivered), 10.0, 40.0, 0.0);
+        assert!((r - 930.0).abs() < 1e-9, "{r}");
+        // échec (détruit) : −2·12 − 50 − 0,1·200 = −94
+        let r = episode_reward(Some(EpisodeOutcome::Destroyed), 12.0, 0.0, 200.0);
+        assert!((r - (-94.0)).abs() < 1e-9, "{r}");
+        // échec (garde-fou atteint, pas de dénouement) : même règle
+        let r = episode_reward(None, 12.0, 0.0, 200.0);
+        assert!((r - (-94.0)).abs() < 1e-9, "{r}");
     }
 
     #[test]

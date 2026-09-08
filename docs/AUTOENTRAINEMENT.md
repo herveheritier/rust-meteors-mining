@@ -261,14 +261,41 @@ du pas-à-pas.
 
 | Requête | Corps | Effet |
 |---|---|---|
-| `POST /bench` | `{"episodes":N,"seed":S,"target":"ship"\|"eva","x":..,"y":..,"scenario":"free"\|"economy"?,"auto_generate":bool?,"max_steps":N?}` | pose un lot : `episodes` épisodes (graines `S..S+N-1`) exécutés en continu dans le processus par l'autopilote du jeu |
-| `GET /bench` | – | rapport du lot : déroulé par épisode (graine, dénouement `delivered`/`eva_recovered`/`destroyed`/`delai`, pas, secondes) + agrégats (temps mur, **cadence en épisodes/s**, répartition des dénouements, temps simulé moyen) |
+| `POST /bench` | `{"episodes":N,"seed":S,"target":"ship"\|"eva","x":..,"y":..,"scenario":"free"\|"economy"?,"auto_generate":bool?,"max_steps":N?,"trajectories":bool?}` | pose un lot : `episodes` épisodes (graines `S..S+N-1`) exécutés en continu dans le processus par l'autopilote du jeu |
+| `GET /bench` | – | rapport du lot : déroulé par épisode (graine, dénouement `delivered`/`eva_recovered`/`destroyed`/`delai`, pas, secondes, vitesse d'entrée, **récompense**) + agrégats (temps mur, **cadence en épisodes/s**, répartition des dénouements, temps simulé moyen, **récompense moyenne**, chemin du fichier de trajectoires) |
 
 Le lot est consommé par la boucle headless, qui **bloque** le temps de
 l'exécuter (le serveur HTTP continue de répondre dans son thread) ; le rapport
 est servi dès qu'il est prêt. `max_steps` est un garde-fou par épisode
 (défaut 120 s de simulation) : au-delà, l'épisode est compté `delai` (aucune
 terminaison atteinte).
+
+### Récompense du banc d'essai (les mêmes règles que l'entraîneur)
+
+Chaque épisode du rapport expose sa **récompense**, calculée **côté jeu** avec
+**les mêmes règles que l'entraîneur** (`tools/trainer/eva_env.py::episode_reward`) :
+
+- dénouement **réussi** (livraison du vaisseau, secours du cosmonaute EVA) :
+  `+1000 − 2·s − max(0, vitesse d'entrée − 30)·5` - la vitesse d'entrée (celle
+  du pilote au moment du dénouement) est exposée, la pénalité sanctionne un
+  retour trop rapide ;
+- **échec** (vaisseau détruit, garde-fou atteint) : `−2·s − 50 − distance
+  finale × 0,1`.
+
+La politique entraînée peut ainsi comparer directement sa récompense à celle
+de l'autopilote sur des épisodes identiques, sans recalculer côté Python.
+
+### Trajectoires pour l'entraînement RL (`trajectories`)
+
+Avec `"trajectories":true`, le banc d'essai écrit en plus un fichier **JSONL**
+(une entrée par ligne, dans le dossier temporaire headless) : une borne
+`episode` (graine, cible, scénario, position), une entrée `step` par pas
+(l'**observation** au format `/obs` + l'**action de l'autopilote** appliquée
+ce pas - la ligne de base de référence), et une entrée `episode_end`
+(dénouement, secondes, récompense). C'est le matériau d'un entraînement RL
+**hors-ligne** sur les décisions de l'autopilote (`client.load_trajectories`
+du côté Python). Le chemin du fichier est exposé dans le rapport
+(`trajectory_file`).
 
 ### Ligne de commande (`--bench N`)
 
@@ -288,7 +315,28 @@ continue de servir (l'entraîneur peut le relire via `GET /bench`).
 ```bash
 python3 bench.py --episodes 200 --target eva        # tâche EVA
 python3 bench.py --episodes 20 --target ship --scenario economy  # boucle de minage
+python3 bench.py --episodes 20 --target eva --trajectories  # + trajectoires RL (fichier JSONL)
 ```
+
+### Mode hybride : politique externe vs autopilote sur les mêmes épisodes
+
+`tools/trainer/evaluate.py --backend hybrid` mesure une **politique externe**
+(seek, random, idle) contre l'**autopilote du jeu** sur des **épisodes
+identiques** : l'autopilote joue d'abord le lot en continu dans le processus
+(`POST /bench`, centaines d'épisodes/s), puis la politique externe rejoue les
+mêmes épisodes pas à pas (HTTP) - même graine, même cible, même position,
+même scénario. Le rapport compare épisode par épisode (dénouement et
+récompense des deux côtés) et résume les moyennes.
+
+```bash
+python3 evaluate.py --backend hybrid --strategy seek --episodes 10 --target eva
+```
+
+Mesure réelle (5 épisodes, graines 1..5, départ 300 u à l'est) : autopilote
+**5/5** (récompense moyenne 943,8, ~136 épisodes/s au bench) contre `seek`
+**4/5** (moyenne 705,0) - la politique paramétrée perd sur la maîtrise de
+l'arrivée (plus lente, une graine détruite), l'écart que l'entraînement CEM
+vise à combler.
 
 Mesures réelles (release, machine de dev) : **~140-230 épisodes/s** pour la
 tâche EVA (départ 300 u, ~5,6 s simulées et ~335 pas par épisode, secours
@@ -296,7 +344,8 @@ systématique) ; **~4-11 épisodes/s** pour la boucle complète de minage du
 vaisseau en économie (aller-retour vers le champ minier, tir, collecte,
 déchargement - ~30-50 s simulées et ~1500-3300 pas par épisode, livraison
 systématique sur la plage de graines testée). Le lot est **déterministe à la
-graine** : même demande → même déroulé (dénouements, pas, temps simulé).
+graine** : même demande → même déroulé (dénouements, pas, temps simulé,
+récompense, trajectoires).
 
 ## 6. Suite (phases suivantes)
 

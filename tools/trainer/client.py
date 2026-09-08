@@ -129,6 +129,7 @@ class DriverClient:
         auto_generate: bool = False,
         scenario: str = "free",
         max_steps: Optional[int] = None,
+        trajectories: bool = False,
     ) -> None:
         """Demande un **banc d'essai en continu** (`POST /bench`) : le
         processus headless exécute `episodes` épisodes de bout en bout à
@@ -138,7 +139,10 @@ class DriverClient:
         `target` : "eva" (vaisseau détruit à (x, y), le pilote est le
         cosmonaute EVA) ou "ship" (vaisseau à quai - scénario "economy" pour
         la boucle de minage). `max_steps` : garde-fou par épisode (défaut du
-        serveur : 120 s de simulation)."""
+        serveur : 120 s de simulation). `trajectories` : enregistrer les
+        déroulés (observation + action de l'autopilote à chaque pas) dans un
+        fichier JSONL pour l'entraînement RL - le chemin est dans le rapport
+        (`trajectory_file`)."""
         payload: dict[str, Any] = {
             "episodes": int(episodes),
             "seed": int(seed),
@@ -147,6 +151,7 @@ class DriverClient:
             "y": float(y),
             "auto_generate": bool(auto_generate),
             "scenario": scenario,
+            "trajectories": bool(trajectories),
         }
         if max_steps is not None:
             payload["max_steps"] = int(max_steps)
@@ -175,6 +180,21 @@ class DriverClient:
             if time.monotonic() > deadline:
                 raise DriverError("banc d'essai trop long (délai dépassé)")
             time.sleep(poll)
+
+    def load_trajectories(self, path: str) -> list[dict[str, Any]]:
+        """Charge un fichier de trajectoires JSONL écrit par un banc d'essai
+        (`trajectories` demandé, chemin dans le rapport) : une entrée par
+        ligne - `episode` (bornes), `step` (observation + action de
+        l'autopilote à ce pas) et `episode_end` (dénouement + récompense).
+        Destiné à l'entraînement RL hors-ligne sur les décisions de la ligne
+        de base."""
+        events: list[dict[str, Any]] = []
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    events.append(json.loads(line))
+        return events
 
     def wait_next_obs(self, last_frame: int = 0, timeout: float = 5.0, poll: float = 0.002) -> dict[str, Any]:
         """Attend la publication de la frame suivante (le jeu publie une

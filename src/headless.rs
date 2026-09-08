@@ -114,6 +114,9 @@ pub struct HeadlessOptions {
     pub bench_economy: bool,
     /// Garde-fou du banc d'essai (pas par épisode - défaut `DEFAULT_BENCH_MAX_STEPS`).
     pub bench_max_steps: u64,
+    /// Enregistrer les trajectoires du banc d'essai (JSONL obs+action, pour
+    /// l'entraînement RL) ?
+    pub bench_trajectories: bool,
 }
 
 impl Default for HeadlessOptions {
@@ -127,6 +130,7 @@ impl Default for HeadlessOptions {
             bench: 0,
             bench_economy: false,
             bench_max_steps: 60 * 120, // cf. driver::DEFAULT_BENCH_MAX_STEPS
+            bench_trajectories: false,
         }
     }
 }
@@ -185,6 +189,7 @@ pub fn parse_args() -> HeadlessOptions {
                 }
                 i += 1;
             }
+            "--trajectories" => opts.bench_trajectories = true,
             _ => {}
         }
         i += 1;
@@ -213,14 +218,47 @@ fn run_bench(
     rng: &mut rand_chacha::ChaCha12Rng,
     req: &crate::driver::BenchRequest,
 ) -> crate::driver::BenchReport {
+    use crate::driver::{
+        episode_reward, reset_episode, BenchEpisodeResult, BenchReport, EpisodeOutcome,
+        EpisodeReset, EpisodeScenario, EpisodeTrack, ResetTarget,
+    };
+    use std::io::Write;
     let t_wall = std::time::Instant::now();
     let dt = 1.0 / 60.0;
+    // trajectoires (RL) : fichier JSONL dans le dossier temporaire headless -
+    // une ligne par pas (observation + action de l'autopilote) + bornes
+    // d'épisode, pour un entraînement hors-ligne sur les décisions de la ligne
+    // de base
+    let traj_path = if req.trajectories {
+        let dir = std::env::temp_dir().join(format!("meteors_mining_headless_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let target = match req.target {
+            ResetTarget::Eva => "eva",
+            ResetTarget::Ship => "ship",
+        };
+        let scenario = match req.scenario {
+            EpisodeScenario::Economy => "economy",
+            EpisodeScenario::FreePlay => "free",
+        };
+        Some(
+            dir.join(format!(
+                "trajectories_{}_{}_{}_{}.jsonl",
+                req.seed, req.episodes, target, scenario
+            )),
+        )
+    } else {
+        None
+    };
+    let mut traj = traj_path
+        .as_ref()
+        .and_then(|p| std::fs::File::create(p).ok())
+        .map(std::io::BufWriter::new);
     let mut results = Vec::with_capacity(req.episodes as usize);
     for i in 0..req.episodes {
         let seed = req.seed.wrapping_add(i);
         // monde neuf à la graine + situation de départ (vaisseau / EVA),
         // comme un `POST /reset` consommé par la boucle
-        crate::driver::reset_episode(
+        reset_episode(
             state,
             shapes,
             triangles,
@@ -228,7 +266,7 @@ fn run_bench(
             elements,
             stars,
             rng,
-            crate::driver::EpisodeReset {
+            EpisodeReset {
                 seed,
                 target: req.target,
                 x: req.x,
@@ -241,10 +279,67 @@ fn run_bench(
         // base - même pilote que `POST /cmd {"autopilot":true}`)
         state.autopilot = true;
         let t_episode = state.session_time;
-        let mut track = crate::driver::EpisodeTrack::begin(i + 1, req.target, t_episode);
+        let mut track = EpisodeTrack::begin(i + 1, req.target, t_episode);
+        if let Some(w) = traj.as_mut() {
+            let _ = writeln!(
+                w,
+                "{}",
+                serde_json::json!({
+                    "event": "episode",
+                    "seed": seed,
+                    "target": match req.target {
+                        ResetTarget::Eva => "eva",
+                        ResetTarget::Ship => "ship",
+                    },
+                    "scenario": match req.scenario {
+                        EpisodeScenario::Economy => "economy",
+                        EpisodeScenario::FreePlay => "free",
+                    },
+                    "x": req.x,
+                    "y": req.y,
+                    "auto_generate": req.auto_generate,
+                })
+            );
+        }
         // boucle de l'épisode : pas fixe à pleine vitesse (aucune attente),
         // jusqu'à la terminaison explicite ou le garde-fou
         while !track.done && track.steps < req.max_steps {
+            // trajectoire : observation (état avant le pas) + action que
+            // l'autopilote va appliquer ce pas - calculée ici avec les mêmes
+            // fonctions pures que `player_controls`
+            if let Some(w) = traj.as_mut() {
+                let obs = crate::driver::observe(state, shapes);
+                let pilot = if state.cosmonaut_active {
+                    let p = crate::autopilot::autopilot_eva_inputs(state, shapes, dt);
+                    crate::autopilot::PilotInputs {
+                        up: p.up,
+                        down: false,
+                        left: p.left,
+                        right: p.right,
+                        fire: false,
+                    }
+                } else {
+                    crate::autopilot::autopilot_inputs(state, shapes)
+                };
+                let _ = writeln!(
+                    w,
+                    "{}",
+                    serde_json::json!({
+                        "event": "step",
+                        "seed": seed,
+                        "step": track.steps + 1,
+                        "t": (state.session_time - t_episode).max(0.0),
+                        "action": {
+                            "up": pilot.up,
+                            "down": pilot.down,
+                            "left": pilot.left,
+                            "right": pilot.right,
+                            "fire": pilot.fire,
+                        },
+                        "obs": obs,
+                    })
+                );
+            }
             crate::game::update(
                 state,
                 shapes,
@@ -257,14 +352,44 @@ fn run_bench(
             );
             crate::driver::advance_episode(&mut track, state, shapes);
         }
-        results.push(crate::driver::BenchEpisodeResult {
+        // dénouement : récompense avec **les mêmes règles que l'entraîneur**
+        // (vitesse d'entrée du pilote au moment du dénouement, distance
+        // finale à la station)
+        let seconds = (state.session_time - t_episode).max(0.0);
+        let obs_end = crate::driver::observe(state, shapes);
+        let entry_speed = match track.outcome {
+            Some(EpisodeOutcome::EvaRecovered) => obs_end.eva.speed,
+            Some(EpisodeOutcome::Delivered) => obs_end.ship.speed,
+            _ => 0.0,
+        };
+        let reward = episode_reward(track.outcome, seconds, entry_speed, obs_end.station_dist);
+        if let Some(w) = traj.as_mut() {
+            let _ = writeln!(
+                w,
+                "{}",
+                serde_json::json!({
+                    "event": "episode_end",
+                    "seed": seed,
+                    "outcome": track.outcome.map(|o| o.label()),
+                    "steps": track.steps,
+                    "seconds": seconds,
+                    "reward": reward,
+                })
+            );
+        }
+        results.push(BenchEpisodeResult {
             seed,
             outcome: track.outcome.map(|o| o.label().to_string()),
             steps: track.steps,
-            seconds: (state.session_time - t_episode).max(0.0),
+            seconds,
             deliveries: track.deliveries,
             collected: track.collected,
+            entry_speed,
+            reward,
         });
+    }
+    if let Some(w) = traj.as_mut() {
+        let _ = w.flush();
     }
     let wall_seconds = t_wall.elapsed().as_secs_f64();
     let count = |o: &str| {
@@ -273,12 +398,14 @@ fn run_bench(
             .filter(|r| r.outcome.as_deref() == Some(o))
             .count() as u64
     };
-    let mean_seconds = if results.is_empty() {
-        0.0
-    } else {
-        results.iter().map(|r| r.seconds).sum::<f64>() / results.len() as f64
+    let mean = |f: fn(&BenchEpisodeResult) -> f64| -> f64 {
+        if results.is_empty() {
+            0.0
+        } else {
+            results.iter().map(f).sum::<f64>() / results.len() as f64
+        }
     };
-    crate::driver::BenchReport {
+    BenchReport {
         episodes: req.episodes,
         wall_seconds,
         episodes_per_second: if wall_seconds > 0.0 {
@@ -290,13 +417,16 @@ fn run_bench(
         eva_recovered: count("eva_recovered"),
         destroyed: count("destroyed"),
         timed_out: req.episodes - count("delivered") - count("eva_recovered") - count("destroyed"),
-        mean_seconds,
+        mean_seconds: mean(|r| r.seconds),
+        mean_reward: mean(|r| r.reward),
+        trajectory_file: traj_path.map(|p| p.display().to_string()),
         results,
     }
 }
 
 /// Imprime le rapport d'un banc d'essai (cadence réelle en épisodes/s, temps
-/// mur, répartition des dénouements) - format lisible du `--bench` CLI.
+/// mur, répartition des dénouements, récompense moyenne, trajectoires) -
+/// format lisible du `--bench` CLI.
 #[cfg(not(target_arch = "wasm32"))]
 fn print_bench_report(report: &crate::driver::BenchReport) {
     println!(
@@ -307,7 +437,13 @@ fn print_bench_report(report: &crate::driver::BenchReport) {
         "  livrés : {} · secourus EVA : {} · détruits : {} · délais (garde-fou) : {}",
         report.delivered, report.eva_recovered, report.destroyed, report.timed_out
     );
-    println!("  temps de simulation moyen : {:.1} s", report.mean_seconds);
+    println!(
+        "  temps de simulation moyen : {:.1} s · récompense moyenne : {:.1}",
+        report.mean_seconds, report.mean_reward
+    );
+    if let Some(path) = &report.trajectory_file {
+        println!("  trajectoires (RL) : {path}");
+    }
 }
 
 /// Boucle headless : sert l'interface de contrôle (`driver.rs`) sur
@@ -396,6 +532,7 @@ pub fn run(opts: &HeadlessOptions) -> ! {
                 crate::driver::EpisodeScenario::FreePlay
             },
             max_steps: opts.bench_max_steps,
+            trajectories: opts.bench_trajectories,
         };
         let report = run_bench(
             &mut state,
@@ -666,6 +803,7 @@ mod tests {
             auto_generate: false,
             scenario: crate::driver::EpisodeScenario::FreePlay,
             max_steps: 60 * 60, // garde-fou généreux : 60 s de simulation
+            trajectories: false,
         };
         let report = super::run_bench(
             &mut state,
@@ -705,6 +843,7 @@ mod tests {
             auto_generate: false,
             scenario: crate::driver::EpisodeScenario::FreePlay,
             max_steps: 60 * 60,
+            trajectories: false,
         };
         let (mut s1, mut sh1, mut tr1, mut g1, mut e1, mut st1, mut r1) = bench_env();
         let a = super::run_bench(
@@ -721,6 +860,109 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(strip(&a), strip(&b), "même graine → même déroulé");
+    }
+
+    /// Le rapport du banc d'essai expose la **récompense** de chaque épisode -
+    /// les mêmes règles que l'entraîneur : secours EVA réussi → +1000 − 2·s −
+    /// pénalité d'arrivée trop rapide (vitesse d'entrée > 30 u/s). La formule
+    /// exacte est vérifiée avec la vitesse d'entrée exposée (elle peut
+    /// dépasser 30 u/s selon la graine - la pénalité s'applique alors).
+    #[test]
+    fn bench_reports_trainer_rewards() {
+        let (mut state, mut shapes, mut triangles, mut garbages, mut elements, mut stars, mut rng) =
+            bench_env();
+        let req = crate::driver::BenchRequest {
+            episodes: 2,
+            seed: 1,
+            target: crate::driver::ResetTarget::Eva,
+            x: 300.0,
+            y: 0.0,
+            auto_generate: false,
+            scenario: crate::driver::EpisodeScenario::FreePlay,
+            max_steps: 60 * 60,
+            trajectories: false,
+        };
+        let report = super::run_bench(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut stars,
+            &mut rng,
+            &req,
+        );
+        for r in &report.results {
+            assert_eq!(r.outcome.as_deref(), Some("eva_recovered"));
+            // formule de l'entraîneur : +1000 − 2·s − max(0, v_entrée − 30)·5
+            let overshoot = (r.entry_speed - 30.0).max(0.0) * 5.0;
+            let expected = 1000.0 - 2.0 * r.seconds - overshoot;
+            assert!(
+                (r.reward - expected).abs() < 1e-6,
+                "récompense = formule de l'entraîneur : {}",
+                r.reward
+            );
+            assert!(r.entry_speed > 0.0, "vitesse d'entrée mesurée");
+        }
+        let mean = report.results.iter().map(|r| r.reward).sum::<f64>() / 2.0;
+        assert!((report.mean_reward - mean).abs() < 1e-6);
+    }
+
+    /// Un banc d'essai avec `trajectories` écrit un fichier JSONL : une ligne
+    /// d'épisode, une ligne par pas (observation + action de l'autopilote) et
+    /// une ligne de dénouement (avec la récompense) - lisible par un
+    /// entraînement RL hors-ligne. Chemin exposé dans le rapport.
+    #[test]
+    fn bench_writes_trajectory_files() {
+        let (mut state, mut shapes, mut triangles, mut garbages, mut elements, mut stars, mut rng) =
+            bench_env();
+        let req = crate::driver::BenchRequest {
+            episodes: 2,
+            seed: 10,
+            target: crate::driver::ResetTarget::Eva,
+            x: 300.0,
+            y: 0.0,
+            auto_generate: false,
+            scenario: crate::driver::EpisodeScenario::FreePlay,
+            max_steps: 60 * 60,
+            trajectories: true,
+        };
+        let report = super::run_bench(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut stars,
+            &mut rng,
+            &req,
+        );
+        let path = report.trajectory_file.expect("le chemin est exposé");
+        let content = std::fs::read_to_string(&path).expect("fichier lisible");
+        // bornes d'épisode + pas + dénouements : 2 épisodes → ≥ 6 lignes
+        let lines: Vec<&str> = content.lines().collect();
+        assert!(lines.len() >= 6, "{} lignes", lines.len());
+        // chaque ligne est du JSON ; les pas portent observation + action
+        let steps: Vec<serde_json::Value> = lines
+            .iter()
+            .filter(|l| l.contains("\"event\":\"step\""))
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert!(!steps.is_empty());
+        let first = &steps[0];
+        assert!(first.get("obs").is_some(), "observation par pas");
+        let action = first.get("action").unwrap();
+        assert!(action.get("up").is_some() && action.get("fire").is_some());
+        // dénouements avec récompense
+        let ends: Vec<serde_json::Value> = lines
+            .iter()
+            .filter(|l| l.contains("\"event\":\"episode_end\""))
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(ends.len(), 2);
+        assert!(ends[0].get("reward").and_then(|r| r.as_f64()).unwrap_or(0.0) > 900.0);
+        // le fichier est dans le dossier temporaire headless
+        assert!(path.contains("meteors_mining_headless_"), "{path}");
     }
 
     /// Le banc d'essai vaisseau (économie) joue la **boucle de minage** : les
@@ -740,6 +982,7 @@ mod tests {
             auto_generate: false,
             scenario: crate::driver::EpisodeScenario::Economy,
             max_steps: 60 * 90, // garde-fou : 90 s de simulation par épisode
+            trajectories: false,
         };
         let report = super::run_bench(
             &mut state,

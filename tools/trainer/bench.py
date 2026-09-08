@@ -36,13 +36,16 @@ def print_report(rep: dict[str, Any], episodes: int, seed: int) -> None:
     print(f"dénouements : livrés {rep.get('delivered', 0)} · secourus EVA "
           f"{rep.get('eva_recovered', 0)} · détruits {rep.get('destroyed', 0)} "
           f"· délais (garde-fou) {rep.get('timed_out', 0)}")
-    print(f"temps de simulation moyen : {rep.get('mean_seconds', 0.0):.1f} s")
+    print(f"temps de simulation moyen : {rep.get('mean_seconds', 0.0):.1f} s · "
+          f"récompense moyenne : {rep.get('mean_reward', 0.0):.1f}")
+    if rep.get("trajectory_file"):
+        print(f"trajectoires (RL) : {rep['trajectory_file']}")
     print("-" * 78)
-    print(f"{'graine':>7} {'dénouement':>14} {'pas':>7} {'secondes':>9}")
+    print(f"{'graine':>7} {'dénouement':>14} {'pas':>7} {'secondes':>9} {'récompense':>11}")
     for r in rep.get("results", []):
         outcome = r.get("outcome") or "delai"
         print(f"{r.get('seed', 0):>7} {outcome:>14} {r.get('steps', 0):>7} "
-              f"{r.get('seconds', 0.0):>9.1f}")
+              f"{r.get('seconds', 0.0):>9.1f} {r.get('reward', 0.0):>11.1f}")
 
 
 def main() -> None:
@@ -60,6 +63,9 @@ def main() -> None:
                     help="monde vivant (météores générés au fil de l'épisode)")
     ap.add_argument("--max-steps", type=int, default=None,
                     help="garde-fou par épisode en pas (défaut serveur : 120 s de simulation)")
+    ap.add_argument("--trajectories", action="store_true",
+                    help="enregistrer les déroulés (obs+action par pas) dans un fichier JSONL "
+                         "pour l'entraînement RL (chemin dans le rapport)")
     ap.add_argument("--wait", type=float, default=120.0, help="délai d'attente du rapport (s)")
     args = ap.parse_args()
 
@@ -82,6 +88,7 @@ def main() -> None:
         auto_generate=args.auto_generate,
         scenario=args.scenario,
         max_steps=args.max_steps,
+        trajectories=args.trajectories,
     )
     rep = client.wait_bench(timeout=args.wait)
     if not rep:

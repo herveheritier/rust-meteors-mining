@@ -63,12 +63,38 @@ python3 evaluate.py --backend live --strategy autopilot --episodes 3
 Pour **mesurer la ligne de base à pleine vitesse**, le processus headless
 peut aussi exécuter des lots d'épisodes **en continu dans le processus** -
 aucun aller-retour HTTP par pas : `POST /bench` pose le lot, `GET /bench`
-sert le rapport (déroulé par épisode + cadence en épisodes/s).
+sert le rapport (déroulé par épisode avec **récompense** - les mêmes règles
+que l'entraîneur, calculées côté jeu - + cadence en épisodes/s).
 
 ```bash
 python3 bench.py --episodes 200 --target eva        # tâche EVA
 python3 bench.py --episodes 20 --target ship --scenario economy  # boucle de minage
+python3 bench.py --episodes 20 --target eva --trajectories  # + trajectoires RL
 ```
+
+Avec `--trajectories`, le processus écrit un fichier **JSONL** (une entrée
+par ligne : bornes d'épisode, pas avec observation + action de l'autopilote,
+dénouement avec récompense) pour un entraînement RL **hors-ligne** sur les
+décisions de la ligne de base - chemin exposé dans le rapport, chargeable par
+`client.load_trajectories(path)`.
+
+### 0 ter. Mode hybride : politique externe vs autopilote (mêmes épisodes)
+
+`evaluate.py --backend hybrid` compare une **politique externe** (seek, random,
+idle) à l'**autopilote du jeu** sur des épisodes **identiques** : l'autopilote
+joue le lot en continu dans le processus (bench, centaines d'épisodes/s),
+puis la politique externe rejoue les mêmes épisodes pas à pas (HTTP) - même
+graine, même cible, même position, même scénario. Rapport épisode par épisode
+(dénouement + récompense des deux côtés) et moyennes.
+
+```bash
+python3 evaluate.py --backend hybrid --strategy seek --episodes 10 --target eva
+```
+
+Mesure réelle (5 épisodes, graines 1..5, départ 300 u à l'est) : autopilote
+**5/5** (récompense moyenne 943,8, ~136 épisodes/s au bench) contre `seek`
+**4/5** (moyenne 705,0) - la politique paramétrée perd sur la maîtrise de
+l'arrivée, l'écart que la CEM vise à combler.
 
 Mesures réelles (release) : **~140-230 épisodes/s** pour la tâche EVA
 (~5,6 s simulées par épisode, secours systématique), **~4-11 épisodes/s**

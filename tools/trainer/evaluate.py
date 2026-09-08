@@ -132,10 +132,126 @@ def run_episode_live(
     }
 
 
+def run_episode_live_episode(
+    client: DriverClient,
+    policy,
+    seed: int,
+    target: str,
+    x: float,
+    y: float,
+    auto_generate: bool,
+    scenario: str,
+    timeout: float,
+) -> dict[str, Any]:
+    """Un épisode dans la **vraie partie** (interface HTTP) piloté par la
+    politique externe (`driver` engagé), sur les **mêmes épisodes que le
+    banc d'essai** (même graine, même cible, même position, même scénario) :
+    le mode hybride compare ainsi la politique externe à l'autopilote du jeu
+    sur des épisodes identiques. Fin = terminaison explicite de l'épisode
+    (`episode_done` / `episode_outcome`, disponible dans l'observation) ou
+    délai."""
+    client.reset(seed=seed, target=target, x=x, y=y,
+                 auto_generate=auto_generate, scenario=scenario)
+    client.cmd(driver=True)  # le pilote externe (évalué) pilote
+    paced = True  # un pas par commande (mode headless) : il faut piloter
+    last = client.obs().get("frame", 0)
+    obs = wait_frame(client, last, paced)
+    t0 = obs.get("t", 0.0)
+    entry_speed = 0.0
+    outcome = None
+    while True:
+        if obs.get("episode_done", False):
+            # terminaison explicite (delivered / eva_recovered / destroyed)
+            outcome = obs.get("episode_outcome")
+            if obs.get("eva_recovery", 0.0) > 0.0:
+                entry_speed = obs["eva"]["speed"]
+            break
+        if obs.get("t", t0) - t0 > timeout:
+            break
+        if policy is not None:
+            cmd = policy(obs)
+            client.cmd(
+                up=cmd["up"], down=cmd["down"], left=cmd["left"],
+                right=cmd["right"], fire=cmd["fire"],
+            )
+        last = obs.get("frame", 0)
+        obs = client.wait_next_obs(last, timeout=5.0)
+    seconds = obs.get("t", t0) - t0
+    return {
+        "success": outcome in ("delivered", "eva_recovered"),
+        "outcome": outcome,
+        "seconds": max(0.0, seconds),
+        "final_dist": obs.get("station_dist", 0.0),
+        "entry_speed": entry_speed,
+    }
+
+
+def run_bench_comparison(
+    client: DriverClient,
+    policy,
+    seed: int,
+    episodes: int,
+    target: str,
+    x: float,
+    y: float,
+    auto_generate: bool,
+    scenario: str,
+    timeout: float,
+) -> None:
+    """Mode **hybride** : l'autopilote du jeu joue d'abord le lot **en
+    continu dans le processus** (`POST /bench` - centaines d'épisodes/s, la
+    mesure de la Phase 2), puis la politique externe rejoue les **mêmes
+    épisodes** pas à pas (HTTP) - comparaison épisode par épisode sur des
+    épisodes identiques (même graine, même cible, même position, même
+    scénario)."""
+    # 1) ligne de base : banc d'essai en continu (autopilote du jeu)
+    client.bench(episodes=episodes, seed=seed, target=target, x=x, y=y,
+                 auto_generate=auto_generate, scenario=scenario)
+    bench = client.wait_bench()
+    if not bench:
+        die("aucun rapport de banc d'essai (le processus headless exécute-t-il le lot ?)")
+    # 2) politique externe sur les mêmes épisodes (pas-à-pas HTTP)
+    results = [
+        run_episode_live_episode(client, policy, seed + i, target, x, y,
+                                 auto_generate, scenario, timeout)
+        for i in range(episodes)
+    ]
+    # 3) rapport comparé
+    print(f"\nMode hybride : politique externe vs autopilote du jeu - mêmes épisodes")
+    print(f"Cible : {target} · scénario : {scenario} · départ ({x:.0f}, {y:.0f}) · "
+          f"graines {seed}..{seed + episodes - 1}")
+    print("-" * 78)
+    print(f"Autopilote (bench en continu) : {bench.get('episodes', episodes)} épisodes "
+          f"en {bench.get('wall_seconds', 0.0):.2f} s mur → "
+          f"{bench.get('episodes_per_second', 0.0):.0f} épisodes/s · "
+          f"récompense moyenne {bench.get('mean_reward', 0.0):.1f}")
+    bench_map = {r["seed"]: r for r in bench.get("results", [])}
+    print(f"{'graine':>7} {'autopilote':>26} {'politique':>26}")
+    print(f"{'':>7} {'dénouement':>12} {'récomp.':>9} {'dénouement':>12} {'récomp.':>9}")
+    for i in range(episodes):
+        b = bench_map.get(seed + i, {})
+        r = results[i]
+        b_outcome = b.get("outcome") or "delai"
+        p_outcome = r.get("outcome") or "delai"
+        print(f"{seed + i:>7} {b_outcome:>12} {b.get('reward', 0.0):>9.1f} "
+              f"{p_outcome:>12} {episode_reward(None, r):>9.1f}")
+    print("-" * 78)
+    p_ok = sum(1 for r in results if r["success"])
+    p_mean = sum(episode_reward(None, r) for r in results) / max(1, len(results))
+    b_ok = sum(1 for r in bench.get("results", []) if r.get("outcome") in ("delivered", "eva_recovered"))
+    print(f"Autopilote : {b_ok}/{bench.get('episodes', episodes)} réussis · "
+          f"récompense moyenne {bench.get('mean_reward', 0.0):.1f}")
+    print(f"Politique  : {p_ok}/{len(results)} réussis · récompense moyenne {p_mean:.1f} · "
+          f"temps moyen {sum(r['seconds'] for r in results if r['success']) / max(1, p_ok):.1f} s")
+    if bench.get("trajectory_file"):
+        print(f"Trajectoires de l'autopilote (RL) : {bench['trajectory_file']}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--backend", choices=("sim", "live"), default="sim",
-                    help="simulateur (défaut, instantané) ou vraie partie (serveur du jeu)")
+    ap.add_argument("--backend", choices=("sim", "live", "hybrid"), default="sim",
+                    help="simulateur (défaut, instantané), vraie partie pas-à-pas (live) "
+                         "ou hybride (bench autopilote + politique externe sur les mêmes épisodes)")
     ap.add_argument("--host", default="http://127.0.0.1:8643/", help="URL de l'interface du jeu")
     ap.add_argument("--strategy", default="seek", choices=SIM_STRATEGIES + (LIVE_AUTOPILOT,))
     ap.add_argument("--policy", default=None, metavar="policy.json",
@@ -144,6 +260,14 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1, help="graine du premier épisode (les suivants +1)")
     ap.add_argument("--spawn-dist", type=float, default=300.0,
                     help="distance du crash au centre de la station (unités)")
+    ap.add_argument("--target", choices=("ship", "eva"), default="eva",
+                    help="entité pilotée (vaisseau à quai ou cosmonaute EVA éjecté)")
+    ap.add_argument("--scenario", choices=("free", "economy"), default="free",
+                    help="règles de l'épisode (economy = boucle de minage du vaisseau)")
+    ap.add_argument("--x", type=float, default=None, help="position du crash (mode hybride, défaut 300)")
+    ap.add_argument("--y", type=float, default=None, help="position du crash (mode hybride, défaut 0)")
+    ap.add_argument("--auto-generate", action="store_true",
+                    help="monde vivant (météores générés au fil de l'épisode)")
     ap.add_argument("--timeout", type=float, default=EPISODE_TIMEOUT)
     args = ap.parse_args()
 
@@ -157,8 +281,9 @@ def main() -> None:
 
     # politique évaluée (None = l'autopilote du jeu pilote lui-même)
     rng = random.Random(args.seed)
-    if args.strategy == LIVE_AUTOPILOT and args.backend == "sim":
-        ap.error("`autopilot` vit dans le jeu - utilisez --backend live")
+    if args.strategy == LIVE_AUTOPILOT and args.backend in ("sim", "hybrid"):
+        ap.error("`autopilot` vit dans le jeu - utilisez --backend live "
+                 "(ou, en hybride, comparez-le à une politique externe)")
     if args.strategy == "seek":
         policy = lambda obs: seek(obs, params)  # noqa: E731 - paramètres entraînés ou défauts
     elif args.strategy == LIVE_AUTOPILOT:
@@ -170,6 +295,18 @@ def main() -> None:
         env = EvaSim()
         results = [run_episode_sim(env, policy, args.seed + i, args.spawn_dist,
                                    args.timeout, rng) for i in range(args.episodes)]
+    elif args.backend == "hybrid":
+        client = DriverClient(args.host)
+        if not client.reachable():
+            die("le jeu ne répond pas sur " + args.host)
+        # mode hybride : mêmes épisodes pour l'autopilote (bench en continu)
+        # et la politique externe (pas-à-pas) - position de départ fixe
+        x = 300.0 if args.x is None else args.x
+        y = 0.0 if args.y is None else args.y
+        run_bench_comparison(client, policy, args.seed, args.episodes,
+                             args.target, x, y, args.auto_generate, args.scenario,
+                             args.timeout)
+        return
     else:
         client = DriverClient(args.host)
         if not client.reachable():
