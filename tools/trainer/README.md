@@ -12,7 +12,9 @@ Python **standard uniquement** (aucune dépendance - `urllib`, `random`,
 tools/trainer/
 ├── client.py     ← client du protocole (GET /obs, POST /cmd, POST /reset, POST/GET /bench)
 ├── eva_env.py    ← géométrie partagée + micro-simulateur de l'EVA (mêmes lois que le jeu)
-├── policies.py   ← politiques : idle / random / seek (contrôleur paramétré entraîné)
+├── policies.py   ← politiques : idle / random / seek (contrôleur paramétré) / nn (réseau)
+├── nn.py         ← petit MLP en Python standard + features d'observation (imitation)
+├── imitate.py    ← entraînement hors-ligne par **imitation de l'autopilote** sur les trajectoires
 ├── evaluate.py   ← lignes de base : mesure une stratégie sur des épisodes
 ├── bench.py      ← banc d'essai **en continu** dans le processus headless (POST /bench)
 ├── cem.py        ← entraînement par croix-entropie (CEM) de la politique `seek`
@@ -153,6 +155,36 @@ frein tangentiel à hystérésis, `src/autopilot.rs`) et re-validée en live :
 retour réussi depuis 300 / 800 / 1500 unités, vitesse de pointe ≤ 25 u/s,
 plus aucune orbite. La politique `seek` reste utile comme ligne de base
 paramétrée et comme point de départ de l'entraînement par renforcement.
+
+### 3 bis. Imiter l'autopilote hors-ligne sur les trajectoires du bench (réseau)
+
+Le banc d'essai peut **enregistrer ses déroulés** (`--trajectories` : une
+ligne JSONL par pas - observation + action de l'autopilote) ; `imitate.py`
+entraîne **hors-ligne** un petit **réseau de neurones** (Python standard
+uniquement, `nn.py`) à **reproduire ces décisions** (clonage comportemental),
+puis écrit une politique rejouable.
+
+```bash
+python3 bench.py --episodes 30 --target eva --trajectories          # 1. trajectoires
+python3 imitate.py --trajectories /tmp/meteors_mining_headless_*/trajectories_*.jsonl  # 2. entraîner
+python3 evaluate.py --backend hybrid --strategy nn --policy nn_policy.json --target eva --episodes 8  # 3. comparer
+```
+
+Le réseau reçoit en entrée les **grandeurs que l'autopilote calcule pour
+décider** (visée vers la station, erreur d'alignement, vitesses radiale et
+tangentielle, objets proches, économie) - fournir ces features dérivées est
+ce qui rend le clonage **stable en boucle fermée** (sans elles, l'imitation
+parfaite hors-ligne dérive et échoue en conditions réelles).
+
+Mesures réelles (tâche EVA, départ 300 u à l'est, graines 1..8) : imitation
+hors-ligne à **~98 % d'exactitude**, et en **boucle fermée contre le jeu** la
+politique `nn` ramène le cosmonaute **7-8/8** (récompense moyenne ~820-840,
+mais plus lente que l'autopilote : ~27 s contre 5,6 s - le réseau hésite
+plus). Limites connues du clonage pur, à documenter avant la suite : la
+politique ne généralise pas aux **départs hors distribution** (le simulateur
+qui tire un angle aléatoire échoue), et la **boucle de minage complète** du
+vaisseau (décisions discrètes séquentielles, états internes) ne se clone pas
+(~0/6) - la suite (DAgger / RL) doit combler ces écarts.
 
 ### 3. Entraîner une politique (CEM)
 

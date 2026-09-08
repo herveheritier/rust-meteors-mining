@@ -347,6 +347,39 @@ systématique sur la plage de graines testée). Le lot est **déterministe à la
 graine** : même demande → même déroulé (dénouements, pas, temps simulé,
 récompense, trajectoires).
 
+### Imitation hors-ligne de l'autopilote (`tools/trainer/imitate.py`)
+
+Les trajectoires enregistrées (`trajectories` ci-dessus) servent à un
+**apprentissage hors-ligne par imitation** : `imitate.py` entraîne un petit
+**réseau de neurones** (Python standard uniquement, `nn.py` - aucune
+dépendance) à reproduire les décisions de l'autopilote, épisode par épisode
+(observation → action, séparation train/validation **par graine**).
+
+```bash
+python3 bench.py --episodes 30 --target eva --trajectories   # 1. trajectoires (JSONL)
+python3 imitate.py --trajectories /tmp/meteors_mining_headless_*/trajectories_*.jsonl  # 2. entraîner
+# 3. comparer la politique `nn` à l'autopilote sur les mêmes épisodes :
+python3 evaluate.py --backend hybrid --strategy nn --policy nn_policy.json --target eva --episodes 8
+```
+
+Les **features** données au réseau sont les grandeurs que l'autopilote
+calcule pour décider (visée vers la station, erreur d'alignement, vitesses
+radiale et tangentielle, objets proches, économie) en plus de la cinématique
+brute - fournir ces dérivées est ce qui rend le clonage **stable en boucle
+fermée** (sans elles, une exactitude hors-ligne de 99 % échoue en conditions
+réelles : chaque erreur déplace la trajectoire hors de la distribution
+apprise).
+
+Résultats réels (tâche EVA, départ 300 u à l'est) : exactitude hors-ligne
+**~98 %**, et en boucle fermée contre le jeu **7-8/8** réussis (récompense
+moyenne ~820-840, contre 943,8 à l'autopilote - la politique est plus lente,
+~27 s contre 5,6 s, elle hésite plus). Limites du clonage pur, connues et
+mesurées : pas de généralisation aux **départs hors distribution** (le
+micro-simulateur, qui tire un angle de départ aléatoire par graine, échoue)
+ni à la **boucle de minage complète** du vaisseau en économie (~0/6 :
+décisions discrètes séquentielles, états internes de l'autopilote invisibles
+dans l'observation) - la suite (DAgger / RL, §6) doit combler ces écarts.
+
 ## 6. Suite (phases suivantes)
 
 - **Phase 2 (suite) — épisodes plus riches côté jeu.** Le mode headless
@@ -355,11 +388,13 @@ récompense, trajectoires).
   EVA). Reste à enrichir les épisodes eux-mêmes : missions portées par les
   objectifs DAG (`objective_tracker.rs`, `.scenario.json`) comme langage de
   tâche/récompense.
-- **Phase 3 — vrais apprenants.** La politique `seek` paramétrée est une
-  preuve de la boucle. La suite : politiques plus riches (réseau de neurones,
-  RL : DQN/PPO sur l'observation complète avec les objets proches),
-  enregistrement des trajectoires, entraînement sur la **vraie partie**
-  accélérée, benchmark systématique contre l'autopilote du jeu.
+- **Phase 3 — vrais apprenants.** L'imitation hors-ligne (§5 ter) donne un
+  premier réseau de neurones qui transfère en boucle fermée sur la tâche EVA.
+  La suite : **DAgger** (ré-entraîner sur les trajectoires mélangées de
+  l'autopilote et de la politique elle-même - le remède classique à la dérive
+  du clonage), puis RL (DQN/PPO sur l'observation complète avec les objets
+  proches) pour dépasser l'autopilote de référence, et un réseau qui tienne
+  la boucle de minage complète du vaisseau.
 - **Phase 4 — politique apprise dans le jeu.** Persister la politique
   entraînée et la charger comme stratégie « autopilote » alternative
   (l'interface expose déjà `autopilot` comme ligne de base ; il s'agira

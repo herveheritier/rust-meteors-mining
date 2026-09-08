@@ -37,8 +37,11 @@ from eva_env import (
 # ── stratégies de base ──────────────────────────────────────────────────────
 
 #: Types de stratégies simulables (sans le jeu) - `seek` porte la politique
-#: entraînable, les autres sont des lignes de base.
-SIM_STRATEGIES = ("idle", "random", "seek")
+#: paramétrée, les autres sont des lignes de base. `nn` (réseau de neurones
+#: entraîné par imitation, `imitate.py`) se pilote aussi en simulateur EVA
+#: (les champs manquants de l'observation valent zéro) - sa vraie évaluation
+#: reste la partie réelle / le mode hybride.
+SIM_STRATEGIES = ("idle", "random", "seek", "nn")
 
 #: Stratégie « pilote automatique du jeu » : seulement en direct (le jeu
 #: pilote lui-même via `POST /cmd {"autopilot": true}`).
@@ -152,8 +155,29 @@ def seek(obs: dict[str, Any], p: Optional[dict[str, float]] = None) -> dict[str,
     return cmd
 
 
+def nn_policy(path: str) -> Callable[[dict[str, Any]], dict[str, bool]]:
+    """Politique **réseau de neurones** entraînée hors-ligne par imitation de
+    l'autopilote (`imitate.py`, sortie `nn_policy.json`) : charge les poids
+    et renvoie la fonction obs → commande (chaque bouton activé si la sortie
+    sigmoïde dépasse 0,5). Fonctionne pour la tâche EVA comme pour la boucle
+    de minage du vaisseau - le réseau a appris les deux sur les trajectoires."""
+    from nn import ACTIONS, load_nn, obs_features
+
+    net = load_nn(path)
+
+    def choose(obs: dict[str, Any]) -> dict[str, bool]:
+        cmd = empty_cmd()
+        out = net.forward(obs_features(obs))
+        for a, v in zip(ACTIONS, out):
+            cmd[a] = v >= 0.5
+        return cmd
+
+    return choose
+
+
 def policy_for(strategy: str, rng: Optional[random.Random] = None) -> Callable[[dict[str, Any]], dict[str, bool]]:
-    """Renvoie la fonction de politique d'une stratégie simulable."""
+    """Renvoie la fonction de politique d'une stratégie simulable (sans
+    fichier) - `nn` nécessite `--policy` (voir `nn_policy`)."""
     if strategy == "idle":
         return idle
     if strategy == "random":

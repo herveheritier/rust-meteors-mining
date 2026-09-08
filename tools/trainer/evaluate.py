@@ -9,6 +9,8 @@ Mesure la **ligne de base** de l'auto-entraînement :
 - `random`    : actions tirées au hasard - le hasard ramène-t-il à la base ?
 - `seek`      : le contrôleur homing paramétré de `policies.py` (défauts =
   réglage robuste, départ `expert` de l'entraînement) ;
+- `nn`        : le **réseau de neurones** entraîné hors-ligne par imitation de
+  l'autopilote (`imitate.py` - `--policy nn_policy.json` requis) ;
 - `autopilot` : l'autopilote **du jeu** (`POST /cmd {"autopilot": true}`) -
   la référence absolue (jeu réel uniquement, pas de simulateur).
 
@@ -32,7 +34,7 @@ from typing import Any, Optional
 
 from client import DriverClient, DriverError, die
 from eva_env import EvaSim, episode_reward, spawn_position
-from policies import LIVE_AUTOPILOT, SIM_STRATEGIES, policy_for, seek
+from policies import LIVE_AUTOPILOT, SIM_STRATEGIES, nn_policy, policy_for, seek
 
 EPISODE_TIMEOUT = 60.0  # secondes avant de déclarer l'épisode perdu
 
@@ -255,7 +257,8 @@ def main() -> None:
     ap.add_argument("--host", default="http://127.0.0.1:8643/", help="URL de l'interface du jeu")
     ap.add_argument("--strategy", default="seek", choices=SIM_STRATEGIES + (LIVE_AUTOPILOT,))
     ap.add_argument("--policy", default=None, metavar="policy.json",
-                    help="paramètres d'un `seek` entraîné (sortie de cem.py)")
+                    help="politique entraînée : paramètres d'un `seek` (sortie de cem.py) "
+                         "ou poids d'un réseau `nn` (sortie d'imitate.py)")
     ap.add_argument("--episodes", type=int, default=5)
     ap.add_argument("--seed", type=int, default=1, help="graine du premier épisode (les suivants +1)")
     ap.add_argument("--spawn-dist", type=float, default=300.0,
@@ -272,12 +275,17 @@ def main() -> None:
     args = ap.parse_args()
 
     params: Optional[dict[str, float]] = None
-    if args.strategy == "seek" and args.policy:
+    nn_net_path: Optional[str] = None
+    if args.policy:
         with open(args.policy, encoding="utf-8") as f:
             data = json.load(f)
-        params = data.get("params")
-        print(f"Politique chargée : {data.get('policy', 'seek')} "
-              f"(paramètres de l'entraînement)")
+        if data.get("policy") == "nn":
+            nn_net_path = args.policy
+            print(f"Politique chargée : réseau de neurones (imitation, {args.policy})")
+        else:
+            params = data.get("params")
+            print(f"Politique chargée : {data.get('policy', 'seek')} "
+                  f"(paramètres de l'entraînement)")
 
     # politique évaluée (None = l'autopilote du jeu pilote lui-même)
     rng = random.Random(args.seed)
@@ -286,6 +294,10 @@ def main() -> None:
                  "(ou, en hybride, comparez-le à une politique externe)")
     if args.strategy == "seek":
         policy = lambda obs: seek(obs, params)  # noqa: E731 - paramètres entraînés ou défauts
+    elif args.strategy == "nn":
+        if nn_net_path is None:
+            ap.error("--strategy nn exige --policy (sortie d'imitate.py : nn_policy.json)")
+        policy = nn_policy(nn_net_path)
     elif args.strategy == LIVE_AUTOPILOT:
         policy = None
     else:
