@@ -764,7 +764,9 @@ mod tests {
 
     /// Environnement de banc d'essai : monde + vecteurs, comme la boucle
     /// headless - renvoie aussi le RNG (réinitialisé à chaque appel par la
-    /// fonction elle-même via `reset_episode`).
+    /// fonction elle-même via `reset_episode`). Le tuple de 7 éléments est
+    /// volontaire : chaque test du banc déstructure directement ses champs.
+    #[allow(clippy::type_complexity)]
     fn bench_env() -> (
         GameState,
         Vec<crate::shape::Shape>,

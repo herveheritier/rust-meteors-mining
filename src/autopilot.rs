@@ -441,7 +441,7 @@ pub fn debug_current_goal(state: &GameState, shapes: &[Shape]) -> String {
             d < MINERAL_CLEARANCE
         })
     });
-    let goal = if cargo_full {
+    if cargo_full {
         "Dock(cargo_plein)".to_string()
     } else if guard.is_some() {
         "Attack(protège station)".to_string()
@@ -449,14 +449,13 @@ pub fn debug_current_goal(state: &GameState, shapes: &[Shape]) -> String {
         "Dock(ravitaillement)".to_string()
     } else if hostile_in_range || mineral_guarded {
         "Attack(hostile à portée / minerai gardé)".to_string()
-    } else if mineral.is_some() {
-        format!("Collect(@{:.0})", mineral.unwrap().0)
-    } else if hostile.is_some() {
-        format!("Attack(@{:.0})", hostile.unwrap().0)
+    } else if let Some((d, _)) = mineral {
+        format!("Collect(@{:.0})", d)
+    } else if let Some((d, _)) = hostile {
+        format!("Attack(@{:.0})", d)
     } else {
         "Patrol".to_string()
-    };
-    goal
+    }
 }
 
 /// Entrées de pilotage de la frame pour le pilote automatique : mission

@@ -1245,7 +1245,7 @@ pub fn reset_episode(
     // météore n'existe avant génération automatique) et la référence ne peut
     // rien miner ni livrer.
     if req.target == ResetTarget::Ship && req.scenario == EpisodeScenario::Economy {
-        crate::generate::seed_mining_field(state, shapes, triangles, &elements, rng);
+        crate::generate::seed_mining_field(state, shapes, triangles, elements, rng);
         // mode de déplacement de l'épisode : DIRECTIONAL (le défaut
         // historique de FreePlay) - c'est le mode que le pilote automatique
         // du vaisseau sait piloter pour la boucle décoller → miner →
