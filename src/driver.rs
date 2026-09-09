@@ -1033,28 +1033,19 @@ pub fn apply_bench_to(s: &mut Shared, body: &str) -> bool {
 pub const DEFAULT_BENCH_MAX_STEPS: u64 = 60 * 120;
 
 /// Prend le banc d'essai demandé (`POST /bench`), si un est en attente -
-/// consommé par la boucle headless.
+/// consommé par la boucle headless. Natif uniquement (hors wasm) : les types
+/// `BenchRequest`/`BenchReport` n'existent pas sur wasm, comme l'état partagé
+/// `STATE` qui les porte - la boucle headless (`headless::run`) qui appelle
+/// ces fonctions est elle-même exclue de la cible wasm.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn take_bench() -> Option<BenchRequest> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        STATE.lock().unwrap().bench_req.take()
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        None
-    }
+    STATE.lock().unwrap().bench_req.take()
 }
 
 /// Publie le rapport du banc d'essai exécuté (servi par `GET /bench`).
+#[cfg(not(target_arch = "wasm32"))]
 pub fn publish_bench_report(report: BenchReport) {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        STATE.lock().unwrap().bench_report = Some(report);
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = report;
-    }
+    STATE.lock().unwrap().bench_report = Some(report);
 }
 
 /// Prend la prochaine remise à zéro d'épisode demandée (`POST /reset`), si
