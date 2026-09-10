@@ -31,10 +31,13 @@ use crate::geom::{wrapped_delta, wrapped_distance, Point};
 use crate::scenario;
 use crate::shape::Shape;
 use crate::state::{Element, GameState};
+use serde::Serialize;
 
 /// Entrées de pilotage calculées par l'autopilote : mêmes primitives que les
-/// touches du joueur (voir `input::player_controls`).
-#[derive(Debug, Clone, Copy, Default)]
+/// touches du joueur (voir `input::player_controls`). Sérialisées dans
+/// l'observation (`expert`) pour servir d'étiquette à l'apprentissage par
+/// imitation (DAgger).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
 pub struct PilotInputs {
     pub up: bool,
     pub down: bool,

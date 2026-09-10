@@ -161,15 +161,21 @@ def nn_policy(path: str) -> Callable[[dict[str, Any]], dict[str, bool]]:
     et renvoie la fonction obs → commande (chaque bouton activé si la sortie
     sigmoïde dépasse 0,5). Fonctionne pour la tâche EVA comme pour la boucle
     de minage du vaisseau - le réseau a appris les deux sur les trajectoires."""
-    from nn import ACTIONS, load_nn, obs_features
+    from nn import SIGMOID_OUTPUTS, load_nn, obs_features
 
     net = load_nn(path)
 
     def choose(obs: dict[str, Any]) -> dict[str, bool]:
         cmd = empty_cmd()
         out = net.forward(obs_features(obs))
-        for a, v in zip(ACTIONS, out):
+        # sigmoïdes indépendantes (up/down/fire) puis rotation softmax
+        # mutuellement exclusive (left/right/none) - l'expert n'appuie jamais
+        # gauche et droite ensemble, et le réseau non plus
+        for a, v in zip(("up", "down", "fire"), out[:SIGMOID_OUTPUTS]):
             cmd[a] = v >= 0.5
+        turn = net.turn_action(out)
+        cmd["left"] = turn == "left"
+        cmd["right"] = turn == "right"
         return cmd
 
     return choose

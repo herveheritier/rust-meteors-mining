@@ -75,6 +75,15 @@ simple à brancher :
   ou non), soute, compteurs, et les **objets proches** (météores, minerais,
   aliens, mines, portails - jusqu'à 32, triés par distance, positions et
   vitesses **relatives**).
+- **Étiquette experte** (`expert`, calculée à la publication, pas dans
+  `observe`) : l'action que prendrait l'**autopilote du jeu sur l'état de la
+  frame** (mêmes primitives que les touches) - la cible de l'apprentissage
+  par imitation, et le label de **DAgger** (étiqueter les états visités par
+  la politique elle-même, voir §5 quater). Le drapeau d'**hystérésis du
+  frein tangentiel EVA** (`eva_tang_braking`) est exposé dans l'observation :
+  c'est un état interne de l'autopilote qui, sans lui, rendrait des
+  observations identiques portées par des étiquettes expert contradictoires
+  (la bande 7-15 u/s de vitesse tangentielle, le régime d'orbite).
 - **Actions** (`Shared`, servies par le serveur) : mêmes primitives que les
   touches ; quand `engaged` est vrai, `input.rs` les consomme à la place du
   clavier et de l'autopilote (pour le vaisseau **et** le cosmonaute EVA) et
@@ -261,8 +270,8 @@ du pas-à-pas.
 
 | Requête | Corps | Effet |
 |---|---|---|
-| `POST /bench` | `{"episodes":N,"seed":S,"target":"ship"\|"eva","x":..,"y":..,"scenario":"free"\|"economy"?,"auto_generate":bool?,"max_steps":N?,"trajectories":bool?}` | pose un lot : `episodes` épisodes (graines `S..S+N-1`) exécutés en continu dans le processus par l'autopilote du jeu |
-| `GET /bench` | – | rapport du lot : déroulé par épisode (graine, dénouement `delivered`/`eva_recovered`/`destroyed`/`delai`, pas, secondes, vitesse d'entrée, **récompense**) + agrégats (temps mur, **cadence en épisodes/s**, répartition des dénouements, temps simulé moyen, **récompense moyenne**, chemin du fichier de trajectoires) |
+| `POST /bench` | `{"episodes":N,"seed":S,"target":"ship"\|"eva","x":..,"y":..,"scenario":"free"\|"economy"\|\"<id>\"?,"auto_generate":bool?,"max_steps":N?,"trajectories":bool?}` | pose un lot : `episodes` épisodes (graines `S..S+N-1`) exécutés en continu dans le processus par l'autopilote du jeu |
+| `GET /bench` | – | rapport du lot : déroulé par épisode (graine, dénouement `delivered`/`eva_recovered`/`destroyed`/`objectives_complete`/`delai`, pas, secondes, vitesse d'entrée, **récompense**, **objectifs complétés**) + agrégats (temps mur, **cadence en épisodes/s**, répartition des dénouements, temps simulé moyen, **récompense moyenne**, chemin du fichier de trajectoires) |
 
 Le lot est consommé par la boucle headless, qui **bloque** le temps de
 l'exécuter (le serveur HTTP continue de répondre dans son thread) ; le rapport
@@ -275,12 +284,17 @@ terminaison atteinte).
 Chaque épisode du rapport expose sa **récompense**, calculée **côté jeu** avec
 **les mêmes règles que l'entraîneur** (`tools/trainer/eva_env.py::episode_reward`) :
 
-- dénouement **réussi** (livraison du vaisseau, secours du cosmonaute EVA) :
-  `+1000 − 2·s − max(0, vitesse d'entrée − 30)·5` - la vitesse d'entrée (celle
-  du pilote au moment du dénouement) est exposée, la pénalité sanctionne un
-  retour trop rapide ;
+- dénouement **réussi** (livraison du vaisseau, secours du cosmonaute EVA,
+  objectifs DAG complétés) : `+1000 − 2·s − max(0, vitesse d'entrée − 30)·5 +
+  bonus d'objectifs` - la vitesse d'entrée (celle du pilote au moment du
+  dénouement) est exposée, la pénalité sanctionne un retour trop rapide ;
 - **échec** (vaisseau détruit, garde-fou atteint) : `−2·s − 50 − distance
-  finale × 0,1`.
+  finale × 0,1 + bonus d'objectifs`.
+
+Le **bonus d'objectifs** (Phase 2, §5 quinquies) récompense la progression des
+missions DAG d'un scénario à objectifs : chaque objectif complété pendant
+l'épisode rapporte `OBJECTIVE_BONUS` (200), que l'épisode se termine ou non -
+c'est la récompense partielle d'une mission accomplie.
 
 La politique entraînée peut ainsi comparer directement sa récompense à celle
 de l'autopilote sur des épisodes identiques, sans recalculer côté Python.
@@ -380,19 +394,182 @@ ni à la **boucle de minage complète** du vaisseau en économie (~0/6 :
 décisions discrètes séquentielles, états internes de l'autopilote invisibles
 dans l'observation) - la suite (DAgger / RL, §6) doit combler ces écarts.
 
+## 5 quater. DAgger — étiquetage expert des états visités par la politique
+
+Le clonage pur (`imitate.py`) n'apprend que sur les trajectoires de
+l'autopilote : en boucle fermée, la moindre erreur déplace la trajectoire
+hors de la distribution apprise, et la politique n'a jamais appris à s'en
+rattraper (mesuré : ~98 % d'exactitude hors-ligne, mais 0/8 sur des départs
+**hors distribution** - angle d'éjection aléatoire). **DAgger** corrige cela
+en déployant la politique elle-même et en étiquetant chaque état qu'elle
+visite avec l'action de l'expert - rendu possible par le champ `expert` de
+l'observation (§3).
+
+`tools/trainer/dagger.py` : à chaque itération, `episodes` épisodes de la
+politique courante (départs variés autour de la station - distances et
+angles tirés des graines), chaque pas → `(features, action experte)` agrégé
+au jeu de données (qui s'amorce avec les trajectoires de l'autopilote via
+`--init-trajectories`), puis ré-entraînement du MLP sur tout l'agrégat
+(séparation train/validation par graine, comme `imitate.py`).
+
+```bash
+python3 bench.py --episodes 12 --target eva --trajectories          # 1. amorce
+python3 imitate.py --trajectories /tmp/.../trajectories_*.jsonl     # 2. clone de départ
+python3 dagger.py --init-trajectories /tmp/.../trajectories_*.jsonl \
+    --init-policy nn_policy.json --iterations 3 --episodes 3 \
+    --spawn-dists 300,500 --target eva                              # 3. DAgger
+python3 evaluate.py --backend hybrid --strategy nn --policy dagger_policy.json   # 4. vs autopilote
+```
+
+Deux corrections structurelles ont accompagné la mise en place :
+
+1. **Observabilité de l'expert** : l'action de l'autopilote est publiée avec
+   l'observation (`expert`), et son **hystérésis de frein tangentiel EVA**
+   (`eva_tang_braking`) est exposée en feature - sans elle, deux
+   cinématiques identiques portent des étiquettes contradictoires dans la
+   bande 7-15 u/s de vitesse tangentielle.
+2. **Tête de rotation mutuellement exclusive** (`nn.py`) : l'autopilote
+   n'appuie jamais gauche **et** droite ensemble ; deux sigmoïdes
+   indépendantes laissaient la politique entraînée coincée à les enfoncer
+   toutes les deux (aucune rotation nette). La rotation est désormais un
+   **softmax {gauche, droite, rien}**, `up`/`down`/`fire` restant des
+   sigmoïdes indépendantes.
+
+**Mesures** (release, mode headless, graines 101..109, départs 300/500 u) :
+la politique DAgger apprend à prédire l'expert sur ses propres états
+(exactitude de validation sur les graines de déploiement : ~12 % à la
+première itération → ~98 % à la troisième) et corrige l'action initiale sur
+les départs hors distribution (le clone partait dans le mauvais sens et
+poussait en étant désaligné). Le **bouclage complet reste ouvert** : en
+boucle fermée la politique entraînée tourne vers la station mais ne tient
+pas encore le rythme de poussée/freinage de l'expert (0/8 en simulateur sur
+angles aléatoires, comme le clone) - il faut davantage d'itérations DAgger
+(chaque itération coûte quelques minutes en Python pur), puis les variantes
+DART/DAgger avec replanification, avant le RL (DQN/PPO, §6).
+
+### DAgger sur épisodes à objectifs (cible vaisseau) — mesures et corrections
+
+Le premier lancement de DAgger sur la **boucle du vaisseau** (scénario à
+objectifs `campaign_prospector`, cible `ship`) a révélé deux bugs côté jeu -
+corrigés et testés :
+
+1. **Épisodes vaisseau bloqués dans l'attente du départ** (`dagger.py`) : la
+   boucle d'attente du début d'épisode attendait `station_dist ≥ 15`, une
+   condition **impossible pour un vaisseau qui démarre à quai** (distance 0,
+   et le pilote externe engagé coupe l'autopilote - rien ne déverrouille le
+   vaisseau). Le lancement tournait en boucle sur ~2 000 connexions HTTP/s
+   (épuisement des ports éphémères : `connect` en SYN-SENT) pendant ~2 h sans
+   produire un seul pas d'entraînement. La garde de distance ne s'applique
+   désormais qu'aux épisodes EVA (l'EVA est éjecté loin de la station) ; un
+   épisode vaisseau démarre à quai et c'est la politique qui doit déverrouiller
+   (vérifié : elle appuie une commande de déplacement → les liens se
+   rétractent).
+2. **Banc d'essai faussé par un pilote externe resté engagé** (`driver.rs` +
+   `headless.rs`) : un épisode rejoué pas à pas se termine pilote externe
+   **engagé, boutons encore enfoncés** ; or `input::player_controls` donne
+   priorité au pilote externe **même quand l'autopilote est allumé** - le
+   banc suivant (mesure de la référence) était donc piloté par les actions
+   restées enfoncées : le vaisseau poussait en permanence, brûlait son
+   carburant et mourait avant la première mission (0/5 objectifs au lieu de
+   2/5, reproductible). `run_bench` **dégage le pilote externe et relâche ses
+   actions** au départ (`clear_driver`, testé par
+   `bench_disengages_a_stuck_external_driver`).
+
+Mesures après corrections (release, headless, mêmes épisodes - graines 1..3,
+`campaign_prospector`, 60 s) :
+
+| stratégie | ép. 1 | ép. 2 | ép. 3 | moyenne |
+|---|---|---|---|---|
+| autopilote (référence) | delai · 80,4 (2 obj.) | delai · 84,2 (2 obj.) | delai · 39,8 (2 obj.) | **68,1** |
+| clone (imitation pure) | delai · −170 | delai · −170 | delai · −170 | **−170,0** |
+| DAgger (2 itér. × 3 ép.) | **detruit · +249,4 (2 obj.)** | delai · −170 | delai · −170 | **−30,2** |
+
+DAgger améliore nettement le clone : la politique déverrouille, décolle,
+**mine, rapporte et accoste** sur l'épisode 1 (2 objectifs complétés avant
+d'être détruite - récompense +249 vs −170), mais ne tient pas encore la
+boucle complète sur les trois graines (elle pousse trop peu après le départ
+et tire en continu - dérive de distribution résiduelle, exactitude de
+validation par graine de déploiement 16,8 % → 0,0 % au fil des itérations :
+le sur-apprentissage des états majoritaires de l'amorce). C'est l'écart
+que les itérations DAgger supplémentaires et le RL (§6) doivent combler.
+
+## 5 quinquies. Épisodes à objectifs DAG — les missions comme langage de tâche/récompense
+
+Les épisodes de l'auto-entraînement se jouaient jusqu'ici sur deux tâches
+codées en dur (EVA → station, ou boucle de minage du vaisseau). Les
+**scénarios à objectifs** de l'éditeur DAG (`scenarios/*.scenario.json`,
+`objective_tracker.rs`) les enrichissent : les **missions** du scénario
+(chaîne de prérequis, conditions chiffrées, récompenses) deviennent la tâche
+et la récompense de l'épisode.
+
+### Protocole : choisir un scénario à objectifs
+
+`POST /reset` et `POST /bench` acceptent `"scenario": "<id>"` en plus de
+`free` / `economy` : `"scenario":"campaign_prospector"` (ou tout id d'un
+scénario chargé depuis `scenarios/*.scenario.json`). Côté jeu, le scénario
+est résolu en `EpisodeScenario::Custom(index)`, appliqué par
+`reset_episode` (`scenario::apply_start` initialise les ressources ET le
+suivi des objectifs DAG) ; un id inconnu est refusé (400).
+
+### Observation : la mission et sa progression
+
+L'observation `/obs` expose le **langage de tâche** : `objectives_total`,
+`objectives_completed`, `objective_bonus` (bonus cumulé de l'épisode) et la
+liste `objectives` - chaque objectif avec `id`, `title`, `unlocked` (mission
+en cours : prérequis satisfaits et pas complété), `completed` et la
+progression chiffrée de sa condition (`current` / `required` : météores
+détruits, crédits, accostages, secondes de survie… - mêmes valeurs que
+l'évaluation du jeu, via `objective_tracker::progress_of`).
+
+### Terminaison et récompense
+
+- **Terminaison** : quand tous les objectifs du scénario sont complétés,
+l'épisode vaisseau se termine en `objectives_complete` (mission accomplie) -
+la livraison de soute, elle, n'est plus qu'une étape de la boucle et ne
+termine plus l'épisode (seuls la destruction ou le garde-fou le stoppent
+sinon).
+- **Récompense** : chaque complétion d'objectif pendant l'épisode rapporte
+`OBJECTIVE_BONUS` (200, côté jeu `src/driver.rs` comme côté entraîneur
+`tools/trainer/eva_env.py`), ajouté à la récompense d'épisode, que
+l'épisode se termine ou non - la progression partielle d'une mission paie
+(`+200` par objectif, `+1000` pour la mission accomplie).
+- **Rapport** : chaque épisode du banc d'essai expose ses `objectives_completed`
+/ `objectives_total` et son `objective_bonus` ; le rapport agrège les
+épisodes gagnés par objectifs (`objectives_complete`).
+
+### Côté entraîneur
+
+`bench.py`, `evaluate.py` et `dagger.py` acceptent `--scenario <id>` ; les
+features du réseau (`nn.py`, version 5) incluent la progression des
+objectifs (part complétée, mission courante et son avancement) - la politique
+apprend sur le langage de tâche du scénario. Le simulateur EVA reste sans
+objectifs (features à zéro, comportement inchangé).
+
+**Mesure** (release, mode headless, scénario `test` - survivre 30 s puis
+débloquer le mode inertiel) : l'autopilote complète les **2/2 objectifs** en
+~30 s simulées et l'épisode se termine en `objectives_complete`
+(récompense 1340 = 1000 − 2·30 + 2·200). Sur `campaign_prospector` (5
+missions chaînées, dont 50 météores), la boucle complète dépasse le garde-fou
+de 120 s : l'épisode s'arrête en `delai` avec 1-2/5 objectifs complétés -
+c'est la tâche longue que la suite (DAgger / RL) doit apprendre à boucler.
+
 ## 6. Suite (phases suivantes)
 
-- **Phase 2 (suite) — épisodes plus riches côté jeu.** Le mode headless
-  accélère le protocole existant et exécute maintenant des lots d'épisodes en
-  continu dans le processus (§5 ter, centaines d'épisodes/s pour la tâche
-  EVA). Reste à enrichir les épisodes eux-mêmes : missions portées par les
-  objectifs DAG (`objective_tracker.rs`, `.scenario.json`) comme langage de
-  tâche/récompense.
+- **Phase 2 — épisodes à objectifs DAG.** ✅ Livrée (§5 quinquies) : les
+  épisodes se jouent sur les scénarios à objectifs de l'éditeur (missions
+  chaînées, progression exposée dans l'observation, récompense par
+  complétion et terminaison `objectives_complete`). Le mode headless
+  accélère le protocole existant et exécute les lots d'épisodes en continu
+  dans le processus (§5 ter, centaines d'épisodes/s pour la tâche EVA).
 - **Phase 3 — vrais apprenants.** L'imitation hors-ligne (§5 ter) donne un
   premier réseau de neurones qui transfère en boucle fermée sur la tâche EVA.
-  La suite : **DAgger** (ré-entraîner sur les trajectoires mélangées de
-  l'autopilote et de la politique elle-même - le remède classique à la dérive
-  du clonage), puis RL (DQN/PPO sur l'observation complète avec les objets
+  L'infrastructure **DAgger** est en place (§5 quater : étiquette experte
+  dans l'observation, `dagger.py`, tête de rotation softmax) et améliore la
+  prédiction de l'expert sur les états visités par la politique (~12 % →
+  ~98 % de validation en 3 itérations), mais la **convergence en boucle
+  fermée sur les départs hors distribution reste à obtenir** : poursuivre
+  les itérations DAgger (et les variantes DART / DAgger avec étiquetage
+  différé), puis **RL** (DQN/PPO sur l'observation complète avec les objets
   proches) pour dépasser l'autopilote de référence, et un réseau qui tienne
   la boucle de minage complète du vaisseau.
 - **Phase 4 — politique apprise dans le jeu.** Persister la politique

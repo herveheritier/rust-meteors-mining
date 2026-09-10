@@ -110,9 +110,11 @@ class DriverClient:
         """Remise à zéro d'un épisode déterministe (monde régénéré à la graine
         à la frame suivante). `target` : "eva" (vaisseau détruit à (x, y), le
         pilote est le cosmonaute EVA) ou "ship" (vaisseau à quai).
-        `scenario` : "free" (défaut, aucune économie) ou "economy"
+        `scenario` : "free" (défaut, aucune économie), "economy"
         (Progression - la boucle de minage du vaisseau : carburant, crédits,
-        soute à livrer)."""
+        soute à livrer) ou **l'id d'un scénario à objectifs** chargé côté jeu
+        (ex. "campaign_prospector" - les missions DAG de l'éditeur deviennent
+        la tâche et la récompense de l'épisode, Phase 2)."""
         self.post(
             "/reset",
             {"seed": int(seed), "target": target, "x": float(x), "y": float(y),
@@ -138,10 +140,12 @@ class DriverClient:
 
         `target` : "eva" (vaisseau détruit à (x, y), le pilote est le
         cosmonaute EVA) ou "ship" (vaisseau à quai - scénario "economy" pour
-        la boucle de minage). `max_steps` : garde-fou par épisode (défaut du
-        serveur : 120 s de simulation). `trajectories` : enregistrer les
-        déroulés (observation + action de l'autopilote à chaque pas) dans un
-        fichier JSONL pour l'entraînement RL - le chemin est dans le rapport
+        la boucle de minage, ou l'id d'un scénario à objectifs DAG, ex.
+        "campaign_prospector" - les missions deviennent la tâche de l'épisode).
+        `max_steps` : garde-fou par épisode (défaut du serveur : 120 s de
+        simulation). `trajectories` : enregistrer les déroulés (observation +
+        action de l'autopilote à chaque pas) dans un fichier JSONL pour
+        l'entraînement RL - le chemin est dans le rapport
         (`trajectory_file`)."""
         payload: dict[str, Any] = {
             "episodes": int(episodes),

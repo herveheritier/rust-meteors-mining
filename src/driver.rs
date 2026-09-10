@@ -43,6 +43,7 @@ use crate::config::{
     PLAYER_INDEX, STATION_INDEX, WHOIAM_ALIEN, WHOIAM_METEOR, WHOIAM_MINE, WHOIAM_MINERAL,
     WHOIAM_WARP_GATE,
 };
+use crate::autopilot::{autopilot_eva_inputs, autopilot_inputs, PilotInputs};
 use crate::geom::{wrapped_delta, Point, Triangle};
 use crate::shape::Shape;
 use crate::state::GameState;
@@ -81,6 +82,13 @@ pub enum EpisodeScenario {
     /// capacité de base - l'épisode de la **boucle de minage** du vaisseau
     /// (décoller → miner → décharger, cible `ship`).
     Economy,
+    /// **Scénario à objectifs** chargé depuis `scenarios/*.scenario.json`
+    /// (éditeur DAG) : ses règles (économie ou non) et ses **objectifs**
+    /// deviennent la tâche et la récompense de l'épisode - l'épisode se
+    /// termine quand tous les objectifs sont complétés, chaque complétion
+    /// rapporte un bonus (Phase 2). L'index désigne le scénario dans la
+    /// liste `scenario_loader::loaded_scenarios()`.
+    Custom(usize),
 }
 
 /// Demande de remise à zéro d'un épisode (posée par `POST /reset`, consommée
@@ -121,17 +129,22 @@ pub enum EpisodeOutcome {
     EvaRecovered,
     /// Le vaisseau a été **détruit** avant d'avoir livré (cible `ship`).
     Destroyed,
+    /// **Tous les objectifs DAG** du scénario courant sont complétés (Phase 2 -
+    /// épisodes à objectifs) : la mission du scénario est accomplie, même sans
+    /// livraison de soute (les objectifs peuvent ne pas demander de miner).
+    ObjectivesComplete,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 impl EpisodeOutcome {
     /// Libellé stable pour l'observation (`delivered` / `eva_recovered` /
-    /// `destroyed`).
+    /// `destroyed` / `objectives_complete`).
     pub(crate) fn label(self) -> &'static str {
         match self {
             EpisodeOutcome::Delivered => "delivered",
             EpisodeOutcome::EvaRecovered => "eva_recovered",
             EpisodeOutcome::Destroyed => "destroyed",
+            EpisodeOutcome::ObjectivesComplete => "objectives_complete",
         }
     }
 }
@@ -184,6 +197,14 @@ pub struct BenchEpisodeResult {
     pub deliveries: u32,
     /// Minerais collectés dans la soute.
     pub collected: u32,
+    /// Objectifs DAG complétés pendant l'épisode (Phase 2 - scénario à
+    /// objectifs) : la progression de la mission.
+    pub objectives_completed: u32,
+    /// Nombre total d'objectifs du scénario (0 hors scénario à objectifs).
+    pub objectives_total: u32,
+    /// Bonus de récompense des complétions d'objectifs de l'épisode
+    /// (compteur × `OBJECTIVE_BONUS` - mêmes règles que l'entraîneur).
+    pub objective_bonus: f64,
     /// Vitesse d'entrée (u/s) du pilote au moment du dénouement : vitesse du
     /// cosmonaute EVA à la récupération, ou du vaisseau à la livraison -
     /// sert à la récompense (pénalité d'arrivée trop rapide) et à la
@@ -214,6 +235,9 @@ pub struct BenchReport {
     pub delivered: u64,
     pub eva_recovered: u64,
     pub destroyed: u64,
+    /// Épisodes gagnés par **objectifs DAG complétés** (Phase 2 - scénario à
+    /// objectifs) : tous les objectifs du scénario accomplis.
+    pub objectives_complete: u64,
     /// Épisodes arrêtés par le garde-fou `max_steps` (aucune terminaison).
     pub timed_out: u64,
     /// Temps de simulation moyen (s) des épisodes du lot.
@@ -231,29 +255,47 @@ pub struct BenchReport {
 /// l'entraîneur** (`tools/trainer/eva_env.py::episode_reward`) :
 ///
 /// - dénouement **réussi** (livraison du vaisseau, secours du cosmonaute
-///   EVA) : `+1000 − 2·s − max(0, vitesse d'entrée − 30)·5` - le retour doit
-///   rester contrôlé (pénalité d'arrivée trop rapide) ;
+///   EVA, objectifs DAG complétés) : `+1000 − 2·s − max(0, vitesse d'entrée −
+///   30)·5 + bonus d'objectifs` - le retour doit rester contrôlé (pénalité
+///   d'arrivée trop rapide) ;
 /// - **échec** (vaisseau détruit, garde-fou atteint) : `−2·s − 50 −
-///   distance finale × 0,1` - pénalité croissante avec le temps perdu et la
-///   distance restante.
+///   distance finale × 0,1 + bonus d'objectifs` - pénalité croissante avec le
+///   temps perdu et la distance restante.
 ///
 /// La vitesse d'entrée est celle du pilote au moment du dénouement (vitesse
-/// du cosmonaute EVA à la récupération, ou du vaisseau à la livraison).
+/// du cosmonaute EVA à la récupération, ou du vaisseau à la livraison). Le
+/// **bonus d'objectifs** (`objective_bonus`) récompense la progression des
+/// objectifs DAG du scénario (Phase 2) : chaque complétion pendant l'épisode
+/// rapporte `OBJECTIVE_BONUS`, que l'épisode se termine ou non - c'est la
+/// récompense partielle d'une mission accomplie.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn episode_reward(
     outcome: Option<EpisodeOutcome>,
     seconds: f64,
     entry_speed: f64,
     final_dist: f64,
+    objective_bonus: f64,
 ) -> f64 {
     match outcome {
-        Some(EpisodeOutcome::Delivered) | Some(EpisodeOutcome::EvaRecovered) => {
+        Some(EpisodeOutcome::Delivered)
+        | Some(EpisodeOutcome::EvaRecovered)
+        | Some(EpisodeOutcome::ObjectivesComplete) => {
             let overshoot = (entry_speed - 30.0).max(0.0) * 5.0;
-            1000.0 - 2.0 * seconds - overshoot
+            1000.0 - 2.0 * seconds - overshoot + objective_bonus
         }
-        Some(EpisodeOutcome::Destroyed) | None => -2.0 * seconds - 50.0 - final_dist * 0.1,
+        Some(EpisodeOutcome::Destroyed) | None => {
+            -2.0 * seconds - 50.0 - final_dist * 0.1 + objective_bonus
+        }
     }
 }
+
+/// Bonus de récompense d'une **complétion d'objectif DAG** pendant un épisode
+/// (Phase 2 - épisodes à objectifs) : chaque objectif complété rapporte ce
+/// montant, ajouté à la récompense d'épisode (`episode_reward`), que
+/// l'épisode se termine ou non. Mêmes règles que l'entraîneur
+/// (`tools/trainer/eva_env.py::OBJECTIVE_BONUS`).
+#[cfg(not(target_arch = "wasm32"))]
+pub const OBJECTIVE_BONUS: f64 = 200.0;
 
 /// Suivi d'un épisode d'auto-entraînement : compteurs et terminaison.
 /// Initialisé à chaque `POST /reset` (voir `take_reset` / `publish_state`),
@@ -283,6 +325,16 @@ pub struct EpisodeTrack {
     pub collected: u32,
     /// Soute de la publication précédente (détection déchargement / récolte).
     prev_cargo: i32,
+    /// Objectifs DAG complétés depuis le début de l'épisode (Phase 2 -
+    /// scénario à objectifs) : chaque complétion pendant l'épisode est
+    /// comptée et récompensée.
+    pub objectives_completed: u32,
+    /// Nombre d'objectifs complétés à la publication précédente (détection
+    /// des nouvelles complétions dans `advance_episode`).
+    prev_objectives_done: u32,
+    /// Bonus de récompense cumulé des complétions d'objectifs de l'épisode
+    /// (compteur × `OBJECTIVE_BONUS` - mêmes règles que l'entraîneur).
+    pub objective_bonus: f64,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -300,6 +352,9 @@ impl EpisodeTrack {
             deliveries: 0,
             collected: 0,
             prev_cargo: 0,
+            objectives_completed: 0,
+            prev_objectives_done: 0,
+            objective_bonus: 0.0,
         }
     }
 
@@ -316,6 +371,9 @@ impl EpisodeTrack {
             deliveries: 0,
             collected: 0,
             prev_cargo: 0,
+            objectives_completed: 0,
+            prev_objectives_done: 0,
+            objective_bonus: 0.0,
         }
     }
 }
@@ -340,6 +398,29 @@ pub struct Kinematic {
     pub orientation: f64,
     /// Vitesse angulaire (radians/s, mode REALISTIC).
     pub rotation: f64,
+}
+
+/// État d'un **objectif DAG** du scénario courant (épisodes à objectifs,
+/// Phase 2) : la mission et sa progression chiffrée - le langage de
+/// tâche/récompense de l'épisode. L'entraîneur voit quelle mission est
+/// débloquée, si elle est complétée, et l'avancement de sa condition
+/// (`current` / `required` - météores détruits, crédits, accostages…).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct ObjectiveInfo {
+    /// Identifiant unique (ex. `"step_first_dock"`).
+    pub id: String,
+    /// Titre affiché (ex. "Premier Accostage").
+    pub title: String,
+    /// Prérequis satisfaits (l'objectif est désigné) **et** pas encore
+    /// complété - c'est la mission en cours.
+    pub unlocked: bool,
+    /// Déjà complété (une fois pour toutes).
+    pub completed: bool,
+    /// Progression de la condition (valeur courante - météores détruits,
+    /// crédits, secondes de survie…).
+    pub current: f64,
+    /// Seuil requis par la condition (`required` / `seconds` / `level`…).
+    pub required: f64,
 }
 
 /// Un objet proche du pilote (météore, alien, minerai…) avec sa position et
@@ -400,10 +481,21 @@ pub struct Observation {
     /// Récupération du cosmonaute EVA en cours / fondu enchaîné du secours.
     pub eva_recovery: f64,
     pub eva_crossfade: f64,
+    /// Hystérésis du frein tangentiel de l'autopilote EVA (orbite en cours de
+    /// cassage) : un état interne de l'autopilote, invisible dans la
+    /// cinématique seule - l'exposer évite des étiquettes expert
+    /// contradictoires sur des observations identiques (imitation / DAgger).
+    pub eva_tang_braking: bool,
     pub paused: bool,
     pub game_over: bool,
     pub autopilot: bool,
     pub driver_engaged: bool,
+    /// Action que prendrait l'**autopilote du jeu** sur l'état courant de la
+    /// frame (l'« expert » de l'imitation - mêmes primitives que les touches).
+    /// Calculée à la publication (`publish_state`) : l'entraînement DAgger
+    /// étiquette ainsi les états visités par la politique apprise. Neutre
+    /// (tout faux) dans une observation pure.
+    pub expert: PilotInputs,
     /// Scénario à économie (carburant/munitions/crédits) - sinon jeu libre.
     pub economy: bool,
     pub fuel: f64,
@@ -437,6 +529,18 @@ pub struct Observation {
     pub episode_deliveries: i32,
     /// Minerais collectés dans la soute depuis le début de l'épisode.
     pub episode_collected: i32,
+    /// Objectifs DAG du scénario courant (vide hors scénario à objectifs) :
+    /// chaque objectif avec sa progression - le langage de tâche de
+    /// l'épisode (Phase 2).
+    pub objectives: Vec<ObjectiveInfo>,
+    /// Nombre d'objectifs du scénario (0 hors scénario à objectifs).
+    pub objectives_total: i32,
+    /// Objectifs complétés depuis le début de l'épisode (récompensés).
+    pub objectives_completed: i32,
+    /// Bonus de récompense cumulé des complétions d'objectifs de l'épisode
+    /// (chaque objectif complété = `OBJECTIVE_BONUS`, mêmes règles que
+    /// l'entraîneur).
+    pub objective_bonus: f64,
     /// Objets proches du pilote (≤ `MAX_NEARBY_OBJECTS`, les plus proches).
     pub nearby: Vec<NearbyObject>,
 }
@@ -552,10 +656,12 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
         dock_box: state.dock_box,
         eva_recovery: state.eva_recovery,
         eva_crossfade: state.eva_crossfade,
+        eva_tang_braking: state.eva_tang_braking,
         paused: state.paused,
         game_over: state.game_over,
         autopilot: state.autopilot,
         driver_engaged: false, // posé par `publish_state` (état partagé)
+        expert: PilotInputs::default(), // posé par `publish_state` (action de l'autopilote)
         economy,
         fuel: crate::scenario::fuel_capacity(state).min(state.resources.fuel),
         fuel_cap: crate::scenario::fuel_capacity(state),
@@ -575,8 +681,42 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
         episode_outcome: None,
         episode_deliveries: 0,
         episode_collected: 0,
+        objectives: objective_info_list(state),
+        objectives_total: state.objective_tracker.total_count() as i32,
+        objectives_completed: 0, // posé par `publish_state` (la piste)
+        objective_bonus: 0.0,    // posé par `publish_state` (la piste)
         nearby,
     }
+}
+
+/// Liste des objectifs DAG du scénario courant avec leur progression
+/// (Phase 2) - le langage de tâche de l'épisode. Les conditions sont
+/// chiffrées par `objective_tracker::progress_of` (mêmes valeurs que
+/// l'évaluation du jeu).
+fn objective_info_list(state: &GameState) -> Vec<ObjectiveInfo> {
+    state
+        .objective_tracker
+        .objectives
+        .iter()
+        .map(|o| {
+            // mission en cours = prérequis satisfaits **et** pas encore
+            // complétée (un objectif complété n'est plus « la mission »)
+            let unlocked = !o.completed
+                && o
+                    .prerequisites
+                    .iter()
+                    .all(|pre| state.objective_tracker.completed_ids.contains(pre));
+            let (current, required) = crate::objective_tracker::progress_of(o, state);
+            ObjectiveInfo {
+                id: o.id.clone(),
+                title: o.title.clone(),
+                unlocked,
+                completed: o.completed,
+                current,
+                required,
+            }
+        })
+        .collect()
 }
 
 /// Avance le suivi de l'épisode courant d'un pas (appelé à chaque publication
@@ -592,6 +732,17 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn advance_episode(track: &mut EpisodeTrack, state: &GameState, shapes: &[Shape]) {
     track.steps += 1;
+    // objectifs DAG (Phase 2 - scénario à objectifs) : les complétions
+    // depuis la publication précédente sont comptées et récompensées (le
+    // tracker est mis à jour par `game::update` avant `publish_state`)
+    let done = state.objective_tracker.completed_count() as u32;
+    if done > track.prev_objectives_done {
+        track.objectives_completed += done - track.prev_objectives_done;
+        track.prev_objectives_done = done;
+        track.objective_bonus = track.objectives_completed as f64 * OBJECTIVE_BONUS;
+    } else {
+        track.prev_objectives_done = done;
+    }
     if track.done {
         return; // dénouement verrouillé jusqu'au prochain `POST /reset`
     }
@@ -610,6 +761,16 @@ pub fn advance_episode(track: &mut EpisodeTrack, state: &GameState, shapes: &[Sh
         return;
     }
     if track.target == ResetTarget::Ship {
+        // épisode à objectifs (Phase 2) : tous les objectifs du scénario
+        // complétés = mission accomplie - l'épisode se termine là, même sans
+        // livraison de soute (les objectifs peuvent ne pas demander de miner)
+        let total = state.objective_tracker.total_count();
+        if total > 0 && done >= total as u32 {
+            track.done = true;
+            track.outcome = Some(EpisodeOutcome::ObjectivesComplete);
+            track.prev_cargo = cargo;
+            return;
+        }
         // vaisseau détruit (météore, alien…) avant d'avoir livré : la boucle
         // de minage s'arrête là (le cosmonaute EVA prendrait le relais, mais
         // l'épisode vaisseau est terminé)
@@ -621,15 +782,21 @@ pub fn advance_episode(track: &mut EpisodeTrack, state: &GameState, shapes: &[Sh
             return;
         }
         // livraison : une soute non vide (récolte précédente) est déchargée
-        // à la station - détectée à la frame où le cargo passe à 0 à quai
+        // à la station - détectée à la frame où le cargo passe à 0 à quai.
+        // Hors scénario à objectifs, c'est la terminaison de l'épisode (la
+        // boucle décoller → miner → décharger est complète) ; avec des
+        // objectifs (Phase 2), la livraison n'est qu'une étape de la boucle -
+        // seule la **mission** (tous les objectifs complétés) termine
         let at_station = state.player_at_station == -1
             || state.dock_box
             || state.dock_anim > 0.0
             || state.dock_links;
         if at_station && track.prev_cargo > 0 && cargo == 0 {
             track.deliveries += 1;
-            track.done = true;
-            track.outcome = Some(EpisodeOutcome::Delivered);
+            if state.objective_tracker.total_count() == 0 {
+                track.done = true;
+                track.outcome = Some(EpisodeOutcome::Delivered);
+            }
         }
     }
     track.prev_cargo = cargo;
@@ -860,6 +1027,28 @@ fn read_body(request: &mut tiny_http::Request, body: &mut Vec<u8>) {
     }
 }
 
+/// Dégage le pilote externe et relâche ses actions : état vierge. Appelé au
+/// début d'un **banc d'essai** (l'autopilote de référence doit piloter, pas
+/// des actions externes restées engagées d'un épisode précédent - sans ceci,
+/// un entraîneur qui termine un épisode pilote-engagé (boutons encore
+/// enfoncés) fausserait tous les épisodes du banc suivant : le vaisseau
+/// pousserait en permanence et mourrait avant la première mission).
+pub fn clear_driver() {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut g = STATE.lock().unwrap();
+        g.engaged = false;
+        g.up = false;
+        g.down = false;
+        g.left = false;
+        g.right = false;
+        g.fire = false;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+    }
+}
+
 /// Pilote externe **engagé** ? (`false` sur wasm - interface inactive.)
 pub fn engaged() -> bool {
     #[cfg(not(target_arch = "wasm32"))]
@@ -944,11 +1133,18 @@ pub fn sync_autopilot(state: &mut GameState) {
     }
 }
 
+/// Cadence de référence du calcul de l'action experte EVA (s) : la bande
+/// d'alignement de `autopilot_eva_inputs` dépend du pas de temps - à la
+/// cadence nominale (60 Hz, celle du mode headless) c'est la valeur de
+/// réglage. L'écart avec la cadence réelle (~60 Hz) est négligeable pour une
+/// étiquette.
+const EXPERT_DT: f64 = 1.0 / 60.0;
+
 /// Publie l'observation de la frame courante (appelé par la boucle de jeu à
 /// chaque frame - voir `main.rs`). Sans effet si l'interface n'est pas
 /// démarrée (ni sur wasm). `frame` du serveur incrémenté à chaque
 /// publication : le système d'entraînement détecte ainsi les nouveaux pas.
-pub fn publish_state(state: &GameState, shapes: &[Shape]) {
+pub fn publish_state(state: &mut GameState, shapes: &[Shape]) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let mut g = STATE.lock().unwrap();
@@ -974,6 +1170,19 @@ pub fn publish_state(state: &GameState, shapes: &[Shape]) {
         obs.episode_outcome = ep.outcome.map(|o| o.label().to_string());
         obs.episode_deliveries = ep.deliveries as i32;
         obs.episode_collected = ep.collected as i32;
+        obs.objectives_completed = ep.objectives_completed as i32;
+        obs.objective_bonus = ep.objective_bonus;
+        // étiquette experte : l'action que prendrait l'autopilote du jeu sur
+        // cet état - l'« expert » de l'imitation. L'entité contrôlée suit la
+        // même règle que le joueur : le vaisseau, ou le cosmonaute EVA quand
+        // il est actif (`autopilot_eva_inputs` mémorise l'hystérésis du frein
+        // tangentiel dans l'état - sans effet sur la physique, et c'est le
+        // même calcul que ferait l'autopilote engagé).
+        obs.expert = if state.cosmonaut_active {
+            autopilot_eva_inputs(state, shapes, EXPERT_DT)
+        } else {
+            autopilot_inputs(state, shapes)
+        };
         g.obs = Some(obs);
     }
     #[cfg(target_arch = "wasm32")]
@@ -989,8 +1198,42 @@ fn apply_bench(body: &str) -> bool {
     apply_bench_to(&mut STATE.lock().unwrap(), body)
 }
 
+/// Résout le libellé `scenario` d'un `POST /reset` ou `/bench` : `"free"`
+/// (jeu libre), `"economy"` / `"progression"` (boucle de minage du
+/// vaisseau), ou **l'id d'un scénario à objectifs** chargé depuis
+/// `scenarios/*.scenario.json` (ex. `"campaign_prospector"`) - résolu en
+/// `Custom(index)` dans la liste `scenario_loader::loaded_scenarios()`.
+/// Renvoie `None` pour un libellé inconnu (la requête est alors refusée).
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_scenario(label: &str) -> Option<EpisodeScenario> {
+    match label {
+        "free" => Some(EpisodeScenario::FreePlay),
+        "economy" | "progression" => Some(EpisodeScenario::Economy),
+        id => crate::scenario_loader::loaded_scenarios()
+            .iter()
+            .position(|ls| ls.data.json.id == id)
+            .map(EpisodeScenario::Custom),
+    }
+}
+
+/// Le scénario de l'épisode est-il **à économie** (carburant/munitions/
+/// crédits) ? - pour le vaisseau : c'est le mode où le **champ minier** est
+/// semé et où la boucle décoller → miner → décharger est atteignable. Un
+/// scénario custom à objectifs **avec économie** (ex. `campaign_prospector`)
+/// reçoit le même traitement que `Economy`.
+#[cfg(not(target_arch = "wasm32"))]
+fn is_economy_scenario(scenario: EpisodeScenario) -> bool {
+    match scenario {
+        EpisodeScenario::Economy => true,
+        EpisodeScenario::Custom(idx) => crate::scenario_loader::loaded_rules(idx)
+            .is_some_and(|s| s.has_economy),
+        EpisodeScenario::FreePlay => false,
+    }
+}
+
 /// Applique un corps `POST /bench` à un état (pur - testable) : pose la
-/// demande de banc d'essai en continu. Corps illisible → `false`.
+/// demande de banc d'essai en continu. Corps illisible (ou scénario custom
+/// inconnu) → `false`.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn apply_bench_to(s: &mut Shared, body: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
@@ -1006,11 +1249,19 @@ pub fn apply_bench_to(s: &mut Shared, body: &str) -> bool {
     let y = v.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0);
     let auto_generate = v.get("auto_generate").and_then(|x| x.as_bool()).unwrap_or(false);
     let scenario = match v.get("scenario").and_then(|x| x.as_str()) {
-        Some("economy" | "progression") => EpisodeScenario::Economy,
-        _ => EpisodeScenario::FreePlay,
+        // libellé inconnu (scénario custom inexistant) : refus de la requête
+        Some(label) => match parse_scenario(label) {
+            Some(s) => s,
+            None => return false,
+        },
+        None => EpisodeScenario::FreePlay,
     };
     let max_steps = v.get("max_steps").and_then(|x| x.as_u64()).unwrap_or(DEFAULT_BENCH_MAX_STEPS);
     let trajectories = v.get("trajectories").and_then(|x| x.as_bool()).unwrap_or(false);
+    // un nouveau banc d'essai **invalide le rapport précédent** : `GET /bench`
+    // renvoie `{}` tant que le nouveau lot n'est pas terminé, sinon
+    // l'entraîneur (`wait_bench`) relirait le rapport du banc précédent
+    s.bench_report = None;
     s.bench_req = Some(BenchRequest {
         episodes,
         seed,
@@ -1086,7 +1337,7 @@ pub fn cmd_seq() -> u64 {
 /// Applique un corps `POST /cmd` à l'état partagé. Renvoie `false` si le
 /// corps n'est pas du JSON.
 #[cfg(not(target_arch = "wasm32"))]
-fn apply_cmd(body: &str) -> bool {
+pub(crate) fn apply_cmd(body: &str) -> bool {
     apply_cmd_to(&mut STATE.lock().unwrap(), body)
 }
 
@@ -1145,8 +1396,12 @@ pub fn apply_reset_to(s: &mut Shared, body: &str) -> bool {
     let y = v.get("y").and_then(|x| x.as_f64()).unwrap_or(0.0);
     let auto_generate = v.get("auto_generate").and_then(|x| x.as_bool()).unwrap_or(false);
     let scenario = match v.get("scenario").and_then(|x| x.as_str()) {
-        Some("economy" | "progression") => EpisodeScenario::Economy,
-        _ => EpisodeScenario::FreePlay,
+        // libellé inconnu (scénario custom inexistant) : refus de la requête
+        Some(label) => match parse_scenario(label) {
+            Some(s) => s,
+            None => return false,
+        },
+        None => EpisodeScenario::FreePlay,
     };
     s.reset_req = Some(EpisodeReset { seed, target, x, y, auto_generate, scenario });
     true
@@ -1188,19 +1443,24 @@ pub fn reset_episode(
     garbages.clear();
     elements.clear();
     stars.clear();
-    // scénario de l'épisode : jeu libre (aucune économie) ou économie
-    // (Progression - carburant/munitions/crédits/soute, la boucle de minage) -
-    // règles de départ réappliquées, progression du joueur **non** chargée
-    // (chaque épisode s'entraîne sur la même base, sans dépendre de la
-    // sauvegarde réelle)
+    // scénario de l'épisode : jeu libre (aucune économie), économie
+    // (Progression - carburant/munitions/crédits/soute, la boucle de minage)
+    // ou **scénario à objectifs** (Phase 2 - chargé depuis
+    // `scenarios/*.scenario.json`, l'éditeur DAG) - règles de départ
+    // réappliquées, progression du joueur **non** chargée (chaque épisode
+    // s'entraîne sur la même base, sans dépendre de la sauvegarde réelle)
     let scenario_id = match req.scenario {
         EpisodeScenario::FreePlay => ScenarioId::FreePlay,
         EpisodeScenario::Economy => ScenarioId::Progression,
+        EpisodeScenario::Custom(idx) => ScenarioId::Custom(idx),
     };
     state.scenario = scenario_id;
     // `apply_start` initialise les ressources du scénario (crédits,
     // carburant, munitions, soute et modes débloqués en Économie ; rien en
-    // jeu libre) et remet les compteurs de session/partie à zéro
+    // jeu libre) et remet les compteurs de session/partie à zéro. Pour un
+    // scénario à objectifs, il **initialise aussi le suivi des objectifs
+    // DAG** (`ObjectiveTracker::init_for_scenario`) : les missions du
+    // scénario deviennent la tâche de l'épisode.
     apply_start(state);
     if req.scenario == EpisodeScenario::FreePlay {
         // jeu libre : aucune ressource ni soute, tous les modes débloqués,
@@ -1235,7 +1495,7 @@ pub fn reset_episode(
     // ~100 carburant) : sans lui, l'épisode se joue dans un monde vide (aucun
     // météore n'existe avant génération automatique) et la référence ne peut
     // rien miner ni livrer.
-    if req.target == ResetTarget::Ship && req.scenario == EpisodeScenario::Economy {
+    if req.target == ResetTarget::Ship && is_economy_scenario(req.scenario) {
         crate::generate::seed_mining_field(state, shapes, triangles, elements, rng);
         // mode de déplacement de l'épisode : DIRECTIONAL (le défaut
         // historique de FreePlay) - c'est le mode que le pilote automatique
@@ -1348,6 +1608,10 @@ mod tests {
         assert!(!obs.economy);
         // vaisseau à quai au lancement (GameState::new)
         assert!(obs.docked);
+        // étiquette experte neutre dans une observation pure (calculée à la
+        // publication seulement)
+        assert!(!obs.expert.up && !obs.expert.down && !obs.expert.left
+            && !obs.expert.right && !obs.expert.fire);
     }
 
     #[test]
@@ -1403,6 +1667,105 @@ mod tests {
         let obs = observe(&state, &[]);
         assert_eq!(obs.pilot, "vaisseau");
         assert!(obs.nearby.is_empty());
+    }
+
+    /// Un scénario à objectifs expose la mission et sa progression dans
+    /// l'observation (Phase 2 - le langage de tâche/récompense de l'épisode).
+    #[test]
+    fn observation_reports_objectives_progress() {
+        // tracker initialisé sur le scénario `campaign_prospector` (chargé
+        // depuis scenarios/*.scenario.json, objectifs DAG)
+        let mut state = GameState::new();
+        let shapes = vec![
+            Shape {
+                position: Point::new(300.0, 0.0),
+                orientation: 0.0,
+                life: 1,
+                who_i_am: crate::config::WHOIAM_PLAYER,
+                is_collider: true,
+                ..Shape::default()
+            },
+            Shape {
+                position: Point::new(0.0, 0.0),
+                radius: 162.0,
+                life: 1,
+                who_i_am: crate::config::WHOIAM_STATION,
+                ..Shape::default()
+            },
+        ];
+        let idx = crate::scenario_loader::loaded_scenarios()
+            .iter()
+            .position(|ls| ls.data.json.id == "campaign_prospector")
+            .expect("scénario de test chargé");
+        state.objective_tracker.init_for_scenario(idx);
+        assert_eq!(state.objective_tracker.total_count(), 5);
+
+        let obs = observe(&state, &shapes);
+        assert_eq!(obs.objectives_total, 5);
+        assert_eq!(obs.objectives.len(), 5);
+        // premier objectif : « Premier Accostage » (DockAtStation 1) -
+        // débloqué (pas de prérequis), pas complété (aucun accostage)
+        let o = &obs.objectives[0];
+        assert_eq!(o.id, "step_first_dock");
+        assert!(o.unlocked, "pas de prérequis → débloqué");
+        assert!(!o.completed);
+        assert!((o.required - 1.0).abs() < 1e-9);
+        // les suivants sont verrouillés par les prérequis (chaînés)
+        assert!(!obs.objectives[1].unlocked);
+        assert!(!obs.objectives[2].unlocked);
+
+        // accostage effectué → l'objectif courant est complété et la mission
+        // suivante (« Récolte Initiale », CollectCredits 10) se débloque
+        state.docking_count = 1;
+        state.objective_tracker.completed_ids.insert("step_first_dock".to_string());
+        state.objective_tracker.objectives[0].completed = true;
+        let obs = observe(&state, &shapes);
+        assert!(obs.objectives[0].completed);
+        assert!(!obs.objectives[0].unlocked, "complété → la mission passe à la suite");
+        assert!(obs.objectives[1].unlocked, "prérequis satisfait → débloqué");
+        assert_eq!(obs.objectives[1].id, "step_mine_gems");
+        assert!((obs.objectives[1].required - 10.0).abs() < 1e-9);
+    }
+
+    /// `POST /reset` et `POST /bench` acceptent l'**id d'un scénario à
+    /// objectifs** chargé (`scenarios/*.scenario.json`) : résolu en
+    /// `EpisodeScenario::Custom(index)` ; un id inconnu est refusé (400).
+    #[test]
+    fn reset_and_bench_parse_objective_scenario_by_id() {
+        // id d'un scénario chargé (ex. campaign_prospector) → Custom(index)
+        let mut s = Shared::new();
+        assert!(apply_reset_to(&mut s, r#"{"scenario":"campaign_prospector"}"#));
+        let req = s.reset_req.expect("la demande doit être posée");
+        match req.scenario {
+            EpisodeScenario::Custom(idx) => {
+                let data = crate::scenario_loader::loaded_data(idx)
+                    .expect("index résolu → scénario chargé");
+                assert_eq!(data.json.id, "campaign_prospector");
+            }
+            other => panic!("scénario custom attendu, obtenu {other:?}"),
+        }
+
+        // id inconnu : refus (aucune demande posée)
+        let mut s = Shared::new();
+        assert!(!apply_reset_to(&mut s, r#"{"scenario":"scenario_inexistant"}"#));
+        assert!(s.reset_req.is_none());
+        let mut s = Shared::new();
+        assert!(!apply_bench_to(&mut s, r#"{"scenario":"scenario_inexistant"}"#));
+        assert!(s.bench_req.is_none());
+
+        // /bench : même résolution par id
+        let mut s = Shared::new();
+        assert!(apply_bench_to(&mut s, r#"{"scenario":"campaign_prospector"}"#));
+        let req = s.bench_req.expect("la demande doit être posée");
+        match req.scenario {
+            EpisodeScenario::Custom(idx) => {
+                assert_eq!(
+                    crate::scenario_loader::loaded_data(idx).map(|d| d.json.id.as_str()),
+                    Some("campaign_prospector")
+                );
+            }
+            other => panic!("scénario custom attendu, obtenu {other:?}"),
+        }
     }
 
     #[test]
@@ -1498,17 +1861,23 @@ mod tests {
     #[test]
     fn episode_reward_matches_trainer_rules() {
         // réussi, arrivée contrôlée : +1000 − 2·10 − 0 = 980
-        let r = episode_reward(Some(EpisodeOutcome::EvaRecovered), 10.0, 20.0, 0.0);
+        let r = episode_reward(Some(EpisodeOutcome::EvaRecovered), 10.0, 20.0, 0.0, 0.0);
         assert!((r - 980.0).abs() < 1e-9, "{r}");
         // réussi mais arrivée trop rapide (40 u/s) : +1000 − 2·10 − 5·(40−30)
-        let r = episode_reward(Some(EpisodeOutcome::Delivered), 10.0, 40.0, 0.0);
+        let r = episode_reward(Some(EpisodeOutcome::Delivered), 10.0, 40.0, 0.0, 0.0);
         assert!((r - 930.0).abs() < 1e-9, "{r}");
         // échec (détruit) : −2·12 − 50 − 0,1·200 = −94
-        let r = episode_reward(Some(EpisodeOutcome::Destroyed), 12.0, 0.0, 200.0);
+        let r = episode_reward(Some(EpisodeOutcome::Destroyed), 12.0, 0.0, 200.0, 0.0);
         assert!((r - (-94.0)).abs() < 1e-9, "{r}");
         // échec (garde-fou atteint, pas de dénouement) : même règle
-        let r = episode_reward(None, 12.0, 0.0, 200.0);
+        let r = episode_reward(None, 12.0, 0.0, 200.0, 0.0);
         assert!((r - (-94.0)).abs() < 1e-9, "{r}");
+        // bonus d'objectifs (Phase 2) : chaque complétion rapporte
+        // `OBJECTIVE_BONUS` (200), que l'épisode se termine ou non
+        let r = episode_reward(Some(EpisodeOutcome::ObjectivesComplete), 10.0, 20.0, 0.0, 400.0);
+        assert!((r - 1380.0).abs() < 1e-9, "{r}"); // +1000 − 20 + 400
+        let r = episode_reward(None, 12.0, 0.0, 200.0, 200.0);
+        assert!((r - 106.0).abs() < 1e-9, "{r}"); // −94 + 200
     }
 
     #[test]
@@ -1574,12 +1943,35 @@ mod tests {
         assert!(ok.contains("200 OK"), "{ok}");
         assert_eq!(take_reset().map(|r| (r.seed, r.target)), Some((7, ResetTarget::Eva)));
 
-        // une observation publiée est servie en JSON
-        let (state, shapes) = scene(0.0, 0.0, 0.0);
-        publish_state(&state, &shapes);
+        // une observation publiée est servie en JSON, avec l'étiquette
+        // experte (l'action que prendrait l'autopilote sur cet état - le
+        // label de l'imitation / DAgger)
+        let (mut state, shapes) = scene(0.0, 0.0, 0.0);
+        publish_state(&mut state, &shapes);
         let obs = conn("GET /obs HTTP/1.1", "");
         assert!(obs.contains("200 OK"), "{obs}");
         assert!(obs.contains("\"pilot\":\"vaisseau\""), "{obs}");
+        assert!(obs.contains("\"expert\""), "{obs}");
+
+        // étiquette experte en mode EVA : cosmonaute éjecté à l'est, nez
+        // vers l'est (orientation 0) - l'autopilote ordonne de tourner vers
+        // la station (à l'ouest), donc `right`
+        let (mut state, mut shapes) = scene(300.0, 0.0, 0.0);
+        state.cosmonaut_active = true;
+        state.eva_cosmonaut = 2;
+        shapes.push(Shape {
+            position: Point::new(300.0, 0.0),
+            orientation: 0.0,
+            direction: 0.0,
+            velocity: 0.0,
+            life: 91,
+            who_i_am: crate::config::WHOIAM_COSMONAUT,
+            ..Shape::default()
+        });
+        publish_state(&mut state, &shapes);
+        let obs = conn("GET /obs HTTP/1.1", "");
+        assert!(obs.contains("\"expert\""), "{obs}");
+        assert!(obs.contains("\"right\":true"), "l'expert doit tourner vers la station : {obs}");
 
         // remise à zéro de l'état partagé (les tests suivants s'exécutent
         // dans le même processus)
@@ -1706,6 +2098,53 @@ mod tests {
         advance_episode(&mut track, &state, &shapes);
         assert!(track.done, "la destruction termine l'épisode");
         assert_eq!(track.outcome, Some(EpisodeOutcome::Destroyed));
+    }
+
+    /// Scénario à objectifs (Phase 2) : quand tous les objectifs du scénario
+    /// sont complétés, l'épisode vaisseau se termine en `objectives_complete`
+    /// et chaque complétion de l'épisode est récompensée (`objective_bonus`).
+    #[test]
+    fn episode_track_rewards_and_terminates_on_objectives() {
+        let mut track = EpisodeTrack::begin(1, ResetTarget::Ship, 0.0);
+        let (mut state, shapes) = ship_scene();
+        // tracker sur le scénario à objectifs (5 missions chaînées)
+        let idx = crate::scenario_loader::loaded_scenarios()
+            .iter()
+            .position(|ls| ls.data.json.id == "campaign_prospector")
+            .expect("scénario de test chargé");
+        state.objective_tracker.init_for_scenario(idx);
+
+        // épisode en cours : un objectif complété pendant l'épisode est
+        // compté et récompensé, sans terminer l'épisode (il en reste 4)
+        state.objective_tracker.objectives[0].completed = true;
+        state
+            .objective_tracker
+            .completed_ids
+            .insert("step_first_dock".to_string());
+        advance_episode(&mut track, &state, &shapes);
+        assert_eq!(track.objectives_completed, 1);
+        assert!((track.objective_bonus - OBJECTIVE_BONUS).abs() < 1e-9);
+        assert!(!track.done, "pas tous les objectifs : l'épisode continue");
+
+        // tous les objectifs complétés (les 5 missions du scénario) →
+        // l'épisode vaisseau se termine en objectives_complete, et les
+        // complétions de l'épisode sont récompensées
+        track.prev_objectives_done = 1; // la publication précédente en comptait 1
+        for o in &mut state.objective_tracker.objectives {
+            o.completed = true;
+        }
+        for o in &state.objective_tracker.objectives {
+            state.objective_tracker.completed_ids.insert(o.id.clone());
+        }
+        advance_episode(&mut track, &state, &shapes);
+        assert!(track.done, "tous les objectifs complétés → mission accomplie");
+        assert_eq!(track.outcome, Some(EpisodeOutcome::ObjectivesComplete));
+        assert_eq!(track.objectives_completed, 5);
+        assert!((track.objective_bonus - 5.0 * OBJECTIVE_BONUS).abs() < 1e-9);
+
+        // la récompense de l'épisode inclut le bonus d'objectifs
+        let r = episode_reward(track.outcome, 30.0, 20.0, 0.0, track.objective_bonus);
+        assert!((r - (1000.0 - 60.0 + 1000.0)).abs() < 1e-9, "{r}");
     }
 
     /// Cible `eva` : le cosmonaute EVA secouru (`eva_recovery > 0`) termine

@@ -44,6 +44,13 @@ WORLD_H = 3540.0
 
 FRAMES_PER_SECOND = 60.0
 
+#: Bonus de récompense d'une **complétion d'objectif DAG** pendant un épisode
+#: (Phase 2 - scénarios à objectifs) : chaque objectif complété rapporte ce
+#: montant, ajouté à la récompense d'épisode (`episode_reward`), que
+#: l'épisode se termine ou non. Mêmes règles que le jeu
+#: (`src/driver.rs::OBJECTIVE_BONUS`).
+OBJECTIVE_BONUS = 200.0
+
 
 def wrap_angle(a: float) -> float:
     """Ramène un angle dans ]−π, π]."""
@@ -206,15 +213,21 @@ def episode_reward(obs_first: Optional[dict[str, Any]], outcome: dict[str, Any])
     """Récompense d'un épisode EVA : +1000 si le cosmonaute est récupéré
     (entré dans le cercle d'accostage), moins le temps passé, moins une
     pénalité quand il arrive trop vite (le retour doit rester contrôlé -
-    c'est ce que cherche aussi l'autopilote du jeu)."""
+    c'est ce que cherche aussi l'autopilote du jeu).
+
+    Le **bonus d'objectifs** (`objective_bonus` du dénouement, Phase 2 -
+    scénarios à objectifs DAG) s'ajoute dans les deux cas, comme côté jeu
+    (`src/driver.rs::episode_reward`) : chaque complétion pendant l'épisode
+    rapporte `OBJECTIVE_BONUS`, que l'épisode se termine ou non."""
     seconds = outcome.get("seconds", 0.0)
+    bonus = outcome.get("objective_bonus", 0.0)
     if outcome.get("success"):
         entry = outcome.get("entry_speed", 0.0)
         overshoot = max(0.0, entry - 30.0) * 5.0
-        return 1000.0 - 2.0 * seconds - overshoot
+        return 1000.0 - 2.0 * seconds - overshoot + bonus
     # échec (délai dépassé) : pénalité croissante avec le temps perdu, plus
     # une prime de progression - rester proche de la base (même en orbite)
     # paie mieux que dériver au loin, pour guider l'entraînement vers
     # l'épisode réussi
     final_dist = outcome.get("final_dist", 0.0)
-    return -2.0 * seconds - 50.0 - final_dist * 0.1
+    return -2.0 * seconds - 50.0 - final_dist * 0.1 + bonus

@@ -33,7 +33,8 @@ import sys
 from typing import Any
 
 from client import DriverClient, die
-from nn import MLP, ACTIONS, obs_features, save_nn
+from nn import MLP, ACTIONS, OUTPUT_COUNT, action_target, obs_features, save_nn
+
 
 #: Fraction des épisodes retenue pour la validation (les derniers par graine).
 VAL_FRACTION = 0.2
@@ -68,7 +69,7 @@ def load_samples(
                 obs = ev.get("obs", {})
                 action = ev.get("action", {})
                 x = obs_features(obs)
-                y = [1.0 if action.get(a) else 0.0 for a in ACTIONS]
+                y = action_target(action)
                 by_seed.setdefault(int(ev.get("seed", 0)), []).append((x, y))
     seeds = sorted(by_seed)
     if not seeds:
@@ -143,7 +144,7 @@ def main() -> None:
                          "(augmentez --episodes du bench ou baissez --val-fraction)")
 
     rng = random.Random(args.seed)
-    net = MLP(len(X_tr[0]), args.hidden, len(ACTIONS), rng)
+    net = MLP(len(X_tr[0]), args.hidden, OUTPUT_COUNT, rng)
     print(f"Réseau : {net.inputs} entrées → {net.hidden} cachées → {net.outputs} sorties "
           f"({', '.join(ACTIONS)})")
     print(f"Entraînement : {args.epochs} époques max, lr {args.lr}, lots de {args.batch}…")
@@ -184,13 +185,22 @@ def main() -> None:
 
     if args.evaluate:
         from evaluate import run_bench_comparison
+        from nn import SIGMOID_OUTPUTS
 
         client = DriverClient(args.host)
         if not client.reachable():
             die("le jeu headless ne répond pas sur " + args.host)
         x = 300.0 if args.target == "eva" else 0.0
         y = 0.0
-        policy = lambda obs: dict(zip(ACTIONS, [v >= 0.5 for v in net.forward(obs_features(obs))]))
+
+        def policy(obs: dict[str, Any]) -> dict[str, bool]:
+            out = net.forward(obs_features(obs))
+            cmd = {"up": out[0] >= 0.5, "down": out[1] >= 0.5, "fire": out[2] >= 0.5}
+            turn = net.turn_action(out)
+            cmd["left"] = turn == "left"
+            cmd["right"] = turn == "right"
+            return cmd
+
         run_bench_comparison(client, policy, 1, args.episodes, args.target, x, y,
                              False, args.scenario, 60.0)
 

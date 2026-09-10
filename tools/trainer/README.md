@@ -15,11 +15,24 @@ tools/trainer/
 ├── policies.py   ← politiques : idle / random / seek (contrôleur paramétré) / nn (réseau)
 ├── nn.py         ← petit MLP en Python standard + features d'observation (imitation)
 ├── imitate.py    ← entraînement hors-ligne par **imitation de l'autopilote** sur les trajectoires
+├── dagger.py     ← **DAgger** : déploie la politique, étiquette ses états avec l'expert, ré-entraîne
 ├── evaluate.py   ← lignes de base : mesure une stratégie sur des épisodes
 ├── bench.py      ← banc d'essai **en continu** dans le processus headless (POST /bench)
 ├── cem.py        ← entraînement par croix-entropie (CEM) de la politique `seek`
 └── policy.json   ← politique entraînée (sortie de cem.py, rejouable)
 ```
+
+Depuis la **Phase 2**, les épisodes peuvent aussi se jouer sur un **scénario
+à objectifs DAG** de l'éditeur (`scenarios/*.scenario.json`) : `--scenario
+campaign_prospector` (dans `bench.py`, `evaluate.py`, `dagger.py`, ou
+`"scenario":"<id>"` du protocole `/reset` / `/bench`). Les **missions** du
+scénario (chaîne de prérequis) deviennent la tâche de l'épisode :
+`objectives` dans l'observation (mission courante + progression `current` /
+`required`), chaque complétion rapporte `OBJECTIVE_BONUS` (200,
+`eva_env.py`), et l'épisode se termine quand **tous les objectifs** sont
+complétés (dénouement `objectives_complete`, +1000) - la livraison de soute
+n'est plus qu'une étape de la boucle. Le réseau (`nn.py` v5) reçoit la
+progression des objectifs en features.
 
 ## La tâche d'entraînement (milestone 1)
 
@@ -186,6 +199,55 @@ qui tire un angle aléatoire échoue), et la **boucle de minage complète** du
 vaisseau (décisions discrètes séquentielles, états internes) ne se clone pas
 (~0/6) - la suite (DAgger / RL) doit combler ces écarts.
 
+### 3 ter. DAgger — déployer la politique et l'étiqueter avec l'expert
+
+Le clonage pur (§3 bis) apprend sur les seules trajectoires de l'autopilote :
+en boucle fermée, chaque erreur de la politique la déplace hors de la
+distribution apprise (mesuré : ~98 % d'exactitude hors-ligne mais **0/8** sur
+les départs **hors distribution** - angle d'éjection aléatoire). **DAgger**
+fait jouer la politique elle-même et étiquette chaque état qu'elle visite
+avec l'action que prendrait l'autopilote sur cet état - le champ **`expert`**
+de l'observation (`/obs`, calculé côté jeu par `src/driver.rs`), avec le
+drapeau d'hystérésis `eva_tang_braking` pour ne pas porter d'étiquettes
+contradictoires. Les (état, action experte) sont agrégés, le MLP est
+ré-entraîné, et on itère.
+
+```bash
+python3 bench.py --episodes 12 --target eva --trajectories          # 1. amorce (autopilote)
+python3 imitate.py --trajectories /tmp/.../trajectories_*.jsonl     # 2. clone de départ
+python3 dagger.py --init-trajectories /tmp/.../trajectories_*.jsonl \
+    --init-policy nn_policy.json --iterations 3 --episodes 3 \
+    --spawn-dists 300,500 --target eva                              # 3. DAgger
+python3 evaluate.py --backend hybrid --strategy nn --policy dagger_policy.json  # 4. vs autopilote
+```
+
+Le réseau `nn.py` a depuis une **tête de rotation softmax** ({gauche,
+droite, rien} mutuellement exclusifs - l'expert n'appuie jamais les deux
+ensemble ; deux sigmoïdes indépendantes laissaient la politique coincée à
+les enfoncer toutes les deux) ; `up`/`down`/`fire` restent des sigmoïdes
+indépendantes.
+
+Mesures réelles (release, headless, graines 101..109, départs 300/500 u) :
+la politique apprend à prédire l'expert sur **ses propres états**
+(exactitude de validation par graines de déploiement ~12 % → ~98 % en 3
+itérations) et corrige l'action initiale sur les départs hors distribution ;
+le **bouclage complet reste ouvert** (en boucle fermée, elle tourne vers la
+station mais ne tient pas encore le rythme poussée/freinage de l'expert) -
+à poursuivre par davantage d'itérations DAgger puis RL (§6 d'`AUTOENTRAINEMENT.md`).
+
+Sur **épisodes à objectifs** (cible vaisseau, `--scenario campaign_prospector`),
+le premier lancement a révélé et corrigé deux bugs : (1) `dagger.py` attendait
+`station_dist ≥ 15` avant de piloter - impossible pour un vaisseau qui démarre
+**à quai** (la garde ne s'applique plus qu'aux épisodes EVA, sinon le
+lancement tourne sur ~2 000 connexions HTTP/s sans progresser) ; (2) un banc
+d'essai lancé après un épisode rejoué pas à pas était piloté par le **pilote
+externe resté engagé** (boutons encore enfoncés) au lieu de l'autopilote -
+`run_bench` dégage désormais le pilote externe au départ (`clear_driver`).
+Mesures (mêmes épisodes, graines 1..3) : autopilote 68,1 (2/5 objectifs) ;
+clone −170,0 (0/3) ; politique DAgger −30,2 (0/3 mais +249,4 sur l'épisode 1 :
+elle décolle, mine, rapporte et accoste - 2 objectifs - avant d'être détruite) :
+progression nette sur le clone, boucle complète encore ouverte.
+
 ### 3. Entraîner une politique (CEM)
 
 ```bash
@@ -227,7 +289,9 @@ serrée, croisière plus élevée) dépasse le réglage manuel sur la récompens
   **externes** (Python) ; l'exécution **en continu dans le processus** (cf.
   §0 bis, `POST /bench` / `bench.py`) mesure la ligne de base de l'autopilote
   du jeu à des centaines d'épisodes par seconde.
-- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md` §5 bis, §5 ter et §6)
-  enrichira encore les épisodes côté jeu (missions des objectifs DAG comme
-  langage de tâche/récompense), puis viendront des apprenants plus puissants
-  (réseau de neurones, RL) qui remplaceront la politique `seek` paramétrée.
+- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md` §5 bis, §5 ter, §5 quater
+  et §6) enrichira encore les épisodes côté jeu (missions des objectifs DAG
+  comme langage de tâche/récompense), puis viendront des apprenants plus
+  puissants (DAgger prolongé, puis RL) qui remplaceront la politique `seek`
+  paramétrée. Le champ **`expert`** de l'observation (§3 ter) sert aussi de
+  guide de récompense pour ces apprenants.

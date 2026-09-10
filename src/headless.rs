@@ -112,6 +112,10 @@ pub struct HeadlessOptions {
     /// Scénario du banc d'essai (économie pour la boucle de minage du
     /// vaisseau, jeu libre sinon).
     pub bench_economy: bool,
+    /// Scénario **à objectifs** du banc d'essai (Phase 2) : index du scénario
+    /// chargé depuis `scenarios/*.scenario.json` (résolu par `--scenario <id>`,
+    /// ex. `campaign_prospector`) - `None` = pas de scénario custom.
+    pub bench_custom: Option<usize>,
     /// Garde-fou du banc d'essai (pas par épisode - défaut `DEFAULT_BENCH_MAX_STEPS`).
     pub bench_max_steps: u64,
     /// Enregistrer les trajectoires du banc d'essai (JSONL obs+action, pour
@@ -129,6 +133,7 @@ impl Default for HeadlessOptions {
             auto_generate: false,
             bench: 0,
             bench_economy: false,
+            bench_custom: None,
             bench_max_steps: 60 * 120, // cf. driver::DEFAULT_BENCH_MAX_STEPS
             bench_trajectories: false,
         }
@@ -180,6 +185,16 @@ pub fn parse_args() -> HeadlessOptions {
             "--scenario" => {
                 if let Some(v) = args.get(i + 1) {
                     opts.bench_economy = v == "economy" || v == "progression";
+                    // scénario à objectifs (Phase 2) : l'id d'un scénario
+                    // chargé depuis scenarios/*.scenario.json (ex.
+                    // campaign_prospector) prime sur economy/free
+                    if let Some(idx) = crate::scenario_loader::loaded_scenarios()
+                        .iter()
+                        .position(|ls| ls.data.json.id == v.as_str())
+                    {
+                        opts.bench_custom = Some(idx);
+                        opts.bench_economy = false;
+                    }
                 }
                 i += 1;
             }
@@ -195,6 +210,22 @@ pub fn parse_args() -> HeadlessOptions {
         i += 1;
     }
     opts
+}
+
+/// Libellé stable d'un scénario d'épisode pour les fichiers de trajectoires
+/// et les événements : `"free"` / `"economy"` / l'**id du scénario à
+/// objectifs** (Phase 2 - ex. `campaign_prospector`).
+#[cfg(not(target_arch = "wasm32"))]
+fn scenario_label(scenario: crate::driver::EpisodeScenario) -> String {
+    match scenario {
+        crate::driver::EpisodeScenario::FreePlay => "free".to_string(),
+        crate::driver::EpisodeScenario::Economy => "economy".to_string(),
+        crate::driver::EpisodeScenario::Custom(idx) => {
+            crate::scenario_loader::loaded_data(idx)
+                .map(|d| d.json.id.clone())
+                .unwrap_or_else(|| format!("custom-{idx}"))
+        }
+    }
 }
 
 /// Exécute un **banc d'essai en continu** : enchaîne `req.episodes` épisodes
@@ -220,9 +251,15 @@ fn run_bench(
 ) -> crate::driver::BenchReport {
     use crate::driver::{
         episode_reward, reset_episode, BenchEpisodeResult, BenchReport, EpisodeOutcome,
-        EpisodeReset, EpisodeScenario, EpisodeTrack, ResetTarget,
+        EpisodeReset, EpisodeTrack, ResetTarget,
     };
     use std::io::Write;
+    // le banc d'essai est la mesure de la **référence** (l'autopilote du jeu) :
+    // il ne doit pas hériter d'un pilote externe resté engagé ni d'actions
+    // enfoncées d'un épisode précédent (sans ceci, un entraîneur qui termine
+    // un épisode pilote-engagé avec des boutons encore enfoncés fausserait
+    // tous les épisodes du banc suivant)
+    crate::driver::clear_driver();
     let t_wall = std::time::Instant::now();
     let dt = 1.0 / 60.0;
     // trajectoires (RL) : fichier JSONL dans le dossier temporaire headless -
@@ -236,10 +273,7 @@ fn run_bench(
             ResetTarget::Eva => "eva",
             ResetTarget::Ship => "ship",
         };
-        let scenario = match req.scenario {
-            EpisodeScenario::Economy => "economy",
-            EpisodeScenario::FreePlay => "free",
-        };
+        let scenario = scenario_label(req.scenario);
         Some(
             dir.join(format!(
                 "trajectories_{}_{}_{}_{}.jsonl",
@@ -291,10 +325,7 @@ fn run_bench(
                         ResetTarget::Eva => "eva",
                         ResetTarget::Ship => "ship",
                     },
-                    "scenario": match req.scenario {
-                        EpisodeScenario::Economy => "economy",
-                        EpisodeScenario::FreePlay => "free",
-                    },
+                    "scenario": scenario_label(req.scenario),
                     "x": req.x,
                     "y": req.y,
                     "auto_generate": req.auto_generate,
@@ -362,7 +393,13 @@ fn run_bench(
             Some(EpisodeOutcome::Delivered) => obs_end.ship.speed,
             _ => 0.0,
         };
-        let reward = episode_reward(track.outcome, seconds, entry_speed, obs_end.station_dist);
+        let reward = episode_reward(
+            track.outcome,
+            seconds,
+            entry_speed,
+            obs_end.station_dist,
+            track.objective_bonus,
+        );
         if let Some(w) = traj.as_mut() {
             let _ = writeln!(
                 w,
@@ -384,6 +421,9 @@ fn run_bench(
             seconds,
             deliveries: track.deliveries,
             collected: track.collected,
+            objectives_completed: track.objectives_completed,
+            objectives_total: state.objective_tracker.total_count() as u32,
+            objective_bonus: track.objective_bonus,
             entry_speed,
             reward,
         });
@@ -416,7 +456,12 @@ fn run_bench(
         delivered: count("delivered"),
         eva_recovered: count("eva_recovered"),
         destroyed: count("destroyed"),
-        timed_out: req.episodes - count("delivered") - count("eva_recovered") - count("destroyed"),
+        objectives_complete: count("objectives_complete"),
+        timed_out: req.episodes
+            - count("delivered")
+            - count("eva_recovered")
+            - count("destroyed")
+            - count("objectives_complete"),
         mean_seconds: mean(|r| r.seconds),
         mean_reward: mean(|r| r.reward),
         trajectory_file: traj_path.map(|p| p.display().to_string()),
@@ -434,8 +479,9 @@ fn print_bench_report(report: &crate::driver::BenchReport) {
         report.episodes, report.wall_seconds, report.episodes_per_second
     );
     println!(
-        "  livrés : {} · secourus EVA : {} · détruits : {} · délais (garde-fou) : {}",
-        report.delivered, report.eva_recovered, report.destroyed, report.timed_out
+        "  livrés : {} · secourus EVA : {} · détruits : {} · objectifs : {} · délais (garde-fou) : {}",
+        report.delivered, report.eva_recovered, report.destroyed,
+        report.objectives_complete, report.timed_out
     );
     println!(
         "  temps de simulation moyen : {:.1} s · récompense moyenne : {:.1}",
@@ -515,6 +561,15 @@ pub fn run(opts: &HeadlessOptions) -> ! {
         // même départ que `evaluate.py`) - un crash en (0, 0), centre de la
         // station, serait récupéré au premier pas (épisodes triviaux)
         let (x, y) = if opts.target_eva { (300.0, 0.0) } else { (0.0, 0.0) };
+        // scénario de l'épisode : scénario à objectifs demandé (`--scenario
+        // <id>`, Phase 2), sinon économie ou jeu libre
+        let scenario = if let Some(idx) = opts.bench_custom {
+            crate::driver::EpisodeScenario::Custom(idx)
+        } else if opts.bench_economy {
+            crate::driver::EpisodeScenario::Economy
+        } else {
+            crate::driver::EpisodeScenario::FreePlay
+        };
         let req = crate::driver::BenchRequest {
             episodes: opts.bench,
             seed: opts.seed,
@@ -526,11 +581,7 @@ pub fn run(opts: &HeadlessOptions) -> ! {
             x,
             y,
             auto_generate: opts.auto_generate,
-            scenario: if opts.bench_economy {
-                crate::driver::EpisodeScenario::Economy
-            } else {
-                crate::driver::EpisodeScenario::FreePlay
-            },
+            scenario,
             max_steps: opts.bench_max_steps,
             trajectories: opts.bench_trajectories,
         };
@@ -545,7 +596,7 @@ pub fn run(opts: &HeadlessOptions) -> ! {
             &req,
         );
         crate::driver::publish_bench_report(report.clone());
-        crate::driver::publish_state(&state, &shapes);
+        crate::driver::publish_state(&mut state, &shapes);
         print_bench_report(&report);
         world_ready = true;
     }
@@ -587,7 +638,7 @@ pub fn run(opts: &HeadlessOptions) -> ! {
             crate::driver::publish_bench_report(report);
             // l'observation publiée reste celle de l'état final du dernier
             // épisode du lot (le rapport, lui, est servi par `/bench`)
-            crate::driver::publish_state(&state, &shapes);
+            crate::driver::publish_state(&mut state, &shapes);
             continue;
         }
         if let Some(req) = crate::driver::take_reset() {
@@ -673,7 +724,7 @@ pub fn run(opts: &HeadlessOptions) -> ! {
         // observation du pas publiée pour `GET /obs` (après `update` :
         // l'état vu est celui d'après les actions du pas - comme la boucle
         // réelle)
-        crate::driver::publish_state(&state, &shapes);
+        crate::driver::publish_state(&mut state, &shapes);
     }
 }
 
@@ -829,6 +880,50 @@ mod tests {
             assert!(r.steps > 0);
             assert!(r.seconds > 0.0);
         }
+    }
+
+    /// Le banc d'essai **dégage un pilote externe resté engagé** : un
+    /// entraîneur qui termine un épisode rejoué pas à pas (pilote externe
+    /// engagé, boutons encore enfoncés - `driver: true, up: true, left: true`)
+    /// ne doit pas fausser les épisodes du banc suivant - c'est l'autopilote
+    /// de référence qui pilote (`clear_driver` appelé en tête de `run_bench`,
+    /// sinon le vaisseau pousserait en permanence et mourrait avant la
+    /// première mission).
+    #[test]
+    fn bench_disengages_a_stuck_external_driver() {
+        // l'entraîneur laisse le pilote externe engagé avec des boutons enfoncés
+        assert!(crate::driver::apply_cmd(r#"{"driver":true,"up":true,"left":true}"#));
+        assert!(crate::driver::engaged());
+        assert!(crate::driver::up() && crate::driver::left());
+        let req = crate::driver::BenchRequest {
+            episodes: 3,
+            seed: 1,
+            target: crate::driver::ResetTarget::Eva,
+            x: 300.0,
+            y: 0.0,
+            auto_generate: false,
+            scenario: crate::driver::EpisodeScenario::FreePlay,
+            max_steps: 60 * 60, // garde-fou généreux : 60 s de simulation
+            trajectories: false,
+        };
+        let (mut state, mut shapes, mut triangles, mut garbages, mut elements, mut stars, mut rng) =
+            bench_env();
+        let report = super::run_bench(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut stars,
+            &mut rng,
+            &req,
+        );
+        // les épisodes sont joués par l'autopilote (pas par le pilote externe
+        // resté engagé) : le cosmonaute EVA est secouru, comme sans pilote
+        assert_eq!(report.eva_recovered, 3, "l'autopilote pilote le banc");
+        // et le pilote externe a été dégagé / relâché par le banc
+        assert!(!crate::driver::engaged());
+        assert!(!crate::driver::up() && !crate::driver::left());
     }
 
     /// Le banc d'essai est **déterministe à la graine** : même demande → même

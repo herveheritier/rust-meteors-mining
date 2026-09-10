@@ -542,7 +542,7 @@ async fn game_body() {
         // observation de la frame publiée pour l'interface d'auto-entraînement
         // (`GET /obs` la lira) - après `update` : l'état vu est celui d'après
         // les actions de la frame
-        crate::driver::publish_state(&state, &shapes);
+        crate::driver::publish_state(&mut state, &shapes);
         match action {
             game::Action::Quit => {
                 // filet de sécurité : la progression (minerais, modes,

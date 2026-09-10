@@ -41,11 +41,13 @@ def print_report(rep: dict[str, Any], episodes: int, seed: int) -> None:
     if rep.get("trajectory_file"):
         print(f"trajectoires (RL) : {rep['trajectory_file']}")
     print("-" * 78)
-    print(f"{'graine':>7} {'dénouement':>14} {'pas':>7} {'secondes':>9} {'récompense':>11}")
+    print(f"{'graine':>7} {'dénouement':>14} {'pas':>7} {'secondes':>9} {'récompense':>11} "
+          f"{'objectifs':>9}")
     for r in rep.get("results", []):
         outcome = r.get("outcome") or "delai"
+        obj = f"{r.get('objectives_completed', 0)}/{r.get('objectives_total', 0)}" if r.get("objectives_total", 0) else "-"
         print(f"{r.get('seed', 0):>7} {outcome:>14} {r.get('steps', 0):>7} "
-              f"{r.get('seconds', 0.0):>9.1f} {r.get('reward', 0.0):>11.1f}")
+              f"{r.get('seconds', 0.0):>9.1f} {r.get('reward', 0.0):>11.1f} {obj:>9}")
 
 
 def main() -> None:
@@ -55,8 +57,10 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1, help="graine du premier épisode (les suivants +1)")
     ap.add_argument("--target", choices=("ship", "eva"), default="eva",
                     help="entité pilotée (vaisseau à quai ou cosmonaute EVA éjecté)")
-    ap.add_argument("--scenario", choices=("free", "economy"), default="free",
-                    help="règles de l'épisode (economy = boucle de minage du vaisseau)")
+    ap.add_argument("--scenario", default="free",
+                    help="règles de l'épisode : free (défaut), economy (boucle de minage "
+                         "du vaisseau) ou l'id d'un scénario à objectifs (ex. "
+                         "campaign_prospector - missions DAG de l'éditeur)")
     ap.add_argument("--x", type=float, default=0.0, help="position du crash (mode eva)")
     ap.add_argument("--y", type=float, default=0.0)
     ap.add_argument("--auto-generate", action="store_true",

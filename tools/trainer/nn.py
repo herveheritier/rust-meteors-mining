@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """Petit réseau de neurones en **Python standard uniquement** (aucune
 dépendance - la convention de `tools/trainer/`) pour l'apprentissage par
-**imitation de l'autopilote** (`imitate.py`).
+**imitation de l'autopilote** (`imitate.py`, `dagger.py`).
 
 - `obs_features(obs)` : transforme une observation JSON (`/obs`, ou celle des
   trajectoires du banc d'essai) en un **vecteur de features à taille fixe** -
   le réseau n'apprend que sur ce vecteur, jamais sur le JSON brut ;
-- `MLP` : perceptron multicouche à une couche cachée (tanh) et sorties
-  sigmoïdes (une par action : up/down/left/right/fire), entraîné en descente
-  de gradient par lots avec **entropie croisée binaire** (le pilote a plusieurs
-  boutons en même temps : c'est une classification multi-étiquettes) ;
+- `MLP` : perceptron multicouche à une couche cachée (tanh) et deux têtes de
+  sortie - **sigmoïdes indépendantes** pour `up`/`down`/`fire` (le pilote peut
+  pousser et tirer en même temps) et **softmax mutuellement exclusif** pour la
+  rotation (`left`/`right`/`none`) : l'autopilote n'appuie jamais gauche et
+  droite ensemble, et deux sigmoïdes indépendantes laissaient la politique
+  entraînée coincée à les enfoncer toutes les deux (aucune rotation, orbite) -
+  le softmax force le choix d'un seul sens de rotation ;
+- `action_target(action)` : cibles binaires (sigmoïdes) + un-seul (softmax)
+  d'une action de l'autopilote (`expert` de l'observation, ou `action` des
+  trajectoires du banc d'essai) ;
 - `save_nn` / `load_nn` : poids sérialisés en JSON (comme `policy.json`),
   rejouables par `evaluate.py --strategy nn --policy nn_policy.json`.
 """
@@ -26,9 +32,11 @@ from typing import Any, Optional
 #: Version du format de features : si elle change (nouveaux champs, autre
 #: normalisation), les politiques entraînées avec l'ancienne version ne sont
 #: plus rejouables - le fichier de politique porte cette version.
-FEATURES_VERSION = 2
+FEATURES_VERSION = 5
 
-#: Actions (boutons) prédits par le réseau - l'ordre définit l'index de sortie.
+#: Actions (boutons) prédits par le réseau - l'ordre définit les indices de
+#: sortie sigmoïde (`up`, `down`, `fire`) ; la rotation (left/right) est une
+#: tête softmax à part (voir `TURN_HEAD`).
 ACTIONS = ("up", "down", "left", "right", "fire")
 
 #: Types d'objets proches encodés en one-hot (même libellé que l'observation).
@@ -37,6 +45,15 @@ NEARBY_KINDS = ("meteore", "minerai", "alien", "portail", "mine")
 #: Nombre d'objets proches pris en compte (les plus proches) : le reste de la
 #: liste est ignoré - couvre l'horizon utile de l'autopilote (tir, minage).
 NEARBY_SLOTS = 6
+
+#: Indices des sorties : 0..2 sigmoïdes (up, down, fire), 3..5 softmax de
+#: rotation (left, right, none).
+SIGMOID_OUTPUTS = 3
+TURN_HEAD = 3  # left / right / none
+NONE_CLASS = 2
+
+#: Nombre total de sorties du réseau (3 sigmoïdes + 3 classes de rotation).
+OUTPUT_COUNT = SIGMOID_OUTPUTS + TURN_HEAD
 
 #: Échelles de normalisation (le monde fait 3960×3540, vitesses ~centaines
 #: d'unités/s, vie de forme ~quelques dizaines).
@@ -118,6 +135,11 @@ def obs_features(obs: dict[str, Any]) -> list[float]:
         1.0 if obs.get("eva_active") else 0.0,          # pilote EVA ?
         1.0 if obs.get("docked") else 0.0,              # accosté / déchargement
         1.0 if obs.get("economy") else 0.0,             # scénario à économie
+        # hystérésis du frein tangentiel de l'autopilote EVA (état interne -
+        # deux cinématiques identiques peuvent porter des actions expert
+        # contradictoires sans lui : c'est la bande 7-15 u/s de vitesse
+        # tangentielle, le régime d'orbite)
+        1.0 if obs.get("eva_tang_braking") else 0.0,
         station_dx / SCALE_DIST,
         station_dy / SCALE_DIST,
         obs.get("station_dist", 0.0) / SCALE_DIST,
@@ -130,6 +152,11 @@ def obs_features(obs: dict[str, Any]) -> list[float]:
         obs.get("ammo", 0) / max(obs.get("ammo_cap", 0), 1),
         obs.get("credits", 0) / SCALE_CREDITS,
         obs.get("cargo_qty", 0) / max(obs.get("cargo_cap", 0), 1),
+        # ── objectifs DAG du scénario (Phase 2 - épisodes à objectifs) : la
+        # mission courante et sa progression, pour que le réseau apprenne sur
+        # le **langage de tâche** du scénario (combien d'objectifs restent,
+        # où en est la mission débloquée) ──
+        *_objective_features(obs),
     ]
     # ── objets proches (les plus proches, slots fixes) ──────────────────────
     nearby = obs.get("nearby", [])[: NEARBY_SLOTS]
@@ -154,19 +181,80 @@ def obs_features(obs: dict[str, Any]) -> list[float]:
     return f
 
 
+def _objective_features(obs: dict[str, Any]) -> list[float]:
+    """Features des **objectifs DAG** du scénario courant (Phase 2 - épisodes
+    à objectifs, champ `objectives` de l'observation) : la mission comme
+    signal de tâche. Chaque objectif expose `unlocked` (mission en cours),
+    `completed`, et la progression chiffrée de sa condition (`current` /
+    `required`). Features :
+
+    - part complétée (0..1) et part restante (`1 − part`) du scénario ;
+    - la **mission courante** (premier objectif débloqué non complété) :
+      sa progression `current / required` (bornée 0..1) et son rang dans la
+      chaîne DAG (normalisé 0..1) - l'entraîneur sait où il en est.
+
+    Sans objectifs (épisode libre / EVA), toutes les features valent zéro."""
+    objectives = obs.get("objectives", [])
+    if not objectives:
+        return [0.0, 0.0, 0.0, 0.0, 0.0]  # pas de scénario à objectifs
+    total = float(len(objectives))
+    completed = sum(1 for o in objectives if o.get("completed"))
+    done_part = _clamp(completed / total, 0.0, 1.0)
+    mission: dict[str, Any] = {}
+    mission_idx = 0.0
+    for i, o in enumerate(objectives):
+        if o.get("unlocked") and not o.get("completed"):
+            mission = o
+            mission_idx = float(i) / total
+            break
+    required = mission.get("required", 0.0)
+    progress = 0.0
+    if required > 0.0:
+        progress = _clamp(mission.get("current", 0.0) / required, 0.0, 1.0)
+    # 1 si une mission est en cours (débloquée et non complétée)
+    has_mission = 1.0 if mission else 0.0
+    return [done_part, 1.0 - done_part, has_mission, mission_idx, progress]
+
+
 def feature_size() -> int:
     """Taille du vecteur de features (fixe, dérivée des constantes ci-dessus)."""
     return len(obs_features({}))
 
 
+# ── cibles d'apprentissage ──────────────────────────────────────────────────
+
+def action_target(action: dict[str, Any]) -> list[float]:
+    """Cibles d'une action de l'autopilote (le champ `expert` de
+    l'observation, ou l'`action` des trajectoires du banc d'essai) : trois
+    sigmoïdes binaires (`up`, `down`, `fire`) puis un un-seul de rotation
+    (`left`, `right`, `none` - l'expert n'appuie jamais les deux ensemble)."""
+    y = [1.0 if action.get(a) else 0.0 for a in ACTIONS[:SIGMOID_OUTPUTS]]
+    if action.get("left"):
+        turn = 0
+    elif action.get("right"):
+        turn = 1
+    else:
+        turn = NONE_CLASS
+    y += [1.0 if k == turn else 0.0 for k in range(TURN_HEAD)]
+    return y
+
+
 # ── le réseau ───────────────────────────────────────────────────────────────
 
 class MLP:
-    """Perceptron multicouche : entrée → cachée (tanh) → sorties (sigmoïdes).
+    """Perceptron multicouche : entrée → cachée (tanh) → deux têtes de sortie.
+
+    - `up`/`down`/`fire` : sigmoïdes indépendantes (entropie croisée binaire -
+      le pilote peut pousser et tirer en même temps) ;
+    - rotation : **softmax** sur {left, right, none} (entropie croisée) -
+      mutuellement exclusif, comme l'autopilote : deux sigmoïdes indépendantes
+      laissaient la politique coincée à enfoncer gauche **et** droite ensemble
+      (aucune rotation nette - c'est l'échec « coincé en orbite » mesuré en
+      boucle fermée, que le softmax supprime structurellement).
 
     Une seule couche cachée suffit pour imiter les décisions de l'autopilote
     (missions, visée, seuils) ; l'entraînement est une descente de gradient
-    par lots avec entropie croisée binaire et élan (`momentum`).
+    par lots avec élan (`momentum`).
     """
 
     def __init__(self, inputs: int, hidden: int, outputs: int, rng: Optional[random.Random] = None) -> None:
@@ -186,15 +274,26 @@ class MLP:
 
     # ── propagation ─────────────────────────────────────────────────────────
     def forward(self, x: list[float]) -> list[float]:
-        """Sorties sigmoïdes (probabilités par action) pour une entrée."""
+        """Sorties pour une entrée : 3 sigmoïdes (up, down, fire) puis 3
+        probabilités softmax (left, right, none) - somme des 3 dernières = 1."""
         h = [math.tanh(sum(x[i] * self.w1[i][j] for i in range(self.inputs)) + self.b1[j])
              for j in range(self.hidden)]
-        return [1.0 / (1.0 + math.exp(-(sum(h[j] * self.w2[j][k] for j in range(self.hidden)) + self.b2[k])))
-                for k in range(self.outputs)]
+        z = [sum(h[j] * self.w2[j][k] for j in range(self.hidden)) + self.b2[k]
+             for k in range(self.outputs)]
+        out = [1.0 / (1.0 + math.exp(-z[k])) for k in range(SIGMOID_OUTPUTS)]
+        m = max(z[SIGMOID_OUTPUTS:])
+        exp_turn = [math.exp(z[SIGMOID_OUTPUTS + k] - m) for k in range(TURN_HEAD)]
+        s = sum(exp_turn)
+        out += [e / s for e in exp_turn]
+        return out
 
     def predict(self, obs: dict[str, Any]) -> list[float]:
         """Sorties pour une observation JSON (chemin court pour `policies`)."""
         return self.forward(obs_features(obs))
+
+    def turn_action(self, out: list[float]) -> str:
+        """Rotation choisie par la tête softmax (le plus probable)."""
+        return ("left", "right", "none")[max(range(TURN_HEAD), key=lambda k: out[SIGMOID_OUTPUTS + k])]
 
     # ── entraînement ────────────────────────────────────────────────────────
     def train(
@@ -211,11 +310,11 @@ class MLP:
     ) -> dict[str, float]:
         """Descente de gradient par lots (mini-lots) sur (X, Y).
 
-        `X` : vecteurs de features, `Y` : cibles binaires (1.0/0.0) par
-        action. Renvoie un résumé : perte finale, exactitude globale
-        (toutes les actions justes), exactitude par action, et le nombre
-        d'époques réellement effectuées (arrêt précoce si la perte ne
-        diminue plus).
+        `X` : vecteurs de features, `Y` : cibles `action_target`. Perte =
+        entropie croisée binaire sur les sigmoïdes + entropie croisée sur le
+        softmax de rotation. Renvoie un résumé : perte finale, exactitude
+        globale (toutes les actions justes), exactitude par action, et le
+        nombre d'époques réellement effectuées (arrêt précoce).
         """
         rng = rng or random.Random()
         n = len(X)
@@ -228,6 +327,16 @@ class MLP:
         def bce_loss(y: float, p: float) -> float:
             p = min(max(p, 1e-9), 1.0 - 1e-9)
             return -(y * math.log(p) + (1.0 - y) * math.log(1.0 - p))
+
+        def total_loss(y: list[float], out: list[float]) -> float:
+            loss = 0.0
+            for k in range(SIGMOID_OUTPUTS):
+                loss += bce_loss(y[k], out[k])
+            # softmax de rotation : −log p(classe juste)
+            turn = max(range(TURN_HEAD), key=lambda k: y[SIGMOID_OUTPUTS + k])
+            p = min(max(out[SIGMOID_OUTPUTS + turn], 1e-9), 1.0)
+            loss += -math.log(p)
+            return loss
 
         best_loss = float("inf")
         stagnant = 0
@@ -261,11 +370,16 @@ class MLP:
                     # ── avant ──
                     h = [math.tanh(sum(x[a] * self.w1[a][j] for a in range(self.inputs)) + self.b1[j])
                          for j in range(self.hidden)]
-                    out = [1.0 / (1.0 + math.exp(-(sum(h[j] * self.w2[j][k] for j in range(self.hidden)) + self.b2[k])))
-                           for k in range(self.outputs)]
-                    for k in range(self.outputs):
-                        epoch_loss += bce_loss(y[k], out[k])
-                    # ── arrière : erreur de sortie = p − y (BCE + sigmoïde) ──
+                    z = [sum(h[j] * self.w2[j][k] for j in range(self.hidden)) + self.b2[k]
+                         for k in range(self.outputs)]
+                    out = [1.0 / (1.0 + math.exp(-z[k])) for k in range(SIGMOID_OUTPUTS)]
+                    m = max(z[SIGMOID_OUTPUTS:])
+                    exp_turn = [math.exp(z[SIGMOID_OUTPUTS + k] - m) for k in range(TURN_HEAD)]
+                    s = sum(exp_turn)
+                    out += [e / s for e in exp_turn]
+                    epoch_loss += total_loss(y, out)
+                    # ── arrière : d = p − y pour sigmoïde (BCE) **et** softmax
+                    # (entropie croisée) - la même forme sert aux deux têtes ──
                     d_out = [out[k] - y[k] for k in range(self.outputs)]
                     # dérivée de tanh : 1 − h²
                     d_h = [0.0] * self.hidden
@@ -317,18 +431,29 @@ class MLP:
 
     def summary(self, X: list[list[float]], Y: list[list[float]]) -> dict[str, float]:
         """Exactitudes sur (X, Y) : globale (toutes les actions justes) et par
-        action, plus la perte BCE moyenne."""
+        action (positions de `ACTIONS`), plus la perte moyenne (BCE +
+        entropie croisée de rotation)."""
         n = len(X)
         loss = 0.0
-        per_action = [0.0] * self.outputs
+        per_action = [0.0] * len(ACTIONS)
         exact = 0
+        # positions des sigmoïdes dans `ACTIONS` : up=0, down=1, fire=4
+        sigmoid_slot = {"up": 0, "down": 1, "fire": 4}
         for x, y in zip(X, Y):
             out = self.forward(x)
-            for k in range(self.outputs):
+            ok_turn = self.turn_action(out) == self.turn_action(y)
+            for k, a in enumerate(("up", "down", "fire")):
                 p = min(max(out[k], 1e-9), 1.0 - 1e-9)
                 loss += -(y[k] * math.log(p) + (1.0 - y[k]) * math.log(1.0 - p))
-                per_action[k] += 1.0 if (out[k] >= 0.5) == (y[k] >= 0.5) else 0.0
-            if all((out[k] >= 0.5) == (y[k] >= 0.5) for k in range(self.outputs)):
+                per_action[sigmoid_slot[a]] += 1.0 if (out[k] >= 0.5) == (y[k] >= 0.5) else 0.0
+            turn = max(range(TURN_HEAD), key=lambda k: y[SIGMOID_OUTPUTS + k])
+            p = min(max(out[SIGMOID_OUTPUTS + turn], 1e-9), 1.0)
+            loss += -math.log(p)
+            for a in ("left", "right"):
+                pred = self.turn_action(out) == a
+                want = self.turn_action(y) == a
+                per_action[ACTIONS.index(a)] += 1.0 if pred == want else 0.0
+            if ok_turn and all((out[k] >= 0.5) == (y[k] >= 0.5) for k in range(SIGMOID_OUTPUTS)):
                 exact += 1
         return {
             "loss": loss / n,
@@ -348,6 +473,8 @@ def save_nn(path: str, net: MLP, meta: Optional[dict[str, Any]] = None) -> None:
         "hidden": net.hidden,
         "outputs": net.outputs,
         "actions": list(ACTIONS),
+        "sigmoid_outputs": SIGMOID_OUTPUTS,
+        "turn_head": TURN_HEAD,
         "w1": net.w1,
         "b1": net.b1,
         "w2": net.w2,
@@ -371,6 +498,8 @@ def load_nn(path: str) -> MLP:
             f"{path} : version de features {data.get('features_version')} "
             f"≠ {FEATURES_VERSION} attendue (re-entraîner avec imitate.py)"
         )
+    if data.get("sigmoid_outputs") != SIGMOID_OUTPUTS or data.get("turn_head") != TURN_HEAD:
+        raise ValueError(f"{path} : tête de sortie incompatible (re-entraîner)")
     net = MLP(data["inputs"], data["hidden"], data["outputs"])
     net.w1 = data["w1"]
     net.b1 = data["b1"]

@@ -131,6 +131,9 @@ def run_episode_live(
         "seconds": max(0.0, seconds),
         "final_dist": obs.get("station_dist", 0.0),
         "entry_speed": entry_speed,
+        # scénario à objectifs (Phase 2) : bonus cumulé des complétions de
+        # l'épisode (0 hors épisode à objectifs - mêmes règles que le jeu)
+        "objective_bonus": obs.get("objective_bonus", 0.0),
     }
 
 
@@ -180,11 +183,14 @@ def run_episode_live_episode(
         obs = client.wait_next_obs(last, timeout=5.0)
     seconds = obs.get("t", t0) - t0
     return {
-        "success": outcome in ("delivered", "eva_recovered"),
+        "success": outcome in ("delivered", "eva_recovered", "objectives_complete"),
         "outcome": outcome,
         "seconds": max(0.0, seconds),
         "final_dist": obs.get("station_dist", 0.0),
         "entry_speed": entry_speed,
+        # scénario à objectifs (Phase 2) : bonus cumulé des complétions de
+        # l'épisode (0 hors épisode à objectifs - mêmes règles que le jeu)
+        "objective_bonus": obs.get("objective_bonus", 0.0),
     }
 
 
@@ -240,7 +246,11 @@ def run_bench_comparison(
     print("-" * 78)
     p_ok = sum(1 for r in results if r["success"])
     p_mean = sum(episode_reward(None, r) for r in results) / max(1, len(results))
-    b_ok = sum(1 for r in bench.get("results", []) if r.get("outcome") in ("delivered", "eva_recovered"))
+    b_ok = sum(
+        1
+        for r in bench.get("results", [])
+        if r.get("outcome") in ("delivered", "eva_recovered", "objectives_complete")
+    )
     print(f"Autopilote : {b_ok}/{bench.get('episodes', episodes)} réussis · "
           f"récompense moyenne {bench.get('mean_reward', 0.0):.1f}")
     print(f"Politique  : {p_ok}/{len(results)} réussis · récompense moyenne {p_mean:.1f} · "
@@ -265,8 +275,10 @@ def main() -> None:
                     help="distance du crash au centre de la station (unités)")
     ap.add_argument("--target", choices=("ship", "eva"), default="eva",
                     help="entité pilotée (vaisseau à quai ou cosmonaute EVA éjecté)")
-    ap.add_argument("--scenario", choices=("free", "economy"), default="free",
-                    help="règles de l'épisode (economy = boucle de minage du vaisseau)")
+    ap.add_argument("--scenario", default="free",
+                    help="règles de l'épisode : free (défaut), economy (boucle de minage "
+                         "du vaisseau) ou l'id d'un scénario à objectifs (ex. "
+                         "campaign_prospector - missions DAG de l'éditeur)")
     ap.add_argument("--x", type=float, default=None, help="position du crash (mode hybride, défaut 300)")
     ap.add_argument("--y", type=float, default=None, help="position du crash (mode hybride, défaut 0)")
     ap.add_argument("--auto-generate", action="store_true",

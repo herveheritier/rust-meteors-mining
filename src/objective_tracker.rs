@@ -275,6 +275,56 @@ pub struct ObjectiveResult {
     pub reward: JsonReward,
 }
 
+/// Progression **numérique** de la condition d'un objectif contre l'état du
+/// jeu : renvoie `(courant, requis)` - les valeurs que l'entraînement expose
+/// dans l'observation pour que la mission soit un **langage de tâche**
+/// (combien de météores détruits / requis, accostages, crédits, temps de
+/// survie…). L'entraîneur n'a pas à re-implémenter chaque type de condition.
+///
+/// Les conditions non reconnues renvoient `(0, 0)` (aucune progression
+/// chiffrée - l'objectif est seulement complété ou non).
+pub fn progress_of(obj: &TrackedObjective, state: &GameState) -> (f64, f64) {
+    match obj.condition.condition_type.as_str() {
+        "DestroyAsteroids" => (state.meteors_destroyed as f64, obj.condition.required as f64),
+        "CollectCredits" | "CollectMinerals" => {
+            (state.resources.credits as f64, obj.condition.required as f64)
+        }
+        "ReachReputation" => (state.resources.reputation, obj.condition.required as f64),
+        "DockAtStation" => (state.docking_count as f64, obj.condition.required as f64),
+        "UnlockMovementMode" => {
+            let m = resolve_target_mode(&obj.condition, &obj.title, &obj.description);
+            let done = (m >= 0 && (m as usize) < state.unlocked_modes.len()
+                && state.unlocked_modes[m as usize])
+                || state.moving_mode == m;
+            (if done { 1.0 } else { 0.0 }, 1.0)
+        }
+        "SurviveTime" => {
+            let req = if obj.condition.seconds > 0.0 {
+                obj.condition.seconds
+            } else if obj.condition.required > 0 {
+                obj.condition.required as f64
+            } else {
+                30.0
+            };
+            (obj.active_time, req)
+        }
+        "PrecisionShooting" => {
+            let hits = (state.bullets_fired - state.bullets_lost).max(0) as f64;
+            (hits, obj.condition.hits as f64)
+        }
+        "BuyUpgrade" => {
+            let lvl = match obj.condition.track.as_str() {
+                "Fuel" => state.resources.fuel_level,
+                "Ammo" => state.resources.ammo_level,
+                "Cargo" => state.resources.cargo_level,
+                _ => 0,
+            };
+            (lvl as f64, obj.condition.level as f64)
+        }
+        _ => (0.0, 0.0),
+    }
+}
+
 /// Résout l'index du mode de vol cible (compatibilité 0-based et 1-based historique).
 pub fn resolve_target_mode(cond: &crate::scenario_loader::JsonCondition, title: &str, description: &str) -> i32 {
     let mode = cond.mode;
