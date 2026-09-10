@@ -256,6 +256,31 @@ python3 cem.py --init expert         # départ près du réglage robuste de `pol
 python3 cem.py --backend live        # contre la vraie partie (épisodes en temps réel - lents)
 ```
 
+### 3 quater. Apprentissage par renforcement (PPO)
+
+```bash
+python3 ppo.py                       # PPO sur l'observation complète, amorce experte `seek`
+python3 ppo.py --iters 200           # budget plus long
+```
+
+PPO (`ppo.py`) apprend de la **seule observation** (112 features, politique
+factorisée poussée × rotation comme l'autopilote, tête de valeur, γ =
+0,9995, avantages bornés, objectif clipé). L'amorce est une imitation
+supervisée du contrôleur `seek` (équilibrée : ~80 % de ses pas sont « ne
+rien faire » - sans duplication des pas rares, l'entraînement finit
+immobile). Sortie : `ppo_policy.json`, rejouable par `evaluate.py
+--strategy ppo` (backend sim/live/hybride). Mesure actuelle (simulateur) :
+l'amorce atteint ~99 % hors-ligne mais la boucle fermée gèle au premier état
+« aligné loin de la station » (sous-représenté dans les données de `seek`) -
+le +1000 n'atteint jamais les rollouts et PPO reste au plateau ; l'écart
+ouvert, identique à celui du clone d'imitation, est documenté dans
+`docs/AUTOENTRAINEMENT.md` §5 sexies.
+
+Note : un DQN a d'abord été essayé (`dqn.py`, retiré) - l'**horizon long**
+de la tâche (~1100 pas, γ 0,99 ⇒ le +1000 n'atteint pas les états de
+départ) empêche le Q-learning bootstrapé de démarrer ; PPO (on-policy) est
+la famille retenue.
+
 À chaque génération, des candidats (les 5 paramètres de `seek` : bandes
 d'alignement `turn_db`/`thrust_db`, croisière `cruise`, ralentissement
 `slow_zone`, hystérésis `band`) sont évalués sur des épisodes déterministes,
@@ -289,9 +314,13 @@ serrée, croisière plus élevée) dépasse le réglage manuel sur la récompens
   **externes** (Python) ; l'exécution **en continu dans le processus** (cf.
   §0 bis, `POST /bench` / `bench.py`) mesure la ligne de base de l'autopilote
   du jeu à des centaines d'épisodes par seconde.
-- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md` §5 bis, §5 ter, §5 quater
-  et §6) enrichira encore les épisodes côté jeu (missions des objectifs DAG
-  comme langage de tâche/récompense), puis viendront des apprenants plus
-  puissants (DAgger prolongé, puis RL) qui remplaceront la politique `seek`
+- La **Phase 2** (voir `docs/AUTOENTRAINEMENT.md` §5 bis, §5 ter, §5 quater,
+  §5 sexies et §6) enrichit les épisodes côté jeu (missions des objectifs DAG
+  comme langage de tâche/récompense) ; l'infrastructure **RL** est livrée
+  (PPO, §5 sexies) mais l'écart en boucle fermée reste ouvert : la politique
+  apprise gèle à la première bifurcation hors distribution de son amorce -
+  la piste la plus courte est une amorce dont la boucle fermée ne gèle pas
+  (DAgger, imitation avec états de départ perturbés), puis le remplacement
+  de la politique `seek`
   paramétrée. Le champ **`expert`** de l'observation (§3 ter) sert aussi de
   guide de récompense pour ces apprenants.

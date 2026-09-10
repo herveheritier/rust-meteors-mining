@@ -553,6 +553,80 @@ missions chaînées, dont 50 météores), la boucle complète dépasse le garde-
 de 120 s : l'épisode s'arrête en `delai` avec 1-2/5 objectifs complétés -
 c'est la tâche longue que la suite (DAgger / RL) doit apprendre à boucler.
 
+## 5 sexies. RL — PPO sur l'observation complète (Phase 3)
+
+L'étape « RL » de la Phase 3 : un apprenant qui dépasse l'autopilote de
+référence en apprenant de la **seule observation**. Exercée sur la tâche EVA
+du simulateur (`eva_env.py`, graines hors entraînement 11..15). Références :
+autopilote du jeu **943,8** (6/6 en conditions réelles, headless) ; contrôleur
+`seek` (réglage robuste de l'entraînement CEM) **≈ 893** (5/5 en simulateur,
+entrée ~48 u/s - la pénalité d'arrivée trop rapide lui coûte ~90 points).
+
+### DQN : essayé, écarté - l'horizon long tue le bootstrap
+
+Un premier `dqn.py` (Q-net MLP, relecture d'expérience, ε-gourmandise,
+réseau cible gelé, TD(0) MSE) n'apprend pas, quels que soient l'échelle des
+récompenses, le bornage de l'erreur TD, l'amorce experte du replay ou le
+mélange expert/aléatoire des mini-lots. La cause est **structurelle** :
+~1100 pas pour rentrer de 300 u, et avec γ = 0,99 le +1000 de la
+récupération n'atteint jamais les états de départ (0,99¹¹⁰⁰ ≈ 0) - le
+Q-learning bootstrapé ne reçoit aucun signal sur les premiers pas, et
+l'exploration aléatoire ne trouve jamais le cercle d'accostage (réussite
+~0 %) pour amorcer la propagation. PPO est **on-policy** : le retour réel
+d'un rollout atteint le départ, pas besoin de bootstrap ni de réussite
+préalable - le script DQN est retiré au profit de `ppo.py`.
+
+### PPO : l'infrastructure, livrée et branchée
+
+`ppo.py` : PPO sur l'observation complète (112 features) avec
+
+- une politique **factorisée** comme les décisions de l'autopilote -
+  sigmoïde poussée × softmax rotation {←, →, rien} (la structure éprouvée
+  du MLP d'imitation `nn.py` : une softmax conjointe sur les 6 combinaisons
+  plafonne à ~95 % d'exactitude et dérive en boucle fermée, la factorisation
+  atteint ~99 % sur la poussée) + une tête de **valeur** (la ligne de base
+  des avantages, sans bootstrap max) ;
+- une **amorce experte** : imitation supervisée du contrôleur `seek` sur ses
+  propres épisodes, avec **équilibrage des classes** - ~80 % des pas de
+  `seek` sont « ne rien faire », et sans duplication des pas rares
+  (pousser/tourner, ×4) l'entropie croisée se concentre sur la majorité et
+  la politique finit immobile ;
+- retours actualisés **γ = 0,9995** (l'horizon long atteint le départ),
+  avantages `G − V` normalisés par lot et **bornés (±2)**, objectif **clipé**
+  (le rapport des probabilités est borné à [1−ε, 1+ε] : une mise à jour ne
+  peut pas dégrader la politique d'un coup), bonus d'entropie, et **prime de
+  progression** (fermer la distance vers la station paie, même dans les
+  épisodes perdus - sans elle, le « moins mauvais échec » des rollouts est
+  l'immobilité et PPO y converge) ;
+- mesure en boucle fermée toutes les 5 itérations (graines hors
+  entraînement, récompense `episode_reward` sans prime), meilleur point
+  sauvegardé dans `ppo_policy.json` (métadonnées : version des features,
+  évaluation), rejouable par `evaluate.py --strategy ppo --policy
+  ppo_policy.json` (backend sim, live ou hybride).
+
+### Mesure honnête et écart restant
+
+L'amorce (imitation de `seek` équilibrée, 15 époques) atteint **94-99 %**
+hors-ligne (99,3 % sur la poussée), mais la boucle fermée **gèle au premier
+état « aligné loin de la station »** (distance 300, erreur d'alignement ~0) :
+p(↑) y vaut ~0,35 (état sous-représenté dans les données de `seek`, qui ne
+le traverse qu'une frame avant de pousser), la politique n'ose ni pousser ni
+quitter l'état, et l'épisode se termine immobile (−200,0). Les rollouts sous
+cette amorce ne produisent **jamais** une approche complète (0,35⁴⁰⁰ ≈ 0) :
+le +1000 de la récupération n'entre jamais dans les retours, les avantages
+s'annulent, et PPO reste au plateau −200 quels que soient la prime de
+progression, le clip, l'entropie et 100 itérations. C'est l'erreur de
+composition dans sa forme pure - le **même écart** mesuré pour le clone du
+vrai autopilote (`imitate.py` : 98 % hors-ligne, 0/6 en boucle fermée
+live) : la politique est juste hors distribution, jamais au point de
+bifurcation que la boucle fermée visite en premier.
+
+L'infrastructure RL est **livrée et branchée** (entraînement, courbe
+d'évaluation, sauvegarde/rejeu, évaluation sim/live/hybride) ; dépasser la
+référence exige une amorce dont la boucle fermée ne gèle pas - l'amorce
+DAgger (politique déjà entraînée sur les états visités, §5 quater) ou une
+imitation avec perturbation des états de départ sont les pistes documentées.
+
 ## 6. Suite (phases suivantes)
 
 - **Phase 2 — épisodes à objectifs DAG.** ✅ Livrée (§5 quinquies) : les
@@ -569,9 +643,14 @@ c'est la tâche longue que la suite (DAgger / RL) doit apprendre à boucler.
   ~98 % de validation en 3 itérations), mais la **convergence en boucle
   fermée sur les départs hors distribution reste à obtenir** : poursuivre
   les itérations DAgger (et les variantes DART / DAgger avec étiquetage
-  différé), puis **RL** (DQN/PPO sur l'observation complète avec les objets
-  proches) pour dépasser l'autopilote de référence, et un réseau qui tienne
-  la boucle de minage complète du vaisseau.
+  différé), et l'infrastructure **RL** est livrée (§5 sexies : PPO sur
+  l'observation complète, amorce experte, rejeu - le DQN a été essayé puis
+  écarté, l'horizon long tuant le bootstrap). L'écart mesuré est partout le
+  même - la politique gèle à la première bifurcation hors distribution de
+  son amorce - et la piste la plus courte est une amorce dont la boucle
+  fermée ne gèle pas (DAgger, imitation avec états de départ perturbés),
+  puis l'évaluation contre l'autopilote (943,8) et la boucle de minage du
+  vaisseau.
 - **Phase 4 — politique apprise dans le jeu.** Persister la politique
   entraînée et la charger comme stratégie « autopilote » alternative
   (l'interface expose déjà `autopilot` comme ligne de base ; il s'agira

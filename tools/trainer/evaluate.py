@@ -11,6 +11,8 @@ Mesure la **ligne de base** de l'auto-entraînement :
   réglage robuste, départ `expert` de l'entraînement) ;
 - `nn`        : le **réseau de neurones** entraîné hors-ligne par imitation de
   l'autopilote (`imitate.py` - `--policy nn_policy.json` requis) ;
+- `ppo`       : la **politique PPO** entraînée par renforcement sur
+  l'observation complète (`ppo.py` - `--policy ppo_policy.json` requis) ;
 - `autopilot` : l'autopilote **du jeu** (`POST /cmd {"autopilot": true}`) -
   la référence absolue (jeu réel uniquement, pas de simulateur).
 
@@ -34,7 +36,7 @@ from typing import Any, Optional
 
 from client import DriverClient, DriverError, die
 from eva_env import EvaSim, episode_reward, spawn_position
-from policies import LIVE_AUTOPILOT, SIM_STRATEGIES, nn_policy, policy_for, seek
+from policies import LIVE_AUTOPILOT, SIM_STRATEGIES, nn_policy, policy_for, ppo_policy, seek
 
 EPISODE_TIMEOUT = 60.0  # secondes avant de déclarer l'épisode perdu
 
@@ -268,7 +270,7 @@ def main() -> None:
     ap.add_argument("--strategy", default="seek", choices=SIM_STRATEGIES + (LIVE_AUTOPILOT,))
     ap.add_argument("--policy", default=None, metavar="policy.json",
                     help="politique entraînée : paramètres d'un `seek` (sortie de cem.py) "
-                         "ou poids d'un réseau `nn` (sortie d'imitate.py)")
+                         "ou poids d'un réseau `nn`/`ppo` (sortie d'imitate.py / ppo.py)")
     ap.add_argument("--episodes", type=int, default=5)
     ap.add_argument("--seed", type=int, default=1, help="graine du premier épisode (les suivants +1)")
     ap.add_argument("--spawn-dist", type=float, default=300.0,
@@ -288,12 +290,16 @@ def main() -> None:
 
     params: Optional[dict[str, float]] = None
     nn_net_path: Optional[str] = None
+    ppo_path: Optional[str] = None
     if args.policy:
         with open(args.policy, encoding="utf-8") as f:
             data = json.load(f)
         if data.get("policy") == "nn":
             nn_net_path = args.policy
             print(f"Politique chargée : réseau de neurones (imitation, {args.policy})")
+        elif data.get("policy") == "ppo":
+            ppo_path = args.policy
+            print(f"Politique chargée : politique PPO (renforcement, {args.policy})")
         else:
             params = data.get("params")
             print(f"Politique chargée : {data.get('policy', 'seek')} "
@@ -310,6 +316,10 @@ def main() -> None:
         if nn_net_path is None:
             ap.error("--strategy nn exige --policy (sortie d'imitate.py : nn_policy.json)")
         policy = nn_policy(nn_net_path)
+    elif args.strategy == "ppo":
+        if ppo_path is None:
+            ap.error("--strategy ppo exige --policy (sortie de ppo.py : ppo_policy.json)")
+        policy = ppo_policy(ppo_path)
     elif args.strategy == LIVE_AUTOPILOT:
         policy = None
     else:

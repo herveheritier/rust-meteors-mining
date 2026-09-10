@@ -38,10 +38,11 @@ from eva_env import (
 
 #: Types de stratégies simulables (sans le jeu) - `seek` porte la politique
 #: paramétrée, les autres sont des lignes de base. `nn` (réseau de neurones
-#: entraîné par imitation, `imitate.py`) se pilote aussi en simulateur EVA
-#: (les champs manquants de l'observation valent zéro) - sa vraie évaluation
-#: reste la partie réelle / le mode hybride.
-SIM_STRATEGIES = ("idle", "random", "seek", "nn")
+#: entraîné par imitation, `imitate.py`) et `ppo` (réseau entraîné par
+#: renforcement, `ppo.py`) se pilotent aussi en simulateur EVA (les champs
+#: manquants de l'observation valent zéro) - leur vraie évaluation reste la
+#: partie réelle / le mode hybride.
+SIM_STRATEGIES = ("idle", "random", "seek", "nn", "ppo")
 
 #: Stratégie « pilote automatique du jeu » : seulement en direct (le jeu
 #: pilote lui-même via `POST /cmd {"autopilot": true}`).
@@ -153,6 +154,26 @@ def seek(obs: dict[str, Any], p: Optional[dict[str, float]] = None) -> dict[str,
         if braking or v_along < desired - band:
             cmd["up"] = True
     return cmd
+
+
+def ppo_policy(path: str) -> Callable[[dict[str, Any]], dict[str, bool]]:
+    """Politique **PPO** entraînée par renforcement sur l'observation complète
+    (`ppo.py`, sortie `ppo_policy.json`) : charge les poids et renvoie la
+    fonction obs → commande (l'action de plus grande probabilité parmi les
+    combinaisons poussée/rotation de `EVA_ACTIONS`). Fonctionne pour la tâche
+    EVA."""
+    from nn import obs_features
+    from ppo import load_ppo
+
+    net, actions = load_ppo(path)
+
+    def choose(obs: dict[str, Any]) -> dict[str, bool]:
+        cmd = empty_cmd()
+        _, probs, _ = net.forward(obs_features(obs))
+        cmd.update(actions[net.greedy(probs)])
+        return cmd
+
+    return choose
 
 
 def nn_policy(path: str) -> Callable[[dict[str, Any]], dict[str, bool]]:
