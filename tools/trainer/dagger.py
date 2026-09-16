@@ -36,13 +36,20 @@ le jeu de données agrégé. La séparation train/validation se fait **par
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import sys
 from typing import Any, Optional
 
 from client import DriverClient, DriverError, die
-from evaluate import EPISODE_TIMEOUT, run_bench_comparison, wait_frame
-from eva_env import episode_reward, spawn_position
+from evaluate import (
+    EPISODE_TIMEOUT,
+    print_sim_comparison,
+    run_bench_comparison,
+    sim_comparison,
+    wait_frame,
+)
+from eva_env import TAU, WORLD_H, WORLD_W, episode_reward
 from imitate import format_accuracy, load_samples, split_by_seed
 from nn import MLP, OUTPUT_COUNT, action_target, obs_features, save_nn
 from policies import nn_policy, random_policy
@@ -50,7 +57,26 @@ from policies import nn_policy, random_policy
 #: Distances de départ (unités) des épisodes EVA, parcourues en cycle : varier
 #: la distance d'éjection est le régime **hors distribution** du clonage pur
 #: (mesuré : l'imitation ne généralise pas aux départs qu'elle n'a pas vus).
-DEFAULT_SPAWN_DISTS = "300,500,800"
+DEFAULT_SPAWN_DISTS = "200,300,500,800,1200"
+
+
+def jittered_spawn(
+    seed: int,
+    dist: float,
+    rng: random.Random,
+    angle_jitter: float = 0.0,
+    dist_jitter: float = 0.0,
+) -> tuple[float, float]:
+    """Position de départ **perturbée** autour de celle de la graine : le cap
+    d'éjection est décalé de ±`angle_jitter` (rad) et la distance de
+    ±`dist_jitter` (unités). L'épisode démarre toujours orientation 0 (le
+    jeu ne l'expose pas au protocole) : décaler le cap revient donc à
+    démarrer **nez désaligné**, le régime hors distribution que la politique
+    doit apprendre à rattraper."""
+    base = random.Random(seed).uniform(0.0, TAU)
+    a = base + rng.uniform(-angle_jitter, angle_jitter)
+    d = max(15.0, dist + rng.uniform(-dist_jitter, dist_jitter))
+    return (math.cos(a) * d) % WORLD_W, (math.sin(a) * d) % WORLD_H
 
 
 def expert_target(expert: dict[str, Any]) -> list[float]:
@@ -145,6 +171,13 @@ def main() -> None:
     ap.add_argument("--iterations", type=int, default=3, help="itérations DAgger (rollouts + ré-entraînement)")
     ap.add_argument("--episodes", type=int, default=6, help="épisodes déployés par itération")
     ap.add_argument("--seed", type=int, default=1, help="graine du premier épisode (les suivants +1, graines uniques par itération)")
+    ap.add_argument("--seeds", type=int, nargs="+", default=None,
+                    help="graines d'épisodes explicites (cyclées) - plus de graines = plus de "
+                         "départs hors distribution vus par la politique")
+    ap.add_argument("--spawn-angle-jitter", type=float, default=0.0, metavar="DEGRES",
+                    help="décale le cap d'éjection de ±N degrés (départ nez désaligné)")
+    ap.add_argument("--spawn-dist-jitter", type=float, default=0.0,
+                    help="décale la distance d'éjection de ±N unités")
     ap.add_argument("--target", choices=("ship", "eva"), default="eva",
                     help="entité pilotée (eva : cosmonaute éjecté - défaut ; ship : boucle de minage)")
     ap.add_argument("--scenario", default="free",
@@ -172,6 +205,12 @@ def main() -> None:
     ap.add_argument("--val-fraction", type=float, default=0.2,
                     help="fraction des épisodes réservée à la validation (par graine)")
     ap.add_argument("--rng-seed", type=int, default=0, help="graine du mélange (reproductibilité)")
+    ap.add_argument("--measure-sim", action="store_true", default=False,
+                    help="après l'entraînement, mesurer l'écart de récompense contre "
+                         "l'autopilote du jeu **porté en Python** (autopilot_ref.py) sur des "
+                         "graines hors entraînement - boucle fermée hors-ligne, sans headless")
+    ap.add_argument("--measure-seeds", type=int, nargs="+", default=list(range(11, 16)),
+                    help="graines de la mesure hors-ligne (défaut 11..15, hors entraînement)")
     ap.add_argument("--evaluate", action="store_true",
                     help="après l'entraînement, comparer la politique à l'autopilote en mode hybride")
     ap.add_argument("--eval-episodes", type=int, default=5, help="épisodes de l'évaluation hybride")
@@ -197,6 +236,9 @@ def main() -> None:
     # aléatoire (l'itération 0 collecte alors des états très hors distribution
     # - c'est le but : DAgger apprend à s'en rattraper)
     rng = random.Random(args.rng_seed)
+    # graines d'épisodes : liste explicite si fournie (plus de graines), sinon
+    # la plage historique à partir de --seed
+    seed_list = list(args.seeds) if args.seeds else None
     policy = nn_policy(args.init_policy) if args.init_policy else random_policy(rng)
     print(f"Politique de départ : {'clone ' + args.init_policy if args.init_policy else 'aléatoire'}"
           f" · {args.iterations} itérations × {args.episodes} épisodes · "
@@ -208,10 +250,15 @@ def main() -> None:
         # entre le jeu de données d'itérations différentes), départs variés
         outcomes: list[dict[str, Any]] = []
         for i in range(args.episodes):
-            seed = args.seed + it * args.episodes + i
+            if seed_list:
+                seed = seed_list[(it * args.episodes + i) % len(seed_list)]
+            else:
+                seed = args.seed + it * args.episodes + i
             dist = dists[i % len(dists)]
             if args.target == "eva":
-                x, y = spawn_position(seed, dist)
+                x, y = jittered_spawn(seed, dist, rng,
+                                      math.radians(args.spawn_angle_jitter),
+                                      args.spawn_dist_jitter)
             else:
                 x, y = 0.0, 0.0
             samples, outcome = roll_episode(
@@ -284,6 +331,10 @@ def main() -> None:
     print(f"\nPolitique DAgger écrite dans {args.output} - rejouable par "
           f"`python3 evaluate.py --backend hybrid --strategy nn "
           f"--policy {args.output} --target {args.target} --episodes N`.")
+
+    if args.measure_sim:
+        cmp = sim_comparison(policy, list(args.measure_seeds), 300.0, args.timeout)
+        print_sim_comparison(cmp, "DAgger")
 
     if args.evaluate:
         print("\nÉvaluation hybride contre l'autopilote (mêmes épisodes)…")

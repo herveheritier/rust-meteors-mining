@@ -8,9 +8,11 @@ rentrer de 300 unités) : avec γ = 0,99, le +1000 de la récupération
 n'atteint jamais les états de départ (0,99¹¹⁰⁰ ≈ 0) et le Q-learning
 bootstrapé diverge (essayé, écart-type des hyperparamètres). PPO est
 **on-policy** : chaque rollout propage le retour réel jusqu'au départ,
-l'amorce experte garantit une politique déjà réussie que le clip protège des
-mises à jour destructrices, et le réseau de valeur fournit la ligne de base
-sans bootstrap max.
+l'amorce experte (départs perturbés) donne un point de départ qui atteint le
++1000, et le réseau de valeur fournit la ligne de base sans bootstrap max.
+Le clip borne chaque mise à jour, mais **l'affinage reste ouvert** : en
+l'état les itérations dégradent l'amorce (la sauvegarde du meilleur point
+protège le résultat).
 
 Le réseau (`PolicyNet`) partage une couche cachée tanh entre trois têtes,
 **factorisées comme les décisions de l'autopilote** (c'est la structure
@@ -23,9 +25,13 @@ Le réseau (`PolicyNet`) partage une couche cachée tanh entre trois têtes,
 
 La politique conjointe est le produit `π(↑)·π(←/→/rien)`, et l'entraînement :
 
-1. **amorce experte** : imitation supervisée (entropie croisée sur les deux
-   têtes) du contrôleur `seek` (le réglage robuste de l'entraînement CEM,
-   qui réussit la tâche) - la politique démarre déjà gagnante ;
+1. **amorce experte avec perturbation des états de départ** : imitation
+   supervisée (entropie croisée sur les deux têtes) de l'expert (`autopilot`
+   = le portage de l'autopilote du jeu, la référence ; ou `seek`) **depuis
+   des états de départ perturbés** (`warmstart.py`) - la politique démarre
+   déjà gagnante **et** sait se rattraper des états hors distribution où le
+   clonage pur gelait (nez aligné au repos loin de la station, approches trop
+   rapides, orbites) ;
 2. **itérations PPO** : rollouts de la politique courante (échantillonnage
    softmax), retours actualisés (γ = 0,9995), avantages `G − V` normalisés
    par lot, puis quelques époques de l'objectif **clipé**
@@ -38,14 +44,23 @@ La politique conjointe est le produit `π(↑)·π(←/→/rien)`, et l'entraîn
 
 La politique apprise est écrite dans `ppo_policy.json` et rejouée - dans le
 simulateur comme dans la vraie partie - par
-`evaluate.py --strategy ppo --policy ppo_policy.json`.
+`evaluate.py --strategy ppo --policy ppo_policy.json`. Le **meilleur point**
+mesuré en boucle fermée est sauvegardé : l'amorce étant évaluée avant les
+itérations, elle sert de point de départ au classement - un affinage qui
+dégrade ne fait donc pas perdre le résultat.
 
-Référence à battre (simulateur, graines 11..15) : `seek` ≈ **893** (5/5,
-entrée ~48 u/s - la pénalité d'arrivée trop rapide lui coûte ~90 points) ;
-un freinage appris plus franc (entrée ≤ 30 u/s) vaut ~985. L'autopilote du
-jeu (≈ 944 en conditions réelles) est la barre suivante.
+Les features vivent dans `nn.py` (version 7) et exigent les **variables de
+décision EVA** ajoutées là-bas : sans elles, l'imitation de l'autopilote EVA
+est impossible (l'expert qui freine vise l'opposé de la station, et la seule
+feature d'alignement ne le dit pas).
 
-    python3 ppo.py                        # budget par défaut (~100 itérations)
+Références (simulateur, graines 11..15) : `seek` ≈ **893** (5/5, entrée
+~48 u/s - la pénalité d'arrivée trop rapide lui coûte ~90 points) ;
+l'**autopilote du jeu** (porté par `autopilot_ref.py`) ≈ **941-944** ; un
+freinage appris plus franc (entrée ≤ 30 u/s) vaut ~985.
+
+    python3 ppo.py                        # amorce + PPO sur ~100 itérations
+    python3 ppo.py --iters 0              # produire l'amorce seule
     python3 ppo.py --iters 200            # plus long, meilleure convergence
 """
 
@@ -60,6 +75,7 @@ from typing import Any, Optional
 from eva_env import EvaSim, episode_reward, spawn_position
 from nn import FEATURES_VERSION, feature_size, obs_features
 from policies import EVA_ACTIONS
+from warmstart import default_perturbation, expert_transitions, is_rare
 
 # ── récompense (mêmes règles que le jeu, `eva_env.episode_reward`) ──────────
 TIME_COST_PER_SECOND = 2.0     # −2 s⁻¹ (coût de temps de l'épisode)
@@ -505,8 +521,18 @@ def main() -> None:
     ap.add_argument("--clip", type=float, default=0.2, help="bornage du rapport de probabilités (ε)")
     ap.add_argument("--entropy", type=float, default=0.02, help="coefficient du bonus d'entropie")
     ap.add_argument("--value-coef", type=float, default=0.5, help="coefficient de la régression de valeur")
-    ap.add_argument("--warmup", type=int, default=25,
-                    help="épisodes de l'expert (`seek`) pour l'amorce supervisée")
+    ap.add_argument("--warmup", type=int, default=8,
+                    help="graines de l'amorce supervisée (départs experts, cycle des --seeds)")
+    ap.add_argument("--warmup-dists", type=float, nargs="+", default=None,
+                    help="distances de départ de l'amorce (défaut : --spawn-dist seule)")
+    ap.add_argument("--expert", choices=("autopilot", "seek"), default="autopilot",
+                    help="expert de l'amorce : autopilot (le portage de l'autopilote du jeu, "
+                         "la référence à dépasser) ou seek (le contrôleur paramétré)")
+    ap.add_argument("--warmup-perturb", type=float, default=1.0,
+                    help="échelle de la perturbation des états de départ (0 = départs "
+                         "nominaux seulement, l'ancienne amorce)")
+    ap.add_argument("--warmup-stride", type=int, default=3,
+                    help="sous-échantillonne les pas de l'amorce (un pas sur N)")
     ap.add_argument("--imitate-epochs", type=int, default=20,
                     help="époques de l'amorce supervisée (données équilibrées)")
     ap.add_argument("--seeds", type=int, nargs="+", default=list(range(1, 9)),
@@ -532,44 +558,32 @@ def main() -> None:
     print(f"récompense : −2 s⁻¹, +1000 récupéré, pénalité d'entrée > "
           f"{ENTRY_SPEED_LIMIT} u/s\n")
 
-    # 1) amorce experte : imiter `seek` sur ses propres épisodes (même
-    # contrôle que le rollout, mais les actions viennent de l'expert)
-    from policies import seek
-    transitions: list[tuple[list[float], int]] = []
-    for k in range(args.warmup):
-        seed = args.seeds[k % len(args.seeds)]
-        x, y = spawn_position(seed, args.spawn_dist)
-        obs = env.reset(seed, x, y)
-        while not env.done and env.t < args.timeout:
-            cmd = seek(obs)
-            s = obs_features(obs)
-            a = None
-            for i, act in enumerate(EVA_ACTIONS):
-                if all(cmd.get(b, False) == act.get(b, False) for b in ("up", "left", "right")):
-                    a = i
-                    break
-            if a is None:
-                raise ValueError(f"action de `seek` hors espace discret : {cmd}")
-            transitions.append((s, a))
-            c = EVA_ACTIONS[a]
-            env.step(c.get("up", False), c.get("right", False), c.get("left", False))
-            obs = env.obs()
-    # équilibre des classes : ~80 % des pas de `seek` sont « ne rien faire »
-    # (la majorité domine l'entropie croisée et l'imitation finit immobile) -
-    # les pas rares (pousser, tourner) sont dupliqués pour peser autant
-    def is_rare(t: tuple[list[float], int]) -> bool:
-        up, turn = action_parts(t[1])
-        return up == 1 or turn != 2
-    rare = [t for t in transitions if is_rare(t)]
-    common = [t for t in transitions if not is_rare(t)]
-    balanced = common + rare * 4
-    imitate_expert(net, balanced, args.imitate_epochs, 0.1, 0.9, rng)
-    print(f"amorce experte : {args.warmup} épisodes de `seek` imités "
-          f"({len(transitions)} pas dont {len(rare)} rares ×4, "
-          f"{args.imitate_epochs} époques)\n")
+    # 1) amorce experte : imiter l'expert depuis des états de départ
+    # **perturbés** (warmstart.py) - le correctif du gel en boucle fermée
+    warm_seeds = [args.seeds[k % len(args.seeds)] for k in range(max(1, args.warmup))]
+    warm_dists = list(args.warmup_dists) if args.warmup_dists else [args.spawn_dist]
+    transitions = expert_transitions(
+        args.expert, warm_seeds, warm_dists, rng, args.timeout,
+        stride=args.warmup_stride,
+        **default_perturbation(args.spawn_dist, args.warmup_perturb),
+    )
+    active = sum(1 for t in transitions if is_rare(t))
+    imitate_expert(net, transitions, args.imitate_epochs, 0.1, 0.9, rng)
+    modo = "perturbés" if args.warmup_perturb > 0 else "nominaux"
+    print(f"amorce experte : `{args.expert}` imité sur {len(warm_seeds)} graine(s) "
+          f"× {len(warm_dists)} distance(s), départs {modo} "
+          f"({len(transitions)} pas dont {active} actifs, "
+          f"{args.imitate_epochs} époques)")
+    ev0 = evaluate_greedy(net, args.eval_seeds, args.spawn_dist, args.timeout)
+    best: dict[str, float] = {"mean_reward": ev0["mean_reward"]}
+    print(f"boucle fermée après amorce : {int(ev0['ok'])}/{int(ev0['total'])} · "
+          f"récomp. {ev0['mean_reward']:.1f} · entrée {ev0['mean_entry']:.1f} u/s\n")
+    save_ppo(args.output, net, meta={
+        "task": "eva-return", "phase": "warmstart",
+        "eval": {k: round(v, 1) for k, v in ev0.items()},
+    })
 
     # 2) itérations PPO
-    best: dict[str, float] = {"mean_reward": -1e18}
     velocities = {
         "w1": [[0.0] * net.hidden for _ in range(net.inputs)],
         "b1": [0.0] * net.hidden,
@@ -626,8 +640,9 @@ def main() -> None:
           f"récompense moyenne {ev['mean_reward']:.1f}, entrée {ev['mean_entry']:.1f} u/s")
     print(f"Meilleur en cours d'entraînement : {best['mean_reward']:.1f} "
           f"(sauvé dans {args.output})")
-    print(f"Référence `seek` : ~893 (entrée ~48 u/s) - viser entrée ≤ "
-          f"{ENTRY_SPEED_LIMIT} u/s pour ~985.")
+    print(f"Références : autopilote du jeu ~941 (porté, autopilot_ref.py) ; "
+          f"`seek` ~893 (entrée ~48 u/s) - viser entrée ≤ {ENTRY_SPEED_LIMIT} "
+          f"u/s pour ~985.")
 
 
 if __name__ == "__main__":

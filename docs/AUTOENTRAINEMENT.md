@@ -540,7 +540,7 @@ l'épisode se termine ou non - la progression partielle d'une mission paie
 ### Côté entraîneur
 
 `bench.py`, `evaluate.py` et `dagger.py` acceptent `--scenario <id>` ; les
-features du réseau (`nn.py`, version 5) incluent la progression des
+features du réseau (`nn.py`, version 7) incluent la progression des
 objectifs (part complétée, mission courante et son avancement) - la politique
 apprend sur le langage de tâche du scénario. Le simulateur EVA reste sans
 objectifs (features à zéro, comportement inchangé).
@@ -561,6 +561,10 @@ du simulateur (`eva_env.py`, graines hors entraînement 11..15). Références :
 autopilote du jeu **943,8** (6/6 en conditions réelles, headless) ; contrôleur
 `seek` (réglage robuste de l'entraînement CEM) **≈ 893** (5/5 en simulateur,
 entrée ~48 u/s - la pénalité d'arrivée trop rapide lui coûte ~90 points).
+L'autopilote du jeu est **porté en Python** (`autopilot_ref.py`, mêmes
+formules et constantes) et reproduit la référence en simulateur : **941,3**
+(6/6, graines 1..6) - c'est lui qui sert de barre hors-ligne (mesure sans
+processus headless, `evaluate.py --reference`, `test_reward_gap.py`).
 
 ### DQN : essayé, écarté - l'horizon long tue le bootstrap
 
@@ -578,7 +582,7 @@ préalable - le script DQN est retiré au profit de `ppo.py`.
 
 ### PPO : l'infrastructure, livrée et branchée
 
-`ppo.py` : PPO sur l'observation complète (112 features) avec
+`ppo.py` : PPO sur l'observation complète (157 features, `nn.py` v8) avec
 
 - une politique **factorisée** comme les décisions de l'autopilote -
   sigmoïde poussée × softmax rotation {←, →, rien} (la structure éprouvée
@@ -586,11 +590,22 @@ préalable - le script DQN est retiré au profit de `ppo.py`.
   plafonne à ~95 % d'exactitude et dérive en boucle fermée, la factorisation
   atteint ~99 % sur la poussée) + une tête de **valeur** (la ligne de base
   des avantages, sans bootstrap max) ;
-- une **amorce experte** : imitation supervisée du contrôleur `seek` sur ses
-  propres épisodes, avec **équilibrage des classes** - ~80 % des pas de
-  `seek` sont « ne rien faire », et sans duplication des pas rares
-  (pousser/tourner, ×4) l'entropie croisée se concentre sur la majorité et
-  la politique finit immobile ;
+- une **amorce experte par perturbation des états de départ**
+  (`warmstart.py`, `--expert autopilot`) : imitation supervisée de
+  l'**autopilote du jeu** (le portage Python, la référence) depuis des
+  départs **perturbés** - au repos nez aligné (l'état qui gelait), cap et
+  distance décalés, approches trop rapides à freiner, orbites à casser. Le
+  rééquilibrage des classes est **adaptatif** (il ne duplique les pas rares
+  que si l'expert est majoritairement inactif - l'amorce perturbée, elle,
+  produit surtout de l'action) ;
+- les **features de décision EVA** (`nn.py` v6) : `eva_braking`,
+  `eva_tang_brake`, `eva_thrust_err` (erreur d'alignement par rapport à la
+  direction de poussée **résultante**). Sans elles, l'imitation de
+  l'autopilote est **structurellement impossible** : quand l'expert freine,
+  il vise l'opposé de la station, et la feature d'alignement existante vaut
+  alors ≈ 0 - deux cinématiques identiques portent des actions opposées et
+  le réseau ne peut pas trancher (mesuré : la politique poussait nez
+  désaligné, gagnait de la vitesse tangentielle et fuyait) ;
 - retours actualisés **γ = 0,9995** (l'horizon long atteint le départ),
   avantages `G − V` normalisés par lot et **bornés (±2)**, objectif **clipé**
   (le rapport des probabilités est borné à [1−ε, 1+ε] : une mise à jour ne
@@ -604,28 +619,567 @@ préalable - le script DQN est retiré au profit de `ppo.py`.
   évaluation), rejouable par `evaluate.py --strategy ppo --policy
   ppo_policy.json` (backend sim, live ou hybride).
 
-### Mesure honnête et écart restant
+### Le gel de la boucle fermée est levé
 
-L'amorce (imitation de `seek` équilibrée, 15 époques) atteint **94-99 %**
-hors-ligne (99,3 % sur la poussée), mais la boucle fermée **gèle au premier
-état « aligné loin de la station »** (distance 300, erreur d'alignement ~0) :
-p(↑) y vaut ~0,35 (état sous-représenté dans les données de `seek`, qui ne
-le traverse qu'une frame avant de pousser), la politique n'ose ni pousser ni
-quitter l'état, et l'épisode se termine immobile (−200,0). Les rollouts sous
-cette amorce ne produisent **jamais** une approche complète (0,35⁴⁰⁰ ≈ 0) :
-le +1000 de la récupération n'entre jamais dans les retours, les avantages
-s'annulent, et PPO reste au plateau −200 quels que soient la prime de
-progression, le clip, l'entropie et 100 itérations. C'est l'erreur de
-composition dans sa forme pure - le **même écart** mesuré pour le clone du
-vrai autopilote (`imitate.py` : 98 % hors-ligne, 0/6 en boucle fermée
-live) : la politique est juste hors distribution, jamais au point de
-bifurcation que la boucle fermée visite en premier.
+L'échec documenté était précis : l'amorce imitait `seek` sur **ses propres**
+trajectoires, où l'état « nez aligné, loin de la station, au repos » n'est
+traversé qu'une frame avant de pousser (p(↑) ≈ 0,35, sous-représenté) ; la
+politique y gelait (−200,0), les rollouts ne produisaient **jamais**
+d'approche complète et le +1000 n'entrait jamais dans les retours.
 
-L'infrastructure RL est **livrée et branchée** (entraînement, courbe
-d'évaluation, sauvegarde/rejeu, évaluation sim/live/hybride) ; dépasser la
-référence exige une amorce dont la boucle fermée ne gèle pas - l'amorce
-DAgger (politique déjà entraînée sur les états visités, §5 quater) ou une
-imitation avec perturbation des états de départ sont les pistes documentées.
+Deux correctifs, mesurés ensemble :
+
+1. **départs perturbés** (`warmstart.py`) : l'expert est déroulé depuis des
+   états de départ qui incluent explicitement l'état qui gelait (au repos,
+   nez aligné, à plusieurs distances), des caps/distance décalés, des
+   approches radiales trop rapides et des orbites ;
+2. **features de décision EVA** (`nn.py` v6, cf. plus haut) : sans elles, le
+   freinage de l'expert contredit la feature d'alignement et l'erreur de
+   composition reste fatale quel que soit le jeu de données.
+
+**Mesure (simulateur, graines d'évaluation 11..15, départ 300 u) :**
+
+| amorce | rollouts atteignant la station | meilleure somme de récompenses de pas |
+|---|---|---|
+| ancienne (`seek`, départs nominaux) | 0/20 | ≈ 793 |
+| **perturbée + features v6** | **16-17/20** | **≈ 1015** (réussite complète) |
+
+La politique gloutonne réussit selon le tirage (0-4/5) : l'amorce n'est pas
+encore un contrôleur déterministe fiable, mais le **signal d'apprentissage
+existe** - les rollouts atteignent enfin le +1000, ce qui était la condition
+manquante. L'**affinage PPO reste ouvert** : en l'état, les mises à jour
+PPO dégradent l'amorce (retour au plateau ≈ −220 dès la première itération,
+même à lr réduit) - la sauvegarde du **meilleur point** conservée par
+`ppo.py` protège le résultat (la politique produite reste l'amorce).
+L'infrastructure RL est livrée et branchée (entraînement, courbe
+d'évaluation, sauvegarde/rejeu, évaluation sim/live/hybride), et la piste
+maintenant ouverte est l'**affinage prudent** de l'amorce (learning rate,
+ancrage KL / contrainte à la politique experte, plus de rollouts) et
+l'extension à la boucle de minage du vaisseau.
+
+## 5 septies. Référence **vaisseau** et extension de l'observation
+
+La boucle de minage du vaisseau a désormais son **portage de référence**
+(`tools/trainer/ship_autopilot_ref.py`) : la loi vaisseau de l'autopilote du
+jeu (`src/autopilot.rs::autopilot_inputs`), portée telle quelle - mission de
+la frame (soute pleine → accoster, hostile menaçant la station, ravitaillement
+si réserves basses **et** payables, minerai à collecter, hostile à détruire,
+stationnement), tir avec **retenue de feu** (cible achevée par des balles en
+vol, ou minerais dans le corridor de tir), et conduite (cap, vitesse visée
+selon la distance, esquive d'hostiles, poussée 4 directions en mode 4 WAYS).
+
+Le portage vaisseau lit plus d'état que l'EVA : l'observation a donc été
+**étendue** (`src/driver.rs`) avec exactement ce qui manquait à un portage
+fidèle :
+
+- **`moving_mode`** (la conduite 4 WAYS diffère des modes « nez ») ;
+- le **centre du corps** de chaque objet proche (`center_x`/`center_y`) - la
+  visée réelle (`body_center`), un météore asymétrique a son corps décalé de
+  `position` ;
+- la liste des **balles en vol** (`bullets`, **séparée** de `nearby` pour ne
+  pas changer les slots des features du réseau) - la retenue de feu ne se lit
+  pas dans la cinématique ;
+- **`supplies_affordable`** (les prix du magasin ne sont pas dans
+  l'observation) : l'autopilote ne rentre se ravitailler que si les réserves
+  sont basses **et** qu'un paquet est payable.
+
+**Fidélité mesurée** contre la loi réelle : l'autopilote du jeu est engagé sur
+une vraie partie headless et le portage doit rendre, à **chaque frame**, la
+même commande que le champ `expert` de l'observation
+(`validate_ship_port.py`). Résultat : **100 % d'accord** sur un épisode
+complet de boucle de minage (graine 7, scénario `economy`, **4 377 pas**
+comparés, dénouement `delivered`). `test_ship_port.py` verrouille hors-ligne
+les décisions clés sur des observations synthétiques (cap, 4 WAYS, soute
+pleine, garde de la station, retenue de feu, ravitaillement).
+
+### Micro-simulateur vaisseau **hybride** (`ship_env.py`)
+
+La boucle de minage existe maintenant côté simulateur : `ship_env.py` est le
+pendant vaisseau d'`eva_env.py`, avec une **frontière de fidélité assumée**
+(le choix « hybride » de la phase de conception) :
+
+- **fidèle** : cinématique du vaisseau (les quatre modes de déplacement,
+  `thrust_vector`, `realistic_rotation_after_input`), tir (cadence, balle au
+  pivot, `vitesse + 2`), minage (un tir = un triangle ; minerais libérés à la
+  destruction), champ minier de l'épisode (`seed_mining_field`), collecte,
+  économie Progression (carburant, munitions, soute, prix) et accostage
+  (seuil de vitesse **par frame**, déchargement, ravitaillement) ;
+- **approché** : la **géométrie** des météores est un **cercle** (centre +
+  rayon) au lieu d'un mesh de triangles, les collisions sont cercle/cercle au
+  lieu du SAT triangle à triangle, et le champ de formation est **synthétisé**
+  (mêmes règles que le jeu, mais un flux aléatoire différent) ; un **rayon de
+  collision effectif** et une **tolérance de ramassage** compensent la
+  différence entre la borne `radius` et la surface réelle (mesurés contre la
+  vraie partie de référence).
+
+**Fidélité de la cinématique : mesurée exacte.** `fixtures/ship_physics_windows.json`
+est un extrait d'une **vraie partie** headless (état du vaisseau, action de
+l'autopilote, état suivant, 90 fenêtres) ; le simulateur reproduit chaque pas à
+la **précision machine** (erreur max ≈ 1,4 × 10⁻¹⁴) - c'est ce que verrouille
+`test_ship_env.py`, sans processus de jeu.
+
+**La référence dans le simulateur** : avec le champ réel importé depuis une
+partie enregistrée, l'autopilote porté livre exactement comme dans le jeu ;
+avec le champ **synthétique**, il boucle la boucle de minage sur une partie des
+graines seulement (2-3/8 selon la disposition tirée) - l'instabilité vient des
+quasi-manqués de minerai sur un monde qui n'est pas celui du jeu, pas de la
+physique. La **vraie partie fait foi** : sur les graines 1..8, l'autopilote du
+jeu donne **8/8 livraisons, récompense moyenne 937,4** (ex. graine 3 : livrée
+en 18,9 s, récompense 962,2 ; le simulateur à champ importé donne 934,8).
+
+### Amorce par départs perturbés de la cible `ship` (`ship_warmstart.py`)
+
+`ship_warmstart.py` est le pendant vaisseau de `warmstart.py` : il fabrique des
+**départs perturbés** (le jeu démarre toujours le vaisseau **à quai** : le nez
+désaligné, une vitesse initiale, une soute entamée, des réserves basses sont
+donc des états hors distribution), déroule l'**expert autopilote** (`ship_autopilot_ref.py`)
+depuis chacun, étiquette chaque pas visité (mêmes features et mêmes cibles que
+le réseau de `nn.py`) et rééquilibre les classes. La **boucle fermée contre
+l'autopilote** se mesure hors ligne (`sim_comparison_ship`, `--measure-sim`).
+
+**Résultat honnête** (artefact par défaut : 10 graines × 4 distances, 60 000
+pas étiquetés, 25 époques, **features v8**) : l'infrastructure est en place et
+le champ de départ est couvert ; la **v8 relève nettement l'imitation**
+(exactitude train **65,0 %**, validation **57,9 %** contre 39,4 % / 31,6 % en
+v7) mais la boucle de minage **ne se ferme pas encore** - écart de récompense
+**−447,8** contre l'autopilote dans le simulateur (**1/6 livraisons** contre
+3/6 ; −566,2 et 0/6 en v7). C'est le même écart que le côté EVA - l'écart
+restant est l'**affinage**, pas l'infrastructure. Le déploiement de cette
+politique dans le jeu (§5 octies) rend l'écart **mesurable dans la partie**
+elle-même : 0/6 livraisons contre 6/6 pour la loi scriptée.
+
+Les **grandeurs de décision** du vaisseau (§5 nonies) sont dans les features
+(v7 : balles en vol, retenue de feu, `supplies_affordable`, `moving_mode` ;
+v8 : la **visée de mission de la conduite**) ; mesurées, elles rendent la
+rotation **décidable** et relèvent l'imitation d'un cran, sans encore boucler
+la boucle - le seuil d'alignement de la bande morte reste à apprendre.
+
+## 5 nonies. Les grandeurs de décision du vaisseau (v7 puis v8)
+
+Le diagnostic du §5 octies (les features n'exposent pas tout ce dont
+l'autopilote vaisseau se sert pour décider) est traité en **version 7** de
+`nn.py::obs_features` (143 entrées au lieu de 115) :
+
+- **balles en vol** (`bullets`, jusqu'à `BULLET_SLOTS` = 4, + leur nombre) :
+  la **retenue de feu** (`HOLD_FIRE_*`) ne se lit pas dans la cinématique du
+  vaisseau ;
+- les deux **indicateurs de retenue de feu** (`_ship_decision_features`) :
+  cible quasi détruite achevée par une balle en vol, minerais dans le
+  corridor de tir. Sans eux, la proximité **mutuelle** cible/balles ne se lit
+  pas et le même vecteur porte `fire` et pas `fire` - même conflit que
+  `eva_braking` (§5 sexies) ;
+- **`supplies_affordable`** : la mission « rentrer se ravitailler » en dépend ;
+- **`moving_mode`** en one-hot : en 4 WAYS la conduite pousse dans les axes de
+  l'écran au lieu d'orienter le nez.
+
+**Mesure** (mêmes épisodes que ci-dessus) : exactitude train 38,7 % → **39,4 %**,
+validation 32,6 % → **31,6 %**, écart de récompense −582,5 → **−566,2**,
+toujours **0/6 livraisons** dans le jeu. Les trois entrées sont donc
+**nécessaires mais pas suffisantes** : le portage Rust est fidèle à **100 %**
+(23 981 pas comparés, fixture ré-enregistré) et la politique reste mesurable,
+mais elle ne boucle pas.
+
+**Cause identifiée (mesurée).** La **conduite** de l'autopilote vaisseau vise
+la **cible de sa mission** (minerai, hostile ou station selon la soute, les
+réserves et la garde de la station), pas la station ; or les features n'exposent
+d'erreur d'alignement que vers la **station**. Mesure sur 113 706 pas
+d'expert : le sens de rotation de l'expert est expliqué à **50,3 %** par
+l'erreur vers la station (le hasard) et **60,5 %** par celle vers l'objet le
+plus proche - aucune des deux ne porte la visée suivie par la loi. C'est
+l'analogue vaisseau de `eva_thrust_err` : la suite naturelle est d'exposer les
+**variables de décision de conduite** (visée `aim` de la mission,
+`desired_speed`, branche 4 WAYS, esquive), symétriquement à la v6, puis de
+ré-entraîner.
+
+### La visée de mission de la conduite (v8) - faite
+
+La version 8 de `nn.py::obs_features` (**157 entrées**) livre exactement cela :
+`_ship_drive_features` **rejoue la mission de la frame** (le choix de `Goal` de
+`src/autopilot.rs`, priorité incluse : soute pleine, garde de la station,
+ravitaillement, hostile à portée, minerai gardé) puis la **conduite** que
+l'autopilote en tire, comme `_ship_decision_features` rejoue déjà la retenue de
+feu :
+
+- la **mission** en one-hot (`dock` / `attack` / `collect` / `patrol`) ;
+- le **cap effectif** `aim` (l'**esquive** remplace le cap de mission quand un
+  hostile va passer trop près - `collision_threat` / `avoid_aim`) et son
+  **erreur d'alignement** `err = aim − orientation`, le seuil de rotation et de
+  poussée se lisant dessus ;
+- la **vitesse visée** (`desired_speed` : croisière, rampes d'arrêt de
+  l'attaque et de la collecte, ralentissement d'accostage, rayon de
+  stationnement) et la vitesse **projetée** sur le cap ;
+- les composantes du mode **4 WAYS** (`ex`, `ey` : l'écart au vecteur de
+  vitesse visé, qui décide des quatre directions de poussée à l'écran) ;
+- les drapeaux de conduite : **esquive** active, menace **devant** (freinage
+  pendant l'esquive), **survitesse** et **arrêt** (`settle`).
+
+Hors vaisseau (le cosmonaute EVA pilote) le bloc vaut zéro, comme la loi.
+Porté à l'identique dans `src/learned_pilot.rs` (`FEATURES_VERSION = 8`,
+`FEATURE_COUNT = 157`, mêmes ordres d'opérations).
+
+**Mesure - la rotation devient décidable.** Sur une vraie partie (graine 1,
+autopilote scripté, 999 pas, mode DIRECTIONAL), la règle de rotation **rejouée
+depuis le cap effectif v8** reproduit exactement la rotation de l'expert :
+**100,0 %** des pas (3 classes), contre **63,3 %** pour la même règle appliquée
+à l'erreur vers la **station** - l'information que la loi suit est bien livrée.
+
+**Mesure - l'imitation relève d'un cran, la boucle ne se ferme pas.** Artefact
+par défaut (60 000 pas étiquetés, 24 cachés, 25 époques) : exactitude train
+39,4 % → **65,0 %**, validation 31,6 % → **57,9 %** ; micro-simulateur : écart
+de récompense −566,2 → **−447,8**, livraisons 0/6 → **1/6** (autopilote 3/6) ;
+dans le jeu : **0/6** livraisons contre **6/6** pour la loi scriptée. Portage
+Rust **fidèle à 100 %** (mesuré alors ; **4 941 pas** avec l'artefact élargi de
+§5 nonies bis, fixture ré-enregistré à chaque changement de poids).
+
+**Résidu mesuré : la bande morte d'alignement.** Dans la partie, le réseau
+d'arrive à **42,9 %** d'exactitude toutes touches, et son échec se **concentre
+dans la bande morte** : **45,2 %** des pas justes pour `|err| ≤ 0,10 rad`,
+contre **84,6 %** au-delà et **100 %** au-delà de 0,35 rad - or cette bande
+couvre **68 %** de la trajectoire (le nez reste pointé, l'autopilote ne corrige
+que par rafales). L'information est dans les features, mais le **seuil**
+(0,10 rad ≈ 0,032 en feature normalisée par π) n'est pas appris : la prochaine
+étape est d'exposer les **seuils de conduite** (drapeaux « aligné pour tourner
+/ pousser », vitesse visée atteinte), voire d'élargir la capacité
+d'apprentissage, puis de ré-entraîner.
+
+La seconde piste a été suivie et **elle ferme la boucle** : c'était un
+symptôme de capacité, pas un mur (§5 nonies bis).
+
+## 5 nonies bis. L'élargissement de la capacité d'apprentissage - fait
+
+L'hypothèse restante après la v8 était la **capacité** du réseau (24 cachés,
+25 époques, 6 000 pas). L'élargir butait sur un fait : le MLP en **Python
+pur** est lent - mesuré, `hidden=64` sur 6 000 pas coûte ~17 s par époque, et
+plusieurs heures pour les réglages visés. L'élargissement commence donc par
+le **rendre possible**.
+
+### Un second moteur d'entraînement, optionnel (`nn.py`)
+
+`MLP.train(..., backend=...)` accepte `python` (**défaut, aucune
+dépendance** - la convention du répertoire), `numpy` (vectorisé) ou `auto`
+(numpy s'il est importable, repli Python pur). Les deux chemins font **le même
+apprentissage** (même perte BCE + entropie croisée de rotation, même élan,
+même arrêt précoce, mêmes bornes numériques) ; seul le chemin vectorisé rend
+les gros réglages atteignables : **~33 × plus rapide** (mesuré : 1,0 s contre
+33 s sur 1 500 pas × 40 époques). Ce qui est **rejouable** n'en dépend jamais :
+l'inférence (`forward`, Python pur) et le portage Rust restent les mêmes, les
+poids sont sauvegardés en **listes Python** (`save_nn` les écrit en JSON), et
+`backend="python"` reste le défaut. `test_nn_backend.py` verrouille
+l'équivalence (les cas numpy se **sautent** sans numpy - la CI n'installe
+rien).
+
+### Les réglages, élargis
+
+| réglage | avant | après |
+|---|---|---|
+| graines | 10 | **12** |
+| sous-échantillonnage (`--stride`) | 10 | **4** |
+| plafond par graine (`--balance-cap`) | 6 000 | **20 000** |
+| pas étiquetés | 60 000 | **240 000** |
+| jeu d'entraînement / validation | 6 000 / 15 000 | **24 000 / 60 000** |
+| couche cachée | 24 | **64** |
+| époques | 25 | **300** (arrêt précoce, patience 25) |
+
+### Mesure - et une mise en garde
+
+| | avant (24 cachés, 6 000 pas) | **élargi (64 cachés, 24 000 pas)** |
+|---|---|---|
+| exactitude train / validation | 65,0 % / 57,9 % | **78,9 % / 69,8 %** |
+| micro-simulateur : écart de récompense | −447,8 (1/6) | **−574,7 (0/6)** |
+| **dans le jeu**, livraisons (graines 1..6) | **0/6** | **5/6** |
+| **dans le jeu**, livraisons (graines 1..12) | - | **7/12** contre **10/12** |
+
+Le micro-simulateur **pénalise** le réseau élargi alors que la partie le
+**récompense** : sur cette cible, l'écart de récompense hors ligne n'est pas un
+critère de sélection - il est même **anti-corrélé** au résultat réel. La raison
+est connue depuis la construction du simulateur : il est **hybride**, avec des
+météores **en cercles** et un champ minier **synthétisé**, alors que le jeu
+engendre son champ ($\S$5 septies). La mesure qui fait foi reste celle **dans
+le jeu** (`measure_in_game.py`).
+
+**Ablation - la capacité est bien le levier.** Mêmes données élargies avec la
+capacité d'**avant** (24 cachés, 25 époques) : validation 60,6 %,
+micro-simulateur **−369,1** (1/6, donc *meilleur* hors ligne) mais **1/12
+livraisons dans le jeu** seulement. Le gros réseau passe donc de **1/12 à
+7/12** : ce n'est pas le volume de données qui ferme la boucle, c'est la
+**capacité**. La bande morte d'alignement n'était pas un mur mais un symptôme.
+
+Le résidu change de nature : le réseau **livre** désormais, mais **plus
+lentement** que la loi (49,2 s contre 31,4 s de temps simulé moyen) et
+échoue encore 5 fois sur 12. La piste ouverte n'est plus « élargir » mais
+**affiner** et **rendre le micro-simulateur représentatif**.
+
+## 5 nonies ter. Les seuils de conduite (v9) - faits, et ce qu'ils ont appris
+
+La suite identifiée était d'exposer les **seuils** de conduite : la v8 livrait
+les grandeurs (cap, erreur, vitesse visée) mais **pas les constantes auxquelles
+la loi les compare**, si bien que la bande morte d'alignement
+existait dans les features sans être lisible (`err/π` y vaut 0,032).
+
+### Ce que la v9 ajoute (157 → 171 entrées)
+
+- **`_ship_drive_features` (+12)** : l'erreur **en unités du seuil**
+  (`err / TURN_DEADBAND`, `err / THRUST_DEADBAND` - le seuil tombe à ±1) et les
+  comparaisons qui décident : rotation droite/gauche, bande morte de rotation,
+  alignement de poussée, « trop lent pour la vitesse visée »,
+  « plus rapide que la vitesse visée », arrêt (`desired < 0,4` et
+  `v > 0,02`), frein d'esquive (`velocity > 0,5`), branche 4 WAYS
+  (`|ex| > |ey|`) et rotation résiduelle (`|rotation| > 0,06`) ;
+- **`_ship_decision_features` (+2)** : le **seuil d'alignement de tir**
+  (`|aim − orientation| < 0,14`) vers la cible de tir et l'erreur normalisée
+  par ce seuil - l'erreur vers la cible de **conduite** existait, pas celle
+  vers la cible de **tir**.
+
+Ce sont des **prédicats d'état** (de quel côté d'une constante on est), jamais
+la commande combinée. Portés à l'identique dans `src/learned_pilot.rs`
+(`FEATURES_VERSION = 9`, `FEATURE_COUNT = 171`), portage mesuré **fidèle à
+100 %** (3 379 pas, fixture ré-enregistré).
+
+### Résultat - l'imitation devient parfaite, la boucle fermée **régresse**
+
+| | v8 | **v9** |
+|---|---|---|
+| exactitude train / validation | 78,9 % / 69,8 % | **100,0 % / 100,0 %** |
+| micro-simulateur : livraisons | 1/6 | **1/6** |
+| **dans le jeu**, livraisons (12 graines) | **7/12** | **3/12** |
+
+Autrement dit : rendre la loi **entièrement décidable** ne suffit pas - et
+**dégrade** le résultat. C'est le troisième enseignement de cette cible, et il
+est important : le facteur limitant n'est pas la **représentation** mais
+l'**écart de distribution** entre l'entraînement et le déploiement.
+
+### Diagnostic du mode d'échec (mesuré)
+
+Sonde d'un épisode appris (graine 1) : le réseau accède avec l'expert à
+**100 %** sur `up`/`down`/`left`/`right`, mais à **1,9 %** sur `fire` - il
+**tire quasiment en permanence**, vide ses munitions, ne détruit presque rien
+(2 météores en 1 000 s), ne collecte pas, et finit détruit. Sur des frames où
+l'expert ne tire jamais (aucun hostile à portée), le réseau tire à **p = 1,0**,
+saturé. Les données d'entraînement couvrent pourtant largement ce cas
+(85 % des pas sans cible à portée, `fire = 0`), et le réseau y est juste à
+100 % : il est donc **hors distribution dans la partie**, pas mal entraîné.
+
+### Deux causes réelles, trouvées et corrigées en route
+
+1. **Un centre de forme à `NaN`.** `compute_shape_center` (`src/shape.rs`)
+   divisait par un compteur de triangles vivants **nul** (`0/0`) quand une
+   forme n'a aucun triangle vivant : le centre devenait `NaN`, puis
+   contaminait `center`, les sommets monde et l'observation publiée - où
+   `serde_json` l'écrit `null`. **Tous** les minerais d'une vraie partie
+   étaient dans ce cas (150/150 mesurés). Le portage refuse désormais de
+   recentrer une forme vide (il garde le centre précédent) et
+   `nn.py::_finite` / `learned_pilot.rs::finite` neutralisent en plus toute
+   valeur non finie (le portage doit reproduire **exactement** le même calcul).
+2. **Le mode de déplacement par défaut du micro-simulateur ne correspondait
+   pas à la partie.** Le simulateur démarrait en **REALISTIC (3)** alors que
+   les 90 fenêtres de `fixtures/ship_physics_windows.json` (une vraie partie
+   `economy`) sont **toutes** en **DIRECTIONAL (2)**. Tout l'entraînement se
+   faisait donc sur un mode que le jeu n'utilise pas - one-hot jamais vu à
+   l'inférence. Corrigé (`ShipSim` démarre en DIRECTIONAL) : le simulateur
+donne alors **6/6 livraisons** pour l'autopilote, comme le jeu.
+
+### Ce qu'il reste à faire (et ce qui ne marche pas)
+
+- **La régularisation ne suffit pas** : un entraînement avec bruit d'entrée
+  (`--noise 0,08`, désormais exposé) redonne 100 % d'exactitude et le même
+  résultat - les seuils quasi binaires saturent les sorties, le bruit ne
+  change pas la décision.
+- **La vraie piste est de supprimer l'écart de distribution** : entraîner
+  (ou affiner) sur des états **du jeu réel** plutôt que du micro-simulateur -
+  c'est exactement ce que fait `dagger.py` pour l'EVA (collecter des états
+  visités, les étiqueter avec l'expert, ré-entraîner), et le simulateur
+  vaisseau étant mesuré **non représentatif** (§5 nonies bis), la cible
+  `ship` a besoin du même traitement. C'est un chantier, pas un réglage.
+- **Conséquence assumée** : avec 3/12 contre 7/12, la politique v9
+  **n'est pas un progrès** - l'artefact embarqué doit être choisi sur la
+  mesure **dans le jeu**, jamais sur l'exactitude d'imitation ni sur
+  l'écart de récompense du simulateur.
+
+## 5 octies. Phase 4 — la politique apprise **déployée dans le jeu**
+
+Objectif de la phase : que le réseau entraîné **tourne dans le jeu**, comme
+stratégie « autopilote » alternative - mesurable, sélectionnable, et fidèle
+au calcul de l'entraîneur.
+
+### Le portage (`src/learned_pilot.rs`)
+
+Deux pièces sont rejouées à l'identique : l'**extraction de features**
+(`nn.py::obs_features`, version 8) sur l'**observation du jeu**
+(`driver::Observation`) et le **réseau** (`nn.py::MLP` : couche cachée tanh,
+sigmoïdes `up`/`down`/`fire`, softmax de rotation `left`/`right`/`none`). Les
+poids sont **embarqués dans le binaire** (`include_str!` de
+`assets/ship_pilot_policy.json`, écrit par
+`ship_warmstart.py --output ../../assets/ship_pilot_policy.json`) : mettre à
+jour le cerveau déployé = ré-entraîner **et** recompiler. Un asset illisible
+n'est pas joué (le portage **retombe sur la loi scriptée**) et la case refuse
+de s'allumer.
+
+Détail qui compte : l'**ordre des opérations** de la couche est celui de
+`nn.py` (somme des termes, **puis** ajout du biais). L'addition flottante
+n'étant pas associative, un ordre différent suffit à faire basculer la
+rotation sur une probabilité limite - le portage doit être le même calcul, pas
+seulement la même formule.
+
+### La sélection dans le jeu
+
+- **Case LEARNED PILOT** de l'écran de paramétrage (touche **Y**, clé
+  persistée `learned_pilot`) : elle choisit le **cerveau** de l'autopilote -
+  elle n'a d'effet qu'avec le pilote automatique allumé (X). L'indicateur du
+  HUD affiche « AUTOPILOT (LEARNED) ».
+- La **loi reste celle de l'entraînement** : le réseau ne décide que des
+  entrées de pilotage ; les gestes d'accostage (décharger, se ravitailler,
+  repartir) restent à la machine à états de l'autopilote - c'est exactement ce
+  que faisait l'expert étiqueteur, qui les exécutait **hors** du réseau.
+- Côté **entraîneur**, le protocole gagne la bascule `learned_pilot`
+  (`POST /cmd {"autopilot":true,"learned_pilot":true}` : le jeu joue le
+  réseau lui-même) et l'observation publie `learned_pilot` **et** `learned` -
+  l'action du portage, miroir exact de `expert`.
+- Le **banc d'essai éteint la stratégie apprise** (`headless::run_bench`) :
+  il mesure la ligne de base **scriptée** ; sans ce nettoyage, une case
+  LEARNED PILOT restée allumée ferait passer le réseau pour « l'autopilote du
+  jeu » dans toutes les comparaisons suivantes (même classe de piège que le
+  pilote externe resté engagé, §5 quater).
+
+### Fidélité du portage — mesurée
+
+`learned` permet la mesure symétrique de `validate_ship_port.py` : on laisse
+le **jeu** jouer avec le réseau embarqué et on compare, à chaque pas, l'action
+du portage Rust à celle de la politique Python **sur la même observation**.
+
+```bash
+cargo run --release -- --headless        # dans un autre terminal
+cd tools/trainer
+python3 validate_learned_port.py --scenario economy --seeds 1 2 3 4 --seconds 30
+```
+
+**Mesure : 4 941 / 4 941 pas identiques (100 %)**, sur trois épisodes de
+minage (scénario `economy`, artefact v8 **élargi**, 64 cachés). Le portage Rust
+lit `hidden` dans le fichier de politique et valide les dimensions :
+**agrandir le réseau ne touche pas le Rust**. Le taux est verrouillé hors ligne par le
+test unitaire Rust de `learned_pilot.rs`, qui rejoue le fixture
+`fixtures/learned_pilot_windows.jsonl` (40 fenêtres d'une **vraie partie** :
+observation, features de `nn.py`, action de la politique Python - régénérables
+par `validate_learned_port.py --record`), plus la fenêtre-limite de
+l'observation vide ; les features y sont reproduites à moins de 1e-9 et les
+décisions **exactement**. `test_learned_pilot.py` verrouille le maillon Python
+(l'asset embarqué reste rejouable par `nn.py`, le fixture reste cohérent) :
+ré-entraîner ou changer les features **casse le test** tant que le fixture n'a
+pas été ré-enregistré.
+
+### Ce que la stratégie déployée vaut — mesuré, sans enjolivement
+
+| artefact | dans le jeu, livraisons | temps simulé moyen (livrés) |
+|---|---|---|
+| **loi scriptée** (graines 1..12) | **10/12** | 31,4 s |
+| **appris, 64 cachés** (graines 1..12) | **7/12** | 49,2 s |
+| appris, 24 cachés + données élargies (ablation) | **1/12** | 17,6 s |
+| appris, v8 d'avant (24 cachés, 6 000 pas, graines 1..6) | 0/6 | - |
+
+avec l'artefact élargi (240 000 pas étiquetés, 24 000 en entraînement,
+64 cachés, 300 époques, moteur numpy) à **78,9 %** d'exactitude d'entraînement
+et **69,8 %** de validation (65,0 % / 57,9 % à 24 cachés et 25 époques).
+Sur les graines 1..6, le réseau livre **5/6** contre **6/6** pour la loi
+scriptée : il reste **derrière**, mais **il livre** - l'écart n'est plus
+« ne boucle pas du tout » mais « boucle plus lentement ». Le micro-simulateur
+du **même** artefact donne **0/6** (écart −574,7) : hors ligne, il **désigne
+le mauvais réseau** (détail et ablation en §5 nonies bis).
+
+### Le protocole de mesure en boucle fermée **dans le jeu** (rejouable)
+
+La mesure « dans le jeu » a son **script du dépôt** :
+`tools/trainer/measure_in_game.py`. Il fait jouer le **jeu lui-même** - la
+seule mesure qui ne dépende ni du micro-simulateur ni d'un portage - et rend la
+comparaison reproductible :
+
+```bash
+cargo build --release && cargo run --release -- --headless   # 1. le jeu
+cd tools/trainer                                              # 2. la mesure
+python3 measure_in_game.py --seeds 1 2 3 4 5 6                # appris vs scripté
+python3 measure_in_game.py --seeds 1 2 --only learned --sim-cap 60 --json /tmp/m.json
+```
+
+**Protocole** - une graine = **deux épisodes identiques**, un par cerveau :
+
+1. `POST /reset` sur la graine, puis `POST /cmd {"autopilot": true}` avec
+   `learned_pilot` **faux** (loi scriptée) ou **vrai** (réseau embarqué) ;
+2. attente de la **nouvelle piste** : l'`episode_id` de l'observation doit
+   changer (l'observation d'avant la remise à zéro appartient à l'épisode
+   précédent - une livraison y serait comptée deux fois) **et** le cerveau
+   demandé doit être appliqué (le champ `learned` est **neutre** tant que la
+   bascule n'est pas consommée : comparer ces pas d'amorçage ferait échouer la
+   mesure pour rien, le même piège que `validate_learned_port.py`) ;
+3. suivi des frames jusqu'au **dénouement explicite** publié par le jeu
+   (`episode_done`, cf. `src/driver.rs::advance_episode`) : le script ne
+   réinterprète pas la condition de succès, elle est celle du jeu ;
+4. deux **garde-fous** pour un épisode qui ne se termine pas (le cas mesuré) :
+   `--sim-cap` (150 s de temps **simulé**, dénouement de mesure `délai`) et
+   `--wall-cap` (120 s muraux, `mur` - protège d'un jeu qui ne publie plus de
+   frame). Le temps rapporté est le temps simulé (`episode_t`), comparable
+   d'une machine à l'autre.
+
+La **logique de mesure est testée hors partie** (`test_measure_in_game.py` :
+classification des dénouements, garde-fous, attente de la bascule, contre un
+faux client) et le **vocabulaire** des dénouements est verrouillé contre
+`src/driver.rs` - le rapport ne peut pas inventer un état que le jeu ne publie
+pas. Rejouée avec l'artefact **élargi**, la mesure donne **7/12** livraisons
+pour le cerveau appris contre **10/12** pour la loi scriptée (graines 1..12),
+et **5/6** contre **6/6** sur les graines 1..6 : c'est cette ligne, et non
+l'écart de récompense du micro-simulateur, qui fait foi.
+
+Entraînement de l'artefact déployé (`ship_warmstart.py` par défaut :
+12 graines × 4 distances, `--stride 4`, 240 000 pas étiquetés, **64 cachés**,
+300 époques, moteur **numpy**, **features v8**) : exactitude **train 78,9 %**,
+**validation 69,8 %**. Autrement dit : **le mécanisme est livré et fidèle, et
+la politique livre désormais dans la partie** (7/12). C'est le résultat de
+l'élargissement de capacité (§5 nonies bis) ; le résidu est le **micro-
+simulateur représentatif** et l'**affinage** (livrer plus vite, 5 échecs
+restants sur 12) - la stratégie apprise reste un objet mesurable **dans le
+jeu**, pas seulement hors ligne.
+
+### Grandeurs de décision du vaisseau (v7) - fait
+
+Les trois entrées manquantes identifiées ici sont **livrées** en version 7 :
+**balles en vol** (`bullets`, avec les deux indicateurs de **retenue de feu**),
+**`supplies_affordable`** et **`moving_mode`** en one-hot (§5 nonies). Mesure
+faite : elles font passer l'écart de récompense de −582,5 à **−566,2** mais ne
+bouclent toujours pas la boucle (0/6 livraisons) - **nécessaires, pas
+suffisantes**.
+
+### Visée de mission de la conduite (v8) - fait
+
+La cause résiduelle identifiée était mesurée : la **conduite** de l'autopilote
+vaisseau vise la **cible de sa mission** (minerai, hostile ou station selon
+soute, réserves et garde de la station), alors que les features n'exposaient
+d'erreur d'alignement que vers la **station** (sur 113 706 pas d'expert, le sens
+de rotation n'y était expliqué qu'à **50,3 %**, le hasard).
+
+La version 8 livre la visée complète (§5 nonies) : mission en one-hot, **cap
+effectif** (esquive comprise) et son erreur d'alignement, **vitesse visée**,
+vitesse projetée, composantes **4 WAYS**, drapeaux d'esquive / survitesse /
+arrêt. Résultat : la rotation de l'expert est **exactement** reproduite par la
+règle rejouée depuis le cap v8 (**100,0 %** des pas, contre 63,3 % avec la
+seule erreur vers la station), l'imitation passe de **31,6 %** à **57,9 %** de
+validation, et le micro-simulateur de 0/6 à **1/6** livraisons - sans encore
+fermer la boucle **dans le jeu** (0/6 contre 6/6 pour la loi scriptée).
+
+### Piste identifiée pour l'affinage - dont la seconde moitié est faite
+
+Sur l'artefact **d'avant l'élargissement**, le résidu était mesuré et n'était
+plus un manque d'information : dans la partie, le réseau n'était juste qu'à
+**45,2 %** dans la **bande morte** d'alignement (`|err| ≤ 0,10 rad`), contre
+84,6 % au-delà et 100 % au-delà de 0,35 rad - et cette bande couvrait **68 %**
+de la trajectoire (le nez reste pointé, l'autopilote ne corrige que par
+rafales). Deux suites étaient proposées : exposer les **seuils de conduite**
+(drapeaux « aligné pour tourner », « aligné pour pousser », « vitesse visée
+atteinte ») - symétrique de l'esprit `hold_fire_*` de la v7 - et/ou élargir la
+**capacité d'apprentissage** (cachés, époques, données).
+
+**La seconde a été suivie et elle ferme la boucle** (§5 nonies bis) :
+la bande morte était un **symptôme de capacité**, pas un mur. La première
+reste ouverte - elle viserait la **précision** (livrer plus vite, réduire les
+5 échecs sur 12), non la fermeture. Le vrai chantier devenu prioritaire est le
+**micro-simulateur représentatif** : hors ligne, il désigne le **mauvais**
+réseau.
 
 ## 6. Suite (phases suivantes)
 
@@ -640,22 +1194,57 @@ imitation avec perturbation des états de départ sont les pistes documentées.
   L'infrastructure **DAgger** est en place (§5 quater : étiquette experte
   dans l'observation, `dagger.py`, tête de rotation softmax) et améliore la
   prédiction de l'expert sur les états visités par la politique (~12 % →
-  ~98 % de validation en 3 itérations), mais la **convergence en boucle
-  fermée sur les départs hors distribution reste à obtenir** : poursuivre
-  les itérations DAgger (et les variantes DART / DAgger avec étiquetage
-  différé), et l'infrastructure **RL** est livrée (§5 sexies : PPO sur
-  l'observation complète, amorce experte, rejeu - le DQN a été essayé puis
-  écarté, l'horizon long tuant le bootstrap). L'écart mesuré est partout le
-  même - la politique gèle à la première bifurcation hors distribution de
-  son amorce - et la piste la plus courte est une amorce dont la boucle
-  fermée ne gèle pas (DAgger, imitation avec états de départ perturbés),
-  puis l'évaluation contre l'autopilote (943,8) et la boucle de minage du
-  vaisseau.
-- **Phase 4 — politique apprise dans le jeu.** Persister la politique
-  entraînée et la charger comme stratégie « autopilote » alternative
-  (l'interface expose déjà `autopilot` comme ligne de base ; il s'agira
-  d'injecter la politique apprise au même endroit) ; durcissement : version
-  du protocole, reproductibilité des graines, documentation.
+  ~98 % de validation en 3 itérations) ; `dagger.py` accepte maintenant
+  **plus de départs et de graines** (`--seeds`, `--spawn-dists` élargi,
+  `--spawn-angle-jitter` / `--spawn-dist-jitter` pour les départs nez
+  désaligné) et **mesure l'écart en boucle fermée contre l'autopilote porté**
+  sans lancer le jeu (`--measure-sim`). L'infrastructure **RL** est livrée
+  (§5 sexies : PPO sur l'observation complète, rejeu - le DQN a été essayé
+  puis écarté, l'horizon long tuant le bootstrap) et le **gel de la boucle
+  fermée est levé** : l'amorce par départs perturbés + features de décision
+  EVA fait que les rollouts atteignent enfin la station (16-17/20 contre 0/20
+  auparavant, §5 sexies). L'écart restant est l'**affinage** (les mises à jour
+  PPO dégradent encore l'amorce - la sauvegarde du meilleur point protège le
+  résultat),  puis l'évaluation contre l'autopilote (943,8) et la boucle de
+  minage du vaisseau - dont la **référence et le micro-simulateur hybride sont
+  livrés** (§5 septies : portage vaisseau validé à 100 % contre la loi du jeu,
+  cinématique du simulateur validée à la précision machine contre une vraie
+  partie) :  l'**amorce par départs perturbés de la cible `ship`** est en place
+  et se mesure hors ligne (`ship_warmstart.py --measure-sim`). Après
+  l'**élargissement de la capacité** (64 cachés, 300 époques, 24 000 pas -
+  moteur numpy, §5 nonies bis), le réseau ne sous-apprend plus (validation
+  **69,8 %**) et la boucle **se ferme dans le jeu** (**7/12** livraisons contre
+  **10/12** pour la loi scriptée) : le levier était la capacité, pas la donnée
+  (ablation : 1/12 à 24 cachés sur les mêmes données). Cette politique est
+  ensuite **déployée dans le jeu** (Phase 4, §5 octies).
+- **Phase 4 — politique apprise dans le jeu.** ✅ Livrée (§5 octies) : le
+  réseau de la boucle de minage est **embarqué dans le binaire**
+  (`assets/ship_pilot_policy.json`) et **rejoué par le jeu**
+  (`src/learned_pilot.rs` : features `nn.py` v8 + perceptron, mêmes ordres
+  d'opérations), sélectionnable par la case **LEARNED PILOT** (touche Y) et
+  exposé à l'entraîneur (`POST /cmd {"learned_pilot":true}`, champs
+  `learned_pilot` / `learned` de l'observation). Le portage est mesuré
+  **fidèle à 100 %** (4 941 pas comparés avec l'artefact v8 élargi, 64 cachés,
+  sur trois épisodes de minage),
+  verrouillé par un fixture de vraie partie (`test_learned_pilot.py` +
+  test unitaire Rust) et le banc d'essai n'hérite plus du cerveau appris.
+  Ce qui reste ouvert n'est donc plus la plomberie mais **la politique
+  elle-même** : après élargissement de la capacité (§5 nonies bis), elle livre
+  **7/12** dans le jeu contre **10/12** pour la loi scriptée (et **5/6** contre
+  **6/6** sur les graines 1..6). La mesure « dans le jeu » n'est plus une
+  manipulation ponctuelle : c'est un **protocole rejouable du dépôt**
+  (`tools/trainer/measure_in_game.py`, §5 octies) - deux épisodes identiques
+  par graine, arrêt au dénouement explicite du jeu, garde-fous simulé et
+  mural - testé hors partie par `test_measure_in_game.py`. La **visée de la
+  mission** de la conduite est livrée en features **v8** (§5 nonies) : la
+  rotation devient décidable (100 % contre 63,3 % avec la seule erreur vers la
+  station) et l'imitation passe à 57,9 % de validation. **Élargir la capacité**
+  (64 cachés, 300 époques, 24 000 pas, moteur numpy) porte la validation à
+  **69,8 %** et ferme la boucle dans le jeu (7/12) ; la piste restante est
+  d'exposer les **seuils de conduite** (bande morte d'alignement) pour gagner
+  en précision, et de rendre le **micro-simulateur représentatif** (hors ligne,
+  il désigne le mauvais réseau). Restent enfin le durcissement du protocole
+  (version explicite des features) et la reproductibilité des artefacts.
 
 ## 7. Conventions et reproductibilité
 
@@ -666,6 +1255,19 @@ imitation avec perturbation des états de départ sont les pistes documentées.
   (`thrust_vector`, `moving_shape`, `PLAYER_*`, `STATION_DOCK_DISTANCE`) ;
   l'observation simulée a le même format JSON que `/obs` - les politiques et
   l'entraîneur sont interchangeables entre simulation et partie réelle.
+- L'entraînement du réseau a **deux moteurs** (`nn.py::MLP.train(backend=...)`) :
+  `python` (**défaut**, aucune dépendance - la convention du répertoire) et
+  `numpy` (vectorisé, ~33 × plus rapide, **optionnel**). Ils font le même
+  apprentissage ; seul l'entraînement peut passer par numpy, jamais
+  l'inférence rejouée par le jeu ni le portage Rust, et les poids sont
+toujours sauvegardés en **listes Python** (`save_nn`, JSON).
+  `test_nn_backend.py` verrouille les deux (les cas numpy se sautent sans
+  numpy, la CI n'installe rien).
 - La **vraie partie** fait foi : la simulation est un outil de développement
   (60 Hz, pas de collisions ni d'aliens autour de l'EVA, qui est un
-  non-collider).
+  non-collider). Ce qui doit être mesuré **dans le jeu** a son protocole
+  rejouable : `tools/trainer/measure_in_game.py` (cible `ship`, scénario
+  `economy` par défaut) fait jouer les deux cerveaux sur les mêmes graines et
+  rapporte dénouement, temps simulé et pas - `--json` pour un rapport machine.
+  Voir §5 octies pour le protocole et ses deux pièges (piste d'épisode non
+  encore ouverte, bascule de cerveau non encore consommée).

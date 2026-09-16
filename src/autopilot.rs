@@ -31,13 +31,13 @@ use crate::geom::{wrapped_delta, wrapped_distance, Point};
 use crate::scenario;
 use crate::shape::Shape;
 use crate::state::{Element, GameState};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Entrées de pilotage calculées par l'autopilote : mêmes primitives que les
 /// touches du joueur (voir `input::player_controls`). Sérialisées dans
 /// l'observation (`expert`) pour servir d'étiquette à l'apprentissage par
 /// imitation (DAgger).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct PilotInputs {
     pub up: bool,
     pub down: bool,
@@ -243,7 +243,7 @@ fn supplies_low(state: &GameState) -> bool {
 /// d.vendre à coût nul (`buy_fuel_qty` renvoie `Full`) - considérer ce
 /// paquet comme « achetable » faisait rentrer le vaisseau se ravitailler
 /// avec 0 crédit puis boucler magasin↔accostage sans rien acheter.
-fn supplies_affordable(state: &GameState) -> bool {
+pub(crate) fn supplies_affordable(state: &GameState) -> bool {
     let fuel_qty = scenario::affordable_fuel_qty(state);
     if fuel_qty > 0.0 && scenario::fuel_qty_cost(state, fuel_qty) > 0 {
         return true;

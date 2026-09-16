@@ -43,6 +43,10 @@ pub enum SettingsClick {
     /// Bascule le pilote automatique (l'ordinateur joue à la place du
     /// pilote - il protège la station, mine, collecte et rentre décharger).
     AutoPilot,
+    /// Bascule la **stratégie apprise** (case LEARNED PILOT) : l'autopilote
+    /// joue le réseau entraîné hors-ligne au lieu de sa loi scriptée
+    /// (`learned_pilot.rs`). Sans effet tant que AUTOPILOT est éteint.
+    LearnedPilot,
     /// Ligne REMOTE PIN : arme la saisie du code de la télécommande (ou, si
     /// la saisie est déjà armée, valide le code tapé).
     PinEdit,
@@ -113,6 +117,9 @@ pub fn settings_box_click(state: &GameState) -> SettingsClick {
     }
     if l.autopilot.contains(m) {
         return SettingsClick::AutoPilot;
+    }
+    if l.learned_pilot.contains(m) {
+        return SettingsClick::LearnedPilot;
     }
     if state.antialias != state.antialias_applied && l.restart.contains(m) {
         return SettingsClick::Restart;
@@ -239,6 +246,7 @@ pub fn handle_settings_input(state: &mut GameState, mut sounds: Option<&mut Soun
                 "AUTOPILOT OFF"
             });
         }
+        SettingsClick::LearnedPilot => crate::game::toggle_learned_pilot(state),
         SettingsClick::PinEdit => {
             if state.settings_pin_edit {
                 // second clic (ou ENTRÉE) : valide la saisie en cours
@@ -375,6 +383,7 @@ pub fn reset_settings_fields(state: &mut GameState) {
     state.save_position = false; // position du vaisseau non sauvegardée
     state.stars_big = false; // étoiles du fond en 1×1 par défaut
     state.autopilot = false; // pilote automatique éteint par défaut
+    state.learned_pilot = false; // stratégie apprise éteinte par défaut
 }
 
 /// Remet les réglages par défaut (bouton RESET) : champs par défaut

@@ -403,6 +403,15 @@ pub fn compute_shape_center(shape: &mut Shape, triangles: &[Triangle]) {
         x += (tri.a.x + tri.b.x + tri.c.x) / 3.0;
         y += (tri.a.y + tri.b.y + tri.c.y) / 3.0;
     }
+    if d == 0 {
+        // Aucun triangle vivant dans la forme : `x / 0` donnerait un centre
+        // **NaN** (0/0), qui contaminerait ensuite `center` (lissage de
+        // `moving_shape`), les sommets monde (`compute_real_positions` tourne
+        // autour du centre) et l'observation publiée à l'entraîneur
+        // (`null` en JSON, serde sérialisant ainsi un flottant non fini).
+        // On garde le centre précédent : la forme n'a rien à recentrer.
+        return;
+    }
     let p = Point::new(x / d as f64, y / d as f64);
     shape.target_center = p;
 

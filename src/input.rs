@@ -133,7 +133,9 @@ pub fn player_controls(
         } else if state.autopilot {
             // pilote automatique : l'ordinateur ramène le cosmonaute à la
             // station (son seul objectif - mêmes primitives que les touches,
-            // voir `autopilot::autopilot_eva_inputs`)
+            // voir `autopilot::autopilot_eva_inputs`). NB : la **stratégie
+            // apprise** (case LEARNED PILOT) ne couvre que la boucle de minage
+            // du vaisseau - la rentrée du cosmonaute reste à la loi scriptée.
             let pilot = crate::autopilot::autopilot_eva_inputs(state, shapes, dt);
             cosmonaut_apply_inputs(state, shapes, dt, pilot.up, pilot.right, pilot.left);
         } else {
@@ -158,8 +160,14 @@ pub fn player_controls(
         // à la place du pilote - il calcule les mêmes primitives que les
         // touches (↑/↓/←/→ + tir), les entrées clavier/tactile/télécommande/
         // manette sont ignorées tant que l'option est active (voir
-        // `autopilot.rs`)
-        crate::autopilot::autopilot_inputs(state, shapes)
+        // `autopilot.rs`). La case **LEARNED PILOT** (touche Y) choisit le
+        // **cerveau** : le réseau entraîné hors-ligne (`learned_pilot.rs`)
+        // au lieu de la loi scriptée.
+        if state.learned_pilot {
+            crate::learned_pilot::inputs(state, shapes)
+        } else {
+            crate::autopilot::autopilot_inputs(state, shapes)
+        }
     } else {
         crate::autopilot::PilotInputs {
             up: up_pressed(),

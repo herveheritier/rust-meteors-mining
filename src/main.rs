@@ -35,6 +35,7 @@ mod generate;
 mod geom;
 mod hud;
 mod input;
+mod learned_pilot;
 mod marketplace;
 mod objective_tracker;
 mod persist;
@@ -314,6 +315,13 @@ async fn game_body() {
     // la station, mine, collecte et rentre décharger (voir `autopilot.rs`)
     if let Some(on) = persist::get_bool("autopilot") {
         state.autopilot = on;
+    }
+    // stratégie apprise (case LEARNED PILOT de l'écran de paramétrage, touche
+    // Y, clé `learned_pilot`) : allumée, l'autopilote joue le réseau
+    // entraîné hors-ligne (`learned_pilot.rs`) au lieu de sa loi scriptée -
+    // c'est la stratégie « autopilote alternative » de la Phase 4
+    if let Some(on) = persist::get_bool("learned_pilot") {
+        state.learned_pilot = on;
     }
     // PIN de la télécommande HTTP (ligne REMOTE PIN de l'écran de
     // paramétrage, clé `remote_pin`) : chargé au lancement - vide = aucune

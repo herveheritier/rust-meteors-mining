@@ -253,7 +253,14 @@ pub fn draw_hud(state: &GameState) -> f32 {
     // supérieur droit) - le joueur sait que l'ordinateur est aux commandes
     if state.autopilot {
         let btn = game_commands_button_layout();
-        let txt = "AUTOPILOT";
+        // le **cerveau** en service (case LEARNED PILOT / touche Y) : le
+        // joueur voit d'un coup d'œil si c'est la loi scriptée du jeu ou le
+        // réseau entraîné hors-ligne qui conduit (`learned_pilot.rs`)
+        let txt = if state.learned_pilot {
+            "AUTOPILOT (LEARNED)"
+        } else {
+            "AUTOPILOT"
+        };
         let w = measure_text(txt, None, 16, 1.0).width;
         draw_text_shadow(txt, btn.x - w - 10.0, 25.0, 16.0, argb_to_color(0xFFFFD000));
     }
@@ -370,6 +377,16 @@ pub fn available_commands(state: &GameState) -> Vec<CmdEntry> {
             "AUTOPILOT OFF (X)"
         } else {
             "AUTOPILOT ON (X)"
+        },
+    });
+    // stratégie apprise (réseau entraîné hors-ligne) : bascule affichant
+    // l'état courant - c'est le **cerveau** de l'autopilote
+    commands.push(CmdEntry {
+        cmd: Cmd::LearnedPilot,
+        label: if state.learned_pilot {
+            "LEARNED PILOT OFF (Y)"
+        } else {
+            "LEARNED PILOT ON (Y)"
         },
     });
     commands.push(CmdEntry {

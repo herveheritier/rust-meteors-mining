@@ -87,15 +87,22 @@ class DriverClient:
         fire: bool = False,
         driver: Optional[bool] = None,
         autopilot: Optional[bool] = None,
+        learned_pilot: Optional[bool] = None,
     ) -> None:
         """Actions de la frame + bascules. `driver: true` engage le pilote
         externe (les actions ci-dessus pilotent) ; `autopilot: true` laisse
-        l'ordinateur du jeu piloter (les actions sont alors ignorées)."""
+        l'ordinateur du jeu piloter (les actions sont alors ignorées) ;
+        `learned_pilot: true` choisit son **cerveau** (le réseau entraîné
+        hors-ligne embarqué, `src/learned_pilot.rs`, au lieu de sa loi
+        scriptée) - l'observation expose alors l'action de ce réseau dans le
+        champ `learned`, miroir de `expert` (Phase 4)."""
         payload: dict[str, Any] = {"up": up, "down": down, "left": left, "right": right, "fire": fire}
         if driver is not None:
             payload["driver"] = driver
         if autopilot is not None:
             payload["autopilot"] = autopilot
+        if learned_pilot is not None:
+            payload["learned_pilot"] = learned_pilot
         self.post("/cmd", payload)
 
     def reset(

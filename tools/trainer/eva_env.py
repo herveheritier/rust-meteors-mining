@@ -102,17 +102,27 @@ class EvaSim:
         self.done = False  # récupéré (entré dans le cercle d'accostage)
         self.entry_speed = 0.0  # vitesse à la récupération (unités/s)
 
-    def reset(self, seed: int, x: float, y: float, orientation: float = 0.0) -> dict[str, Any]:
+    def reset(self, seed: int, x: float, y: float, orientation: float = 0.0,
+              vx: float = 0.0, vy: float = 0.0) -> dict[str, Any]:
         """Départ d'épisode : même situation que `reset_episode` du jeu
-        (`activate_cosmonaut` : position du crash, orientation 0, immobile)."""
+        (`activate_cosmonaut` : position du crash, orientation 0, immobile).
+
+        `orientation` et la vitesse initiale `(vx, vy)` (unités/s, mêmes axes
+        et même signe que l'observation `eva.vx/vy`) sont paramétrables : la
+        vraie partie part toujours au repos, mais l'entraînement en a besoin
+        pour **perturber les états de départ** (`warmstart.py` - les états
+        hors distribution où la boucle fermée du clonage pur se bloque)."""
         self.rng = random.Random(seed)
         self.frame = 0
         self.t = 0.0
         self.x = x % WORLD_W
         self.y = y % WORLD_H
         self.orientation = orientation
-        self.dir = 0.0
-        self.v = 0.0
+        speed = math.hypot(vx, vy)
+        # l'observation rapporte (cos dir·v, −sin dir·v) : on inverse pour
+        # retrouver la direction de vitesse (convention du jeu)
+        self.dir = math.atan2(-vy, vx) if speed > 0.0 else 0.0
+        self.v = speed / FRAMES_PER_SECOND
         self.done = False
         self.entry_speed = 0.0
         return self.obs()

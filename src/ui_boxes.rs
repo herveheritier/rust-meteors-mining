@@ -73,7 +73,7 @@ pub fn draw_help_box() {
     draw_box_button("CLOSE", help_box_layout());
 }
 
-/// Géométrie des contrôles de l'écran de paramétrage : fenêtre 560×280
+/// Géométrie des contrôles de l'écran de paramétrage : fenêtre 560×412
 /// centrée en deux colonnes - à gauche les cases MUSIC, AUTO GENERATE et
 /// TOUCH UI, la barre horizontale du volume (ascenseur) et le bouton RESET
 /// PROGRESSION (pleine largeur de la colonne) ; à droite le panneau
@@ -82,6 +82,9 @@ pub fn draw_help_box() {
 /// à côte en bas. (Le mode de déplacement se choisit désormais au magasin de
 /// la station - bouton SHOP de la boîte DOCK STATION.)
 pub struct SettingsLayout {
+    /// Fenêtre elle-même (fond + bordure + coordinateur des deux colonnes) -
+    /// `draw_settings_box` s'en sert pour ne pas redupliquer ses dimensions.
+    pub rect: Rect,
     /// Ligne cliquable de la case MUSIC.
     pub music: Rect,
     /// Ligne cliquable de la case AUTO GENERATE.
@@ -131,6 +134,10 @@ pub struct SettingsLayout {
     /// Ligne cliquable de la case AUTOPILOT (l'ordinateur joue à la place du
     /// pilote - colonne droite, sous STARS 3x3).
     pub autopilot: Rect,
+    /// Ligne cliquable de la case LEARNED PILOT (l'autopilote joue le réseau
+    /// entraîné hors-ligne au lieu de sa loi scriptée - colonne droite, sous
+    /// AUTOPILOT).
+    pub learned_pilot: Rect,
     /// Bouton RESET (réglages par défaut).
     pub reset: Rect,
     /// Bouton RESTART (relance le jeu - affiché uniquement quand un réglage
@@ -143,7 +150,9 @@ pub struct SettingsLayout {
 /// Calcule la géométrie de l'écran de paramétrage (voir `SettingsLayout`).
 pub fn settings_box_layout() -> SettingsLayout {
     let w = 560.0;
-    let h = 380.0;
+    // hauteur portée à 412 pour loger la case LEARNED PILOT sous AUTOPILOT
+    // (colonne droite) sans chevaucher la rangée des boutons RESET / CLOSE
+    let h = 412.0;
     let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
     let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
     let col_w = 250.0;
@@ -189,6 +198,9 @@ pub fn settings_box_layout() -> SettingsLayout {
     // AUTOPILOT : case sous STARS 3x3 (colonne droite) - l'ordinateur joue à
     // la place du pilote (protège la station, mine, collecte, rentre décharger)
     let autopilot = Rect::new(col_right + 6.0, top + 296.0, row_w + 8.0, 26.0);
+    // LEARNED PILOT : case sous AUTOPILOT (colonne droite) - choisit le
+    // **cerveau** de l'autopilote (réseau entraîné hors-ligne, Phase 4)
+    let learned_pilot = Rect::new(col_right + 6.0, top + 328.0, row_w + 8.0, 26.0);
 
     // boutons en bas : RESET à gauche, CLOSE à droite (ex
     // `windowUtils_choiceBox` : 1er sur la moitié gauche, 2e sur la moitié
@@ -207,6 +219,7 @@ pub fn settings_box_layout() -> SettingsLayout {
     let restart = Rect::new(left + (w - w3) / 2.0 - BOX_PADDING, top_btn, w3, btn_h);
 
     SettingsLayout {
+        rect: Rect::new(left, top, w, h),
         music,
         auto_generate,
         volume_track,
@@ -224,6 +237,7 @@ pub fn settings_box_layout() -> SettingsLayout {
         save_position,
         stars_big,
         autopilot,
+        learned_pilot,
         reset,
         restart,
         close,
@@ -260,10 +274,11 @@ pub fn draw_volume_bar(track: Rect, label: &str, value: f32, m: Vec2) {
 }
 
 pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
-    let w = 560.0;
-    let h = 380.0;
-    let left = ((VIEWPORT_WIDTH as f32 - w) / 2.0).round();
-    let top = ((VIEWPORT_HEIGHT as f32 - h) / 2.0).round();
+    // géométrie **partagée** avec la détection des clics (`settings_box_layout`) :
+    // une seule source de vérité pour la fenêtre et ses colonnes
+    let layout = settings_box_layout();
+    let (left, top) = (layout.rect.x, layout.rect.y);
+    let (w, h) = (layout.rect.w, layout.rect.h);
 
     // fenêtre : fond + bordure
     draw_rectangle(left, top, w, h, argb_to_color(BOX_BG));
@@ -274,7 +289,6 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     let text_w = measure_text(msg, None, 16, 1.0).width;
     draw_text_shadow(msg, left + (w - text_w) / 2.0, top + 2.0 * BOX_PADDING + 12.0, 16.0, argb_to_color(BOX_FG));
 
-    let layout = settings_box_layout();
     let m = mouse_to_game();
 
     // cases à cocher MUSIC (état depuis les sons) et AUTO GENERATE
@@ -326,6 +340,7 @@ pub fn draw_settings_box(state: &GameState, sounds: &Sounds) {
     draw_checkbox(layout.save_position, state.save_position, "SAVE POSITION", m);
     draw_checkbox(layout.stars_big, state.stars_big, "STARS 3x3", m);
     draw_checkbox(layout.autopilot, state.autopilot, "AUTOPILOT", m);
+    draw_checkbox(layout.learned_pilot, state.learned_pilot, "LEARNED PILOT", m);
 
     // télécommande : ligne REMOTE PIN (code à saisir au clavier après un
     // clic - ENTRÉE valide, ÉCHAP annule, vide + ENTRÉE = aucune protection)

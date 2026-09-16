@@ -40,14 +40,14 @@
 //!   servi par `GET /bench`
 
 use crate::config::{
-    PLAYER_INDEX, STATION_INDEX, WHOIAM_ALIEN, WHOIAM_METEOR, WHOIAM_MINE, WHOIAM_MINERAL,
-    WHOIAM_WARP_GATE,
+    PLAYER_INDEX, STATION_INDEX, WHOIAM_ALIEN, WHOIAM_BULLET, WHOIAM_METEOR, WHOIAM_MINE,
+    WHOIAM_MINERAL, WHOIAM_WARP_GATE,
 };
 use crate::autopilot::{autopilot_eva_inputs, autopilot_inputs, PilotInputs};
 use crate::geom::{wrapped_delta, Point, Triangle};
 use crate::shape::Shape;
 use crate::state::GameState;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::Mutex;
@@ -382,7 +382,7 @@ impl EpisodeTrack {
 /// position monde, vitesse (vectorielle **écran** en unités/s - y vers le
 /// bas, convention du portage), orientation/direction/vitesse angulaire
 /// brutes.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Kinematic {
     pub x: f64,
     pub y: f64,
@@ -398,6 +398,13 @@ pub struct Kinematic {
     pub orientation: f64,
     /// Vitesse angulaire (radians/s, mode REALISTIC).
     pub rotation: f64,
+    /// Décalage du **centre du corps** par rapport à `position` (le point de
+    /// collision réel : `game.rs` pré-filtre sur `position + center`) - le
+    /// vaisseau et le cosmonaute en ont un petit, la station et les minerais
+    /// un nul. Exposé pour que l'entraîneur puisse viser le corps et non la
+    /// seule position (l'autopilote vaisseau le fait - `body_center`).
+    pub center_x: f64,
+    pub center_y: f64,
 }
 
 /// État d'un **objectif DAG** du scénario courant (épisodes à objectifs,
@@ -405,7 +412,7 @@ pub struct Kinematic {
 /// tâche/récompense de l'épisode. L'entraîneur voit quelle mission est
 /// débloquée, si elle est complétée, et l'avancement de sa condition
 /// (`current` / `required` - météores détruits, crédits, accostages…).
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ObjectiveInfo {
     /// Identifiant unique (ex. `"step_first_dock"`).
     pub id: String,
@@ -426,9 +433,10 @@ pub struct ObjectiveInfo {
 /// Un objet proche du pilote (météore, alien, minerai…) avec sa position et
 /// sa vitesse **relatives** au pilote (deltas toriques), pour un entraîneur
 /// qui n'aurait pas à gérer le repliement du monde.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NearbyObject {
-    /// Libellé du type (`meteore`, `alien`, `minerai`, `mine`, `portail`).
+    /// Libellé du type (`meteore`, `alien`, `minerai`, `mine`, `portail`,
+    /// `balle`).
     pub kind: String,
     /// Position relative au pilote (dx, dy - delta torique le plus court).
     pub dx: f64,
@@ -442,12 +450,21 @@ pub struct NearbyObject {
     pub radius: f64,
     /// Vie restante (triangles vivants pour un météore).
     pub life: i32,
+    /// Décalage du **centre du corps** par rapport à `position` (voir
+    /// `Kinematic::center_x`) : le point visé / de collision réel.
+    pub center_x: f64,
+    pub center_y: f64,
 }
 
 /// Observation complète publiée à chaque frame - le « coup d'œil » que le
 /// système d'auto-entraînement reçoit pour choisir ses actions. Sérialisée
 /// en JSON (`GET /obs`).
-#[derive(Clone, Debug, PartialEq, Serialize)]
+///
+/// `Deserialize` + `default` (champs absents = neutres) : une observation peut
+/// être **relue** (fixtures de fidélité des portages, `learned_pilot.rs`) et le
+/// protocole peut gagner des champs sans casser les enregistrements existants.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Observation {
     /// Compteur de frames du serveur d'interface (incrémenté à chaque
     /// `publish_state`) : permet à l'entraîneur de détecter un nouveau pas.
@@ -490,12 +507,28 @@ pub struct Observation {
     pub game_over: bool,
     pub autopilot: bool,
     pub driver_engaged: bool,
+    /// Mode de déplacement actif du vaisseau (`MOVING_MODE_*` : INERTIAL,
+    /// 4 WAYS, DIRECTIONAL, REALISTIC). La conduite de l'autopilote en dépend
+    /// (4 WAYS pousse dans les 4 directions de l'écran, les autres orientent
+    /// le nez) - sans lui, un portage fidèle de la loi vaisseau est impossible.
+    pub moving_mode: i32,
     /// Action que prendrait l'**autopilote du jeu** sur l'état courant de la
     /// frame (l'« expert » de l'imitation - mêmes primitives que les touches).
     /// Calculée à la publication (`publish_state`) : l'entraînement DAgger
     /// étiquette ainsi les états visités par la politique apprise. Neutre
     /// (tout faux) dans une observation pure.
     pub expert: PilotInputs,
+    /// **Stratégie apprise** active (case LEARNED PILOT / touche Y) : quand
+    /// elle est allumée, l'autopilote joue avec le **réseau embarqué**
+    /// (`learned_pilot.rs`) au lieu de sa loi scriptée - l'entraîneur sait
+    /// quel cerveau conduit la partie qu'il observe.
+    pub learned_pilot: bool,
+    /// Action que prend **la stratégie apprise** (`learned_pilot.rs`) sur
+    /// l'état courant de la frame - même rôle que `expert` : le portage Rust
+    /// du réseau est ainsi **comparable à la politique Python**
+    /// (`validate_learned_port.py`), à chaque pas, sur la même observation.
+    /// Neutre (tout faux) si la politique embarquée est illisible.
+    pub learned: PilotInputs,
     /// Scénario à économie (carburant/munitions/crédits) - sinon jeu libre.
     pub economy: bool,
     pub fuel: f64,
@@ -507,6 +540,12 @@ pub struct Observation {
     /// mission « rentrer décharger » de la boucle complète.
     pub cargo_qty: i32,
     pub cargo_cap: i32,
+    /// Les **crédits couvrent au moins un paquet** de carburant ou de
+    /// munitions (scénario à économie - `autopilot::supplies_affordable`) :
+    /// l'autopilote rentre se ravitailler quand carburant/munitions sont bas
+    /// **et** payables (sinon il continue de miner pour gagner de quoi payer).
+    /// Exposé parce que les prix du magasin ne sont pas dans l'observation.
+    pub supplies_affordable: bool,
     /// Compteurs utiles aux récompenses de l'entraîneur.
     pub meteors_destroyed: i32,
     pub score: i32,
@@ -543,6 +582,13 @@ pub struct Observation {
     pub objective_bonus: f64,
     /// Objets proches du pilote (≤ `MAX_NEARBY_OBJECTS`, les plus proches).
     pub nearby: Vec<NearbyObject>,
+    /// **Balles en vol** proches du pilote (≤ `MAX_NEARBY_OBJECTS`), séparées
+    /// de `nearby` pour ne pas changer la sémantique de ses slots (features
+    /// du réseau) : l'autopilote vaisseau s'en sert pour **retenir le feu**
+    /// sur une cible quasi détruite (les balles déjà en vol l'achèvent ;
+    /// tirer encore traverserait le point d'apparition des minerais et les
+    /// détruirait).
+    pub bullets: Vec<NearbyObject>,
 }
 
 /// Nombre maximal d'objets rapportés dans une observation (les plus proches
@@ -557,6 +603,7 @@ fn kind_label(who: i32) -> String {
         WHOIAM_ALIEN => "alien".to_string(),
         WHOIAM_WARP_GATE => "portail".to_string(),
         WHOIAM_MINE => "mine".to_string(),
+        WHOIAM_BULLET => "balle".to_string(),
         _ => format!("forme-{who}"),
     }
 }
@@ -574,6 +621,8 @@ fn kinematic(s: &Shape) -> Kinematic {
         direction: s.direction,
         orientation: s.orientation,
         rotation: s.rotation,
+        center_x: s.center.x,
+        center_y: s.center.y,
     }
 }
 
@@ -608,6 +657,23 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
 
     // objets proches (météores, minerais, aliens, mines, portails) - triés
     // par distance croissante au pilote, plafonnés à `MAX_NEARBY_OBJECTS`
+    // objet proche d'une forme : position/vitesse **relatives au pilote**
+    // (deltas toriques), plus son centre de corps
+    let to_nearby = |s: &Shape| -> NearbyObject {
+        let d = wrapped_delta(pilot, s.position, &state.world);
+        NearbyObject {
+            kind: kind_label(s.who_i_am),
+            dx: d.x,
+            dy: d.y,
+            dist: d.x.hypot(d.y),
+            vx: s.direction.cos() * s.velocity * 60.0,
+            vy: -s.direction.sin() * s.velocity * 60.0,
+            radius: s.radius,
+            life: s.life,
+            center_x: s.center.x,
+            center_y: s.center.y,
+        }
+    };
     let mut nearby: Vec<NearbyObject> = shapes
         .iter()
         .filter(|s| {
@@ -618,22 +684,20 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
                     || s.who_i_am == WHOIAM_WARP_GATE
                     || s.who_i_am == WHOIAM_MINE)
         })
-        .map(|s| {
-            let d = wrapped_delta(pilot, s.position, &state.world);
-            NearbyObject {
-                kind: kind_label(s.who_i_am),
-                dx: d.x,
-                dy: d.y,
-                dist: d.x.hypot(d.y),
-                vx: s.direction.cos() * s.velocity * 60.0,
-                vy: -s.direction.sin() * s.velocity * 60.0,
-                radius: s.radius,
-                life: s.life,
-            }
-        })
+        .map(&to_nearby)
         .collect();
     nearby.sort_by(|a, b| a.dist.total_cmp(&b.dist));
     nearby.truncate(MAX_NEARBY_OBJECTS);
+    // balles en vol (liste **séparée** : `nearby` garde ses slots historiques
+    // pour les features du réseau) - l'autopilote vaisseau retient son feu
+    // quand une cible est déjà achevée par les balles en vol
+    let mut bullets: Vec<NearbyObject> = shapes
+        .iter()
+        .filter(|s| s.life > 0 && s.who_i_am == WHOIAM_BULLET)
+        .map(&to_nearby)
+        .collect();
+    bullets.sort_by(|a, b| a.dist.total_cmp(&b.dist));
+    bullets.truncate(MAX_NEARBY_OBJECTS);
 
     let economy = crate::scenario::has_economy(state);
     let docked = state.dock_links || state.dock_anim > 0.0 || state.dock_retract > 0.0;
@@ -661,7 +725,10 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
         game_over: state.game_over,
         autopilot: state.autopilot,
         driver_engaged: false, // posé par `publish_state` (état partagé)
+        moving_mode: state.moving_mode,
         expert: PilotInputs::default(), // posé par `publish_state` (action de l'autopilote)
+        learned_pilot: state.learned_pilot,
+        learned: PilotInputs::default(), // posé par `publish_state` (stratégie apprise)
         economy,
         fuel: crate::scenario::fuel_capacity(state).min(state.resources.fuel),
         fuel_cap: crate::scenario::fuel_capacity(state),
@@ -670,6 +737,7 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
         credits: state.resources.credits,
         cargo_qty: state.player.cargo_qty,
         cargo_cap: crate::scenario::cargo_capacity(state),
+        supplies_affordable: crate::autopilot::supplies_affordable(state),
         meteors_destroyed: state.meteors_destroyed,
         score: state.meteors_destroyed,
         // suivi d'épisode : posé par `publish_state` (le serveur possède la
@@ -686,6 +754,7 @@ pub fn observe(state: &GameState, shapes: &[Shape]) -> Observation {
         objectives_completed: 0, // posé par `publish_state` (la piste)
         objective_bonus: 0.0,    // posé par `publish_state` (la piste)
         nearby,
+        bullets,
     }
 }
 
@@ -823,6 +892,11 @@ pub struct Shared {
     /// Demande de bascule du pilote automatique de référence (consommée par
     /// la boucle de jeu, qui possède `state.autopilot`).
     pub autopilot_req: Option<bool>,
+    /// Demande de bascule de la **stratégie apprise** (case LEARNED PILOT) :
+    /// avec `autopilot: true`, elle fait jouer le **réseau embarqué** par le
+    /// jeu lui-même - l'entraîneur observe alors les décisions du portage
+    /// Rust (`learned` de l'observation) sans piloter à sa place.
+    pub brain_req: Option<bool>,
     /// Dernière observation publiée par la boucle de jeu.
     pub obs: Option<Observation>,
     /// Prochaine remise à zéro d'épisode demandée (consommée par `main.rs`).
@@ -862,6 +936,7 @@ impl Shared {
             fire: false,
             engaged: false,
             autopilot_req: None,
+            brain_req: None,
             obs: None,
             reset_req: None,
             started: false,
@@ -1126,6 +1201,12 @@ pub fn sync_autopilot(state: &mut GameState) {
         if let Some(req) = g.autopilot_req.take() {
             state.autopilot = req;
         }
+        // stratégie apprise : même bascule que la case LEARNED PILOT de
+        // l'écran de paramétrage - l'entraîneur peut donc faire jouer le
+        // réseau embarqué par le jeu et comparer ses décisions
+        if let Some(req) = g.brain_req.take() {
+            state.learned_pilot = req;
+        }
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -1182,6 +1263,17 @@ pub fn publish_state(state: &mut GameState, shapes: &[Shape]) {
             autopilot_eva_inputs(state, shapes, EXPERT_DT)
         } else {
             autopilot_inputs(state, shapes)
+        };
+        // stratégie apprise : l'action du réseau embarqué sur cette même
+        // observation - miroir de `expert`, pour vérifier le portage Rust
+        // contre la politique Python (`validate_learned_port.py`). Neutralisée
+        // quand la case est éteinte (l'entraîneur n'a pas à lire une décision
+        // qui ne pilote rien).
+        obs.learned_pilot = state.learned_pilot;
+        obs.learned = if state.learned_pilot {
+            crate::learned_pilot::inputs_from(&obs).unwrap_or_default()
+        } else {
+            PilotInputs::default()
         };
         g.obs = Some(obs);
     }
@@ -1368,6 +1460,12 @@ pub fn apply_cmd_to(s: &mut Shared, body: &str) -> bool {
         if a {
             s.engaged = false; // autopilot reprend la main
         }
+    }
+    // stratégie apprise (`learned_pilot`) : allumée, l'autopilote joue le
+    // réseau embarqué au lieu de sa loi scriptée ; l'action n'a d'effet
+    // qu'avec `autopilot: true` et ne demande **pas** le pilote externe
+    if let Some(l) = v.get("learned_pilot").and_then(|x| x.as_bool()) {
+        s.brain_req = Some(l);
     }
     s.cmd_seq += 1; // commande acceptée (même sans changement) : un pas demandé
     true
@@ -1639,6 +1737,43 @@ mod tests {
         assert_eq!(m.kind, "meteore");
         assert!((m.dx - 120.0).abs() < 1e-9);
         assert_eq!(m.life, 8);
+    }
+
+    /// L'observation expose ce dont le **portage fidèle de l'autopilote
+    /// vaisseau** a besoin : le mode de déplacement, le **centre du corps**
+    /// des objets proches (la visée réelle) et les **balles en vol** (liste
+    /// séparée de `nearby`, qui garde ses slots historiques pour les features
+    /// du réseau).
+    #[test]
+    fn observation_exposes_ship_autopilot_inputs() {
+        let (state, mut shapes) = scene(0.0, 0.0, 0.0);
+        // météore au corps décalé : la visée doit utiliser `position + center`
+        shapes.push(Shape {
+            position: Point::new(150.0, 0.0),
+            center: Point::new(0.0, 40.0),
+            radius: 20.0,
+            life: 6,
+            who_i_am: WHOIAM_METEOR,
+            is_collider: true,
+            ..Shape::default()
+        });
+        // balle en vol (acheminement de la cible)
+        shapes.push(Shape {
+            position: Point::new(120.0, 0.0),
+            life: 1,
+            who_i_am: WHOIAM_BULLET,
+            ..Shape::default()
+        });
+        let obs = observe(&state, &shapes);
+        // mode de déplacement (GameState::new = DIRECTIONAL)
+        assert_eq!(obs.moving_mode, crate::config::MOVING_MODE_DIRECTIONAL);
+        // centre du corps du météore exposé (visée réelle)
+        assert_eq!(obs.nearby[0].kind, "meteore");
+        assert!((obs.nearby[0].center_y - 40.0).abs() < 1e-9);
+        // la balle est dans `bullets`, pas dans `nearby`
+        assert_eq!(obs.bullets.len(), 1);
+        assert_eq!(obs.bullets[0].kind, "balle");
+        assert!(!obs.nearby.iter().any(|o| o.kind == "balle"));
     }
 
     #[test]

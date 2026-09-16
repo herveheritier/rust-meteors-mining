@@ -41,8 +41,11 @@ from eva_env import (
 #: entraîné par imitation, `imitate.py`) et `ppo` (réseau entraîné par
 #: renforcement, `ppo.py`) se pilotent aussi en simulateur EVA (les champs
 #: manquants de l'observation valent zéro) - leur vraie évaluation reste la
-#: partie réelle / le mode hybride.
-SIM_STRATEGIES = ("idle", "random", "seek", "nn", "ppo")
+#: partie réelle / le mode hybride. `autopilot_sim` est le portage Python de
+#: l'autopilote du jeu (`autopilot_ref.py`) : la **référence hors-ligne**
+#: (l'original exige un processus de jeu), utilisée pour mesurer l'écart des
+#: politiques apprises sans lancer le jeu.
+SIM_STRATEGIES = ("idle", "random", "seek", "nn", "ppo", "autopilot_sim")
 
 #: Stratégie « pilote automatique du jeu » : seulement en direct (le jeu
 #: pilote lui-même via `POST /cmd {"autopilot": true}`).
@@ -202,13 +205,43 @@ def nn_policy(path: str) -> Callable[[dict[str, Any]], dict[str, bool]]:
     return choose
 
 
+def autopilot_sim_policy() -> Callable[[dict[str, Any]], dict[str, bool]]:
+    """Politique de l'**autopilote du jeu porté en Python**
+    (`autopilot_ref.py`) - la référence hors-ligne (l'autopilote original vit
+    dans le jeu et exige un processus headless). Elle porte un état interne
+    (freinage tangentiel) et expose `.reset()` à appeler entre les épisodes."""
+    from autopilot_ref import autopilot_ref_policy
+
+    return autopilot_ref_policy()
+
+
+def load_policy_file(path: str) -> Callable[[dict[str, Any]], dict[str, bool]]:
+    """Charge une politique depuis un fichier JSON en **détectant sa nature**
+    (champ `policy`) : paramètres de `seek` (sortie de `cem.py`), réseau `nn`
+    (`imitate.py`/`dagger.py`) ou réseau `ppo` (`ppo.py`). C'est ce que
+    consomment `evaluate.py --policy` et le test de non-régression."""
+    import json
+
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    kind = data.get("policy", "seek")
+    if kind == "nn":
+        return nn_policy(path)
+    if kind == "ppo":
+        return ppo_policy(path)
+    params = data.get("params")
+    return lambda obs: seek(obs, params)  # noqa: E731 - paramètres entraînés ou défauts
+
+
 def policy_for(strategy: str, rng: Optional[random.Random] = None) -> Callable[[dict[str, Any]], dict[str, bool]]:
     """Renvoie la fonction de politique d'une stratégie simulable (sans
-    fichier) - `nn` nécessite `--policy` (voir `nn_policy`)."""
+    fichier) - `nn`/`ppo` nécessitent `--policy` (voir `policy_file`)."""
     if strategy == "idle":
         return idle
     if strategy == "random":
         return random_policy(rng)
     if strategy == "seek":
         return seek
+    if strategy == "autopilot_sim":
+        return autopilot_sim_policy()
     raise ValueError(f"stratégie inconnue : {strategy} (attendues : {', '.join(SIM_STRATEGIES)})")

@@ -181,10 +181,11 @@ crédits, vies et réglages du navigateur au lancement suivant.
 | Manette (stick gauche / croix / A ou gâchette droite) | Déplacement / Tir (en plus du clavier, du tactile et de la télécommande) |
 | P | Pause (overlay PAUSE + rappel de la touche P) |
 | S | Aide (liste des touches, fermeture au clic sur CLOSE) |
-| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS / TOUCH UI / SAVE POSITION / AUTOPILOT (pilote automatique, touche X), volume maître + sous-volumes MUSIQUE / EFFETS / AMBIENCE (barres horizontales cliquables/glissables), ligne REMOTE PIN (code de la télécommande) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en PROGRESSION/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - crédits, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
+| O | Écran de paramétrage (aussi accessible depuis l'écran titre) : cases MUSIC / AUTO GENERATE / ANTIALIAS / TOUCH UI / SAVE POSITION / AUTOPILOT (pilote automatique, touche X) / LEARNED PILOT (stratégie **apprise**, touche Y - le cerveau de l'autopilote), volume maître + sous-volumes MUSIQUE / EFFETS / AMBIENCE (barres horizontales cliquables/glissables), ligne REMOTE PIN (code de la télécommande) et panneau « GRAPHICS » (RENDER texturé/colorisé/mesh, WINDOW fenêtré/plein écran zoomé/natif, SIZE 960×540 à 1920×1080 - clic = cycle) ; si un réglage exige un redémarrage (anticrénelage), note « RESTART REQUIRED » et bouton RESTART (relance le jeu) ; RESET revient aux défauts des réglages (la progression du scénario est conservée) ; en PROGRESSION/Survival, le bouton RESET PROGRESSION (colonne gauche) remet à zéro la progression du scénario - crédits, modes payés, réputation, extensions d'atelier, vies/bouclier et mode de déplacement choisi - puis réapplique les règles de départ (seuls les réglages et le scénario choisi sont conservés) ; fermer avec CLOSE ou ESC. Le mode de déplacement se choisit désormais au magasin de la station (bouton SHOP de la boîte DOCK STATION) |
 | G | Générer un météore près du vaisseau |
 | A | Activer/désactiver la génération automatique des météores |
 | X | Activer/désactiver le pilote automatique : l'ordinateur joue à la place du pilote - il protège la station, détruit les météores (en esquivant ceux qui croisent sa trajectoire), récupère les minerais et rentre à la station décharger quand la soute est pleine ou se ravitailler quand les réserves passent sous le seuil (carburant/munitions achetés au magasin en scénario à économie) ; vaisseau détruit, il ramène aussi le cosmonaute EVA à la station pour qu'il soit secouru - en **bornant sa vitesse** (croisière rapide loin de la station - 90 u/s -, gaz coupés pendant les réorientations, ralentissement à l'approche et freinage **anticipé par la distance** : demi-tour et contre-poussée nez à l'opposé assez tôt pour arriver à vitesse douce - il n'a pas de frein) (case AUTOPILOT de l'écran O) |
+| Y | Choisir le **cerveau** de l'autopilote (case LEARNED PILOT de l'écran O) : allumé, l'ordinateur joue avec le **réseau de neurones entraîné hors-ligne** par imitation de l'autopilote (`assets/ship_pilot_policy.json`, porté dans le jeu par `src/learned_pilot.rs`) au lieu de sa loi scriptée - l'indicateur du HUD affiche « AUTOPILOT (LEARNED) » ; n'a d'effet qu'avec le pilote automatique allumé (touche X), et les gestes d'accostage (décharger, se ravitailler, repartir) restent à la machine à états de l'autopilote. Éteint par défaut |
 | C | Créer un alien |
 | F | Cycler les modes d'affichage : fenêtré → plein écran zoomé → plein écran natif |
 | M | Couper/relancer la musique |
@@ -544,10 +545,11 @@ du serveur, y est masquée).
   MUSIQUE / EFFETS / AMBIANCE, style de rendu, mode d'affichage, définition
   de fenêtre, anticrénelage, interface tactile (TOUCH UI), PIN de la
   télécommande (REMOTE PIN), option SAVE POSITION (le vaisseau repart de
-  sa dernière position à la sortie) et pilote automatique (AUTOPILOT -
-  l'ordinateur joue à la place du pilote) - modifiables dans l'écran de
-  paramétrage (touche O) ou par les touches M/A/X, rechargés au lancement
-  suivant. NB : la génération automatique des météores (touche A ou
+  sa dernière position à la sortie), pilote automatique (AUTOPILOT -
+  l'ordinateur joue à la place du pilote) et stratégie apprise (LEARNED PILOT
+  - l'autopilote joue le réseau entraîné hors-ligne) - modifiables dans
+  l'écran de paramétrage (touche O) ou par les touches M/A/X/Y, rechargés au
+  lancement suivant. NB : la génération automatique des météores (touche A ou
   case AUTO GENERATE) n'est **pas** persistée - elle repart **toujours
   active** à chaque lancement, pour que le monde ne soit jamais vide au
   démarrage. S'y ajoutent le scénario choisi et la progression d'une partie à
@@ -601,12 +603,26 @@ déterministes (`POST /reset`, graine + cible vaisseau/cosmonaute EVA).
 micro-simulateur, lignes de base idle/aléatoire/autopilote et entraînement
 par croix-entropie d'un contrôleur de retour à la station).
 
+La **stratégie apprise** produite par cet entraîneur est **déployée dans le
+jeu** (Phase 4) : le réseau de la boucle de minage du vaisseau est embarqué
+dans le binaire (`assets/ship_pilot_policy.json`, porté par
+`src/learned_pilot.rs` - mêmes features et même réseau que l'entraîneur) et
+se choisit par la case **LEARNED PILOT** de l'écran O ou la touche Y :
+l'autopilote joue alors le réseau au lieu de sa loi scriptée. Après
+**élargissement de la capacité** du réseau (64 neurones cachés, 300 époques,
+24 000 pas d'entraînement), le cerveau appris **livre 7/12 épisodes** de
+minage contre 10/12 pour la loi scriptée (0/6 avant). L'entraîneur garde
+**zéro dépendance** par défaut ; un second moteur **optionnel** (`numpy`)
+accélère l'entraînement des réseaux larges, sans jamais intervenir dans
+l'inférence rejouée par le jeu.
+
 ```bash
 cargo run                # le jeu démarre l'interface (annoncée en jeu)
 cd tools/trainer
 python3 evaluate.py --backend live --strategy autopilot   # ligne de base du jeu
 python3 cem.py           # entraîne une politique (simulateur) → policy.json
 python3 evaluate.py --strategy seek --policy policy.json  # mesure la politique
+python3 measure_in_game.py --seeds 1 2 3   # boucle fermée dans le jeu : loi scriptée vs réseau embarqué
 ```
 
 Démarche, protocole détaillé, décisions de cadrage et suite :

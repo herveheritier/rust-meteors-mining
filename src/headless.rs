@@ -260,6 +260,12 @@ fn run_bench(
     // un épisode pilote-engagé avec des boutons encore enfoncés fausserait
     // tous les épisodes du banc suivant)
     crate::driver::clear_driver();
+    // ... ni de la **stratégie apprise** restée allumée (case LEARNED PILOT
+    // persistée, ou `POST /cmd {"learned_pilot":true}` d'une validation
+    // précédente) : la ligne de base est la loi **scriptée** - mesurer le
+    // réseau appris en croyant mesurer l'autopilote du jeu fausserait toutes
+    // les comparaisons
+    state.learned_pilot = false;
     let t_wall = std::time::Instant::now();
     let dt = 1.0 / 60.0;
     // trajectoires (RL) : fichier JSONL dans le dossier temporaire headless -
@@ -1098,6 +1104,39 @@ mod tests {
         for r in &report.results {
             assert!(r.steps > 0);
         }
+    }
+
+    /// Le banc d'essai mesure la loi **scriptée** : il doit éteindre la
+    /// stratégie apprise restée allumée (case LEARNED PILOT persistée ou
+    /// `POST /cmd {"learned_pilot":true}` d'une validation précédente), sinon
+    /// la « ligne de base de l'autopilote » serait en réalité le réseau appris.
+    #[test]
+    fn bench_clears_the_learned_brain() {
+        let (mut state, mut shapes, mut triangles, mut garbages, mut elements, mut stars, mut rng) =
+            bench_env();
+        state.learned_pilot = true;
+        let req = crate::driver::BenchRequest {
+            episodes: 1,
+            seed: 501,
+            target: crate::driver::ResetTarget::Ship,
+            x: 0.0,
+            y: 0.0,
+            auto_generate: false,
+            scenario: crate::driver::EpisodeScenario::Economy,
+            max_steps: 60,
+            trajectories: false,
+        };
+        let _ = super::run_bench(
+            &mut state,
+            &mut shapes,
+            &mut triangles,
+            &mut garbages,
+            &mut elements,
+            &mut stars,
+            &mut rng,
+            &req,
+        );
+        assert!(!state.learned_pilot, "le banc d'essai joue la loi scriptée");
     }
 
 }

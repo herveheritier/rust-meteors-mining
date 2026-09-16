@@ -96,6 +96,10 @@ pub enum GameCommand {
     /// Bascule le pilote automatique (touche X) : l'ordinateur joue à la
     /// place du pilote (protège la station, mine, collecte, rentre décharger).
     AutoPilot,
+    /// Bascule la **stratégie apprise** (touche Y, case LEARNED PILOT) :
+    /// l'autopilote joue le réseau entraîné hors-ligne (`learned_pilot.rs`)
+    /// au lieu de sa loi scriptée - n'a d'effet qu'autopilote allumé.
+    LearnedPilot,
     /// Génère un météore près du vaisseau (touche G).
     SpawnMeteor,
     /// Crée un alien (touche C).
@@ -118,6 +122,28 @@ pub enum GameCommand {
     Quit,
     /// Fermer le panneau sans exécuter de commande.
     Close,
+}
+
+/// Bascule la **stratégie apprise** (case LEARNED PILOT de l'écran de
+/// paramétrage, touche Y, clé `learned_pilot`) : l'autopilote joue alors le
+/// réseau entraîné hors-ligne (`learned_pilot.rs`) au lieu de sa loi scriptée.
+/// Partagé par la touche Y, le panneau COMMANDES et l'écran de paramétrage -
+/// une seule bascule pour les trois entrées. Si les poids embarqués sont
+/// illisibles, la case **refuse de s'allumer** et le message le dit : un
+/// asset corrompu ne doit pas passer pour un pilote qui fonctionne.
+/// NB : la stratégie n'a d'effet qu'avec le pilote automatique allumé (X).
+pub fn toggle_learned_pilot(state: &mut GameState) {
+    if !state.learned_pilot && !crate::learned_pilot::available() {
+        state.send_message("LEARNED PILOT UNAVAILABLE");
+        return;
+    }
+    state.learned_pilot = !state.learned_pilot;
+    let _ = persist::set_bool("learned_pilot", state.learned_pilot);
+    state.send_message(if state.learned_pilot {
+        "LEARNED PILOT ON"
+    } else {
+        "LEARNED PILOT OFF"
+    });
 }
 
 /// Exécute une commande du panneau COMMANDES (bouton du HUD, interface
@@ -170,6 +196,9 @@ pub fn execute_command(
             let _ = persist::set_bool("autopilot", state.autopilot);
             state.send_message(if state.autopilot { "AUTOPILOT ON" } else { "AUTOPILOT OFF" });
         }
+        // Y : stratégie apprise (case LEARNED PILOT) - le cerveau de
+        // l'autopilote, persisté comme la touche Y
+        GameCommand::LearnedPilot => toggle_learned_pilot(state),
         // G : génère un météore près du vaisseau (immobile, comme la touche G)
         GameCommand::SpawnMeteor => {
             let idx = create_shape(state, shapes, triangles, camera, elements, rng);
@@ -696,6 +725,14 @@ pub fn update(
         state.autopilot = !state.autopilot;
         let _ = persist::set_bool("autopilot", state.autopilot);
         state.send_message(if state.autopilot { "AUTOPILOT ON" } else { "AUTOPILOT OFF" });
+    }
+
+    // Y : stratégie apprise (case LEARNED PILOT de l'écran de paramétrage) -
+    // l'autopilote joue le **réseau entraîné hors-ligne** au lieu de sa loi
+    // scriptée (voir `learned_pilot.rs`) ; sans effet tant que X n'a pas
+    // allumé le pilote. Le réglage est persisté (clé `learned_pilot`).
+    if crate::headless::key_pressed(KeyCode::Y) {
+        toggle_learned_pilot(state);
     }
 
     // G : génère un météore près du vaisseau (ex `mainLoop`) : à

@@ -358,6 +358,15 @@ pub struct GameState {
     /// Les entrées clavier/tactile/télécommande/manette sont ignorées tant
     /// que l'option est active. Éteint par défaut.
     pub autopilot: bool,
+    /// **Stratégie apprise** (case LEARNED PILOT de l'écran de paramétrage /
+    /// touche Y, clé `learned_pilot`, Phase 4) : l'autopilote joue avec le
+    /// **réseau de neurones entraîné hors-ligne** (`learned_pilot.rs`, poids
+    /// embarqués `assets/ship_pilot_policy.json`) au lieu de sa loi scriptée -
+    /// c'est la stratégie « autopilote alternative » du plan d'auto-
+    /// entraînement. N'a d'effet que si `autopilot` est actif (la case choisit
+    /// le **cerveau**, X allume le pilote) ; les gestes d'accostage restent à
+    /// la machine à états de `autopilot.rs`. Éteint par défaut.
+    pub learned_pilot: bool,
     /// Valeur d'anticrénelage effectivement appliquée par la fenêtre au
     /// lancement (`Conf.sample_count`). Si `antialias` en diffère, un
     /// redémarrage est nécessaire (bouton RESTART de l'écran de paramétrage).
@@ -636,6 +645,7 @@ impl GameState {
             save_position: false, // option SAVE POSITION éteinte par défaut
             stars_big: false, // étoiles du fond en 1×1 par défaut
             autopilot: false, // pilote automatique éteint par défaut
+            learned_pilot: false, // stratégie apprise éteinte par défaut
             max_meteor_shapes: INITIAL_MAX_METEOR_SHAPES,
             dock_anim: 0.0,
             dock_anim_from_pos: Point::new(0.0, 0.0),

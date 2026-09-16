@@ -14,7 +14,11 @@ Mesure la **ligne de base** de l'auto-entraînement :
 - `ppo`       : la **politique PPO** entraînée par renforcement sur
   l'observation complète (`ppo.py` - `--policy ppo_policy.json` requis) ;
 - `autopilot` : l'autopilote **du jeu** (`POST /cmd {"autopilot": true}`) -
-  la référence absolue (jeu réel uniquement, pas de simulateur).
+  la référence absolue (jeu réel uniquement, pas de simulateur) ;
+- `autopilot_sim` : le **portage Python** de cet autopilote
+  (`autopilot_ref.py`) - la même référence, mais **en simulateur** (aucun
+  processus de jeu). `--reference` compare la politique évaluée à ce
+  portage sur les mêmes graines et affiche l'**écart de récompense**.
 
 `--backend sim` (défaut) utilise le micro-simulateur (`eva_env.py`, instantané,
 mêmes lois physiques) ; `--backend live` pilote la **vraie partie** par
@@ -69,18 +73,87 @@ def run_episode_sim(
     rng: random.Random,
 ) -> dict[str, Any]:
     """Un épisode EVA dans le micro-simulateur : succès quand le cosmonaute
-    entre dans le cercle d'accostage (récupération), échec au délai."""
+    entre dans le cercle d'accostage (récupération), échec au délai.
+
+    L'état interne des politiques qui en ont un (l'autopilote porté,
+    `autopilot_ref`) est réinitialisé au départ de l'épisode."""
+    if hasattr(policy, "reset"):
+        policy.reset()  # type: ignore[attr-defined]
     x, y = spawn_position(seed, spawn_dist)
     obs = env.reset(seed, x, y)
     while not env.done and env.t < timeout:
         obs = env.step(**{k: v for k, v in policy(obs).items() if k in ("up", "right", "left")})
     return {
+        "seed": seed,
         "success": env.done,
         "seconds": env.t,
         "final_dist": env.obs()["station_dist"],
         "entry_speed": env.entry_speed if env.done else 0.0,
-        "reward": 0.0,  # rempli par l'appelant
+        "reward": episode_reward(None, {
+            "success": env.done,
+            "seconds": env.t,
+            "entry_speed": env.entry_speed if env.done else 0.0,
+            "final_dist": env.obs()["station_dist"],
+        }),
     }
+
+
+def sim_comparison(
+    policy,
+    seeds: list[int],
+    spawn_dist: float = 300.0,
+    timeout: float = EPISODE_TIMEOUT,
+    reference=None,
+) -> dict[str, Any]:
+    """Compare une politique à la **référence** (par défaut l'autopilote du
+    jeu porté en Python, `autopilot_ref.py`) sur les **mêmes graines**, dans
+    le micro-simulateur - l'écart de récompense hors-ligne, sans processus
+    headless. C'est la mesure du test de non-régression et de `dagger.py`.
+
+    Renvoie les déroulés des deux côtés, les moyennes et l'**écart**
+    `politique − référence` (positif = la politique fait mieux)."""
+    if reference is None:
+        from autopilot_ref import autopilot_ref_policy
+
+        reference = autopilot_ref_policy()
+    env = EvaSim()
+    rng = random.Random(0)
+    pol = [run_episode_sim(env, policy, s, spawn_dist, timeout, rng) for s in seeds]
+    ref = [run_episode_sim(env, reference, s, spawn_dist, timeout, rng) for s in seeds]
+    p_mean = sum(r["reward"] for r in pol) / len(pol)
+    r_mean = sum(r["reward"] for r in ref) / len(ref)
+    return {
+        "seeds": list(seeds),
+        "spawn_dist": spawn_dist,
+        "policy": pol,
+        "reference": ref,
+        "policy_mean": p_mean,
+        "reference_mean": r_mean,
+        "gap": p_mean - r_mean,
+        "policy_ok": sum(1 for r in pol if r["success"]),
+        "reference_ok": sum(1 for r in ref if r["success"]),
+    }
+
+
+def print_sim_comparison(cmp: dict[str, Any], policy_label: str = "politique") -> None:
+    """Rapport lisible de `sim_comparison` (une ligne par graine + moyennes)."""
+    print(f"\nComparaison hors-ligne (simulateur) : {policy_label} vs autopilote du jeu")
+    print(f"Départ à {cmp['spawn_dist']:.0f} u · graines "
+          f"{cmp['seeds'][0]}..{cmp['seeds'][-1]}")
+    print("-" * 66)
+    print(f"{'graine':>7} {'politique':>18} {'autopilote':>18}")
+    for p, r in zip(cmp["policy"], cmp["reference"]):
+        p_out = "récupéré" if p["success"] else "échec"
+        r_out = "récupéré" if r["success"] else "échec"
+        print(f"{p['seed']:>7} {p_out:>10} {p['reward']:>7.1f} "
+              f"{r_out:>10} {r['reward']:>7.1f}")
+    print("-" * 66)
+    print(f"{policy_label:>7} : {cmp['policy_ok']}/{len(cmp['policy'])} réussis · "
+          f"récompense moyenne {cmp['policy_mean']:.1f}")
+    print(f"autopilote : {cmp['reference_ok']}/{len(cmp['reference'])} réussis · "
+          f"récompense moyenne {cmp['reference_mean']:.1f}")
+    sign = "+" if cmp["gap"] >= 0 else ""
+    print(f"écart (politique − autopilote) : {sign}{cmp['gap']:.1f}")
 
 
 def run_episode_live(
@@ -286,6 +359,10 @@ def main() -> None:
     ap.add_argument("--auto-generate", action="store_true",
                     help="monde vivant (météores générés au fil de l'épisode)")
     ap.add_argument("--timeout", type=float, default=EPISODE_TIMEOUT)
+    ap.add_argument("--reference", action="store_true",
+                    help="backend sim : comparer aussi à l'autopilote du jeu **porté en "
+                         "Python** (autopilot_ref.py) sur les mêmes graines - l'écart de "
+                         "récompense, sans processus headless")
     args = ap.parse_args()
 
     params: Optional[dict[str, float]] = None
@@ -368,6 +445,11 @@ def main() -> None:
     mean_r = sum(episode_reward(None, r) for r in results) / len(results)
     print(f"{ok}/{len(results)} épisodes réussis   temps moyen : {mean_t:.1f} s   "
           f"récompense moyenne : {mean_r:.1f}")
+    if args.backend == "sim" and args.reference:
+        cmp = sim_comparison(policy,
+                             list(range(args.seed, args.seed + args.episodes)),
+                             args.spawn_dist, args.timeout)
+        print_sim_comparison(cmp, args.strategy)
     if ok == 0:
         print("Aucun succès : le délai est-il assez long (--timeout) ? Le départ "
               "assez proche (--spawn-dist) ?")

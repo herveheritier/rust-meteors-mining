@@ -47,6 +47,27 @@ jobs:
             tools/marketplace-editor/index.html \
             tools/scenario-editor/index.html \
             web/index.html
+      # Tests de non-régression de l'entraîneur : l'écart de récompense de la
+      # politique apprise (policy.json) à l'autopilote du jeu reste dans la
+      # tolérance, le micro-simulateur vaisseau reproduit **exactement** la
+      # physique d'une vraie partie (fixture de fenêtres enregistrées) et la
+      # politique **embarquée dans le jeu** (assets/ship_pilot_policy.json,
+      # Phase 4) reste celle que le fixture fait rejouer au portage Rust. Les
+      # autopilotes sont **portés en Python** (tools/trainer/autopilot_ref.py,
+      # ship_autopilot_ref.py) et les micro-simulateurs remplacent le processus
+      # de jeu : aucun Rust à compiler, aucune dépendance Python (stdlib
+      # `unittest`). Les **deux moteurs d'entraînement** du réseau
+      # (test_nn_backend.py) sont verrouillés : le chemin Python pur reste sans
+      # dépendance et le chemin numpy - optionnel, celui qui entraîne l'artefact
+      # embarqué - doit apprendre autant (ses cas se **sautent** si numpy est
+      # absent, ce qui est le cas ici : la CI n'installe rien). Le **protocole de
+      # mesure en boucle fermée dans le jeu**
+      # (measure_in_game.py, Phase 4) est vérifié sans partie : sa logique de
+      # mesure (dénouements, garde-fous, attente de la bascule de cerveau) est
+      # testée contre un faux client, contre lequel le script reste rejouable.
+      - name: Tests entraîneur (écart à l'autopilote + ports + simulateurs + politique embarquée)
+        working-directory: tools/trainer
+        run: python3 -m unittest -v test_reward_gap test_ship_port test_ship_env test_learned_pilot test_nn_backend test_measure_in_game
       # Build release complet (binaire autonome) : compile au moins une fois
       # avec le profil release (lto + strip)
       - name: Build release
