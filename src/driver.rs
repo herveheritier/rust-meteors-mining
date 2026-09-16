@@ -1593,6 +1593,14 @@ pub fn reset_episode(
     // ~100 carburant) : sans lui, l'épisode se joue dans un monde vide (aucun
     // météore n'existe avant génération automatique) et la référence ne peut
     // rien miner ni livrer.
+    //
+    // Garde wasm : `is_economy_scenario` interroge les scénarios à objectifs
+    // **chargés depuis le disque** (`scenario_loader`, exclu de la cible) et
+    // n'existe donc que côté natif. Le bloc est lui aussi inatteignable en
+    // web (la demande vient de `POST /reset`, interface désactivée), mais
+    // `reset_episode` est appelée par la boucle de jeu (`main.rs`) : la
+    // fonction reste compilée, seul ce bloc est retiré.
+    #[cfg(not(target_arch = "wasm32"))]
     if req.target == ResetTarget::Ship && is_economy_scenario(req.scenario) {
         crate::generate::seed_mining_field(state, shapes, triangles, elements, rng);
         // mode de déplacement de l'épisode : DIRECTIONAL (le défaut
