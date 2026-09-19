@@ -16,6 +16,10 @@ complète), un épisode par cerveau, mêmes graines.
     # 2. mesurer, depuis tools/trainer/
     python3 measure_in_game.py --seeds 1 2 3 4 5 6
     python3 measure_in_game.py --seeds 1 2 --only learned --json /tmp/measure.json
+    # enregistrer les champs miniers réels + les dénouements du jeu (fixture que
+    # le micro-simulateur rejoue hors ligne, cf. `validate_ship_env.py`)
+    python3 measure_in_game.py --seeds 1 2 3 4 5 6 \
+        --fields fixtures/ship_mining_fields.json
 
 ### Protocole (rejouable)
 
@@ -47,6 +51,10 @@ d'une machine à l'autre.
 
 Sortie : un tableau graine par graine (dénouement des deux cerveaux + temps
 simulé + pas), puis les totaux. `--json` écrit le même rapport en machine.
+`--fields` écrit en plus le **fixture des champs miniers réels** (les météores
+de la graine, tels que le jeu les a semés) avec les dénouements mesurés : c'est
+lui qui donne au micro-simulateur le **monde du jeu** et lui permet de désigner,
+hors ligne, la politique que la partie préfère (`validate_ship_env.py`).
 
 Nécessite un processus de jeu lancé avec l'interface de contrôle (les poids du
 réseau sont **embarqués dans le binaire** : `src/learned_pilot.rs`).
@@ -61,6 +69,7 @@ import time
 from typing import Any, Optional
 
 from client import DriverClient, die
+from ship_env import field_from_obs, ship_center_from_obs
 
 #: Dénouements publiés par le jeu (`EpisodeOutcome::label`, `src/driver.rs`) -
 #: verrouillés contre la source par `test_measure_in_game.py`.
@@ -119,16 +128,22 @@ def run_episode(
     deadline = time.monotonic() + wall_cap
     last = 0
     obs: dict[str, Any] = {}
+    field: list[dict[str, Any]] = []
+    ship_center: tuple[float, float] = (0.0, 0.0)
     while time.monotonic() < deadline:
         obs = client.obs()
         if (obs.get("frame", 0) > last
                 and obs.get("episode_id", 0) != before
                 and bool(obs.get("learned_pilot")) == learned):
+            # premier pas du nouvel épisode : le **champ minier de la graine**
+            # est intact (météores inertes, rien n'a encore bougé)
+            field = field_from_obs(obs)
+            ship_center = ship_center_from_obs(obs)
             break
         last = obs.get("frame", last)
         time.sleep(0.002)
     else:
-        return _result(seed, learned, OUTCOME_WALL, obs)
+        return _result(seed, learned, OUTCOME_WALL, obs, field, ship_center)
 
     while time.monotonic() < deadline:
         obs = client.obs()
@@ -141,14 +156,18 @@ def run_episode(
                 "ancien (recompiler avec src/learned_pilot.rs)")
         outcome = classify(obs, sim_cap)
         if outcome is not None:
-            return _result(seed, learned, outcome, obs)
-    return _result(seed, learned, OUTCOME_WALL, obs)
+            return _result(seed, learned, outcome, obs, field, ship_center)
+    return _result(seed, learned, OUTCOME_WALL, obs, field, ship_center)
 
 
 def _result(
-    seed: int, learned: bool, outcome: str, obs: dict[str, Any]
+    seed: int, learned: bool, outcome: str, obs: dict[str, Any],
+    field: Optional[list[dict[str, Any]]] = None,
+    ship_center: Optional[tuple[float, float]] = None,
 ) -> dict[str, Any]:
-    """Résultat d'épisode normalisé (temps simulé, pas, compteurs de livraison)."""
+    """Résultat d'épisode normalisé (temps simulé, pas, compteurs de livraison,
+    et le monde de la graine lu au premier pas de l'épisode : champ minier et
+    centre du corps du vaisseau - la visée réelle de la loi)."""
     return {
         "seed": seed,
         "brain": "appris" if learned else "scripté",
@@ -158,6 +177,8 @@ def _result(
         "steps": obs.get("episode_steps", 0),
         "deliveries": obs.get("episode_deliveries", 0),
         "collected": obs.get("episode_collected", 0),
+        "field": field or [],
+        "ship_center": list(ship_center or (0.0, 0.0)),
     }
 
 
@@ -220,6 +241,11 @@ def main() -> None:
                     help="garde-fou mural par épisode (s) - au-delà, « mur »")
     ap.add_argument("--json", metavar="PATH", default=None,
                     help="écrire le rapport machine (graines, cerveaux, totaux)")
+    ap.add_argument("--fields", metavar="PATH", default=None,
+                    help="enregistrer le fixture des **champs miniers réels** et des "
+                         "dénouements du jeu (graine par graine) - c'est lui qui rend "
+                         "le micro-simulateur représentatif hors ligne "
+                         "(`validate_ship_env.py`, `fixtures/ship_mining_fields.json`)")
     args = ap.parse_args()
 
     client = DriverClient(args.host)
@@ -273,6 +299,39 @@ def main() -> None:
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
         print(f"rapport : {args.json}")
+
+    if args.fields:
+        # fixture des champs réels : ce que le **jeu** a joué, graine par graine -
+        # le micro-simulateur s'y mesure hors ligne sans processus de jeu
+        fixture: dict[str, Any] = {
+            "target": args.target,
+            "scenario": args.scenario,
+            "sim_cap": args.sim_cap,
+            "note": "monde de la graine (champ minier : position monde, rayon, triangles, "
+                    "centre du corps des météores ; centre du corps du vaisseau) et "
+                    "dénouements du jeu par graine - enregistré par "
+                    "measure_in_game.py --fields, rejoué hors ligne par ship_env.py",
+            "seeds": {},
+        }
+        for name, learned in brains:
+            for r in results[learned]:
+                entry = fixture["seeds"].setdefault(str(r["seed"]), {})
+                if r["field"]:
+                    entry["field"] = r["field"]
+                    entry["ship_center"] = r["ship_center"]
+                entry["learned" if learned else "reference"] = {
+                    "outcome": r["outcome"],
+                    "seconds": r["seconds"],
+                    "steps": r["steps"],
+                    "collected": r["collected"],
+                }
+        missing = [s for s, e in fixture["seeds"].items() if not e.get("field")]
+        with open(args.fields, "w", encoding="utf-8") as f:
+            json.dump(fixture, f, ensure_ascii=False, indent=1)
+        print(f"champs enregistrés : {args.fields} "
+              f"({len(fixture['seeds'])} graines"
+              + (f", {len(missing)} sans champ lisible : {', '.join(missing)}"
+                 if missing else "") + ")")
 
 
 if __name__ == "__main__":

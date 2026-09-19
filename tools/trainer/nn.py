@@ -67,12 +67,36 @@ from typing import Any, Optional
 #: donc pas la **représentation** mais l'**écart de distribution** entre le
 #: micro-simulateur et la partie (voir `docs/AUTOENTRAINEMENT.md` §5 nonies ter) :
 #: le format reste en **v8**, et l'effort se porte sur des données **du jeu réel**.
-FEATURES_VERSION = 8
+#:
+#: **v10 (déployée) : le format des cibles était faux.** `action_target`
+#: découpait `ACTIONS[:SIGMOID_OUTPUTS]`, soit `(up, down, left)` puisque `ACTIONS`
+#: range `left`/`right` avant `fire` : la cible des trois sigmoïdes était donc
+#: `up`, `down`, **`left`** - `fire` était **absent** de l'apprentissage et
+#: `left` comptait **double** (sa propre sigmoïde, en plus de la tête de
+#: rotation). Conséquence mesurée : le pilote appris ne tirait pas parce qu'il
+#: l'avait appris, mais parce que la sortie lue comme « tire » était en réalité
+#: la sigmoïde d'un virage à gauche - le **tir**, la seule action qui libère les
+#: minerais, n'avait jamais été appris, et la boucle de minage n'était fermée
+#: que par accident. La trappe du pilote (vaisseau figé à ~400 u, soute vide) est
+#: exactement l'état où l'expert ouvre le feu : son étiquette vaut `fire` et la
+#: cible v8 y valait « ne rien faire ». Le format monte donc à **v10** pour que
+#: les poids v8 soient **refusés** (`load_nn`, `learned_pilot.rs`) au lieu d'être
+#: rejoués de travers.
+FEATURES_VERSION = 10
 
-#: Actions (boutons) prédits par le réseau - l'ordre définit les indices de
-#: sortie sigmoïde (`up`, `down`, `fire`) ; la rotation (left/right) est une
-#: tête softmax à part (voir `TURN_HEAD`).
+#: Actions (boutons) prédits par le réseau. `ACTIONS` est l'ordre **des boutons**
+#: (l'ordre du jeu, `learned_pilot.rs`) : il ne définit **pas** l'ordre des
+#: sorties - voir `SIGMOID_ACTIONS` et `TURN_ACTIONS`.
 ACTIONS = ("up", "down", "left", "right", "fire")
+
+#: Actions des trois sigmoïdes de sortie, **dans l'ordre des sorties** : `fire`
+#: est la troisième, pas la cinquième. `ACTIONS[:SIGMOID_OUTPUTS]` (le bug v8)
+#: tombait sur `left`.
+SIGMOID_ACTIONS = ("up", "down", "fire")
+
+#: Actions de la tête de rotation (softmax, mutuellement exclusives) : `none`
+#: (l'expert ne tourne pas) est la classe `NONE_CLASS`.
+TURN_ACTIONS = ("left", "right", "none")
 
 #: Types d'objets proches encodés en one-hot (même libellé que l'observation).
 NEARBY_KINDS = ("meteore", "minerai", "alien", "portail", "mine")
@@ -730,7 +754,7 @@ def action_target(action: dict[str, Any]) -> list[float]:
     l'observation, ou l'`action` des trajectoires du banc d'essai) : trois
     sigmoïdes binaires (`up`, `down`, `fire`) puis un un-seul de rotation
     (`left`, `right`, `none` - l'expert n'appuie jamais les deux ensemble)."""
-    y = [1.0 if action.get(a) else 0.0 for a in ACTIONS[:SIGMOID_OUTPUTS]]
+    y = [1.0 if action.get(a) else 0.0 for a in SIGMOID_ACTIONS]
     if action.get("left"):
         turn = 0
     elif action.get("right"):
@@ -1085,11 +1109,11 @@ class MLP:
         per_action = [0.0] * len(ACTIONS)
         exact = 0
         # positions des sigmoïdes dans `ACTIONS` : up=0, down=1, fire=4
-        sigmoid_slot = {"up": 0, "down": 1, "fire": 4}
+        sigmoid_slot = {a: i for i, a in enumerate(SIGMOID_ACTIONS)}
         for x, y in zip(X, Y):
             out = self.forward(x)
             ok_turn = self.turn_action(out) == self.turn_action(y)
-            for k, a in enumerate(("up", "down", "fire")):
+            for k, a in enumerate(SIGMOID_ACTIONS):
                 p = min(max(out[k], 1e-9), 1.0 - 1e-9)
                 loss += -(y[k] * math.log(p) + (1.0 - y[k]) * math.log(1.0 - p))
                 per_action[sigmoid_slot[a]] += 1.0 if (out[k] >= 0.5) == (y[k] >= 0.5) else 0.0
@@ -1122,6 +1146,8 @@ def save_nn(path: str, net: MLP, meta: Optional[dict[str, Any]] = None) -> None:
         "actions": list(ACTIONS),
         "sigmoid_outputs": SIGMOID_OUTPUTS,
         "turn_head": TURN_HEAD,
+        "sigmoid_actions": list(SIGMOID_ACTIONS),
+        "turn_actions": list(TURN_ACTIONS),
         "w1": net.w1,
         "b1": net.b1,
         "w2": net.w2,
@@ -1147,6 +1173,13 @@ def load_nn(path: str) -> MLP:
         )
     if data.get("sigmoid_outputs") != SIGMOID_OUTPUTS or data.get("turn_head") != TURN_HEAD:
         raise ValueError(f"{path} : tête de sortie incompatible (re-entraîner)")
+    if tuple(data.get("sigmoid_actions") or ()) != SIGMOID_ACTIONS:
+        # v8 rangeait `fire` hors des sigmoïdes (`up`, `down`, `left`) : ses
+        # poids lisent « tire » là où ils ont appris « tourne à gauche ».
+        raise ValueError(
+            f"{path} : cibles d'entraînement incompatibles "
+            f"({data.get('sigmoid_actions')!r} ≠ {list(SIGMOID_ACTIONS)}) - ré-entraîner"
+        )
     net = MLP(data["inputs"], data["hidden"], data["outputs"])
     net.w1 = data["w1"]
     net.b1 = data["b1"]

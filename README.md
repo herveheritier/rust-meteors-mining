@@ -608,10 +608,21 @@ jeu** (Phase 4) : le réseau de la boucle de minage du vaisseau est embarqué
 dans le binaire (`assets/ship_pilot_policy.json`, porté par
 `src/learned_pilot.rs` - mêmes features et même réseau que l'entraîneur) et
 se choisit par la case **LEARNED PILOT** de l'écran O ou la touche Y :
-l'autopilote joue alors le réseau au lieu de sa loi scriptée. Après
-**élargissement de la capacité** du réseau (64 neurones cachés, 300 époques,
-24 000 pas d'entraînement), le cerveau appris **livre 7/12 épisodes** de
-minage contre 10/12 pour la loi scriptée (0/6 avant). L'entraîneur garde
+l'autopilote joue alors le réseau au lieu de sa loi scriptée. L'artefact
+embarqué livre **7/12 épisodes** de minage contre 10/12 pour la loi scriptée
+(64 neurones cachés, mesuré par `measure_in_game.py`) ; il les livre **aussi
+vite** que la loi (30,0 s contre 31,4 s en moyenne). Ce chiffre était de
+**0/12** avant la correction du format des **cibles d'entraînement** : le tir,
+seule action qui libère les minerais, **n'était pas appris** (la cible des
+sigmoïdes était `up`, `down`, **`left`**) - le réseau ne bouclait le cycle de
+minage que par accident, et se figeait à ~400 u de la station (voir
+`docs/AUTOENTRAINEMENT.md` §5 nonies quinquies). La sélection d'un cerveau se
+fait donc **dans le jeu**, et non sur l'exactitude d'imitation. Le
+**micro-simulateur** de l'entraîneur
+rejoue désormais le **monde de la graine** (champ minier du jeu **importé**, pas
+synthétisé) et la **séquence d'épisode** du jeu (rétraction des liens avant le
+décollage, animation d'accostage avant la livraison) : son classement suit celui
+de la partie, mesuré hors ligne par `validate_ship_env.py`. L'entraîneur garde
 **zéro dépendance** par défaut ; un second moteur **optionnel** (`numpy`)
 accélère l'entraînement des réseaux larges, sans jamais intervenir dans
 l'inférence rejouée par le jeu.
@@ -623,6 +634,7 @@ python3 evaluate.py --backend live --strategy autopilot   # ligne de base du jeu
 python3 cem.py           # entraîne une politique (simulateur) → policy.json
 python3 evaluate.py --strategy seek --policy policy.json  # mesure la politique
 python3 measure_in_game.py --seeds 1 2 3   # boucle fermée dans le jeu : loi scriptée vs réseau embarqué
+python3 validate_ship_env.py               # représentativité du micro-simulateur (hors ligne)
 ```
 
 Démarche, protocole détaillé, décisions de cadrage et suite :

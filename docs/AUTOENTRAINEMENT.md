@@ -701,16 +701,24 @@ pendant vaisseau d'`eva_env.py`, avec une **frontière de fidélité assumée**
 - **fidèle** : cinématique du vaisseau (les quatre modes de déplacement,
   `thrust_vector`, `realistic_rotation_after_input`), tir (cadence, balle au
   pivot, `vitesse + 2`), minage (un tir = un triangle ; minerais libérés à la
-  destruction), champ minier de l'épisode (`seed_mining_field`), collecte,
-  économie Progression (carburant, munitions, soute, prix) et accostage
-  (seuil de vitesse **par frame**, déchargement, ravitaillement) ;
-- **approché** : la **géométrie** des météores est un **cercle** (centre +
-  rayon) au lieu d'un mesh de triangles, les collisions sont cercle/cercle au
-  lieu du SAT triangle à triangle, et le champ de formation est **synthétisé**
-  (mêmes règles que le jeu, mais un flux aléatoire différent) ; un **rayon de
-  collision effectif** et une **tolérance de ramassage** compensent la
+  destruction), collecte, économie Progression (carburant, munitions, soute,
+  prix) ;
+- **fidèle depuis le chantier « représentatif »** (§5 nonies quater) : la
+  **séquence de l'épisode** - vaisseau à quai **liens attachés**, rétraction de
+  1,5 s au décollage (vaisseau figé au centre, **entrées ignorées**, tir
+  compris), animation d'accostage de 3 s avant la boîte DOCK STATION,
+  déchargement puis ravitaillement au **maximum achetable**, rétraction avant de
+  repartir - et le **champ minier de la graine**, **importé du jeu**
+  (`fixtures/ship_mining_fields.json` : même graine → même monde - positions,
+  rayons et triangles vivants des météores enregistrés) ;
+- **approché** (la frontière hybride restante) : la **géométrie** des météores
+  est un **cercle** (centre + rayon) au lieu d'un mesh de triangles et les
+  collisions sont cercle/cercle au lieu du SAT triangle à triangle ; un **rayon
+  de collision effectif** et une **tolérance de ramassage** compensent la
   différence entre la borne `radius` et la surface réelle (mesurés contre la
-  vraie partie de référence).
+  vraie partie de référence) ; les graines **sans champ enregistré** retombent
+  sur un champ **synthétisé** (mêmes règles que le jeu, flux aléatoire
+  différent - monde qui n'est pas celui de la partie).
 
 **Fidélité de la cinématique : mesurée exacte.** `fixtures/ship_physics_windows.json`
 est un extrait d'une **vraie partie** headless (état du vaisseau, action de
@@ -718,14 +726,23 @@ l'autopilote, état suivant, 90 fenêtres) ; le simulateur reproduit chaque pas 
 la **précision machine** (erreur max ≈ 1,4 × 10⁻¹⁴) - c'est ce que verrouille
 `test_ship_env.py`, sans processus de jeu.
 
-**La référence dans le simulateur** : avec le champ réel importé depuis une
-partie enregistrée, l'autopilote porté livre exactement comme dans le jeu ;
-avec le champ **synthétique**, il boucle la boucle de minage sur une partie des
-graines seulement (2-3/8 selon la disposition tirée) - l'instabilité vient des
+**Fidélité de l'épisode : mesurée, à la piste près.** Rejoué **pas à pas**
+contre une vraie partie (mêmes actions, même graine, champ importé), le
+simulateur suit le jeu **exactement pendant toute la rétraction des liens**
+(86 pas identiques, la première divergence n'étant que la frame d'arrondi de
+fin de rétraction), reste sous **1 u d'écart** pendant ~170 pas (~3 s) et sous
+10 u ensuite : le résidu est la géométrie en cercles et la tolérance de
+ramassage. Le tir suit aussi (munitions identiques sur 899/900 pas). Mesure
+complète de représentativité : `validate_ship_env.py` (§5 nonies quater).
+
+**La référence dans le simulateur** : avec le champ **importé** (celui du jeu),
+l'autopilote porté livre sur **les 12 graines enregistrées**, à des temps
+comparables à la partie (graine 1 : 22,1 s hors ligne contre 22,1 s dans le
+jeu ; graine 3 : 18,8 s contre 18,9 s) ; avec le champ **synthétisé**, il ne
+bouclait que sur une partie des graines - l'instabilité venait des
 quasi-manqués de minerai sur un monde qui n'est pas celui du jeu, pas de la
-physique. La **vraie partie fait foi** : sur les graines 1..8, l'autopilote du
-jeu donne **8/8 livraisons, récompense moyenne 937,4** (ex. graine 3 : livrée
-en 18,9 s, récompense 962,2 ; le simulateur à champ importé donne 934,8).
+physique. La **vraie partie fait foi** : l'autopilote du jeu livre **10/12**
+sur les graines 1..12 (temps moyen 31,4 s) dans cette même mesure d'épisode.
 
 ### Amorce par départs perturbés de la cible `ship` (`ship_warmstart.py`)
 
@@ -753,6 +770,41 @@ Les **grandeurs de décision** du vaisseau (§5 nonies) sont dans les features
 v8 : la **visée de mission de la conduite**) ; mesurées, elles rendent la
 rotation **décidable** et relèvent l'imitation d'un cran, sans encore boucler
 la boucle - le seuil d'alignement de la bande morte reste à apprendre.
+
+### DAgger **dans le simulateur** (`--dagger-iterations`) — le clonage ne suffit pas
+
+L'écart ci-dessus n'est ni un manque d'infrastructure ni de capacité : c'est
+une **dérive de distribution**. Diagnostic mesuré sur la trappe exacte où le
+clone se gare : le vaisseau **s'arrête** à 401,7 u de la station, soute vide,
+position **identique pendant 80 s**, et la politique y **décide délibérément de
+ne rien faire** (les trois sigmoïdes sous 0,5, rotation « none » à 1,0). Cette
+décision est **fidèle à la distribution d'imitation** (l'expert ne stationne
+jamais là : ses trajectoires sont toujours en vol), et c'est la boucle fermée
+qui punit : la même exactitude d'imitation (98,3 % train / 95,9 % validation)
+correspond à **0/6 livraisons** hors ligne contre **6/6** pour la loi scriptée.
+
+> La trappe a depuis été **expliquée et corrigée** : l'état est franchissable
+> (l'expert y **livre en 17,9 s**, en **ouvrant le feu**) et l'étiquette qui y
+> était enregistrée ne contenait pas `fire` - le format des cibles était faux.
+> Voir §5 nonies quinquies ; ce qui suit décrit le chemin qui y a mené.
+
+Le remède est **DAgger**, et il se joue maintenant **hors ligne** :
+`ship_warmstart.py --dagger-iterations N` fait jouer la **politique** dans le
+micro-simulateur **représentatif**, étiquette les états qu'elle visite avec
+l'expert (`ship_autopilot_ref.py`), les **agrège** au jeu de données et
+ré-entraîne. Même principe que `dagger.py` (§5 quater), sans processus de jeu
+ni requête HTTP par pas - ce que le simulateur représentatif vient de rendre
+possible.
+
+Coût : le roulage d'une politique **qui cale** va jusqu'au délai de l'épisode
+(~1,3 ms par pas en Python pur) - d'où deux réglages : `--dagger-stall` coupe
+un roulage **figé** (un point fixe n'apprend rien de neuf) et
+`--dagger-starts dock` fait rouler depuis les départs **du jeu**, la seule
+distribution où la politique atteint ses propres points fixes (§5 nonies
+quinquies). `test_ship_env.py` verrouille le mécanisme : les étiquettes sont
+celles de l'**expert** (pas celles de la politique), la politique visite bien
+des états **hors** de la distribution de l'expert, et le coupe-circuit ne
+tronque pas une politique qui commande.
 
 ## 5 nonies. Les grandeurs de décision du vaisseau (v7 puis v8)
 
@@ -814,8 +866,9 @@ feu :
   pendant l'esquive), **survitesse** et **arrêt** (`settle`).
 
 Hors vaisseau (le cosmonaute EVA pilote) le bloc vaut zéro, comme la loi.
-Porté à l'identique dans `src/learned_pilot.rs` (`FEATURES_VERSION = 8`,
-`FEATURE_COUNT = 157`, mêmes ordres d'opérations).
+Porté à l'identique dans `src/learned_pilot.rs` (`FEATURE_COUNT = 157`, mêmes
+ordres d'opérations ; le format est en **v10** depuis la correction des
+**cibles**, §5 nonies quinquies - ces blocs de features, eux, sont inchangés).
 
 **Mesure - la rotation devient décidable.** Sur une vraie partie (graine 1,
 autopilote scripté, 999 pas, mode DIRECTIONAL), la règle de rotation **rejouée
@@ -889,13 +942,43 @@ rien).
 | **dans le jeu**, livraisons (graines 1..6) | **0/6** | **5/6** |
 | **dans le jeu**, livraisons (graines 1..12) | - | **7/12** contre **10/12** |
 
+> ⚠ **Lecture corrigée (§5 nonies quinquies).** Les livraisons « apprises » de
+> cette table datent du **format v8** : le **tir n'y était pas appris**. La
+> sortie lue comme `fire` par le jeu était la sigmoïde d'un **virage à gauche**
+> (`action_target` découpait `ACTIONS[:3]`, soit `up`, `down`, `left`), `fire`
+> était **absent** de la cible et `left` comptait double. Les conclusions
+> ci-dessous restent vraies (l'exactitude d'imitation ne prédit pas la boucle
+> fermée), mais elles se lisaient sur une politique dont le **tir** était un
+> accident : le format v10 corrige la cible et les poids v8 sont maintenant
+> **refusés**.
+
 Le micro-simulateur **pénalise** le réseau élargi alors que la partie le
 **récompense** : sur cette cible, l'écart de récompense hors ligne n'est pas un
 critère de sélection - il est même **anti-corrélé** au résultat réel. La raison
 est connue depuis la construction du simulateur : il est **hybride**, avec des
 météores **en cercles** et un champ minier **synthétisé**, alors que le jeu
 engendre son champ ($\S$5 septies). La mesure qui fait foi reste celle **dans
-le jeu** (`measure_in_game.py`).
+le jeu** (`measure_in_game.py`). Ce résidu est **traité** en §5 nonies quater
+(le simulateur rejoue désormais le monde de la graine et la séquence de
+l'épisode, et son classement suit celui de la partie).
+
+> **Correctif de mesure (16 septembre 2026).** L'artefact **embarqué** n'est
+> plus celui de cette table : un ré-entraînement postérieur
+> (`assets/ship_pilot_policy.json`, 134 633 pas étiquetés, 98,8 % d'exactitude
+> d'entraînement) l'a remplacé, et **il ne livre aucune des 12 graines** dans le
+> jeu (0/12 mesuré par `measure_in_game.py`, contre 10/12 pour la loi scriptée).
+> La leçon de la table tient - ni l'exactitude d'imitation ni l'écart de
+> récompense hors ligne ne prédisent la boucle fermée - et elle est désormais
+> **mesurable sans lancer le jeu** : le simulateur représentatif reproduit ce
+> verdict (12/12 scripté contre 0/12 pour le cerveau embarqué, §5 nonies
+> quater). La suite est donc de **ré-entraîner** l'artefact sur ce monde-là.
+>
+> **Suite (18 septembre 2026).** Ré-entraînement fait sur le monde de la partie,
+> mais c'est **une autre cause** qui expliquait ces 0/12 : la cible
+> d'apprentissage ne contenait **pas le tir** (§5 nonies quinquies). L'artefact
+> embarqué est depuis un **v10** (cibles corrigées, DAgger depuis le quai) qui
+> livre **7/12** dans le jeu - comme l'artefact élargi ci-dessus, mais pour de
+> bonnes raisons cette fois (le tir est **appris**).
 
 **Ablation - la capacité est bien le levier.** Mêmes données élargies avec la
 capacité d'**avant** (24 cachés, 25 époques) : validation 60,6 %,
@@ -932,8 +1015,10 @@ existait dans les features sans être lisible (`err/π` y vaut 0,032).
 
 Ce sont des **prédicats d'état** (de quel côté d'une constante on est), jamais
 la commande combinée. Portés à l'identique dans `src/learned_pilot.rs`
-(`FEATURES_VERSION = 9`, `FEATURE_COUNT = 171`), portage mesuré **fidèle à
-100 %** (3 379 pas, fixture ré-enregistré).
+(`FEATURE_COUNT = 171`), portage mesuré **fidèle à 100 %** (3 379 pas, fixture
+ré-enregistré). Cette variante a été mesurée avec un numéro de format propre
+(`9`) puis **écartée** : le numéro **10** qui est déployé correspond à une autre
+correction - le format des **cibles** (§5 nonies quinquies).
 
 ### Résultat - l'imitation devient parfaite, la boucle fermée **régresse**
 
@@ -995,6 +1080,225 @@ donne alors **6/6 livraisons** pour l'autopilote, comme le jeu.
   mesure **dans le jeu**, jamais sur l'exactitude d'imitation ni sur
   l'écart de récompense du simulateur.
 
+## 5 nonies quater. Le micro-simulateur **représentatif** - fait
+
+§5 nonies bis avait laissé un résidu précis : le micro-simulateur **désignait
+le mauvais réseau** - l'écart de récompense hors ligne était *anti-corrélé* au
+résultat réel. La cause n'était ni la physique ni l'imitation, mais trois
+écarts entre le simulateur et la partie, tous **mesurés** :
+
+1. **le monde** : le champ minier était **synthétisé** (mêmes règles, flux
+   aléatoire différent) - une même graine donnait **deux mondes**, donc deux
+   géométries de cibles ;
+2. **le départ** : le jeu retient le vaisseau **à quai, liens attachés**, et
+   **1,5 s** après la première commande de mouvement (rétraction des liens), en
+   **ignorant toutes les entrées** - le tir compris. Le simulateur démarrait
+   immédiatement : le vaisseau partait 1,5 s plus tôt, tournait et **tirait**
+   pendant que le jeu ne faisait rien (munitions consommées pour rien, cap et
+   position d'entrée en vol différents) ;
+3. **l'accostage** : le jeu enchaîne **animation de 3 s** (vaisseau pivoté vers
+   la droite et recentré, entrées ignorées), boîte DOCK STATION, déchargement,
+   ravitaillement, puis rétraction de 1,5 s - la livraison est **datée à la
+   boîte**. Le simulateur livrait à l'instant de l'entrée dans le cercle :
+   l'épisode était ~4,5 s plus court, donc la **récompense** fausse.
+
+### Ce qui a été changé
+
+- `ship_env.py` porte la **séquence du jeu** (`game.rs::update`,
+  `docking.rs`) : liens attachés, rétraction de 1,5 s (vaisseau figé au centre,
+  orientation 0, entrées ignorées), animation d'accostage de 3 s, boîte DOCK
+  STATION, déchargement puis ravitaillement au **maximum achetable**
+  (`autopilot_handle_dock` / `autopilot_handle_shop`), rétraction avant de
+  repartir. `docked` est désormais la définition **publiée par le jeu**
+  (`dock_links || dock_anim > 0 || dock_retract > 0`), et `player_at_station`
+  décide, comme en jeu, entre **déclencher l'animation** (retour) et
+  **décharger** (pilote venant de la station) ;
+- le **champ minier est importé du jeu** par graine
+  (`fixtures/ship_mining_fields.json`, écrit par `measure_in_game.py
+  --fields` depuis une vraie partie) : `ShipSim` rejoue le monde de la graine ;
+- `validate_ship_env.py` mesure la **représentativité** hors ligne (sans
+  processus de jeu) : jeu contre simulateur, graine par graine, accord des
+  dénouements et verdict.
+
+### Reproduction
+
+```bash
+cargo build --release && cargo run --release -- --headless       # 1. le jeu
+cd tools/trainer
+python3 measure_in_game.py --seeds 1 2 3 4 5 6 7 8 9 10 11 12 \
+    --fields fixtures/ship_mining_fields.json                    # 2. traces + champs du jeu
+python3 validate_ship_env.py                                     # 3. la représentativité
+```
+
+### Mesures (graines 1..12, cible `ship`, scénario `economy`)
+
+Mesures du **18 septembre 2026**, artefact **v10** embarqué (§5 nonies
+quinquies) - les mêmes chiffres sortent de `validate_ship_env.py` (hors ligne)
+et de `measure_in_game.py` (dans le jeu) :
+
+| | jeu | simulateur |
+|---|---|---|
+| loi scriptée : livraisons | **10/12** (31,4 s de moyenne) | **12/12** (21,8 s) |
+| réseau embarqué : livraisons | **7/12** (30,0 s de moyenne) | **11/12** |
+| accord des dénouements | - | scripté **10/12** (83 %) · appris **8/12** (67 %) |
+| écart moyen de temps (livraisons communes) | - | **11,1 s** |
+
+- **le classement ne s'inverse pas** : le jeu préfère la loi scriptée
+  (**10** livraisons contre **7**), et le simulateur la préfère aussi (**12**
+  contre **11**) - c'est ce qui manquait pour choisir un artefact sans lancer le
+  jeu. Un test le verrouille (`test_ship_env.py::TestRepresentativity` : champ de
+  la graine identique au fixture, accord ≥ 80 %, **inversion** de classement
+  refusée) ;
+- **mais la marge hors ligne ne suffit pas à sélectionner** : l'accord du
+  cerveau **appris** est de **67 %**, sous le seuil de 80 %, et le simulateur
+  l'**annonce** (« ne pas sélectionner de politique sur cette mesure »). La
+  raison est nommée : le simulateur est plus **clément** que la partie - il
+  n'**y a pas de destruction** là où le jeu perd le vaisseau (§ ci-dessous) ;
+- la fidélité de l'épisode, elle, se mesure à la **piste** : exacte pendant
+  toute la rétraction (86 pas), < 1 u pendant ~3 s, < 10 u ensuite
+  (§5 septies).
+
+### Ce qui reste approché (et ce que ça coûte)
+
+Deux résidus, mesurés :
+
+- la **géométrie** - un météore reste un **cercle** (rayon de collision effectif
+  × 0,6, marge de ramassage des minerais). C'est la source de l'écart de temps
+  (11,1 s) et des graines qui divergent ;
+- la **destruction** - le jeu perd le vaisseau par **collision** sur les graines
+  2 et 5 (11,0 s et 8,4 s) là où le simulateur livre (20,1 s et 22,2 s). C'est
+  désormais **le** poste d'écart du cerveau appris : sur les 5 graines qu'il
+  échoue dans le jeu, 2 sont des collisions, 3 des délais, **aucune n'est la
+  trappe figée** d'avant §5 nonies quinquies.
+
+Le résidu de **généralisation** du réseau, lui, ne se règle plus dans le
+simulateur : l'imitation porte sur la géométrie de la partie (champ importé), et
+l'artefact a été **ré-entraîné sur ce monde-là** puis **mesuré dans le jeu**
+(§5 nonies quinquies) - la seule mesure qui fait foi pour l'artefact embarqué
+(§5 octies).
+
+## 5 nonies quinquies. Le format des **cibles** (v10) — le tir n'était pas appris
+
+Le résidu de §5 nonies quater n'était pas un manque de capacité, ni d'abord un
+écart de distribution : **la cible d'apprentissage était fausse**. C'est la
+cause racine de la trappe du pilote appris, et elle explique d'un coup les trois
+observations restées séparées jusqu'ici (le clone qui se fige, la boucle de
+minage qui ne se ferme qu'à moitié, le « désaccord de 1,9 % sur `fire` »).
+
+### 1. Le symptôme : un point fixe
+
+Rejouée depuis le quai (graine 1, simulateur **représentatif**), la politique
+pousse ~2 s, puis **ne commande plus rien** : le vaisseau s'arrête à 401,7 u de
+la station et sa position reste **identique pendant 80 s** (soute vide, 26
+munitions). Ses sorties y valent `[0,045, 0,00, 0,00, 0,00, 0,00, 1,00]` : les
+trois sigmoïdes sous 0,5 et la rotation « none » à 1,0 - la politique **décide
+délibérément de ne rien faire**.
+
+### 2. L'état est franchissable, et l'expert le sait
+
+Lâché **depuis cet état exact**, l'expert (loi scriptée portée) **livre en
+17,9 s** : il ouvre le feu, tue un météore dès la 1,7 s et embarque les
+minerais. L'action qui ouvre la trappe est donc le **tir** - et c'est bien ce
+que l'expert répond sur cet état, de façon **sans état** (trois appels, trois
+fois `fire`).
+
+### 3. La cible ne pouvait pas l'exprimer
+
+L'étiquette **enregistrée** sur cette même observation valait pourtant
+`[0, 0, 0, 0, 0, 1]` - « ne rien faire ». La raison est dans `nn.py` :
+
+```python
+ACTIONS = ("up", "down", "left", "right", "fire")
+SIGMOID_OUTPUTS = 3
+y = [1.0 if action.get(a) else 0.0 for a in ACTIONS[:SIGMOID_OUTPUTS]]  # ← v8
+```
+
+`ACTIONS[:3]` vaut `(up, down, left)` puisque `left`/`right` sont rangés **avant**
+`fire` : la cible des trois sigmoïdes était `up`, `down`, **`left`**. Mesuré :
+
+| action de l'expert | cible v8 | cible v10 |
+|---|---|---|
+| `fire` | `[0,0,0, 0,0,1]` | `[0,0,**1**, 0,0,1]` |
+| `left` | `[0,0,**1**, 1,0,0]` | `[0,0,0, 1,0,0]` |
+
+Autrement dit : **`fire` était absent de l'apprentissage** et **`left` comptait
+double** (sa propre sigmoïde, en plus de la tête de rotation). La sortie que le
+jeu lit comme `fire` (`greedy()`, `policies.nn_policy`) était la sigmoïde
+entraînée sur les virages à gauche : le pilote appris **tirait par accident**,
+et la boucle de minage ne se fermait que par accident. Le « désaccord de 1,9 %
+sur `fire` » relevé plus haut (§5 nonies bis) n'était pas une dérive de
+distribution : c'était **l'étiquette**.
+
+Conséquence directe sur DAgger, mesurée : sur la trappe, la cible disait « ne
+rien faire » - agréger ces états **apprenait la trappe**. Trois itérations
+DAgger (roulages à 600 u, cible v8) : validation 95,9 % → 77,0 %, boucle fermée
+**0/6** avec le vaisseau **détruit** sur la graine 4 (§5 nonies quater ne
+pouvait donc pas conclure).
+
+### 4. La correction (format **v10**)
+
+- `nn.py` : `SIGMOID_ACTIONS = ("up", "down", "fire")` et `TURN_ACTIONS =
+  ("left", "right", "none")` définissent l'**ordre des sorties** (distinct de
+  l'ordre des boutons `ACTIONS`) ; `action_target` les suit, `summary` aussi ;
+- l'artefact **déclare** `sigmoid_actions` / `turn_actions`, et les deux
+  lecteurs **refusent** un fichier qui déclare autre chose (`nn.py::load_nn`,
+  `src/learned_pilot.rs::parse`) : des poids v8 sont **refusés** au lieu d'être
+  pilotés de travers ;
+- `FEATURES_VERSION` passe à **10** (même mécanisme que les versions de
+  features) : la garde vaut aussi pour le portage Rust.
+
+Deuxième correction, trouvée en instrumentant la trappe : les roulages DAgger
+doivent partir de la **distribution de départ de la tâche** - le vaisseau **à
+quai** (`--dagger-starts dock`, désormais le défaut). Partant de départs
+**écartés** (`--dagger-dists 600`), les roulages n'atteignaient **jamais** la
+trappe d'évaluation (distance L∞ minimale de **0,96** à cet état, la géométrie
+de vol n'étant pas la même) : la correction n'existait donc pas dans les données
+DAgger. Depuis le quai, la trappe est visitée **exactement** (600 pas,
+étiquetés par l'expert). S'y ajoute un **coupe-circuit** (`--dagger-stall`,
+600 pas) : un point fixe n'apprend rien de neuf, le rejouer ne coûte que du
+temps de simulateur (~10 min par itération avant, ~5 min après).
+
+### 5. Le résultat
+
+```bash
+cd tools/trainer
+python3 ship_warmstart.py --dagger-iterations 3 --dagger-starts dock \
+    --dagger-stride 4 --measure-sim --output ship_warmstart_policy.json
+```
+
+| étape | boucle fermée hors ligne (graines 1..6) | récompense moyenne |
+|---|---|---|
+| amorce (clonage seul) | **1/6** | −118,7 |
+| DAgger 1 | **4/6** | 522,2 |
+| DAgger 2 | 2/6 | 116,5 |
+| **DAgger 3** (artefact déployé) | **6/6** | **958,0** (autopilote 960,5) |
+
+La progression n'est pas monotone (la trappe se déplace d'une itération à
+l'autre) : c'est le **dernier** point de reprise qui est déployé, et
+`--output` est réécrit après **chaque** itération pour qu'un run interrompu
+laisse un artefact que la mesure vient de qualifier.
+
+**Dans le jeu** (`measure_in_game.py`, 12 graines) : **7/12 livrés contre 10/12**
+pour la loi scriptée, à **30,0 s** de temps simulé moyen contre 31,4 s - il
+livre **aussi vite** que la loi, et plus vite sur certaines graines (graine 7 :
+21,4 s contre 71,6 s). Les 5 échecs ne sont **plus** la trappe : 2
+**collisions** (graines 2 et 5) et 3 **délais** (6, 8, 9) - c'est la frontière
+hybride du simulateur (§5 nonies quater), pas le format des cibles.
+
+**Portage Rust** : **1 423 / 1 423 pas identiques (100 %)** avec les nouveaux
+poids, sur trois épisodes de minage (les graines 7 et 21 **livrent**).
+
+### 6. Les verrous
+
+`test_nn_backend.py` (`ActionTargetTest`) : les sigmoïdes sont `up`, `down`,
+`fire` ; `left` n'y est plus dupliquée ; **relire une cible avec le décodeur du
+jeu rend l'action d'origine** sur les 24 combinaisons ; un fichier de poids qui
+déclare l'ancien format est **refusé** ; et - bout en bout - un réseau entraîné
+sur ce format exécute bien l'action de l'expert (> 95 %, contre **0 %** en v8,
+vérifié). `test_ship_env.py` verrouille côté épisode : les roulages DAgger
+partagent la distribution de départ de la mesure, la trappe est visitée, le
+coupe-circuit ne tronque pas une politique qui commande.
+
 ## 5 octies. Phase 4 — la politique apprise **déployée dans le jeu**
 
 Objectif de la phase : que le réseau entraîné **tourne dans le jeu**, comme
@@ -1004,7 +1308,7 @@ au calcul de l'entraîneur.
 ### Le portage (`src/learned_pilot.rs`)
 
 Deux pièces sont rejouées à l'identique : l'**extraction de features**
-(`nn.py::obs_features`, version 8) sur l'**observation du jeu**
+(`nn.py::obs_features`, version **10**) sur l'**observation du jeu**
 (`driver::Observation`) et le **réseau** (`nn.py::MLP` : couche cachée tanh,
 sigmoïdes `up`/`down`/`fire`, softmax de rotation `left`/`right`/`none`). Les
 poids sont **embarqués dans le binaire** (`include_str!` de
@@ -1071,9 +1375,19 @@ pas été ré-enregistré.
 | artefact | dans le jeu, livraisons | temps simulé moyen (livrés) |
 |---|---|---|
 | **loi scriptée** (graines 1..12) | **10/12** | 31,4 s |
-| **appris, 64 cachés** (graines 1..12) | **7/12** | 49,2 s |
-| appris, 24 cachés + données élargies (ablation) | **1/12** | 17,6 s |
-| appris, v8 d'avant (24 cachés, 6 000 pas, graines 1..6) | 0/6 | - |
+| **appris v10, 64 cachés** (graines 1..12, embarqué) | **7/12** | **30,0 s** |
+| appris v8, 64 cachés (graines 1..12, d'alors) | 7/12 | 49,2 s |
+| appris v9 (seuils de conduite, repli de capacité) | 1/12 | 17,6 s |
+| appris v8 d'avant (24 cachés, 6 000 pas, graines 1..6) | 0/6 | - |
+
+> ⚠ **Ces lignes décrivent les artefacts d'alors**, dont le **tir n'était pas
+> appris** (format de cibles v8, §5 nonies quinquies) : la ligne « appris v8,
+> 64 cachés » bouclait par accident. L'artefact embarqué aujourd'hui est un
+> **v10** (cibles corrigées, DAgger depuis le quai) à **7/12** et **30,0 s** -
+> même nombre de livraisons, mais un tir **appris**, sans trappe. Ce qui reste
+> vrai et verrouillé : le **portage** Rust du réseau est **fidèle à 100 %**
+> (1 423 pas de vraie partie, `validate_learned_port.py`) et la **plomberie**
+> d'entraînement ne dépend pas de la valeur de l'artefact.
 
 avec l'artefact élargi (240 000 pas étiquetés, 24 000 en entraînement,
 64 cachés, 300 époques, moteur numpy) à **78,9 %** d'exactitude d'entraînement
@@ -1121,20 +1435,23 @@ La **logique de mesure est testée hors partie** (`test_measure_in_game.py` :
 classification des dénouements, garde-fous, attente de la bascule, contre un
 faux client) et le **vocabulaire** des dénouements est verrouillé contre
 `src/driver.rs` - le rapport ne peut pas inventer un état que le jeu ne publie
-pas. Rejouée avec l'artefact **élargi**, la mesure donne **7/12** livraisons
-pour le cerveau appris contre **10/12** pour la loi scriptée (graines 1..12),
-et **5/6** contre **6/6** sur les graines 1..6 : c'est cette ligne, et non
-l'écart de récompense du micro-simulateur, qui fait foi.
+pas. Rejouée avec l'artefact **déployé** (v10, §5 nonies quinquies), la mesure
+donne **7/12** livraisons pour le cerveau appris contre **10/12** pour la loi
+scriptée (graines 1..12) et **3/6** contre **6/6** sur les graines 1..6 : c'est
+cette ligne, et non l'écart de récompense du micro-simulateur, qui fait foi.
 
-Entraînement de l'artefact déployé (`ship_warmstart.py` par défaut :
-12 graines × 4 distances, `--stride 4`, 240 000 pas étiquetés, **64 cachés**,
-300 époques, moteur **numpy**, **features v8**) : exactitude **train 78,9 %**,
-**validation 69,8 %**. Autrement dit : **le mécanisme est livré et fidèle, et
-la politique livre désormais dans la partie** (7/12). C'est le résultat de
-l'élargissement de capacité (§5 nonies bis) ; le résidu est le **micro-
-simulateur représentatif** et l'**affinage** (livrer plus vite, 5 échecs
-restants sur 12) - la stratégie apprise reste un objet mesurable **dans le
-jeu**, pas seulement hors ligne.
+Entraînement de l'artefact déployé (`ship_warmstart.py --dagger-iterations 3
+--dagger-starts dock --dagger-stride 4` : 12 graines × 4 distances, `--stride 4`,
+**147 917 pas étiquetés** + 13 291 états DAgger, **64 cachés**, 300 époques,
+moteur **numpy**, **features v10**) : exactitude **train 98,4 %**, **validation
+91,0 %** (la validation baisse à mesure que le DAgger ajoute des états hors
+distribution - c'est sa définition, pas une régression : la **boucle fermée**,
+elle, passe de 1/6 à **6/6**). Autrement dit : **le mécanisme est livré et
+fidèle, et la politique livre dans la partie** (7/12) **au rythme de la loi**
+(30,0 s contre 31,4 s). Le résidu n'est plus ni la trappe ni le tir : c'est la
+**frontière hybride du simulateur** (collisions) et l'**affinage** (§5 nonies
+quater) - la stratégie apprise reste un objet mesurable **dans le jeu**, pas
+seulement hors ligne.
 
 ### Grandeurs de décision du vaisseau (v7) - fait
 
@@ -1238,13 +1555,22 @@ réseau.
   mural - testé hors partie par `test_measure_in_game.py`. La **visée de la
   mission** de la conduite est livrée en features **v8** (§5 nonies) : la
   rotation devient décidable (100 % contre 63,3 % avec la seule erreur vers la
-  station) et l'imitation passe à 57,9 % de validation. **Élargir la capacité**
+  station) et l'imitation passe à 57,9 % de validation.  **Élargir la capacité**
   (64 cachés, 300 époques, 24 000 pas, moteur numpy) porte la validation à
   **69,8 %** et ferme la boucle dans le jeu (7/12) ; la piste restante est
   d'exposer les **seuils de conduite** (bande morte d'alignement) pour gagner
   en précision, et de rendre le **micro-simulateur représentatif** (hors ligne,
-  il désigne le mauvais réseau). Restent enfin le durcissement du protocole
-  (version explicite des features) et la reproductibilité des artefacts.
+  il désignait le mauvais réseau) - **fait** en §5 nonies quater : le champ
+  minier de la graine est **importé du jeu**, la séquence de l'épisode
+  (rétraction des liens, animation d'accostage) est portée, et le classement
+  hors ligne suit celui de la partie (verrouillé par
+  `test_ship_env.py::TestRepresentativity`). **Ce qui reste** : l'artefact
+  embarqué, ré-entraîné depuis le 16 septembre, ne livre plus aucune graine
+  (0/12 contre 10/12 pour la loi scriptée) - il doit être **ré-entraîné sur le
+  simulateur représentatif** puis **mesuré dans le jeu** (`measure_in_game.py`),
+  sans se fier à l'exactitude d'imitation. Restent enfin le durcissement du
+  protocole (version explicite des features) et la reproductibilité des
+  artefacts.
 
 ## 7. Conventions et reproductibilité
 

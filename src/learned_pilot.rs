@@ -48,11 +48,18 @@ use crate::state::GameState;
 /// réseau + métadonnées d'entraînement, mêmes clés que `nn.py::save_nn`).
 const POLICY_JSON: &str = include_str!("../assets/ship_pilot_policy.json");
 
-/// Version du format des features (`nn.py::FEATURES_VERSION`) : le fichier de
-/// politique porte la sienne et le portage refuse une version inconnue -
+/// Version du **format du fichier de politique** (`nn.py::FEATURES_VERSION`) :
+/// le fichier porte la sienne et le portage refuse une version inconnue -
 /// rejouer des poids entraînés sur d'anciennes features donnerait des
 /// décisions silencieusement fausses.
-pub const FEATURES_VERSION: u32 = 8;
+///
+/// **v10** : le format des **cibles** d'apprentissage (`nn.py::action_target`)
+/// rangeait `fire` hors des trois sigmoïdes (`up`, `down`, `left` - `ACTIONS`
+/// place `left`/`right` avant `fire`) : un réseau v8 lit « tire » là où il a
+/// appris « tourne à gauche ». Ses poids sont donc **refusés** ici plutôt que
+/// pilotés de travers ; `SIGMOID_ACTIONS` verrouille la même propriété dans le
+/// fichier, et `nn.py::SIGMOID_ACTIONS` la définit.
+pub const FEATURES_VERSION: u32 = 10;
 
 // ─── paramètres du modèle (miroir de `tools/trainer/nn.py`) ─────────────────
 
@@ -90,6 +97,12 @@ pub const FEATURE_COUNT: usize = 157;
 /// de rotation `left`/`right`/`none` (`nn.py::SIGMOID_OUTPUTS` / `TURN_HEAD`).
 const SIGMOID_OUTPUTS: usize = 3;
 const TURN_HEAD: usize = 3;
+
+/// Actions des trois sigmoïdes, **dans l'ordre des sorties**
+/// (`nn.py::SIGMOID_ACTIONS`) : `fire` est la troisième. Le fichier de politique
+/// les déclare et le portage refuse une autre répartition - le format v8 les
+/// rangeait `up`, `down`, `left`, et le tir n'était donc jamais appris.
+const SIGMOID_ACTIONS: [&str; SIGMOID_OUTPUTS] = ["up", "down", "fire"];
 
 // ─── constantes de la loi EVA rejouées par les features ─────────────────────
 // (miroir de `src/autopilot.rs` ; `nn.py::_eva_decision_features`)
@@ -149,6 +162,11 @@ struct PolicyFile {
     outputs: usize,
     sigmoid_outputs: usize,
     turn_head: usize,
+    /// Actions des sigmoïdes, dans l'ordre des sorties (`nn.py::SIGMOID_ACTIONS`).
+    /// Absent des fichiers antérieurs au format v10, d'où le défaut vide - la
+    /// vérification qui suit les refuse explicitement.
+    #[serde(default)]
+    sigmoid_actions: Vec<String>,
     /// Couche d'entrée : `inputs × hidden`.
     w1: Vec<Vec<f64>>,
     b1: Vec<f64>,
@@ -194,6 +212,13 @@ impl Policy {
         }
         if f.sigmoid_outputs != SIGMOID_OUTPUTS || f.turn_head != TURN_HEAD {
             return Err("têtes de sortie incompatibles (ré-entraîner)".to_string());
+        }
+        if f.sigmoid_actions != SIGMOID_ACTIONS {
+            return Err(format!(
+                "cibles d'entraînement {:?} (ce portage en implémente {SIGMOID_ACTIONS:?} - \
+                 ré-entraîner : au format v8 `fire` n'était pas dans les sigmoïdes)",
+                f.sigmoid_actions
+            ));
         }
         if f.outputs != SIGMOID_OUTPUTS + TURN_HEAD
             || f.w1.len() != f.inputs
