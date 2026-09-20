@@ -1,0 +1,27 @@
+{
+  "policy": "ga-law",
+  "task": "ship-mining",
+  "params": {
+    "CRUISE_SPEED": 3.5,
+    "ATTACK_STANDOFF": 20.0,
+    "STATION_GUARD_RADIUS": 285.9477,
+    "FIRE_RANGE": 320.0,
+    "AIM_TOLERANCE": 0.4214,
+    "THRUST_DEADBAND": 0.3121,
+    "TURN_DEADBAND": 0.0945,
+    "PATROL_RADIUS": 240.0,
+    "DOCK_SLOW_ZONE": 123.0444,
+    "LOW_SUPPLY_RATIO": 0.2287,
+    "MINERAL_CLEARANCE": 162.9547,
+    "AVOID_RADIUS": 386.135,
+    "AVOID_CLEARANCE": 96.4649,
+    "AVOID_TIME": 1.5491,
+    "DODGE_BRAKE_SPEED": 0.0
+  },
+  "reward": 971.79,
+  "train_seeds": [
+    1,
+    2,
+    3
+  ]
+}

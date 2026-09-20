@@ -225,12 +225,30 @@ def load_policy_file(path: str) -> Callable[[dict[str, Any]], dict[str, bool]]:
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     kind = data.get("policy", "seek")
+    if kind == "ga-law":
+        return ga_law_policy(path)
     if kind == "nn":
         return nn_policy(path)
     if kind == "ppo":
         return ppo_policy(path)
     params = data.get("params")
     return lambda obs: seek(obs, params)  # noqa: E731 - paramètres entraînés ou défauts
+
+
+def ga_law_policy(path: str) -> Callable[[dict[str, Any]], dict[str, bool]]:
+    """Politique **génome A** de l'algorithme génétique (`ga.py`, sortie
+    `ga_policy.json`) : la loi portée de l'autopilote vaisseau recâblée sur
+    les gènes optimisés. Rejouable dans le simulateur comme contre la vraie
+    partie (le champ `params` porte les constantes)."""
+    import json
+
+    from ga import make_law_policy
+
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if data.get("policy") != "ga-law":
+        raise ValueError(f"{path} n'est pas une politique ga-law (champ `policy`)")
+    return make_law_policy(dict(data["params"]))
 
 
 def policy_for(strategy: str, rng: Optional[random.Random] = None) -> Callable[[dict[str, Any]], dict[str, bool]]:

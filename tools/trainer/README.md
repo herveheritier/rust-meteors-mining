@@ -27,6 +27,8 @@ tools/trainer/
 ├── evaluate.py      ← lignes de base : mesure une stratégie sur des épisodes (+ --reference)
 ├── bench.py         ← banc d'essai **en continu** dans le processus headless (POST /bench)
 ├── cem.py           ← entraînement par croix-entropie (CEM) de la politique `seek`
+├── ga.py            ← **algorithme génétique sélectif** de l'autopilote vaisseau (génomes loi / réseau)
+├── viewer.py        ← **afficheur pixels** du jeu (station/vaisseau/météores/minerais) + suivi de l'entraînement (`ga.py --view`)
 ├── test_reward_gap.py ← **test de non-régression** de l'écart politique/autopilote (EVA)
 ├── test_ship_port.py ← tests du portage de l'autopilote **vaisseau** (observations synthétiques)
 ├── test_ship_env.py ← tests du **micro-simulateur vaisseau** + amorce perturbée (ship)
@@ -577,6 +579,84 @@ combinaisons, refus d'un fichier d'ancien format, et - bout en bout - un réseau
 entraîné qui exécute l'action de l'expert, contre **0 %** en v8) et
 `test_ship_env.py` (roulages DAgger partant de la distribution de départ de la
 mesure, trappe visitée, coupe-circuit de calage).
+
+### 3 septies. Algorithme génétique sélectif (GA)
+
+`ga.py` fait évoluer une **population** de pilotes candidats par sélection
+(élitisme + tournoi), **croisement** uniforme et **mutation** gaussienne
+(σ décroissant) - l'équivalent génétique de `cem.py` (qui n'a ni croisement ni
+population large) - sur la **boucle de minage** du vaisseau dans le
+micro-simulateur. Deux génomes :
+
+- **`--genome law`** (défaut) : les constantes de conduite de la loi portée
+  (`ship_autopilot_ref.py` : `CRUISE_SPEED`, `AIM_TOLERANCE`, `AVOID_*`…)
+  deviennent des gènes bornés ; la structure de la loi est conservée, le GA
+  cherche **son meilleur réglage**. La population initiale contient le réglage
+  du jeu : le meilleur membre de la génération 0 est déjà viable.
+- **`--genome nn --warmstart nn_policy.json`** : les poids du MLP (format
+  `ship_pilot_policy.json`) sont aplatis en gènes continus ; la population
+  initiale est faite de perturbations d'un réseau d'imitation (`ship_warmstart.py`
+  ou `imitate.py`) - le GA affine en boucle fermée là où le clonage échoue.
+
+La **fitness** = moyenne des récompenses sur les graines d'entraînement moins
+`--robustness × écart-type` (un pilote qui réussit 2 graines sur 3 très vite
+doit perdre contre celui qui réussit les 3) ; les graines `--val-seeds`,
+disjointes, ne servent qu'à la mesure finale (anti-surapprentissage).
+
+```bash
+cd tools/trainer
+python3 ga.py                                   # génome A, simulateur, ~1 min
+python3 ga.py --gens 25 --pop 30 --seeds 1 2 3 4 5      # budget plus long
+python3 ga.py --genome nn --warmstart nn_policy.json    # affiner un réseau d'imitation
+python3 evaluate.py --strategy ga --policy ga_policy.json --episodes 5  # rejouer
+python3 -c "from policies import load_policy_file; from ship_warmstart import \
+    sim_comparison_ship, print_ship_comparison; \
+    print_ship_comparison(sim_comparison_ship(load_policy_file('ga_policy.json'), [1,2,3,4]))"
+```
+
+Mesure (génome A, 5 générations × 12 candidats, graines 1-3) : fitness
+entraînement 964,2 · validation (graines 11-12) 962,8 · contre l'autopilote
+porté sur graines 1-4 : **4/4 livrés à 965,2 contre 960,0** (écart +5,2) -
+la loi scriptée recâblée fait déjà légèrement mieux que son réglage d'origine.
+Sortie : `ga_policy.json` (génome law, chargé par `policies.load_policy_file`)
+ou `nn_policy_ga.json` (génome nn, format `load_nn` - déployable en jeu comme
+l'amorce d'imitation, `assets/ship_pilot_policy.json` + touche Y). Tests :
+`python3 -m unittest test_ga -v`.
+
+#### Voir l'entraînement en pixels (`viewer.py`, `ga.py --view`)
+
+`viewer.py` est un afficheur **indépendant** (bibliothèque standard) : la
+grille torique du monde rendue en **pixels** (10 u/pixel, la station au
+centre - l'anneau minier tient entier à l'écran), chaque élément du jeu est
+un bloc de couleur (station et trappe, vaisseau + nez + flamme de poussée,
+météores, minerais libérés, balles), avec un panneau de statistiques, les
+courbes de fitness (meilleur / moyenne) et une légende. Sans tkinter (ou
+`--backend ansi`), le même affichage tombe dans le **terminal** (couleurs
+ANSI 24 bits, vue suivie du vaisseau).
+
+```bash
+cd tools/trainer
+python3 ga.py --view                                   # l'entraînement, en direct
+python3 viewer.py                                      # la loi du jeu, seule
+python3 viewer.py --policy ga_policy.json --seed 3     # une politique entraînée
+```
+
+Branché sur le GA, `--view` montre le **déroulement de l'entraînement** : à
+chaque génération, l'épisode du **meilleur candidat** est rejoué (première
+graine d'entraînement, déterministe - c'est exactement l'épisode de la
+fitness) pendant que la courbe avance ; entre les générations défilent des
+épisodes de **candidats ordinaires échantillonnés** (`--view-sample N` : 1
+sur N, défaut 4, 0 = aucun - rejeu rapide, en lecture de moindre priorité :
+une génération qui arrive les interrompt toujours) ; à la fin, l'épisode de
+**validation** (graine disjointe). L'entraînement tourne dans un fil
+d'arrière-plan : l'affichage ne coûte qu'un épisode de rejeu par événement
+montré et n'attend jamais l'écran. Réglages de lecture : vitesse ×1-×8
+(défaut ×4), Pause, « Passer » (génération, sinon candidat en attente) ;
+`--zoom` redimensionne les pixels, `--quit-after MS` ferme la fenêtre seule
+(tests). Tests : `python3 -m unittest test_viewer -v` (conversions
+monde→pixel, calques fixe/mobile, rejeu déterministe, discipline des files
+de lecture, repli ANSI - tout hors écran) et le hook `on_candidate` dans
+`test_ga.py`.
 
 #### 3 quinquies quater. La politique **déployée dans le jeu** (Phase 4)
 
